@@ -1,0 +1,19 @@
+# Invictus: Astrum — how the tools run. Never what is true (that is data/) or how it looks (style.toml).
+# Every key is required; unknown keys are an error. Paths are relative to this file.
+
+[paths]
+systems   = "data/systems"
+scenarios = "data/scenarios"
+players   = "data/players.toml"
+style     = "style.toml"
+
+[server]
+host = "127.0.0.1"
+port = 8010
+
+[live]
+check_seconds = 2      # how often the server looks for edits to data/ and style.toml
+
+[sim]
+start = "system"       # "system" = each system's own epoch, "now" = the wall clock, or an ISO UTC date
+orbit_samples = 360    # points per drawn orbit

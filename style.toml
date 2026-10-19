@@ -1,0 +1,110 @@
+# Invictus: Astrum — how the map looks. Edit freely: the map picks up changes within seconds.
+# Colours are #rrggbb. Nothing here changes the simulation.
+
+[palette]
+void    = "#07050f"   # background
+violet  = "#7433fa"   # the interface: rings, hairlines, cursor
+fuchsia = "#fa1f99"   # lock and selection only
+ink     = "#e4def7"   # text
+dim     = "#8a82a6"   # secondary text
+orbit   = "#5b4a8f"   # orbit lines
+cyan    = "#9ff0ff"   # bullseye plane and fields
+
+# Affiliation is told by SHAPE first, colour second (APP-6 style frames).
+# shape: rect | diamond | quatrefoil | square | circle; fill is the frame's fill opacity (0–1).
+[affiliation.friend]
+label = "Friend"
+shape = "rect"
+color = "#e4def7"
+fill  = 0.10
+
+[affiliation.hostile]
+label = "Hostile"
+shape = "diamond"
+color = "#ff5a36"
+fill  = 0.12
+
+[affiliation.unknown]
+label = "Unknown"
+shape = "quatrefoil"
+color = "#f5b82e"
+fill  = 0.10
+
+[affiliation.neutral]
+label = "Civil / neutral"
+shape = "square"
+color = "#2ec4b6"
+fill  = 0.10
+
+# Status modifiers. dash: frame dash pattern [on, off] px; cross: strike through; opacity: 0–1;
+# ellipse: draw an uncertainty ring.
+[status.cold]
+label = "Cold"
+dash = [5, 3]
+
+[status.track-lost]
+label = "Track lost"
+dash = [2, 3]
+opacity = 0.7
+ellipse = true
+
+[status.crab]
+label = "Crab: surrendered or disabled"
+cross = true
+opacity = 0.75
+
+# Echelon marks drawn above a frame, smallest to largest.
+[echelon]
+ship       = ""
+flight     = "•"
+squadron   = "••"
+flotilla   = "•••"
+task-force = "|"
+classis    = "X"
+armada     = "XX"
+
+# Bodies are drawn large by tactical role (size in px at display scale 1). 0 hides the display.
+[roles.star]
+size_px = 48
+label = "Star"
+
+[roles.orbis]
+size_px = 40
+label = "Inhabited world"
+
+[roles.gas-giant]
+size_px = 36
+label = "Gas giant"
+
+[roles.ice-giant]
+size_px = 30
+label = "Ice giant"
+
+[roles.world]
+size_px = 22
+label = "World"
+
+[roles.dwarf]
+size_px = 14
+label = "Dwarf planet"
+
+[roles.moon]
+size_px = 14
+label = "Moon"
+
+[roles.station]
+size_px = 14
+label = "Station"
+
+[roles.barycenter]
+size_px = 0
+label = "Barycentre"
+
+[display]
+scale_default = 1.0    # the display-size slider
+scale_min     = 0.0
+scale_max     = 3.0
+scale_step    = 0.25
+symbol_px     = 7      # the small fixed mark every body keeps when its display is off
+declutter_px  = 14     # a body this close on screen to its parent folds into it
+aggregate_px  = 26     # members this close together fold into their formation's symbol

@@ -1,0 +1,64 @@
+# Players and their bullseyes. Each player reads the same simulation through their own references;
+# the engine itself always uses each system's default bullseye ("system": the root, system axes).
+#
+# origin:  {body = "<id>"} | {body = "<id>", offset_km = [x, y, z]} | {xyz_km = [x, y, z]}
+#          | {aer = [bearing_deg, elevation_deg, range_km], from = "<bullseye id>" or "system"}
+# up:      "system" | "ecliptic" | "galactic" | "icrs" | "pole:<body>" | [x, y, z]
+# ref:     "system" | "vernal-equinox" | "galactic-centre" | "toward:<body>" | [x, y, z]
+# roll_deg turns 000 clockwise about Eve.
+
+[[player]]
+id = "arcvs"
+name = "ARCVS Vanguard"
+
+  # Doctrine: before sync the TACAN centre is the burn end, oriented by galactic markers, in the
+  # launch system's up. Here: a point carried with Earth, 1.2 million km out of the plane (Eve).
+  [[player.bullseye]]
+  id = "burn"
+  name = "Burn Bullseye"
+  system = "sol"
+  origin = { body = "earth", offset_km = [0, 0, 1200000] }
+  up = "galactic"
+  ref = "galactic-centre"
+
+  [[player.bullseye]]
+  id = "gate"
+  name = "Gate Bullseye"
+  system = "sol"
+  origin = { aer = [150, -40, 900000], from = "burn" }
+  up = "ecliptic"
+  ref = "vernal-equinox"
+
+  # An expedition into Alpha Centauri keeps its launch system's up: Sol's ecliptic north.
+  [[player.bullseye]]
+  id = "burn-acen"
+  name = "Burn Bullseye"
+  system = "alpha-centauri"
+  origin = { body = "alpha-cen-ab" }
+  up = "ecliptic"
+  ref = "toward:proxima"
+
+[[player]]
+id = "terran"
+name = "Terran Space Command"
+
+  # A local navy reads from its own world: Earth's pole is up, 000 toward the Sun.
+  [[player.bullseye]]
+  id = "home"
+  name = "Home Plate"
+  system = "sol"
+  origin = { body = "earth" }
+  up = "pole:earth"
+  ref = "toward:sun"
+
+[[player]]
+id = "ultracool"
+name = "Trappist Concord"
+
+  [[player.bullseye]]
+  id = "e-plate"
+  name = "Eden Plate"
+  system = "trappist-1"
+  origin = { body = "trappist-1e" }
+  up = "system"
+  ref = "toward:trappist-1"

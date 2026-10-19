@@ -1,0 +1,369 @@
+# Sol: the Sun, the eight planets, Pluto–Charon, and the major moons.
+#
+# Units as published: km, km³/s², AU, days, degrees. The builder converts to SI.
+# Planets: JPL "Keplerian elements for approximate positions of the major planets" (Standish),
+# table 1, valid 1800–2050, mean ecliptic and equinox of J2000; rates per Julian century.
+# Physical data: IAU 2015 / JPL SSD planetary physical parameters; poles and rotation: IAU WGCCRE.
+# Major-moon geometry (a, e, i, period) from JPL SSD mean elements, referred to the parent's
+# equator. Their phases along the orbit are placeholders until fetched from JPL Horizons
+# (tools/fetch_horizons.py); the map flags them.
+
+[system]
+id = "sol"
+name = "Sol"
+epoch = "2026-10-19T00:00:00Z"   # where the clock starts
+sources = [
+  "Standish, Keplerian Elements for Approximate Positions of the Major Planets (JPL SSD)",
+  "Archinal et al. 2018, IAU WGCCRE Report 2015 (poles, rotation)",
+  "JPL SSD planetary physical parameters and satellite mean elements",
+  "Meeus, Astronomical Algorithms, 2nd ed., ch. 47 (lunar mean elements)",
+]
+
+[frame]
+kind = "ecliptic-j2000"     # system plane = ecliptic; +x = vernal equinox; origin = the Sun
+
+# ---- the star --------------------------------------------------------------------------------
+[[body]]
+id = "sun"
+name = "Sun"
+kind = "star"
+gm_km3s2 = 1.32712440018e11
+radius_km = 695700
+pole_ra_deg = 286.13
+pole_dec_deg = 63.87
+w0_deg = 84.176
+w_rate_deg_per_day = 14.1844
+luminosity_lsun = 1.0
+teff_k = 5772
+wind_pressure_1au_npa = 2.0
+display = { role = "star", color = "#ffd27a" }
+
+# ---- planets -----------------------------------------------------------------------------------
+[[body]]
+id = "mercury"
+name = "Mercury"
+kind = "planet"
+parent = "sun"
+gm_km3s2 = 22031.78
+radius_km = 2439.4
+pole_ra_deg = 281.0103
+pole_dec_deg = 61.4155
+w0_deg = 329.5988
+w_rate_deg_per_day = 6.1385108
+magnetic = { b_eq_nt = 190, tilt_deg = 180, offset_r = [0, 0, 0.2], note = "MESSENGER: weak, northward-offset dipole, Earth-like polarity" }
+display = { role = "world", color = "#9c948a" }
+orbit = { a_au = 0.38709927, e = 0.20563593, i_deg = 7.00497902, mean_lon_deg = 252.25032350, lon_peri_deg = 77.45779628, node_deg = 48.33076593, da_au = 0.00000037, de = 0.00001906, di_deg = -0.00594749, dmean_lon_deg = 149472.67411175, dlon_peri_deg = 0.16047689, dnode_deg = -0.12534081 }
+
+[[body]]
+id = "venus"
+name = "Venus"
+kind = "planet"
+parent = "sun"
+gm_km3s2 = 324858.59
+radius_km = 6051.8
+pole_ra_deg = 272.76
+pole_dec_deg = 67.16
+w0_deg = 160.20
+w_rate_deg_per_day = -1.4813688
+display = { role = "world", color = "#e3c88f" }
+orbit = { a_au = 0.72333566, e = 0.00677672, i_deg = 3.39467605, mean_lon_deg = 181.97909950, lon_peri_deg = 131.60246718, node_deg = 76.67984255, da_au = 0.00000390, de = -0.00004107, di_deg = -0.00078890, dmean_lon_deg = 58517.81538729, dlon_peri_deg = 0.00268329, dnode_deg = -0.27769418 }
+
+[[body]]
+id = "earth"
+name = "Earth"
+kind = "planet"
+gm_km3s2 = 398600.4354
+radius_km = 6371.0
+radius_eq_km = 6378.137
+j2 = 1.08263e-3
+pole_ra_deg = 0.0
+pole_dec_deg = 90.0
+w0_deg = 190.147
+w_rate_deg_per_day = 360.9856235
+orbis_altitude_km = 2000      # the shore: surface to the top of low orbit
+inhabited = true
+magnetic = { b_eq_nt = 29500, tilt_deg = 170.7, tilt_lon_deg = 107.3, note = "IGRF-13 dipole, 2020; the moment points to the southern geomagnetic pole" }
+display = { role = "orbis", color = "#5aa0ff" }
+
+[[body]]
+id = "moon"
+name = "Moon"
+kind = "moon"
+gm_km3s2 = 4902.800
+radius_km = 1737.4
+pole_ra_deg = 266.86
+pole_dec_deg = 65.64
+w0_deg = 38.32
+w_rate_deg_per_day = 13.17635815
+display = { role = "moon", color = "#c8c4bc" }
+
+[[binary]]
+id = "earth-moon"
+name = "Earth–Moon barycentre"
+parent = "sun"
+primary = "earth"
+secondary = "moon"
+# The Moon about the Earth: Meeus mean elements, with the general precession (1.3969713°/cy)
+# taken out of the rates so they refer to the fixed J2000 ecliptic. Mean elements omit
+# evection and variation: expect the Moon within about 1.5° of its true direction.
+relative = { a_km = 384748, e = 0.054900, i_deg = 5.1454, mean_lon_deg = 218.3164477, lon_peri_deg = 83.3532465, node_deg = 125.0445479, dmean_lon_deg = 481266.4842629, dlon_peri_deg = 4067.6167574, dnode_deg = -1935.5332323 }
+orbit = { a_au = 1.00000261, e = 0.01671123, i_deg = -0.00001531, mean_lon_deg = 100.46457166, lon_peri_deg = 102.93768193, node_deg = 0.0, da_au = 0.00000562, de = -0.00004392, di_deg = -0.01294668, dmean_lon_deg = 35999.37244981, dlon_peri_deg = 0.32327364, dnode_deg = 0.0 }
+
+[[body]]
+id = "mars"
+name = "Mars"
+kind = "planet"
+parent = "sun"
+gm_km3s2 = 42828.37
+radius_km = 3389.5
+radius_eq_km = 3396.2
+j2 = 1.96045e-3
+pole_ra_deg = 317.681
+pole_dec_deg = 52.887
+w0_deg = 176.630
+w_rate_deg_per_day = 350.89198226
+display = { role = "world", color = "#d0704a" }
+orbit = { a_au = 1.52371034, e = 0.09339410, i_deg = 1.84969142, mean_lon_deg = -4.55343205, lon_peri_deg = -23.94362959, node_deg = 49.55953891, da_au = 0.00001847, de = 0.00007882, di_deg = -0.00813131, dmean_lon_deg = 19140.30268499, dlon_peri_deg = 0.44441088, dnode_deg = -0.29257343 }
+
+[[body]]
+id = "jupiter"
+name = "Jupiter"
+kind = "planet"
+parent = "sun"
+gm_km3s2 = 126686531.9
+radius_km = 69911
+radius_eq_km = 71492
+j2 = 1.4736e-2
+pole_ra_deg = 268.056595
+pole_dec_deg = 64.495303
+w0_deg = 284.95
+w_rate_deg_per_day = 870.5360000
+magnetic = { b_eq_nt = 417000, tilt_deg = 9.6, tilt_lon_deg = 159.2, note = "VIP4-class dipole; tilt toward System III 200.8°W" }
+display = { role = "gas-giant", color = "#d9b38c", rings = false }
+orbit = { a_au = 5.20288700, e = 0.04838624, i_deg = 1.30439695, mean_lon_deg = 34.39644051, lon_peri_deg = 14.72847983, node_deg = 100.47390909, da_au = -0.00011607, de = -0.00013253, di_deg = -0.00183714, dmean_lon_deg = 3034.74612775, dlon_peri_deg = 0.21252668, dnode_deg = 0.20469106 }
+
+[[body]]
+id = "saturn"
+name = "Saturn"
+kind = "planet"
+parent = "sun"
+gm_km3s2 = 37931206.2
+radius_km = 58232
+radius_eq_km = 60268
+j2 = 1.6298e-2
+pole_ra_deg = 40.589
+pole_dec_deg = 83.537
+w0_deg = 38.90
+w_rate_deg_per_day = 810.7939024
+magnetic = { b_eq_nt = 21000, tilt_deg = 0.0, offset_r = [0, 0, 0.04], note = "axisymmetric to within a few hundredths of a degree" }
+display = { role = "gas-giant", color = "#e6d3a3", rings = true }
+orbit = { a_au = 9.53667594, e = 0.05386179, i_deg = 2.48599187, mean_lon_deg = 49.95424423, lon_peri_deg = 92.59887831, node_deg = 113.66242448, da_au = -0.00125060, de = -0.00050991, di_deg = 0.00193609, dmean_lon_deg = 1222.49362201, dlon_peri_deg = -0.41897216, dnode_deg = -0.28867794 }
+
+[[body]]
+id = "uranus"
+name = "Uranus"
+kind = "planet"
+parent = "sun"
+gm_km3s2 = 5793951.3
+radius_km = 25362
+radius_eq_km = 25559
+j2 = 3.34343e-3
+pole_ra_deg = 257.311
+pole_dec_deg = -15.175
+w0_deg = 203.81
+w_rate_deg_per_day = -501.1600928
+magnetic = { b_eq_nt = 23000, tilt_deg = 58.6, offset_r = [0, 0, -0.3], note = "Voyager 2 offset tilted dipole; azimuth of tilt and offset are approximate" }
+display = { role = "ice-giant", color = "#9fe3e8", rings = true }
+orbit = { a_au = 19.18916464, e = 0.04725744, i_deg = 0.77263783, mean_lon_deg = 313.23810451, lon_peri_deg = 170.95427630, node_deg = 74.01692503, da_au = -0.00196176, de = -0.00004397, di_deg = -0.00242939, dmean_lon_deg = 428.48202785, dlon_peri_deg = 0.40805281, dnode_deg = 0.04240589 }
+
+[[body]]
+id = "neptune"
+name = "Neptune"
+kind = "planet"
+parent = "sun"
+gm_km3s2 = 6835099.5
+radius_km = 24622
+radius_eq_km = 24764
+j2 = 3.411e-3
+pole_ra_deg = 299.36
+pole_dec_deg = 43.46
+w0_deg = 249.978
+rotation_period_h = 16.11
+magnetic = { b_eq_nt = 14000, tilt_deg = 47, offset_r = [0, 0, -0.55], note = "Voyager 2 offset tilted dipole; azimuth of tilt and offset are approximate" }
+display = { role = "ice-giant", color = "#4f7cff" }
+orbit = { a_au = 30.06992276, e = 0.00859048, i_deg = 1.77004347, mean_lon_deg = -55.12002969, lon_peri_deg = 44.96476227, node_deg = 131.78422574, da_au = 0.00026291, de = 0.00005105, di_deg = 0.00035372, dmean_lon_deg = 218.45945325, dlon_peri_deg = -0.32241464, dnode_deg = -0.00508664 }
+
+# ---- Pluto–Charon: a true binary, barycentre outside Pluto -------------------------------------
+[[body]]
+id = "pluto"
+name = "Pluto"
+kind = "dwarf"
+gm_km3s2 = 869.3
+radius_km = 1188.3
+pole_ra_deg = 132.993
+pole_dec_deg = -6.163
+w0_deg = 302.695
+w_rate_deg_per_day = 56.3625225
+display = { role = "dwarf", color = "#d8c3a5" }
+
+[[body]]
+id = "charon"
+name = "Charon"
+kind = "moon"
+gm_km3s2 = 105.88
+radius_km = 606.0
+display = { role = "moon", color = "#a9a39b" }
+
+[[binary]]
+id = "pluto-charon"
+name = "Pluto–Charon barycentre"
+parent = "sun"
+primary = "pluto"
+secondary = "charon"
+relative = { a_km = 19596, e = 0.0002, i_deg = 0.08, period_d = 6.3872273, plane = "equator" }
+orbit = { a_au = 39.48211675, e = 0.24882730, i_deg = 17.14001206, mean_lon_deg = 238.92903833, lon_peri_deg = 224.06891629, node_deg = 110.30393684, da_au = -0.00031596, de = 0.00005170, di_deg = 0.00004818, dmean_lon_deg = 145.20780515, dlon_peri_deg = -0.04062942, dnode_deg = -0.01183482 }
+
+# ---- the Galilean moons --------------------------------------------------------------------------
+[[body]]
+id = "io"
+name = "Io"
+kind = "moon"
+parent = "jupiter"
+gm_km3s2 = 5959.916
+radius_km = 1821.6
+display = { role = "moon", color = "#e8d36a" }
+orbit = { a_km = 421800, e = 0.0041, i_deg = 0.036, period_d = 1.769137786, plane = "equator" }
+
+[[body]]
+id = "europa"
+name = "Europa"
+kind = "moon"
+parent = "jupiter"
+gm_km3s2 = 3202.739
+radius_km = 1560.8
+display = { role = "moon", color = "#d9cbb0" }
+orbit = { a_km = 671100, e = 0.0094, i_deg = 0.466, period_d = 3.551181041, plane = "equator" }
+
+[[body]]
+id = "ganymede"
+name = "Ganymede"
+kind = "moon"
+parent = "jupiter"
+gm_km3s2 = 9887.834
+radius_km = 2631.2
+magnetic = { b_eq_nt = 719, tilt_deg = 176, note = "intrinsic dipole, antiparallel to Jupiter's; tilt azimuth not modelled" }
+display = { role = "moon", color = "#a99f92" }
+orbit = { a_km = 1070400, e = 0.0013, i_deg = 0.177, period_d = 7.15455296, plane = "equator" }
+
+[[body]]
+id = "callisto"
+name = "Callisto"
+kind = "moon"
+parent = "jupiter"
+gm_km3s2 = 7179.289
+radius_km = 2410.3
+display = { role = "moon", color = "#7d7468" }
+orbit = { a_km = 1882700, e = 0.0074, i_deg = 0.192, period_d = 16.6890184, plane = "equator" }
+
+# ---- Saturn's major moons -------------------------------------------------------------------------
+[[body]]
+id = "enceladus"
+name = "Enceladus"
+kind = "moon"
+parent = "saturn"
+gm_km3s2 = 7.211
+radius_km = 252.1
+display = { role = "moon", color = "#f2f4f8" }
+orbit = { a_km = 237948, e = 0.0047, i_deg = 0.009, period_d = 1.370218, plane = "equator" }
+
+[[body]]
+id = "tethys"
+name = "Tethys"
+kind = "moon"
+parent = "saturn"
+gm_km3s2 = 41.21
+radius_km = 531.1
+display = { role = "moon", color = "#e4e2dc" }
+orbit = { a_km = 294619, e = 0.0001, i_deg = 1.12, period_d = 1.887802, plane = "equator" }
+
+[[body]]
+id = "dione"
+name = "Dione"
+kind = "moon"
+parent = "saturn"
+gm_km3s2 = 73.12
+radius_km = 561.4
+display = { role = "moon", color = "#d6d3cc" }
+orbit = { a_km = 377396, e = 0.0022, i_deg = 0.019, period_d = 2.736915, plane = "equator" }
+
+[[body]]
+id = "rhea"
+name = "Rhea"
+kind = "moon"
+parent = "saturn"
+gm_km3s2 = 153.94
+radius_km = 763.8
+display = { role = "moon", color = "#cfcbc3" }
+orbit = { a_km = 527108, e = 0.0010, i_deg = 0.345, period_d = 4.518212, plane = "equator" }
+
+[[body]]
+id = "titan"
+name = "Titan"
+kind = "moon"
+parent = "saturn"
+gm_km3s2 = 8978.14
+radius_km = 2574.7
+display = { role = "moon", color = "#e0a64a" }
+orbit = { a_km = 1221870, e = 0.0288, i_deg = 0.34854, period_d = 15.945421, plane = "equator" }
+
+[[body]]
+id = "iapetus"
+name = "Iapetus"
+kind = "moon"
+parent = "saturn"
+gm_km3s2 = 120.51
+radius_km = 734.5
+display = { role = "moon", color = "#8e8172" }
+notes = "Iapetus's inclination is to its own Laplace plane, tilted ~15° from Saturn's equator; referred to the equator here, so its plane is approximate."
+orbit = { a_km = 3560820, e = 0.0286, i_deg = 15.47, period_d = 79.3215, plane = "equator" }
+
+# ---- Uranus and Neptune -----------------------------------------------------------------------------
+[[body]]
+id = "titania"
+name = "Titania"
+kind = "moon"
+parent = "uranus"
+gm_km3s2 = 228.2
+radius_km = 788.9
+display = { role = "moon", color = "#bdb4ab" }
+orbit = { a_km = 435910, e = 0.0011, i_deg = 0.34, period_d = 8.705872, plane = "equator" }
+
+[[body]]
+id = "oberon"
+name = "Oberon"
+kind = "moon"
+parent = "uranus"
+gm_km3s2 = 205.3
+radius_km = 761.4
+display = { role = "moon", color = "#a79c94" }
+orbit = { a_km = 583520, e = 0.0014, i_deg = 0.058, period_d = 13.463239, plane = "equator" }
+
+[[body]]
+id = "triton"
+name = "Triton"
+kind = "moon"
+parent = "neptune"
+gm_km3s2 = 1428.5
+radius_km = 1353.4
+display = { role = "moon", color = "#d9c7c2" }
+notes = "Retrograde: inclination above 90°."
+orbit = { a_km = 354759, e = 0.000016, i_deg = 156.865, period_d = 5.876854, plane = "equator" }
+
+# ---- numerical ephemeris -----------------------------------------------------------------------------
+# JPL DE421 (1900–2050), shipped by the skyfield-data package. Where it covers a body and the
+# date, positions come from it (kilometre-level); everywhere else the orbits above are used.
+# Planet targets are system barycentres: each sits within a few hundred km of the planet's centre.
+[ephemeris]
+kind = "jpl-de"
+file = "de421.bsp"
+targets = { sun = "sun", mercury = "mercury", venus = "venus", "earth-moon" = "earth barycenter", earth = "earth", moon = "moon", mars = "mars barycenter", jupiter = "jupiter barycenter", saturn = "saturn barycenter", uranus = "uranus barycenter", neptune = "neptune barycenter", "pluto-charon" = "pluto barycenter" }

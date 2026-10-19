@@ -1,0 +1,39 @@
+// Talks to the server. The server computes; this file only fetches.
+async function get(path, params) {
+  const q = params ? '?' + new URLSearchParams(Object.entries(params).filter(([, v]) => v != null)) : '';
+  const r = await fetch(`/api${path}${q}`);
+  if (!r.ok) throw new Error(`${r.status} ${path}`);
+  return r.json();
+}
+
+export const api = {
+  meta: () => get('/meta'),
+  status: () => get('/status'),
+  system: (id) => get(`/system/${id}`),
+  orbits: (id, t) => get(`/system/${id}/orbits`, { t }),
+  probe: (id, p, t, player, bullseye) => get(`/system/${id}/probe`, { x: p[0], y: p[1], z: p[2], t, player, bullseye }),
+};
+
+// One request in flight at a time: the latest wanted time wins, so a fast clock never queues up.
+export class StateStream {
+  constructor(onstate) {
+    this.onstate = onstate;
+    this.want = null;
+    this.busy = false;
+    this._open();
+  }
+  _open() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    this.ws = new WebSocket(`${proto}://${location.host}/ws`);
+    this.ws.onopen = () => this._send();
+    this.ws.onmessage = (e) => { this.busy = false; this.onstate(JSON.parse(e.data)); this._send(); };
+    this.ws.onclose = () => { this.busy = false; setTimeout(() => this._open(), 1000); };
+  }
+  request(req) { this.want = req; this._send(); }
+  _send() {
+    if (this.busy || !this.want || this.ws.readyState !== 1) return;
+    this.busy = true;
+    this.ws.send(JSON.stringify(this.want));
+    this.want = null;
+  }
+}

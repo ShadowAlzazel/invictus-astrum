@@ -1,0 +1,86 @@
+# Alpha Centauri: A and B on an 80-year eccentric orbit, Proxima ~8,700 AU out, and Proxima's planets.
+#
+# The origin is the A–B barycentre, the system's centre of gravity for every practical purpose
+# (Proxima, at 6% of the mass and 8,700 AU, would move the triple's barycentre ~470 AU).
+# The system plane is the A–B orbit; +x points to its periastron, +z along the orbital motion.
+# Visual orbit of A–B: Akeson et al. 2021 (a, e, i, Ω, ω, P; masses). Periastron epoch ~1955.6.
+# Proxima's orbit about A–B: Kervella, Thévenin & Lovis 2017.
+# Proxima's planets: radial-velocity detections; masses are minima and their orbital plane is not
+# known, so they are placed in the system plane. Radii are estimates from mass, not measurements.
+
+[system]
+id = "alpha-centauri"
+name = "Alpha Centauri"
+epoch = "2026-10-19T00:00:00Z"
+sources = ["Akeson et al. 2021, AJ 162, 14", "Kervella, Thévenin & Lovis 2017, A&A 598, L7",
+           "Anglada-Escudé et al. 2016, Nature 536, 437", "Faria et al. 2022, A&A 658, A115"]
+
+[frame]
+kind = "orbit"
+of = "alpha-cen-ab"
+ra_deg = 219.90206
+dec_deg = -60.83399
+distance_pc = 1.3319
+
+[[body]]
+id = "alpha-cen-a"
+name = "Alpha Centauri A"
+kind = "star"
+mass_msun = 1.0788
+radius_rsun = 1.2175
+luminosity_lsun = 1.519
+teff_k = 5790
+display = { role = "star", color = "#fff1c9" }
+
+[[body]]
+id = "alpha-cen-b"
+name = "Alpha Centauri B"
+kind = "star"
+mass_msun = 0.9092
+radius_rsun = 0.8591
+luminosity_lsun = 0.500
+teff_k = 5260
+display = { role = "star", color = "#ffd58f" }
+
+[[binary]]
+id = "alpha-cen-ab"
+name = "Alpha Centauri A–B barycentre"
+primary = "alpha-cen-a"
+secondary = "alpha-cen-b"
+relative = { a_arcsec = 17.4930, e = 0.51947, i_deg = 79.243, node_deg = 205.073, peri_deg = 232.006, period_yr = 79.762, t_peri = 1955.59, phase = "approximate", plane = "sky" }
+
+[[body]]
+id = "proxima"
+name = "Proxima Centauri"
+kind = "star"
+parent = "alpha-cen-ab"
+mass_msun = 0.1221
+radius_rsun = 0.1542
+luminosity_lsun = 0.001567
+teff_k = 3042
+display = { role = "star", color = "#ff6a3d" }
+orbit = { a_au = 8700, e = 0.50, i_deg = 107.6, node_deg = 126.0, peri_deg = 72.3, t_peri = 285000.0, phase = "approximate", plane = "sky" }
+
+[[body]]
+id = "proxima-b"
+name = "Proxima b"
+kind = "planet"
+parent = "proxima"
+mass_mearth = 1.07
+mass_is_minimum = true
+radius_rearth = 1.03
+notes = "Radius estimated from the minimum mass; not transiting."
+display = { role = "world", color = "#b07d62" }
+orbit = { period_d = 11.18427, e = 0.02 }
+
+[[body]]
+id = "proxima-d"
+name = "Proxima d"
+kind = "planet"
+parent = "proxima"
+mass_mearth = 0.26
+mass_is_minimum = true
+radius_rearth = 0.81
+notes = "Radius estimated from the minimum mass; not transiting."
+display = { role = "world", color = "#9a8a80" }
+orbit = { period_d = 5.122, e = 0.04 }

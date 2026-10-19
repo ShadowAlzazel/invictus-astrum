@@ -1,0 +1,17 @@
+:root {
+  --void: #07050f;
+  --violet: #7433fa;
+  --fuchsia: #fa1f99;
+  --ink: #e4def7;
+  --dim: #8a82a6;
+  --rule: rgba(116, 51, 250, 0.32);
+  --panel: rgba(10, 7, 22, 0.82);
+  --mono: 'Share Tech Mono', ui-monospace, monospace;
+  --display: 'Chakra Petch', 'Share Tech Mono', sans-serif;
+}
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; height: 100%; background: var(--void); color: var(--ink); overflow: hidden; }
+body { font-family: var(--mono); font-size: 12px; cursor: none; }
+@media (hover: none) { body { cursor: auto; } }
+button, input { font: inherit; color: inherit; cursor: none; }
+:focus-visible { outline: 1px solid var(--fuchsia); outline-offset: 2px; }

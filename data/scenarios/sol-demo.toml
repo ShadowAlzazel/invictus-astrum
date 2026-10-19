@@ -1,0 +1,113 @@
+# A static picture for the map: symbols only, no engagement is simulated yet.
+# Positions are AER from a bullseye, or carried with a body.
+
+[scenario]
+id = "sol-demo"
+name = "Cislunar picture"
+system = "sol"
+player = "arcvs"
+
+# ---- friendly: one task force element, in flights, out of plane over Earth --------------------------
+[[contact]]
+id = "tf-1"
+callsign = "Task Force 1"
+affiliation = "friend"
+echelon = "task-force"
+
+[[contact]]
+id = "kiki"
+callsign = "Kiki flight"
+affiliation = "friend"
+echelon = "flight"
+formation = "tf-1"
+
+[[contact]]
+id = "kiki-1"
+callsign = "Kiki"
+unit_type = "PAPILION"
+affiliation = "friend"
+echelon = "ship"
+formation = "kiki"
+status = ["cold"]
+position = { bullseye = "burn", aer = [0, 0, 2000] }
+
+[[contact]]
+id = "kiki-2"
+callsign = "Odessa"
+unit_type = "PHALAENA"
+affiliation = "friend"
+echelon = "ship"
+formation = "kiki"
+status = ["cold"]
+position = { bullseye = "burn", aer = [300, 4, 7000] }
+
+[[contact]]
+id = "kiki-3"
+callsign = "Philadelphia"
+unit_type = "PHALAENA"
+affiliation = "friend"
+echelon = "ship"
+formation = "kiki"
+status = ["cold"]
+position = { bullseye = "burn", aer = [60, -4, 7000] }
+
+[[contact]]
+id = "paris"
+callsign = "Paris flight"
+affiliation = "friend"
+echelon = "flight"
+formation = "tf-1"
+
+[[contact]]
+id = "paris-1"
+callsign = "Paris"
+unit_type = "PAPILION"
+affiliation = "friend"
+echelon = "ship"
+formation = "paris"
+position = { bullseye = "burn", aer = [90, -10, 40000] }
+
+[[contact]]
+id = "paris-2"
+callsign = "Imoogi"
+unit_type = "PAPILION"
+affiliation = "friend"
+echelon = "ship"
+formation = "paris"
+position = { bullseye = "burn", aer = [95, -12, 46000] }
+
+# ---- the local picture --------------------------------------------------------------------------------
+[[contact]]
+id = "g1"
+callsign = "Single Group"
+affiliation = "hostile"
+echelon = "squadron"
+brevity = "bandit"
+pry = 4
+position = { bullseye = "burn", aer = [150, -40, 400000] }
+
+[[contact]]
+id = "b1"
+callsign = "Bogey"
+affiliation = "unknown"
+echelon = "ship"
+brevity = "bogey"
+status = ["track-lost"]
+position = { body = "moon", offset_km = [30000, -12000, 5000] }
+
+[[contact]]
+id = "c1"
+callsign = "Civil transport"
+affiliation = "neutral"
+echelon = "ship"
+brevity = "civil"
+position = { body = "earth", offset_km = [-42164, 0, 0] }
+
+[[contact]]
+id = "x1"
+callsign = "Crab"
+affiliation = "hostile"
+echelon = "ship"
+brevity = "crab"
+status = ["crab"]
+position = { bullseye = "burn", aer = [170, -35, 380000] }

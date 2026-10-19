@@ -1,0 +1,10 @@
+"""Start the map server: python serve.py, then open the address it prints."""
+import uvicorn
+
+from astrum.app import create_app
+from astrum.config import load_config
+
+if __name__ == "__main__":
+    cfg = load_config()
+    print(f"Invictus: Astrum on http://{cfg['server']['host']}:{cfg['server']['port']}")
+    uvicorn.run(create_app(cfg), host=cfg["server"]["host"], port=cfg["server"]["port"], log_level="warning")

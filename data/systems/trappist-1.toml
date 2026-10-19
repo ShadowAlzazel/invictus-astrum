@@ -1,0 +1,103 @@
+# TRAPPIST-1: an ultracool M8 dwarf and seven transiting, rocky planets, all inside 0.07 AU.
+#
+# Masses, radii and periods: Agol et al. 2021 (transit-timing analysis). Eccentricities are all
+# below ~0.01 (Grimm et al. 2018); the values here are representative. Semi-major axes are derived
+# from the periods and the star's mass, and agree with the published ones.
+# The planets are coplanar to better than 0.1°, so the system plane is their common plane. The
+# orientation of that plane on the sky (its position angle) is not known, so the system is untied:
+# its own geometry is exact, but galactic or ecliptic references cannot be used here.
+# Phases are placeholders until the transit ephemerides are entered as t_peri / m0_deg.
+
+[system]
+id = "trappist-1"
+name = "TRAPPIST-1"
+epoch = "2026-10-19T00:00:00Z"
+sources = ["Agol et al. 2021, PSJ 2, 1", "Grimm et al. 2018, A&A 613, A68", "Gillon et al. 2017, Nature 542, 456"]
+
+[frame]
+kind = "untied"
+ra_deg = 346.62234
+dec_deg = -5.04144
+distance_pc = 12.467
+
+[[body]]
+id = "trappist-1"
+name = "TRAPPIST-1"
+kind = "star"
+mass_msun = 0.0898
+radius_rsun = 0.1192
+luminosity_lsun = 0.000553
+teff_k = 2566
+w_rate_deg_per_day = 109.1     # ~3.3 d rotation
+notes = "Stellar wind pressure is not measured; the solar value is assumed."
+display = { role = "star", color = "#ff7a4a" }
+
+[[body]]
+id = "trappist-1b"
+name = "TRAPPIST-1 b"
+kind = "planet"
+parent = "trappist-1"
+mass_mearth = 1.374
+radius_rearth = 1.116
+display = { role = "world", color = "#b08a74" }
+orbit = { period_d = 1.510826, e = 0.006 }
+
+[[body]]
+id = "trappist-1c"
+name = "TRAPPIST-1 c"
+kind = "planet"
+parent = "trappist-1"
+mass_mearth = 1.308
+radius_rearth = 1.097
+display = { role = "world", color = "#a99682" }
+orbit = { period_d = 2.421937, e = 0.007 }
+
+[[body]]
+id = "trappist-1d"
+name = "TRAPPIST-1 d"
+kind = "planet"
+parent = "trappist-1"
+mass_mearth = 0.388
+radius_rearth = 0.788
+display = { role = "world", color = "#9fb0a6" }
+orbit = { period_d = 4.049219, e = 0.008 }
+
+[[body]]
+id = "trappist-1e"
+name = "TRAPPIST-1 e"
+kind = "planet"
+parent = "trappist-1"
+mass_mearth = 0.692
+radius_rearth = 0.920
+display = { role = "world", color = "#7fa6c8" }
+orbit = { period_d = 6.101013, e = 0.005 }
+
+[[body]]
+id = "trappist-1f"
+name = "TRAPPIST-1 f"
+kind = "planet"
+parent = "trappist-1"
+mass_mearth = 1.039
+radius_rearth = 1.045
+display = { role = "world", color = "#8fb6c9" }
+orbit = { period_d = 9.207540, e = 0.010 }
+
+[[body]]
+id = "trappist-1g"
+name = "TRAPPIST-1 g"
+kind = "planet"
+parent = "trappist-1"
+mass_mearth = 1.321
+radius_rearth = 1.129
+display = { role = "world", color = "#a3bfd0" }
+orbit = { period_d = 12.352446, e = 0.002 }
+
+[[body]]
+id = "trappist-1h"
+name = "TRAPPIST-1 h"
+kind = "planet"
+parent = "trappist-1"
+mass_mearth = 0.326
+radius_rearth = 0.755
+display = { role = "world", color = "#c4ccd6" }
+orbit = { period_d = 18.772866, e = 0.006 }
