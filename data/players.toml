@@ -29,6 +29,16 @@ name = "ARCVS Vanguard"
   up = "ecliptic"
   ref = "vernal-equinox"
 
+  # Task Force 2's own reference: 0.5 light-seconds (149,896 km) below the Moon, relative to the
+  # solar plane. Eve is ecliptic north; 000 is the direction the wedge advances, toward Earth.
+  [[player.bullseye]]
+  id = "wedge"
+  name = "Wedge Bullseye"
+  system = "sol"
+  origin = { body = "moon", offset_km = [0, 0, -149896] }
+  up = "ecliptic"
+  ref = "toward:earth"
+
   # An expedition into Alpha Centauri keeps its launch system's up: Sol's ecliptic north.
   [[player.bullseye]]
   id = "burn-acen"

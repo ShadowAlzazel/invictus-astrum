@@ -99,3 +99,20 @@ def test_settings_api(tmp_path):
     assert c.post("/api/display/settings", json={"text": {"unit_label_px": 99}}).status_code == 422
     units = {u["id"]: u for u in c.get("/api/meta").json()["scenarios"][0]["contacts"]}
     assert "escort-1" in units["tf-1"]["children"] and units["escort-1-1"]["ancestors"][-1] == "luna-classis-1"
+
+
+def test_units_are_placed_from_their_scenario_whoever_watches():
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    c = TestClient(create_app())
+    seen = {}
+    for player in ("arcvs", "terran", None):
+        with c.websocket_connect("/ws") as w:
+            w.send_json({"system": "sol", "t": 0.0, "player": player, "scenario": "sol-demo"})
+            seen[player] = w.receive_json()["contacts"]
+    assert seen["arcvs"] == seen["terran"] == seen[None]
+    # Task Force 2 sits on its flagship; the wedge is half a light-second below the Moon
+    assert seen["arcvs"]["tf-2"] == seen["arcvs"]["tf2-lf1-bs-1"]
+    units = {u["id"]: u for u in c.get("/api/meta").json()["scenarios"][0]["contacts"]}
+    assert len([u for u in units.values() if u["ancestors"][:1] == ["tf-2"] or "tf-2" in u["ancestors"]
+                and u["echelon"] == "ship"]) >= 44

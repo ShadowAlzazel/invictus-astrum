@@ -102,10 +102,15 @@ class World:
         except (ConfigError, tomllib.TOMLDecodeError) as e:
             errors["display.toml"] = str(e)
         trees = {}
-        for sc_ in scenarios.values():                       # units must name classes that exist
+        for sc_ in scenarios.values():                       # units must name classes and bullseyes that exist
+            own = {"system"} | {b.id for b in players.get(sc_.player, None).bullseyes.values()
+                                if b.system == sc_.system} if sc_.player in players else {"system"}
             for c in sc_.contacts.values():
                 if c.ship_class and ships and c.ship_class not in ships.classes:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown ship class {c.ship_class!r}"
+                b = c.position.get("bullseye", "system") if "aer" in c.position else None
+                if b and b not in own:
+                    errors[f"scenarios/{sc_.id}/{c.id}"] = f"bullseye {b!r} is not one of player {sc_.player!r}'s in {sc_.system}"
             trees[sc_.id], problems = display.tree([c.__dict__ for c in sc_.contacts.values()], list(style.get("echelon", {})))
             for msg in problems:
                 errors[f"scenarios/{sc_.id}/{msg.split(':')[0]}"] = msg.split(": ", 1)[1]
@@ -416,7 +421,9 @@ def create_app(config: dict | None = None) -> FastAPI:
                 contacts = {}
                 sc = world.scenarios.get(req.get("scenario") or "")
                 if sc and sc.system == sid:
-                    contacts = {cid: _km(v) for cid, v in contact_positions(sc, bulls, pos).items()}
+                    # units are placed from their scenario's own bullseyes, whoever is watching
+                    placed = world.resolved(sid, sc.player, pos)
+                    contacts = {cid: _km(v) for cid, v in contact_positions(sc, placed, pos).items()}
                 await sock.send_json({
                     "t": t, "utc": iso(t), "system": sid, "version": world.version, "source": eph.source(t),
                     "bodies": {bid: _km(v) for bid, v in pos.items()},

@@ -138,6 +138,9 @@ def load_scenario(path: str | Path) -> Scenario:
     for c in contacts.values():
         if c.formation and c.formation not in contacts:
             problems.append(f"{c.id}: formation {c.formation!r} is not a contact")
+        flag = c.position.get("unit")
+        if flag is not None and (flag not in contacts or not contacts[flag].position or "unit" in contacts[flag].position):
+            problems.append(f"{c.id}: position unit {flag!r} must be a contact with a position of its own")
     if problems:
         raise ValueError(f"{path.name}:\n  " + "\n  ".join(problems))
     return Scenario(s["id"], s.get("name", s["id"]), s["system"], epoch_of(s.get("epoch")), s.get("player", ""), contacts)
@@ -155,7 +158,8 @@ def load_scenarios(folder: str | Path) -> tuple[dict[str, Scenario], dict[str, s
 
 
 def contact_positions(scenario: Scenario, resolved_bullseyes: dict, positions: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-    """Where each contact is, system frame. Formations sit at the mean of their members."""
+    """Where each contact is, system frame. A formation sits where it says ({unit = flagship}, or
+    its own AER/body position), else at the mean of its members."""
     out = {}
     for c in scenario.contacts.values():
         p = c.position
@@ -167,6 +171,9 @@ def contact_positions(scenario: Scenario, resolved_bullseyes: dict, positions: d
             out[c.id] = r.point(np.radians(az), np.radians(el), rng * 1e3)
         elif "body" in p:
             out[c.id] = positions[p["body"]] + np.asarray(p.get("offset_km", (0, 0, 0)), dtype=float) * 1e3
+    for c in scenario.contacts.values():                 # a formation placed at its flagship
+        if c.position.get("unit") in out:
+            out[c.id] = out[c.position["unit"]]
     for _ in range(len(scenario.contacts)):          # nested formations settle bottom-up
         placed = len(out)
         for c in scenario.contacts.values():

@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010
-python -m pytest -q tests             # 104 tests
+python -m pytest -q tests             # 105 tests
 ```
 
 Frontend work: `python serve.py` in one terminal, `cd web && npm run dev` in another (live
@@ -84,6 +84,7 @@ player and one of their bullseyes at the bottom left.
 | `config.toml` | paths, port, clock start, orbit sampling |
 | `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server |
 | `web/` | the map (Svelte + Three.js) |
+| `tools/formation_tf2.py` | lays out the demo's Task Force 2 wedge; edit its numbers and rerun |
 | `tools/fetch_horizons.py` | fills in the major moons' real orbital phases from JPL Horizons |
 
 Edits to `data/` and `style.toml` show on the map within a couple of seconds. See `OVERVIEW.md`
