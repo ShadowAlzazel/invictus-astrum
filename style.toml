@@ -57,11 +57,12 @@ opacity = 0.75
 [echelon]
 ship       = ""
 flight     = "•"
-squadron   = "••"
-flotilla   = "•••"
-task-force = "|"
-classis    = "X"
-armada     = "XX"
+group      = "••"
+squadron   = "||"
+flotilla   = "|||"
+task-force = "X"
+classis    = "XX"
+armada     = "XXX"
 
 # Bodies are drawn large by tactical role (size in px at display scale 1). 0 hides the display.
 [roles.star]

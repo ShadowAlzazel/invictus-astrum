@@ -10,10 +10,18 @@ player = "arcvs"
 
 # ---- friendly: one task force element, in flights, out of plane over Earth --------------------------
 [[contact]]
+id = "luna-classis-1"
+callsign = "Luna Classis I"
+affiliation = "friend"
+echelon = "classis"
+position = { bullseye = "burn", aer = [0, 0, 1000000] }
+
+[[contact]]
 id = "tf-1"
 callsign = "Task Force 1"
 affiliation = "friend"
 echelon = "task-force"
+formation = "luna-classis-1"
 
 [[contact]]
 id = "kiki"
@@ -76,6 +84,14 @@ affiliation = "friend"
 echelon = "ship"
 formation = "paris"
 position = { bullseye = "burn", aer = [95, -12, 46000] }
+
+[[contact]]
+id = "pciket-squadron-3"
+callsign = "Picket 3"
+affiliation = "friend"
+echelon = "squadron"
+formation = "tf-1"
+position = { bullseye = "burn", aer = [35, -30, 86000] }
 
 # ---- the local picture --------------------------------------------------------------------------------
 [[contact]]
