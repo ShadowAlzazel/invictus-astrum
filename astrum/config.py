@@ -19,7 +19,7 @@ SHAPES = ("rect", "diamond", "quatrefoil", "square", "circle")
 AFFILIATIONS = ("friend", "hostile", "unknown", "neutral")
 
 CONFIG_SCHEMA = {
-    "paths": {"systems": str, "scenarios": str, "players": str, "style": str},
+    "paths": {"systems": str, "scenarios": str, "players": str, "style": str, "ships": str},
     "server": {"host": str, "port": int},
     "live": {"check_seconds": float},
     "sim": {"start": str, "orbit_samples": int},

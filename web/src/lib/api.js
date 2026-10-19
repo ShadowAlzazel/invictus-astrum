@@ -12,6 +12,8 @@ export const api = {
   system: (id) => get(`/system/${id}`),
   orbits: (id, t) => get(`/system/${id}/orbits`, { t }),
   probe: (id, p, t, player, bullseye) => get(`/system/${id}/probe`, { x: p[0], y: p[1], z: p[2], t, player, bullseye }),
+  ships: () => get('/ships'),
+  ship: (id) => get(`/ships/${id}`),
   workshop: {
     schema: () => get('/workshop/schema'),
     source: (id) => get(`/workshop/source/${id}`),

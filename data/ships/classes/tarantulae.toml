@@ -1,0 +1,18 @@
+# Source: SHIPS OF THE CLASSIS §7; RATE AND ROLE §8.6.
+[class]
+id = "tarantulae"
+name = "TARANTULAE NUTRIX"
+lineage = "garden"
+genus = { word = "TARANTULAE", meaning = "tarantula" }
+epithet = { word = "NUTRIX", meaning = "nurse" }
+rate = "auxiliary"
+terms = { modern = "repair ship", arcvs = "NUTRIX" }
+summary = "The repair ship: splice and loom works on her docking legs."
+symbol = "REP"
+in_classis = 2
+
+[hull]
+mass_t = { value = 40000, approx = true }
+
+[tending]
+work = "splice and loom works on her docking legs; spare manes carried outside; dope sack with a stern spinneret"

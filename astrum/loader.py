@@ -103,6 +103,7 @@ class Contact:
     pry: int | None = None
     status: tuple[str, ...] = ()
     formation: str | None = None          # parent formation contact, for zoom aggregation
+    ship_class: str = ""                  # a class id in data/ships/classes; gives the symbol its type
     position: dict = field(default_factory=dict)
     notes: str = ""
 
@@ -132,7 +133,8 @@ def load_scenario(path: str | Path) -> Scenario:
         contacts[cid] = Contact(id=cid, callsign=c.get("callsign", cid), affiliation=c.get("affiliation", "unknown"),
                                 echelon=c.get("echelon", "ship"), unit_type=c.get("unit_type", ""),
                                 brevity=c.get("brevity", ""), pry=c.get("pry"), status=tuple(c.get("status", ())),
-                                formation=c.get("formation"), position=c.get("position", {}), notes=c.get("notes", ""))
+                                formation=c.get("formation"), position=c.get("position", {}), notes=c.get("notes", ""),
+                                ship_class=c.get("class", ""))
     for c in contacts.values():
         if c.formation and c.formation not in contacts:
             problems.append(f"{c.id}: formation {c.formation!r} is not a contact")

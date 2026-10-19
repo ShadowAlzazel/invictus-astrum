@@ -1,5 +1,6 @@
 # A static picture for the map: symbols only, no engagement is simulated yet.
-# Positions are AER from a bullseye, or carried with a body.
+# Positions are AER from a bullseye, or carried with a body. `class` names a ship class in
+# data/ships/classes; the unit's symbol takes its type from there.
 
 [scenario]
 id = "sol-demo"
@@ -24,7 +25,7 @@ formation = "tf-1"
 [[contact]]
 id = "kiki-1"
 callsign = "Kiki"
-unit_type = "PAPILION"
+class = "papilion"
 affiliation = "friend"
 echelon = "ship"
 formation = "kiki"
@@ -34,7 +35,7 @@ position = { bullseye = "burn", aer = [0, 0, 2000] }
 [[contact]]
 id = "kiki-2"
 callsign = "Odessa"
-unit_type = "PHALAENA"
+class = "phalaena"
 affiliation = "friend"
 echelon = "ship"
 formation = "kiki"
@@ -44,7 +45,7 @@ position = { bullseye = "burn", aer = [300, 4, 7000] }
 [[contact]]
 id = "kiki-3"
 callsign = "Philadelphia"
-unit_type = "PHALAENA"
+class = "phalaena"
 affiliation = "friend"
 echelon = "ship"
 formation = "kiki"
@@ -61,7 +62,7 @@ formation = "tf-1"
 [[contact]]
 id = "paris-1"
 callsign = "Paris"
-unit_type = "PAPILION"
+class = "papilion"
 affiliation = "friend"
 echelon = "ship"
 formation = "paris"
@@ -70,7 +71,7 @@ position = { bullseye = "burn", aer = [90, -10, 40000] }
 [[contact]]
 id = "paris-2"
 callsign = "Imoogi"
-unit_type = "PAPILION"
+class = "papilion"
 affiliation = "friend"
 echelon = "ship"
 formation = "paris"

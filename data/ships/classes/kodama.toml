@@ -1,0 +1,15 @@
+# Source: RATE AND ROLE §6.1, §8.11. No particulars yet.
+[class]
+id = "kodama"
+name = "Kodama"
+lineage = "old-forest"
+rate = "frigate"
+terms = { sail = "the 28", modern = "corvette", arcvs = "the depot hull" }
+old_rating = "the 28"
+summary = "The standard light frigate of the Old Forest, made second-line by the Dryad. The only class held in ordinary."
+symbol = "KOD"
+
+[history]
+built_as = "standard light frigate, or corvette"
+serves_as = "held in ordinary; the depot training hull"
+notable = ["Loom yards learn to re-weave on her; damage-control cohorts learn to save a ship"]

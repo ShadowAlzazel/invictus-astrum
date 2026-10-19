@@ -1,0 +1,16 @@
+# Source: RATE AND ROLE §5, §6.1, §8.10. No particulars yet.
+[class]
+id = "dryad"
+name = "Dryad"
+lineage = "old-forest"
+rate = "frigate"
+terms = { sail = "heavy frigate; Constitution", arcvs = "the backbone frigate's ancestor" }
+old_rating = "the 38"
+summary = "The experimental heavy frigate who broke the 1 kA barrier and became the backbone of Garden frigate doctrine: the Old Forest's Constitution."
+symbol = "DRY"
+places = ["police frigate", "internal picket", "MINERVA pipeline, middle step"]
+
+[history]
+built_as = "experimental heavy frigate"
+serves_as = "police frigate, internal picket, and the middle step of the MINERVA pipeline"
+notable = ["Broke the 1 kA barrier", "A ship above her rate whose success changed what the rate meant"]

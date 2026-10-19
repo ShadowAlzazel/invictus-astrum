@@ -1,0 +1,10 @@
+# Source: RATE AND ROLE §6.2, §8.7. No particulars yet.
+[class]
+id = "carabidae"
+name = "CARABIDAE BALLISTATRIX"
+lineage = "garden"
+genus = { word = "CARABIDAE", meaning = "ground beetles: the bombardiers" }
+epithet = { word = "BALLISTATRIX", meaning = "she of the ballista" }
+terms = { modern = "bombardment vessel", arcvs = "BALLISTATRIX" }
+summary = "The bombardment vessel of the shore-war group. An armada 1-ring may attach them."
+symbol = "BMB"

@@ -1,0 +1,10 @@
+# Source: RATE AND ROLE §6.2, §8.7. No particulars yet.
+[class]
+id = "formicinae"
+name = "FORMICINAE LEGIONATRIX"
+lineage = "garden"
+genus = { word = "FORMICINAE", meaning = "ants: armies that march together" }
+epithet = { word = "LEGIONATRIX", meaning = "she of the legion" }
+terms = { modern = "Legion transport", arcvs = "LEGIONATRIX" }
+summary = "The Legion transport: the shore-war group. A 1-ring may send them after sync."
+symbol = "LEG"

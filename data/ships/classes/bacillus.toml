@@ -1,0 +1,55 @@
+# Source: SHIPS OF THE CLASSIS §8; RATE AND ROLE §8.5, §10.
+[class]
+id = "bacillus"
+name = "BACILLUS LICTRIX"
+lineage = "garden"
+genus = { word = "BACILLUS", meaning = "little rod" }
+epithet = { word = "LICTRIX", meaning = "female lictor" }
+designation = "AVC in a Classis; AAG in the Astrum Guard"
+rate = "unrated"
+terms = { sail = "revenue cutter", modern = "coast guard cutter", arcvs = "LICTRIX" }
+body = "four wings, stacked in pairs; they do not fold"
+summary = "Police vessel and auxiliary escort. She guards headquarters and transports against what is not a warship, and answers civil craft with force she can scale."
+symbol = "CUT"
+in_classis = { range = [8, 12] }
+
+[hull]
+length_m = { value = 150, approx = true }
+mass_t = { value = 16000, approx = true }
+acceleration_ms2 = { value = 5.2, approx = true }
+
+[[battery]]
+id = "main"
+label = "Main battery"
+component = "cvrsvs-i-15"
+count = 12
+mounts = 6
+rounds_per_cycle = 24
+cycle_s = 10
+arrangement = "12 guns on two-thirds of the horizon; 8 forward; 4 aft"
+magazine = { standard = 26000 }
+reach_km = { "against warships, up to" = 70, "civil craft at 1 m/s²" = 77, "civil craft at 0.1 m/s²" = 245, "civil craft at 0.01 m/s²" = 775 }
+notes = "Holes every hull in service; punctures, does not destroy. About 3 hours of full fire."
+
+[[battery]]
+id = "optical"
+label = "LIGHT strips"
+component = "light-strip"
+count = 4
+facets = 16
+power_mw = 1.54
+notes = "Ranges to ~2,500 km."
+
+[[battery]]
+id = "missiles"
+label = "Missiles"
+component = "missile-cell"
+count = "—"
+
+[[point_defence]]
+at_km = 100
+kills_per_s = { value = 6.4, approx = true }
+
+[endurance]
+thermal_store_tj = 2.4
+notes = "Runs indefinitely on her fixed wings; guns at full cycle, about 37 hours."

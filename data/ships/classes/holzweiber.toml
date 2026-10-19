@@ -1,0 +1,24 @@
+# Source: RATE AND ROLE §6.1, §7, §8.9. No particulars yet.
+[class]
+id = "holzweiber"
+name = "Holzweiber"
+lineage = "old-forest"
+rate = "line"
+terms = { sail = "third rate; the 74", arcvs = "the emitter" }
+old_rating = "the third-rate cruiser of its time"
+summary = "The 74 of the Old Forest, the backbone of its line. Refitted as the emitter: the ship that ranges so the line can stay cold."
+symbol = "HLZ"
+
+[[battery]]
+id = "blisters"
+label = "Active sensor blisters"
+component = "sensor-blister"
+count = "—"
+notes = "Fitted in place of her two 1.7 kg turrets."
+
+[history]
+built_as = "line ship: the backbone of the Old Forest line"
+serves_as = "emitter"
+refit = "a razee in reverse: two 1.7 kg turrets given up for active sensor blisters"
+notable = ["Her long strips became the Garden's wing-edge strips",
+           "Her vocation passed to the SALTICIDAE VIGIL, her successor in everything but name"]

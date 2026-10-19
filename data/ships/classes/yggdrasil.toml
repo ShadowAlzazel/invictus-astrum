@@ -1,0 +1,19 @@
+# Source: RATE AND ROLE §6.1, §6.4, §8.8, §11. No particulars yet.
+[class]
+id = "yggdrasil"
+name = "Yggdrasil"
+lineage = "old-forest"
+rate = "line"
+terms = { sail = "first rate of her day", modern = "the old battleship kept as escort", arcvs = "a line-rate hull of the old plan" }
+old_rating = "—"
+body = "no wings; domes"
+summary = "Built as the line ship of the Old Forest. Now a cruiser and internal escort: the Atlanta class of her age. Her rate never changed; her line moved past her."
+symbol = "YGG"
+places = ["escort", "internal escort"]
+
+[history]
+built_as = "the line ship of the Old Forest"
+serves_as = "cruiser and internal escort"
+notable = ["AVC Mount Vernon: a line-rate flagship in the last stages of the Noir War, a line-rate escort in IRIS PRAETORI CLASSIS now; the oldest ship in service",
+           "IRIS PRAETORI CLASSIS keeps two permanent squadrons of Yggdrasil running escort",
+           "A reserve Classis carries an Old Forest Task Force"]

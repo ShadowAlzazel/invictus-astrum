@@ -1,0 +1,32 @@
+# Source: SHIPS OF THE CLASSIS §6; RATE AND ROLE §8.6.
+[class]
+id = "coccinella"
+name = "COCCINELLA MOLLITRIX"
+lineage = "garden"
+genus = { word = "COCCINELLA", meaning = "ladybird" }
+epithet = { word = "MOLLITRIX", meaning = "she who softens (sense not yet set)" }
+rate = "auxiliary"
+terms = { sail = "storeship", modern = "fleet tender", arcvs = "MOLLITRIX" }
+summary = "The most common tender. She takes the line's heat so the line can stay dark, and carries its stores."
+symbol = "TND"
+in_classis = { range = [12, 16] }
+
+[hull]
+length_m = 210
+width_m = { closed = 180, expanded = 350 }
+mass_t = { base = 20000, loaded = 50000 }
+
+[[battery]]
+id = "optical"
+label = "Point defence"
+component = "panel-i"
+count = 20
+
+[[point_defence]]
+at_km = 100
+kills_per_s = { value = 8, approx = true }
+
+[tending]
+radiating_gw = { "fully expanded" = 23, "covers open" = 5.8, closed = 3.4 }
+cold_carried_tj = { value = 76, est = true, note = "up to, in her loaded mass" }
+work = "latches on top; swaps coolant and ELYTRA panels; replaces whiskers"

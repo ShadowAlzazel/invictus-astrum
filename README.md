@@ -13,23 +13,42 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010
-python -m pytest -q tests             # 69 tests
+python -m pytest -q tests             # 97 tests
 ```
 
 Frontend work: `python serve.py` in one terminal, `cd web && npm run dev` in another (live
 reload on :5173, proxied to the server).
 
+## The main menu
+
+The map opens on the main menu, over a live system:
+
+1. **Simulation**: choose a system and take the map.
+2. **System workshop**: build a system, or copy one and change it.
+3. **Ship registry**: the classes of the fleet.
+4. **Ship workshop**: next.
+
 ## Levels and the workshop
 
-The map opens on the **level selector**: every file in `data/systems/` is a level. Choose one to
+**Simulation** opens the **level selector**: every file in `data/systems/` is a level. Choose one to
 preview it behind the list; Enter (or double-click) takes the map, and L brings you back.
 
-The **workshop** builds systems. Start from "+ New system", or copy any level into it. Add bodies
+The **workshop** builds systems. From the menu's System workshop, start from "+ New system", or
+copy any level into it. Add bodies
 from presets (`data/presets.toml`: star classes, planets, moons), set masses, radii and orbits in
 whatever units you like, and the map shows the system as you edit it: every change is built and
 checked by the server, with errors and warnings listed under the form. Save writes
 `data/systems/<id>.toml`, and it is a level at once. Hand-written files are never overwritten from
 the map; copies are saved under a new id.
+
+## The ship registry
+
+Every class in `data/ships/classes/`: the Garden's fleet and auxiliaries, its shore-war classes,
+and the Old Forest. Each shows the three readers' words (sail, modern, ARCVS), rate and command,
+particulars, batteries, point defence and endurance, and reach by crew tier: pick green, rated,
+veteran or exceptional and the table shows how far each effect reaches and whether the beam or
+the aim sets it (DE COLLINEATIONE). Figures the canon has not stated yet are listed as *left for
+the author*. The format is in `data/ships/README.md`.
 
 ## Using the map
 
@@ -52,11 +71,12 @@ player and one of their bullseyes at the bottom left.
 |---|---|
 | `data/systems/*.toml` | stellar systems, one level each; see `data/systems/README.md` for the format |
 | `data/presets.toml` | the workshop's starting bodies; add your own |
+| `data/ships/` | ship classes, their components, and the rules they are read against |
 | `data/players.toml` | players and their bullseyes |
 | `data/scenarios/*.toml` | units placed in a system (symbols only; no engagement is simulated yet) |
 | `style.toml` | colours, affiliation frames, echelon marks, body display sizes by role |
 | `config.toml` | paths, port, clock start, orbit sampling |
-| `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, server |
+| `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server |
 | `web/` | the map (Svelte + Three.js) |
 | `tools/fetch_horizons.py` | fills in the major moons' real orbital phases from JPL Horizons |
 

@@ -35,7 +35,7 @@
         <p class="kind">{KIND[body.kind] ?? body.kind}{#if parentName} · of {parentName}{/if}{#if body.inhabited} · inhabited{/if}</p>
       {:else if contact}
         <h1>{contact.callsign}</h1>
-        <p class="kind">{contact.unit_type || contact.echelon} · {contact.affiliation}{#if contact.brevity} · {contact.brevity}{/if}{#if contact.pry} · Pry-{contact.pry}{/if}</p>
+        <p class="kind">{contact.class_name || contact.unit_type || contact.echelon} · {contact.affiliation}{#if contact.brevity} · {contact.brevity}{/if}{#if contact.pry} · Pry-{contact.pry}{/if}</p>
       {:else}
         <h1>Point</h1>
         <p class="kind">{probe ? `${REGION[probe.zone.region]} of ${map.bodies[probe.zone.dominant]?.name}` : 'probing…'}</p>
@@ -87,7 +87,7 @@
     <button class="act" on:click={() => onfocus(sel)}>Centre and follow (F)</button>
   {:else if contact}
     {#if members.length}
-      <section><h2>Members</h2>{#each members as m}<p>{m.callsign} <span class="dim">{m.unit_type || m.echelon}</span></p>{/each}</section>
+      <section><h2>Members</h2>{#each members as m}<p>{m.callsign} <span class="dim">{m.class_name || m.unit_type || m.echelon}</span></p>{/each}</section>
     {/if}
     {#if contact.status?.length}<p class="dim">Status: {contact.status.join(', ')}</p>{/if}
     {#if contact.notes}<p class="note">{contact.notes}</p>{/if}

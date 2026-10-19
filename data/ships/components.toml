@@ -1,0 +1,92 @@
+# The parts ships are built from. A class's battery names a component and says how many.
+# Only what the canon states per part lives here; whole-battery figures (total power, salvo energy)
+# live on the battery in the class file. A round's energy is derived (½mv²), never typed in.
+#
+# kind: spinal-channel | gun | panel | dome | strip | missile-cell | telescope | sensor
+
+[component.nervvs-mk2]
+name = "NERVVS Mk.2"
+kind = "spinal-channel"
+energy_gev = 19
+
+[component.filvm-mk2]
+name = "FILVM Mk.2"
+kind = "spinal-channel"
+energy_gev = 15
+
+[component.pilvm-gun]
+name = "PILVM rod gun"
+kind = "gun"
+round = "PILVM rod"
+round_kg = 5.0
+velocity_kms = 10
+
+[component.cvrsvs-ii-31]
+name = "CVRSVS II/31"
+kind = "gun"
+round = "SPICVLVM rod"
+round_kg = 1.7
+velocity_kms = 10
+mount = "BINA"
+
+[component.cvrsvs-i-15]
+name = "CVRSVS I/15"
+kind = "gun"
+round = "LICVS needle"
+round_kg = 0.182
+velocity_kms = 10
+mount = "BINA"
+notes = "Velocity is scalable: a few hundred kJ a round at the low end of its band."
+
+[component.panel-iii]
+name = "PANEL III"
+kind = "panel"
+
+[component.panel-ii]
+name = "PANEL II"
+kind = "panel"
+
+[component.panel-i]
+name = "PANEL I"
+kind = "panel"
+
+[component.panel-c]
+name = "PANEL C"
+kind = "panel"
+
+[component.dome-xxxvii]
+name = "DOME XXXVII"
+kind = "dome"
+facet = "panel-c"
+
+[component.dome-xix-b]
+name = "DOME XIX-B"
+kind = "dome"
+
+[component.picket-strip]
+name = "PICKET strip"
+kind = "strip"
+facet = "panel-ii"
+
+[component.light-strip]
+name = "LIGHT strip"
+kind = "strip"
+facet = "panel-i"
+
+[component.missile-cell]
+name = "Missile cell"
+kind = "missile-cell"
+notes = "Ordinary cell missiles carry 50 kt warheads under ordinary authority."
+
+[component.ir-telescope]
+name = "Infrared telescope, 6.5 m class"
+kind = "telescope"
+
+[component.sensor-blister]
+name = "Active sensor blister"
+kind = "sensor"
+
+[component.tube]
+name = "Tube"
+kind = "tube"
+notes = "Tube warheads are 100 kt and above; only a 4-star approves their use."

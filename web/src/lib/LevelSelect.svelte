@@ -8,6 +8,8 @@
   export let onpreview = () => {};
   export let onenter = () => {};
   export let onworkshop = () => {};    // (id | null, copy)
+  export let onback = () => {};
+  export let purpose = 'play';         // 'play': Enter takes the map. 'build': it opens the workshop
 
   const LY_PER_PC = 3.261564;
   function line(l) {
@@ -19,24 +21,29 @@
     if (l.distance_pc) parts.push(`${n(l.distance_pc * LY_PER_PC, 2)} ly`);
     return parts.join(' · ');
   }
+  function primary(l) { if (purpose === 'build') onworkshop(l.id, !l.workshop_made); else onenter(l.id); }
   function key(e) {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
     const i = levels.findIndex((l) => l.id === current);
     if (e.key === 'ArrowDown' && levels.length) { e.preventDefault(); onpreview(levels[(i + 1) % levels.length].id); }
     if (e.key === 'ArrowUp' && levels.length) { e.preventDefault(); onpreview(levels[(i - 1 + levels.length) % levels.length].id); }
-    if (e.key === 'Enter' && current) onenter(current);
+    if (e.key === 'Enter' && current) primary(levels.find((l) => l.id === current));
+    if (e.key === 'Escape') onback();
   }
 </script>
 
 <svelte:window on:keydown={key} />
 
 <aside data-ui>
-  <p class="eyebrow">INVICTUS <b>ASTRUM</b></p>
-  <h1>Select a system</h1>
+  <button class="back" on:click={onback}>◂ Menu</button>
+  <h1>{purpose === 'build' ? 'Build from a system' : 'Select a system'}</h1>
+  {#if purpose === 'build'}
+    <button class="new top" on:click={() => onworkshop(null, false)}>+ New system</button>
+  {/if}
   <ul>
     {#each levels as l (l.id)}
       <li class:on={l.id === current}>
-        <button class="lvl" on:click={() => onpreview(l.id)} on:dblclick={() => onenter(l.id)}>
+        <button class="lvl" on:click={() => onpreview(l.id)} on:dblclick={() => primary(l)}>
           <span class="name">{l.name}</span>
           <span class="sub">{line(l)}</span>
           <span class="tags">
@@ -49,16 +56,18 @@
         </button>
         {#if l.id === current}
           <div class="acts">
-            <button class="enter" on:click={() => onenter(l.id)}>Enter ▸</button>
-            <button on:click={() => onworkshop(l.id, !l.workshop_made)}>{l.workshop_made ? 'Edit in workshop' : 'Copy to workshop'}</button>
+            {#if purpose === 'build'}
+              <button class="enter" on:click={() => onworkshop(l.id, !l.workshop_made)}>{l.workshop_made ? 'Edit ▸' : 'Copy and build ▸'}</button>
+            {:else}
+              <button class="enter" on:click={() => onenter(l.id)}>Enter ▸</button>
+            {/if}
             <span class="file">{l.file}</span>
           </div>
         {/if}
       </li>
     {/each}
   </ul>
-  <button class="new" on:click={() => onworkshop(null, false)}>+ New system</button>
-  <p class="keys">↑ ↓ choose · Enter to take the map · the list is data/systems/</p>
+  <p class="keys">↑ ↓ choose · Enter {purpose === 'build' ? 'to build' : 'to take the map'} · Esc back · the list is data/systems/</p>
 </aside>
 
 <style>
@@ -66,8 +75,7 @@
     position: fixed; top: 20px; left: 20px; bottom: 20px; width: 400px; overflow: auto; z-index: 25;
     background: var(--panel); border-left: 1px solid var(--violet); padding: 18px 20px; backdrop-filter: blur(6px);
   }
-  .eyebrow { margin: 0; font-family: var(--display); letter-spacing: 0.14em; color: var(--dim); font-size: 12px; }
-  .eyebrow b { color: var(--ink); font-weight: 600; }
+  .back { font-family: var(--display); }
   h1 { font-family: var(--display); font-weight: 600; font-size: 26px; margin: 10px 0 16px; }
   ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
   li { border-left: 1px solid transparent; padding: 6px 0 6px 10px; }
@@ -85,7 +93,7 @@
   .acts { display: flex; gap: 16px; align-items: baseline; margin-top: 8px; }
   .enter { color: var(--ink); font-family: var(--display); font-size: 14px; box-shadow: inset 0 -1px 0 var(--fuchsia); }
   .file { margin-left: auto; color: var(--dim); font-size: 10px; }
-  .new { margin-top: 16px; color: var(--violet); filter: brightness(1.5); font-family: var(--display); font-size: 14px; }
+  .new { margin: 0 0 14px; color: var(--violet); filter: brightness(1.5); font-family: var(--display); font-size: 14px; }
   .new:hover { color: var(--fuchsia); filter: none; }
   .keys { color: var(--dim); font-size: 10px; margin: 14px 0 0; }
 </style>

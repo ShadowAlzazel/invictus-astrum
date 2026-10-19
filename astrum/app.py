@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import threading
+import tomllib
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +33,7 @@ from .loader import contact_positions, load_players, load_scenarios, load_system
 from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify, magnetopause
 from . import workshop
+from .ships import ShipRegistry, class_detail, class_summary, rules_dict
 
 KM = 1e-3
 
@@ -47,6 +49,7 @@ class World:
         self.errors: dict[str, str] = {}
         self.systems, self.ephemerides, self.players, self.scenarios = {}, {}, {}, {}
         self.drafts: dict[str, tuple] = {}       # workshop previews: "draft" -> (system, ephemeris)
+        self.ships: ShipRegistry | None = None
         self.style = {}
         self._stamp = None
         self._checked = 0.0
@@ -55,6 +58,7 @@ class World:
     def _files(self) -> list[Path]:
         p = self.config["paths"]
         files = list(Path(p["systems"]).glob("*.toml")) + list(Path(p["scenarios"]).glob("*.toml"))
+        files += list(Path(p["ships"]).glob("*.toml")) + list((Path(p["ships"]) / "classes").glob("*.toml"))
         return files + [Path(p["players"]), Path(p["style"])]
 
     def _mtimes(self):
@@ -77,6 +81,18 @@ class World:
             style = load_style(p["style"])
         except (ConfigError, ValueError) as e:
             errors["style.toml"] = str(e)
+        ships = self.ships
+        try:
+            ships = ShipRegistry.load(p["ships"])
+            for f in ships.findings:
+                if f.level == "error":
+                    errors[f"ships/{f.where}"] = f.message
+        except (OSError, tomllib.TOMLDecodeError, KeyError) as e:
+            errors["ships"] = str(e)
+        for sc_ in scenarios.values():                       # units must name classes that exist
+            for c in sc_.contacts.values():
+                if c.ship_class and ships and c.ship_class not in ships.classes:
+                    errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown ship class {c.ship_class!r}"
         for pl in players.values():                          # bullseyes must resolve in their system
             for b in pl.bullseyes.values():
                 if b.system not in systems:
@@ -98,7 +114,7 @@ class World:
                 if self.ephemerides[sid].numerical_error:
                     errors[f"systems/{sid} ephemeris"] = self.ephemerides[sid].numerical_error
             self.scenarios = {**self.scenarios, **scenarios} if sc_err else scenarios
-            self.players, self.style, self.errors = players, style, errors
+            self.players, self.style, self.errors, self.ships = players, style, errors, ships
             self.version += 1
             self._stamp = self._mtimes()
 
@@ -189,6 +205,17 @@ def body_dict(s, b, zones) -> dict:
     }
 
 
+def contact_dict(world: "World", c) -> dict:
+    """A unit for the map; its type label comes from its ship class when it names one."""
+    d = dict(c.__dict__)
+    sc = world.ships.classes.get(c.ship_class) if world.ships and c.ship_class else None
+    if sc:
+        d["class_name"] = sc.name
+        if not c.unit_type:
+            d["unit_type"] = sc.doc.get("class", {}).get("symbol", "")
+    return d
+
+
 def level_dict(world: "World", s) -> dict:
     """A system as the level selector shows it."""
     kinds: dict[str, int] = {}
@@ -223,10 +250,11 @@ def create_app(config: dict | None = None) -> FastAPI:
                          "bullseyes": [{"id": b.id, "name": b.name, "system": b.system} for b in p.bullseyes.values()]}
                         for p in world.players.values()],
             "scenarios": [{"id": sc.id, "name": sc.name, "system": sc.system, "player": sc.player,
-                           "contacts": [c.__dict__ for c in sc.contacts.values()]}
+                           "contacts": [contact_dict(world, c) for c in sc.contacts.values()]}
                           for sc in world.scenarios.values()],
             "style": world.style,
             "speed_of_light_kms": k.C * KM,
+            "ship_classes": len(world.ships.classes) if world.ships else 0,
         }
 
     @app.get("/api/status")
@@ -280,6 +308,24 @@ def create_app(config: dict | None = None) -> FastAPI:
             out["aer"] = {"bullseye": bullseye, "bearing_deg": math.degrees(az), "elevation_deg": math.degrees(el),
                           "range_km": rng * KM, "light_s": rng / k.C}
         return out
+
+    # ---- ship classes ---------------------------------------------------------------------------
+    @app.get("/api/ships")
+    def ships():
+        world.check()
+        reg = world.ships
+        if reg is None:
+            raise HTTPException(503, "the ship registry did not load")
+        return {"version": world.version, "rules": rules_dict(reg), "components": reg.components,
+                "classes": [class_summary(reg, sc) for sc in reg.classes.values()],
+                "findings": [f.__dict__ for f in reg.findings]}
+
+    @app.get("/api/ships/{cid}")
+    def ship(cid: str):
+        reg = world.ships
+        if reg is None or cid not in reg.classes:
+            raise HTTPException(404, f"no ship class {cid!r}")
+        return class_detail(reg, reg.classes[cid])
 
     # ---- the workshop: build systems from the map --------------------------------------------
     presets = Path(config["paths"]["systems"]).parent / "presets.toml"

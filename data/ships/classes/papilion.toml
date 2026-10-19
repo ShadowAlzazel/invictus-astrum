@@ -1,0 +1,85 @@
+# Source: SHIPS OF THE CLASSIS §2; RATE AND ROLE §8.1; DE COLLINEATIONE §4.1.
+[class]
+id = "papilion"
+name = "PAPILION VENATRIX"
+lineage = "garden"
+genus = { word = "PAPILION", meaning = "butterfly" }
+epithet = { word = "VENATRIX", meaning = "huntress" }
+designation = "AVC"
+rate = "line"
+terms = { sail = "ship of the line", modern = "battlecruiser", arcvs = "VENATRIX" }
+body = "two wings per side"
+summary = "The heavy of the Classis. She kills hulls, and works behind the frigate screen."
+symbol = "PAP"
+in_classis = { range = [58, 72], note = "midpoint ~65" }
+
+[hull]
+length_m = 390
+wingspan_m = { spread = 140, folded = 62 }
+mass_t = { light = 62340, full = 70340 }
+acceleration_ms2 = { full = 5.40, light = 6.09 }
+material = "MAJOR-6 woven silk"
+protection_kgm2 = { citadel = 547, bumper = 18 }
+complement = { value = 500, approx = true, note = "line rate: a line crew and a splice party" }
+
+[aim]
+rated_urad = 6.5
+demasted_urad = 18
+tiers = { green = [7.5, 8.0], rated = 6.5, veteran = 6.0, exceptional = 5.5 }
+
+[[battery]]
+id = "spinal"
+label = "Spinal battery"
+component = "nervvs-mk2"
+count = 16
+stacks = 2
+cycle_s = 10
+fire = "the stacks alternate: one stack salvo every 10 s"
+stack_salvo_mj = 730
+
+[[battery]]
+id = "main"
+label = "Main battery"
+component = "pilvm-gun"
+count = 16
+mounts = 5
+arrangement = "three dorsal and two ventral mounts, all superfiring"
+cycle_s = "—"
+magazine = { standard = 3200, barrage = 28200 }
+reach_km = { "kills an evading titanium hull" = 87, "kills an evading woven hull" = 66, "kills a blinded or fixed target" = 2500 }
+
+[[battery]]
+id = "optical"
+label = "Optical battery"
+component = "panel-iii"
+count = 12
+arrangement = "forewing edges"
+power_mw = 18.4
+
+[reach]
+open-woven = 3600
+open-titanium = 4310
+shatter-titanium = 5530
+mast = 11600
+radiator = 15500
+mane = 17800
+crew = "aim"
+dazzle = 40000
+
+[[point_defence]]
+bearing = "forward"
+at_km = 1000
+kills_per_s = { value = 12, approx = true }
+
+[[point_defence]]
+bearing = "forward"
+at_km = 300
+kills_per_s = { value = 140, approx = true }
+
+[endurance]
+thermal_store_tj = 10.8
+cold_h = { "wings folded" = 36, "optics firing" = 28.4 }
+notes = "Wings spread, the clock does not run."
+
+[combat]
+annihilation_floor_km = { value = 2400, est = true, note = "against her equals" }

@@ -1,0 +1,103 @@
+# Rules every ship class is read against: the vocabulary of RATE AND ROLE and the aim model of
+# DE COLLINEATIONE. Classes name these by id; the server refuses a class that names one not here.
+
+# ---- rate: who commands her, and how many hands --------------------------------------------------
+[rate.line]
+label = "Line rate"
+commanded_by = "a Commander"
+hands = "about five hundred, in ten serving cohorts and an eleventh at depot"
+covers = "ships of the line, battlecruisers and cruisers"
+
+[rate.frigate]
+label = "Frigate"
+commanded_by = "a Captain"
+hands = "fewer"
+covers = "the frigates; the most independent posting below flag rank"
+
+[rate.auxiliary]
+label = "Auxiliary"
+covers = "the fleet's harbour, carried with it"
+
+[rate.unrated]
+label = "Not rated"
+covers = "cutters and other hulls below the frigate, as sloops and cutters were not rated in sail"
+
+# ---- lineage: the two plans ------------------------------------------------------------------------
+[lineage.garden]
+label = "The Garden"
+names = "binomial: a genus for the body, an epithet for the vocation"
+order = "carried by the epithet"
+design = "one line ship, one frigate, specialists for everything else"
+
+[lineage.old-forest]
+label = "The Old Forest"
+names = "proper names: spirits of the forest"
+order = "carried by rating"
+design = "generalists in graded sizes"
+
+# ---- crew: experience moves aim, never the beam ------------------------------------------------------
+[crew.green]
+label = "Green"
+who = "a MINERVA and crew with no engagement behind them"
+
+[crew.rated]
+label = "Rated"
+who = "after one engagement"
+
+[crew.veteran]
+label = "Veteran"
+who = "after several"
+
+[crew.exceptional]
+label = "Exceptional"
+who = "the best MINERVA and crews"
+
+# ---- the wall: where the miss equals the target ------------------------------------------------------
+# R = size / θ: the range at which the beam's miss θ equals a line-rate citadel, or a silhouette.
+[wall.citadel]
+label = "Citadel wall"
+size_m = 64.3
+
+[wall.silhouette]
+label = "Silhouette wall"
+size_m = 96.4
+
+# ---- beam effects ------------------------------------------------------------------------------------
+# A class gives each effect's beam reach (how far one stack carries it, at the standard 5 nT field).
+# Usable reach is the lesser of that and the effect's wall at the crew's aim. `wall` absent: the beam
+# runs out long before the aim does. `beam_km` absent on a class: the beam carries it past every wall.
+[effect.open-woven]
+label = "Opens a woven hull"
+order = 1
+
+[effect.open-titanium]
+label = "Opens a titanium hull"
+order = 2
+
+[effect.shatter-titanium]
+label = "Shatters titanium plate"
+order = 3
+
+[effect.mast]
+label = "Takes a mast"
+wall = "silhouette"
+order = 4
+
+[effect.radiator]
+label = "Ruins a radiator"
+wall = "silhouette"
+order = 5
+
+[effect.mane]
+label = "Ruins a mane"
+wall = "silhouette"
+order = 6
+
+[effect.crew]
+label = "Kills crew and electronics, line citadel"
+wall = "citadel"
+order = 7
+
+[effect.dazzle]
+label = "Dazzles an open sensor"
+order = 8

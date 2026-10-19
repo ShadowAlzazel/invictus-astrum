@@ -1,0 +1,19 @@
+# Source: RATE AND ROLE §8.12, §10. No particulars yet.
+[class]
+id = "popocatepetl"
+name = "Popocatepetl"
+lineage = "old-forest"
+rate = "unrated"
+terms = { sail = "bomb vessel", modern = "arsenal ship", arcvs = "the tube ship" }
+summary = "The tube ship. Not a ship of the line, carries no LINE stacks and no kinetic battery, and is nothing to treat lightly. Her name breaks the forest-spirit pattern for a volcano."
+symbol = "TUB"
+
+[[battery]]
+id = "tubes"
+label = "Tubes"
+component = "tube"
+count = "—"
+notes = "Warheads of 100 kt and above. An armada 1-ring or above attaches her; only a 4-star approves her warheads."
+
+[history]
+notable = ["Popocatépetl: the warrior who keeps watch forever beside the sleeping Iztaccíhuatl"]

@@ -6,6 +6,8 @@
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
   import LevelSelect from './lib/LevelSelect.svelte';
+  import MainMenu from './lib/MainMenu.svelte';
+  import ShipRegistry from './lib/ShipRegistry.svelte';
   import Workshop from './lib/Workshop.svelte';
 
   // sim seconds per real second; the clock runs in TDB seconds since J2000, like the server
@@ -20,7 +22,10 @@
   const LAYER_LABELS = { orbits: 'Orbits', bullseye: 'Bullseye', display: 'Body display', labels: 'Labels', contacts: 'Units', zones: 'Zones' };
   let scale = 1, sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
   let showFindings = false, down = null, poll;
-  let mode = 'levels';                  // 'levels' | 'map' | 'workshop'
+  let mode = 'menu';                    // 'menu' | 'levels' | 'map' | 'workshop' | 'ships'
+  let purpose = 'play';                 // what the level list is for: 'play' or 'build'
+  let registry, shipCount = 0;
+  $: inMap = mode === 'map' || mode === 'workshop';   // the screens that use the map's controls
   let schema = null, wdoc = null, lastLevel = null;
 
   $: player = meta?.players.find((p) => p.id === playerId);
@@ -123,14 +128,19 @@
     if (e.key === ' ') { e.preventDefault(); paused = !paused; }
     if (e.key === ']') warp = Math.min(warp + 1, WARPS.length - 1);
     if (e.key === '[') warp = Math.max(warp - 1, 0);
-    if (mode === 'levels') return;                       // the list has its own keys
+    if (!inMap) return;                                  // menus have their own keys
     if (e.key === 'Escape') select(null);
     if (e.key === 'f' || e.key === 'F') focusOn(sel);
     if (e.key === 'h' || e.key === 'H') map.frameAll();
     if ((e.key === 'l' || e.key === 'L') && mode === 'map') toLevels();
   }
 
-  // ---- levels and the workshop ------------------------------------------------------------------
+  // ---- the menu, levels and the workshop --------------------------------------------------------
+  function choose(what) {
+    if (what === 'play' || what === 'build') { purpose = what; mode = 'levels'; }
+    if (what === 'ships') mode = 'ships';
+  }
+  function toMenu() { mode = 'menu'; select(null); }
   async function previewLevel(id) { if (id !== systemId) await openSystem(id); lastLevel = id; }
   async function enter(id) { await previewLevel(id); mode = 'map'; }
   function toLevels() {
@@ -168,7 +178,11 @@
     try {
       const s = await api.status();
       errors = s.errors;
-      if (s.version !== version) { await loadMeta(); if (systemId) await openSystem(systemId, true, true); }
+      if (s.version !== version) {
+        await loadMeta();
+        if (systemId) await openSystem(systemId, true, true);
+        registry?.refresh();
+      }
     } catch { error = 'Cannot reach the server. Start it with: python serve.py'; return; }
     error = null;
   }
@@ -200,18 +214,24 @@
 <Overlay {map} {style} {scale} {layers} {contacts} />
 <HudCursor {map} {style} {overUI} />
 
-{#if mode === 'levels'}
-  <LevelSelect levels={meta?.systems ?? []} current={systemId} onpreview={previewLevel} onenter={enter} onworkshop={openWorkshop} />
+{#if mode === 'menu'}
+  <MainMenu onchoose={choose} counts={{ systems: meta?.systems.length ?? 0, ships: meta?.ship_classes ?? 0 }} />
+{:else if mode === 'ships'}
+  <ShipRegistry bind:this={registry} {style} onback={toMenu} />
+{:else if mode === 'levels'}
+  <LevelSelect {purpose} levels={meta?.systems ?? []} current={systemId} onpreview={previewLevel} onenter={enter} onworkshop={openWorkshop} onback={toMenu} />
 {:else if mode === 'workshop' && schema && wdoc}
   <Workshop {schema} bind:doc={wdoc} onpreview={draftBuilt} onsaved={workshopSaved} onexit={toLevels} />
 {:else}
   <div class="bar" data-ui>
-    <button on:click={toLevels} title="L">◂ Levels</button>
+    <button on:click={toMenu}>◂ Menu</button>
+    <button on:click={toLevels} title="L">Levels</button>
     <span class="brand">INVICTUS <b>ASTRUM</b></span>
     <span class="here">{def?.name ?? ''}</span>
   </div>
 {/if}
 
+{#if inMap || mode === 'levels'}
 <div class="clock" data-ui>
   <span class="utc">{state?.utc?.replace('T', ' ').replace('Z', ' UTC') ?? '—'}</span>
   <button on:click={() => (paused = !paused)} title="Space">{paused ? '▶' : '❚❚'}</button>
@@ -221,6 +241,7 @@
   <button class="small" on:click={resetClock}>reset</button>
   <span class="src">{state?.source ?? ''}</span>
 </div>
+{/if}
 
 {#if mode !== 'map'}
   {#if error}<div class="banner loud low" data-ui><strong>Offline</strong><p>{error}</p></div>{/if}
@@ -259,6 +280,7 @@
 </div>
 {/if}
 
+{#if inMap}
 <div class="panel right" data-ui>
   {#each Object.keys(layers) as k}
     <button class="toggle" class:on={layers[k]} on:click={() => toggleLayer(k)}><i></i>{LAYER_LABELS[k]}</button>
@@ -275,6 +297,7 @@
 <InfoPanel {map} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} />
+{/if}
 
 <style>
   .map { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; touch-action: none; }

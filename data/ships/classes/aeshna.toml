@@ -1,0 +1,110 @@
+# Source: SHIPS OF THE CLASSIS §4; RATE AND ROLE §8.3; DE COLLINEATIONE §4.3.
+[class]
+id = "aeshna"
+name = "AESHNA ARQUITRIX"
+lineage = "garden"
+genus = { word = "AESHNA", meaning = "hawker dragonfly" }
+epithet = { word = "ARQUITRIX", meaning = "archeress (read from arquites, archers; sense not yet set)" }
+designation = "AVC"
+rate = "line"
+terms = { modern = "air-defence cruiser", arcvs = "ARQUITRIX" }
+body = "four wings in an X"
+summary = "The point-defence cruiser. She stands over what cannot dodge, and is the fleet's answer to missile saturation."
+symbol = "AES"
+in_classis = { range = [10, 15], note = "midpoint ~12.5" }
+
+[hull]
+length_m = 350
+wingspan_m = { spread = 180 }
+mass_t = { value = 55000, est = true }
+material = "MAJOR-6 woven silk"
+
+[aim]
+rated_urad = 6.0
+demasted_urad = { value = 18, est = true }
+tiers = { green = [7.0, 7.5], rated = 6.0, veteran = 5.5 }
+
+[[battery]]
+id = "domes"
+label = "Domes"
+component = "dome-xxxvii"
+count = 5
+facets = 185
+power_mw = 35.5
+notes = "Every bearing is seen by at least two domes."
+
+[[battery]]
+id = "strips"
+label = "Strips"
+component = "picket-strip"
+count = 4
+facets = 24
+power_mw = 9.22
+notes = "Dazzles every open sensor in a formation."
+
+[[battery]]
+id = "spinal"
+label = "Spinal battery"
+component = "filvm-mk2"
+count = 36
+stacks = 6
+cycle_s = 10
+fire = "six patterns every 10 s"
+
+[[battery]]
+id = "missiles"
+label = "Missiles"
+component = "missile-cell"
+count = 90
+
+[reach]
+open-woven = 1550
+open-titanium = 1900
+mast = { value = 5450, note = "six at once" }
+radiator = 7370
+crew = "aim"
+dazzle = 40000
+
+[[point_defence]]
+bearing = "nadir, three domes"
+at_km = 1000
+kills_per_s = { value = 52, approx = true }
+
+[[point_defence]]
+bearing = "nadir, three domes"
+at_km = 300
+kills_per_s = { value = 570, approx = true }
+
+[[point_defence]]
+bearing = "zenith, two domes"
+at_km = 1000
+kills_per_s = { value = 34, approx = true }
+
+[[point_defence]]
+bearing = "zenith, two domes"
+at_km = 300
+kills_per_s = { value = 380, approx = true }
+
+[[point_defence]]
+bearing = "median over the sphere"
+at_km = 1000
+kills_per_s = { value = 7.8, approx = true }
+
+[[point_defence]]
+bearing = "median over the sphere"
+at_km = 300
+kills_per_s = { value = 86, approx = true }
+
+[[point_defence]]
+bearing = "weakest: astern, just above the hull plane"
+at_km = 1000
+kills_per_s = { value = 0.85, approx = true }
+
+[[point_defence]]
+bearing = "weakest: astern, just above the hull plane"
+at_km = 300
+kills_per_s = { value = 9.4, approx = true }
+
+[endurance]
+thermal_store_tj = 45.4
+working_days = { "full working ceiling" = 6, "cold, wings folded" = 8 }

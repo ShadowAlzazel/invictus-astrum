@@ -1,0 +1,88 @@
+# Source: SHIPS OF THE CLASSIS §5; RATE AND ROLE §8.4.
+[class]
+id = "salticidae"
+name = "SALTICIDAE VIGIL"
+lineage = "garden"
+genus = { word = "SALTICIDAE", meaning = "jumping spiders" }
+epithet = { word = "VIGIL", meaning = "watchman: Rome's night watch" }
+designation = "AVC"
+terms = { sail = "repeating frigate", modern = "airborne early warning", arcvs = "VIGIL" }
+body = "eight wings, fixed, in an X from both ends: the radiators"
+summary = "The eyes and voice of the fleet. She sees, relays, assays and controls the picture as Overlord or Overwatch. Not a frontline ship."
+symbol = "VIG"
+in_classis = { range = [5, 6] }
+successor_of = "holzweiber"
+
+[hull]
+length_m = { value = 150, approx = true }
+mass_t = { value = 22000, approx = true }
+
+[[battery]]
+id = "domes"
+label = "Domes"
+component = "dome-xix-b"
+count = 4
+facets = 76
+power_mw = 6.38
+
+[[battery]]
+id = "strips"
+label = "Strips"
+component = "light-strip"
+count = 12
+facets = 48
+power_mw = 4.61
+notes = "Dazzles 124 apertures at once; takes a mast by light in ~0.2 s at 1,000 km."
+
+[[battery]]
+id = "missiles"
+label = "Missiles"
+component = "missile-cell"
+count = 84
+
+[[battery]]
+id = "telescopes"
+label = "Telescopes"
+component = "ir-telescope"
+count = 2
+
+[reach]
+dazzle = 40000
+
+[[point_defence]]
+bearing = "above or below"
+at_km = 1000
+kills_per_s = { value = 0.96, approx = true }
+
+[[point_defence]]
+bearing = "median"
+at_km = 1000
+kills_per_s = { value = 0.30, approx = true }
+
+[[point_defence]]
+at_km = 300
+kills_per_s = { value = 11, approx = true }
+
+[[sensor]]
+what = "A missile plume"
+reach = "~4 AU, in one second"
+
+[[sensor]]
+what = "A cold hull, by telescope"
+reach = "~1 AU"
+
+[[sensor]]
+what = "A cold hull, by active scan"
+reach = "~4,400 km, every 10 s"
+
+[[sensor]]
+what = "A cold rod"
+reach = "tens to hundreds of thousands of km when cued, est."
+
+[[sensor]]
+what = "Emitters"
+reach = "located to a few km at 10,000 km, by her masts"
+
+[endurance]
+thermal_store_tj = 2.8
+notes = "She watches and relays indefinitely; all optics working, about 58 hours."

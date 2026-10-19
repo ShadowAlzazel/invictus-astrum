@@ -5,6 +5,7 @@
 systems   = "data/systems"
 scenarios = "data/scenarios"
 players   = "data/players.toml"
+ships     = "data/ships"
 style     = "style.toml"
 
 [server]

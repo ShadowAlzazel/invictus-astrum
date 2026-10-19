@@ -98,6 +98,25 @@ asks before overwriting, and never overwrites a hand-written file: files the wor
 with a marker line, and only those are replaced. Comments in hand-written files survive because
 they are only ever copied.
 
+## Ship classes
+
+`astrum/ships.py` is the registry. It replaces the old games' stat blocks (FP, ACC, EVA, RNG in
+hexes) with the canon's own figures, in the canon's own units, and keeps them as data:
+
+- **Figures carry their certainty.** A value, a range, an estimate, an "about", a note, or a
+  blank. Blanks are not errors: they are the author's open list, shown per class.
+- **Parts are shared.** Batteries name components (NERVVS Mk.2, CVRSVS II/31, PANEL III...), so a
+  part is described once and every class that carries it agrees.
+- **Rules are shared.** Rates, lineages, crew tiers, walls and beam effects live in one file, so
+  "line rate" or "takes a mast" means one thing everywhere.
+- **Derivation is narrow.** Only what the canon defines by formula is computed: walls and usable
+  reach by crew tier, round energy, thrust. The registry's tests check these against the
+  DE COLLINEATIONE tables to the kilometre.
+- **Four measures stay apart** (RATE AND ROLE): rate is a field, the epithet is in the name,
+  body is a field, and place belongs to formations, not to the class.
+
+Scenario units can name a class; the engagement simulator will read the same registry.
+
 ## The map
 
 - **Floating origin.** Float32 GPU coordinates cannot hold a solar system (at Neptune a float32
