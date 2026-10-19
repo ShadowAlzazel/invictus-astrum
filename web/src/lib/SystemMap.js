@@ -33,6 +33,9 @@ function unitCircle(seg = 256) {
 }
 
 export class SystemMap {
+  static MIN_DISTANCE = 0.01;      // km from the focus: 10 m
+  static MAX_DISTANCE = 5e13;      // km: 330,000 AU, the edge of any system worth drawing
+
   constructor(canvas) {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
@@ -41,8 +44,14 @@ export class SystemMap {
     this.camera = new THREE.PerspectiveCamera(45, 1, 1e-3, 1e14);
     this.camera.position.set(0, 3e8, 2.2e8);
     this.controls = new MapControls(this.camera, canvas);
-    Object.assign(this.controls, { enableDamping: true, dampingFactor: 0.12, minDistance: 5, maxDistance: 5e13,
-                                   zoomToCursor: true, zoomSpeed: 1.6, maxPolarAngle: Math.PI });
+    // three's zoomToCursor drove the camera to NaN when zoomed in close, and nothing recovered from
+    // that; zoom is done here instead, in log space, with the cursor anchored (see _zoomStep)
+    Object.assign(this.controls, { enableDamping: true, dampingFactor: 0.12, enableZoom: false, maxPolarAngle: Math.PI });
+    this._zoomPending = 0;          // log-distance still to apply; eased out over a few frames
+    this._cursor = null;            // where the wheel was turned, px
+    this._lastGood = this.camera.position.clone();
+    this._wheel = this._wheel.bind(this);
+    canvas.addEventListener('wheel', this._wheel, { passive: false });
 
     this.focus = [0, 0, 0];         // float64, system frame, km
     this.follow = null;             // selection the focus rides with: { kind, id }
@@ -91,7 +100,9 @@ export class SystemMap {
   }
 
   // ---- the system ----------------------------------------------------------------------------
-  setSystem(def) {
+  // keepView: the same system again (a workshop edit, a live reload): leave the camera be
+  setSystem(def, keepView = false) {
+    keepView = keepView && this.def?.id === def.id;
     this.def = def;
     this.bodies = Object.fromEntries(def.bodies.map((b) => [b.id, b]));
     for (const m of this.meshes.values()) { this.bodyGroup.remove(m); m.geometry.dispose(); m.material.dispose(); }
@@ -104,14 +115,29 @@ export class SystemMap {
       this.bodyGroup.add(m);
       this.meshes.set(b.id, m);
     }
+    if (keepView) {
+      if (this.selected?.kind === 'body' && !this.bodies[this.selected.id]) this.selected = null;
+      if (this.follow?.kind === 'body' && !this.bodies[this.follow.id]) this.follow = { kind: 'body', id: def.root };
+      return;
+    }
     this.setOrbits({});
-    this.follow = { kind: 'body', id: def.root };
     this.selected = null;
     this.hover = null;
-    // frame the planetary system: the furthest orbit under 1,000 AU (Proxima would hide Alpha Cen A–B)
+    this.frameAll(false);
+  }
+
+  // look at the whole planetary system from above: the furthest orbit under 1,000 AU
+  // (Proxima's 13,000 AU would shrink Alpha Centauri A–B to a dot)
+  frameAll(fly = true) {
+    const def = this.def;
+    if (!def) return;
     const apo = def.bodies.map((b) => b.orbit?.apoapsis_km ?? 0).filter((a) => a > 0);
     const near = apo.filter((a) => a < 1.5e11);
-    const extent = Math.max(...(near.length ? near : apo), 1e6);
+    const rootR = this.bodies[def.root]?.radius_km ?? 0;
+    const extent = Math.max(...(near.length ? near : apo), rootR * 4, 1e6);
+    const root = { kind: 'body', id: def.root };
+    if (fly) { this.focusOn(root, extent * 2.7); return; }
+    this.follow = root;
     this.focus = [0, 0, 0];
     this.camera.position.set(0, extent * 2.2, extent * 1.6);
     this.controls.target.set(0, 0, 0);
@@ -274,6 +300,57 @@ export class SystemMap {
     this._fly = { from, sel, t0: performance.now(), ms: reduceMotion ? 0 : 700, distance: distanceKm, d0: this.camera.position.length() };
   }
 
+  // ---- zoom ------------------------------------------------------------------------------------
+  _wheel(e) {
+    e.preventDefault();
+    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+    this._zoomPending += Math.max(-1, Math.min(1, dy * 0.0016));
+    this._cursor = { x: e.clientX, y: e.clientY };
+  }
+
+  // one eased step of zoom. The target sits at the scene origin, so zoom is scaling the camera's
+  // offset. Zooming in with nothing followed keeps the point under the cursor under the cursor:
+  // the target slides toward it (the slide becomes a focus shift in _recentre). Zooming out
+  // stays centred, or repeated zoom-outs would drift the view into empty space.
+  _zoomStep() {
+    if (Math.abs(this._zoomPending) < 1e-4) { this._zoomPending = 0; return; }
+    const step = this._zoomPending * 0.3;
+    this._zoomPending -= step;
+    const d = this.camera.position.length();
+    const d2 = Math.min(Math.max(d * Math.exp(step), SystemMap.MIN_DISTANCE), SystemMap.MAX_DISTANCE);
+    const k = d2 / d;
+    if (!isFinite(k) || k === 1) return;
+    let shift = null;
+    if (k < 1 && !this.follow && !this._fly && this._cursor) {
+      const ndc = new THREE.Vector2(this._cursor.x / this.canvas.clientWidth * 2 - 1, -(this._cursor.y / this.canvas.clientHeight) * 2 + 1);
+      const ray = new THREE.Raycaster();
+      ray.setFromCamera(ndc, this.camera);
+      const view = this.camera.position.clone().negate().normalize();
+      const c = ray.ray.direction.dot(view);
+      if (c > 0.05) shift = ray.ray.origin.clone().addScaledVector(ray.ray.direction, d / c).multiplyScalar(1 - k);
+    }
+    this.camera.position.multiplyScalar(k);
+    if (shift) { this.camera.position.add(shift); this.controls.target.add(shift); }
+  }
+
+  // nothing may sit inside a body: push the camera back out to just above the surface
+  _keepOutside() {
+    if (!this.state) return;
+    const cam = fromThree(this.camera.position);
+    const w = [cam[0] + this.focus[0], cam[1] + this.focus[1], cam[2] + this.focus[2]];
+    for (const [id, m] of this.meshes) {
+      const p = this.state.bodies[id];
+      if (!p) continue;
+      const r = m.geometry.parameters.radius, floor = r * 1.002 + 0.05;
+      const d = sub(w, p), dist = Math.hypot(...d);
+      if (dist >= floor) continue;
+      const u = dist > 0 ? d.map((x) => x / dist) : [0, 0, 1];
+      const out = [p[0] + u[0] * floor - this.focus[0], p[1] + u[1] * floor - this.focus[1], p[2] + u[2] * floor - this.focus[2]];
+      toThree(out, this.camera.position);
+      break;
+    }
+  }
+
   _recentre() {
     // keep the camera's target at the scene origin: move the float64 focus instead
     const t = this.controls.target;
@@ -298,9 +375,18 @@ export class SystemMap {
       const p = this.position(this.follow);
       if (p) this.focus = [...p];
     }
-    this.controls.zoomToCursor = !this.follow;
+    this._zoomStep();
     this.controls.update();
     this._recentre();
+    this._keepOutside();
+    // last line of defence: a non-finite camera would blank the map for good
+    const c = this.camera.position;
+    if (!(isFinite(c.x) && isFinite(c.y) && isFinite(c.z)) || c.lengthSq() === 0 || !this.focus.every(isFinite)) {
+      this.camera.position.copy(this._lastGood);
+      this.controls.target.set(0, 0, 0);
+      if (!this.focus.every(isFinite)) this.focus = [0, 0, 0];
+      this._zoomPending = 0;
+    } else this._lastGood.copy(c);
     this._place();
     this.renderer.render(this.scene, this.camera);
     for (const fn of this._hooks) fn(now);
@@ -338,6 +424,7 @@ export class SystemMap {
 
   dispose() {
     cancelAnimationFrame(this._raf);
+    this.canvas.removeEventListener('wheel', this._wheel);
     this.controls.dispose();
     this.renderer.dispose();
   }

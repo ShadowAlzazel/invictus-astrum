@@ -1,6 +1,7 @@
 # Writing a stellar system
 
-One TOML file per system. Units are the ones papers publish in; the builder converts to SI and
+One TOML file per system; each is a level. The map's workshop writes these files too, and is the
+easier way to start: it checks every change as you make it. By hand: Units are the ones papers publish in; the builder converts to SI and
 reports every problem at once. Errors stop the build; warnings appear on the map.
 
 ```toml

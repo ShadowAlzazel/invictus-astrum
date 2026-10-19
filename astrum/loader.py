@@ -9,7 +9,7 @@ Every file goes through a builder or a checker that lists all of its problems at
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -47,7 +47,8 @@ def build_system(doc: dict, where: str = "") -> StellarSystem:
 def load_system(path: str | Path) -> StellarSystem:
     path = Path(path)
     with path.open("rb") as f:
-        return build_system(tomllib.load(f), str(path))
+        s = build_system(tomllib.load(f), str(path))
+    return replace(s, source=str(path))
 
 
 def load_systems(folder: str | Path) -> tuple[dict[str, StellarSystem], dict[str, str]]:

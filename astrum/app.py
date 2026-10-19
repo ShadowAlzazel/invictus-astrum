@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -31,6 +31,7 @@ from .frames import to_spherical
 from .loader import contact_positions, load_players, load_scenarios, load_systems
 from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify, magnetopause
+from . import workshop
 
 KM = 1e-3
 
@@ -45,6 +46,7 @@ class World:
         self.version = 0
         self.errors: dict[str, str] = {}
         self.systems, self.ephemerides, self.players, self.scenarios = {}, {}, {}, {}
+        self.drafts: dict[str, tuple] = {}       # workshop previews: "draft" -> (system, ephemeris)
         self.style = {}
         self._stamp = None
         self._checked = 0.0
@@ -109,20 +111,31 @@ class World:
             self.reload()
 
     # ---- lookups ----------------------------------------------------------------------------
+    def get(self, sid: str):
+        """(system, ephemeris) for a saved system or a workshop draft, or None."""
+        if sid in self.drafts:
+            return self.drafts[sid]
+        if sid in self.systems:
+            return self.systems[sid], self.ephemerides[sid]
+        return None
+
     def system(self, sid: str):
-        if sid not in self.systems:
+        got = self.get(sid)
+        if got is None:
             raise HTTPException(404, f"no system {sid!r}")
-        return self.systems[sid], self.ephemerides[sid]
+        return got
 
     def bullseyes(self, sid: str, player: str | None) -> dict[str, Bullseye]:
-        s = self.systems[sid]
+        s = self.get(sid)[0]
+        if sid in self.drafts:                               # a draft is read from its own centre
+            return {"system": Bullseye.default(s)}
         out = {"system": Bullseye.default(s)}
         if player and player in self.players:
             out.update({b.id: b for b in self.players[player].bullseyes.values() if b.system == sid})
         return out
 
     def resolved(self, sid: str, player: str | None, positions: dict) -> dict:
-        s = self.systems[sid]
+        s = self.get(sid)[0]
         bulls = self.bullseyes(sid, player)
         out = {}
         for bid, b in bulls.items():
@@ -176,6 +189,24 @@ def body_dict(s, b, zones) -> dict:
     }
 
 
+def level_dict(world: "World", s) -> dict:
+    """A system as the level selector shows it."""
+    kinds: dict[str, int] = {}
+    for b in s:
+        kinds[b.kind] = kinds.get(b.kind, 0) + 1
+    src = Path(s.source) if s.source else None
+    return {
+        "id": s.id, "name": s.name, "frame": s.frame.description, "tied": s.frame.to_icrs is not None,
+        "start": world.start_time(s), "start_utc": iso(world.start_time(s)),
+        "distance_pc": s.frame.distance / k.PC if s.frame.distance else None,
+        "stars": [b.name for b in s.stars()], "counts": kinds,
+        "warnings": sum(f.level == "warning" for f in s.findings),
+        "file": src.name if src else None,
+        "workshop_made": bool(src and src.exists() and src.read_text(encoding="utf-8").startswith(workshop.WORKSHOP_MARK)),
+        "numerical": bool(s.ephemeris), "notes": s.notes, "sources": s.sources,
+    }
+
+
 def create_app(config: dict | None = None) -> FastAPI:
     config = config or load_config()
     world = World(config)
@@ -187,9 +218,7 @@ def create_app(config: dict | None = None) -> FastAPI:
         world.check()
         return {
             "version": world.version,
-            "systems": [{"id": s.id, "name": s.name, "frame": s.frame.description,
-                         "start": world.start_time(s), "start_utc": iso(world.start_time(s))}
-                        for s in world.systems.values()],
+            "systems": [level_dict(world, s) for s in sorted(world.systems.values(), key=lambda s: s.name)],
             "players": [{"id": p.id, "name": p.name,
                          "bullseyes": [{"id": b.id, "name": b.name, "system": b.system} for b in p.bullseyes.values()]}
                         for p in world.players.values()],
@@ -210,7 +239,8 @@ def create_app(config: dict | None = None) -> FastAPI:
         s, eph = world.system(sid)
         zones = all_zones(s)
         return {
-            "id": s.id, "name": s.name, "root": s.root, "notes": s.notes, "sources": s.sources,
+            "id": sid, "name": s.name, "root": s.root, "notes": s.notes, "sources": s.sources,
+            "start": world.start_time(s),
             "frame": {"kind": s.frame.kind, "description": s.frame.description, "tied": s.frame.to_icrs is not None,
                       "distance_pc": s.frame.distance / k.PC if s.frame.distance else None},
             "bodies": [body_dict(s, b, zones) for b in s],
@@ -251,6 +281,40 @@ def create_app(config: dict | None = None) -> FastAPI:
                           "range_km": rng * KM, "light_s": rng / k.C}
         return out
 
+    # ---- the workshop: build systems from the map --------------------------------------------
+    presets = Path(config["paths"]["systems"]).parent / "presets.toml"
+
+    @app.get("/api/workshop/schema")
+    def workshop_schema():
+        return workshop.schema(world.style, presets)
+
+    @app.get("/api/workshop/source/{sid}")
+    def workshop_source(sid: str):
+        s, _ = world.system(sid)
+        if not s.source:
+            raise HTTPException(404, f"{sid!r} has no file")
+        return workshop.source(Path(s.source))
+
+    @app.post("/api/workshop/check")
+    def workshop_check(doc: dict = Body(...)):
+        """Build a document. If it builds, it becomes the draft the map can show as "draft"."""
+        system, findings = workshop.check(doc)
+        out = {"ok": system is not None, "findings": [f.__dict__ for f in findings]}
+        if system is not None:
+            with world.lock:
+                world.drafts["draft"] = (system, Ephemeris(system))
+            out["draft"] = "draft"
+        return out
+
+    @app.post("/api/workshop/save")
+    def workshop_save(doc: dict = Body(...), overwrite: bool = False):
+        try:
+            path = workshop.save(doc, Path(config["paths"]["systems"]), overwrite=overwrite)
+        except workshop.WorkshopError as e:
+            raise HTTPException(409, str(e))
+        world.reload()
+        return {"saved": path.name, "id": doc["system"]["id"], "version": world.version}
+
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
         await sock.accept()
@@ -259,10 +323,11 @@ def create_app(config: dict | None = None) -> FastAPI:
                 req = await sock.receive_json()
                 world.check()
                 sid = req.get("system")
-                if sid not in world.systems:
-                    await sock.send_json({"error": f"no system {sid!r}"})
+                got = world.get(sid)
+                if got is None:
+                    await sock.send_json({"error": f"no system {sid!r}", "system": sid})
                     continue
-                s, eph = world.systems[sid], world.ephemerides[sid]
+                s, eph = got
                 t = float(req.get("t", world.start_time(s)))
                 pos = eph.positions(t)
                 bulls = world.resolved(sid, req.get("player"), pos)

@@ -1,0 +1,112 @@
+# Starting points for the system workshop. Each preset fills a new body's fields; everything
+# stays editable after. Values are representative of the class, from well-known examples.
+# Add your own: [preset.<id>] with a label, a kind, and any body keys (see data/systems/README.md).
+
+# ---- stars ---------------------------------------------------------------------------------------
+[preset.g-dwarf]
+label = "G dwarf: Sun-like"
+kind = "star"
+mass_msun = 1.0
+radius_rsun = 1.0
+luminosity_lsun = 1.0
+teff_k = 5772
+display = { role = "star", color = "#ffd27a" }
+
+[preset.k-dwarf]
+label = "K dwarf: Alpha Centauri B"
+kind = "star"
+mass_msun = 0.909
+radius_rsun = 0.859
+luminosity_lsun = 0.50
+teff_k = 5260
+display = { role = "star", color = "#ffb85c" }
+
+[preset.m-dwarf]
+label = "M dwarf: Proxima-like"
+kind = "star"
+mass_msun = 0.122
+radius_rsun = 0.154
+luminosity_lsun = 0.00157
+teff_k = 3042
+display = { role = "star", color = "#ff6a3d" }
+
+[preset.ultracool]
+label = "Ultracool dwarf: TRAPPIST-1"
+kind = "star"
+mass_msun = 0.0898
+radius_rsun = 0.1192
+luminosity_lsun = 0.000553
+teff_k = 2566
+display = { role = "star", color = "#ff7a4a" }
+
+[preset.f-dwarf]
+label = "F dwarf: Procyon-like"
+kind = "star"
+mass_msun = 1.5
+radius_rsun = 2.05
+luminosity_lsun = 6.9
+teff_k = 6530
+display = { role = "star", color = "#fff4dc" }
+
+# ---- planets -------------------------------------------------------------------------------------
+[preset.earth]
+label = "Earth-like"
+kind = "planet"
+mass_mearth = 1.0
+radius_rearth = 1.0
+rotation_period_h = 24.0
+display = { role = "world", color = "#5aa0ff" }
+
+[preset.mars]
+label = "Mars-like"
+kind = "planet"
+mass_mearth = 0.107
+radius_rearth = 0.532
+rotation_period_h = 24.62
+display = { role = "world", color = "#d0704a" }
+
+[preset.super-earth]
+label = "Super-Earth"
+kind = "planet"
+mass_mearth = 5.0
+radius_rearth = 1.6
+display = { role = "world", color = "#9fb0a6" }
+
+[preset.neptune]
+label = "Ice giant: Neptune-like"
+kind = "planet"
+mass_mearth = 17.15
+radius_rearth = 3.88
+rotation_period_h = 16.11
+display = { role = "ice-giant", color = "#4f7cff" }
+
+[preset.jupiter]
+label = "Gas giant: Jupiter-like"
+kind = "planet"
+mass_mjup = 1.0
+radius_km = 69911
+rotation_period_h = 9.925
+magnetic = { b_eq_nt = 417000, tilt_deg = 9.6 }
+display = { role = "gas-giant", color = "#d9b38c" }
+
+# ---- moons ---------------------------------------------------------------------------------------
+[preset.luna]
+label = "Large moon: Luna-like"
+kind = "moon"
+gm_km3s2 = 4902.8
+radius_km = 1737.4
+display = { role = "moon", color = "#c8c4bc" }
+
+[preset.ganymede]
+label = "Giant moon: Ganymede-like"
+kind = "moon"
+gm_km3s2 = 9887.8
+radius_km = 2631.2
+display = { role = "moon", color = "#a99f92" }
+
+[preset.icy-moon]
+label = "Icy moon: Rhea-like"
+kind = "moon"
+gm_km3s2 = 153.94
+radius_km = 763.8
+display = { role = "moon", color = "#cfcbc3" }

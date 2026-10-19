@@ -5,6 +5,8 @@
   import HudCursor from './lib/HudCursor.svelte';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
+  import LevelSelect from './lib/LevelSelect.svelte';
+  import Workshop from './lib/Workshop.svelte';
 
   // sim seconds per real second; the clock runs in TDB seconds since J2000, like the server
   const WARPS = [[1, '1×'], [10, '10×'], [60, '1 min/s'], [600, '10 min/s'], [3600, '1 h/s'], [21600, '6 h/s'],
@@ -18,6 +20,8 @@
   const LAYER_LABELS = { orbits: 'Orbits', bullseye: 'Bullseye', display: 'Body display', labels: 'Labels', contacts: 'Units', zones: 'Zones' };
   let scale = 1, sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
   let showFindings = false, down = null, poll;
+  let mode = 'levels';                  // 'levels' | 'map' | 'workshop'
+  let schema = null, wdoc = null, lastLevel = null;
 
   $: player = meta?.players.find((p) => p.id === playerId);
   $: bullseyes = [{ id: 'system', name: `${def?.name ?? ''} centre` }, ...(player?.bullseyes.filter((b) => b.system === systemId) ?? [])];
@@ -39,13 +43,17 @@
     version = meta.version;
   }
 
-  async function openSystem(id, keepTime = false) {
+  // keepView: the same system rebuilt (a workshop edit, a live reload) keeps the camera, unless
+  // bodies were added or removed, which reframes it
+  async function openSystem(id, keepTime = false, keepView = false) {
+    const before = def?.bodies.length;
     systemId = id;
     def = await api.system(id);
-    const sys = meta.systems.find((s) => s.id === id);
-    if (!keepTime) t = sys.start;
-    map.setSystem(def);
-    sel = null; probe = null; orbitsT = null;
+    const same = keepView && def.bodies.length === before;
+    if (!keepTime) t = def.start;
+    map.setSystem(def, same);
+    if (!same) { sel = null; probe = null; map.selected = null; }
+    orbitsT = null;
     if (!bullseyes.some((b) => b.id === bullseyeId)) bullseyeId = 'system';
     await refreshOrbits();
   }
@@ -112,24 +120,55 @@
 
   function key(e) {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'range') return;
-    if (e.key === 'Escape') select(null);
     if (e.key === ' ') { e.preventDefault(); paused = !paused; }
     if (e.key === ']') warp = Math.min(warp + 1, WARPS.length - 1);
     if (e.key === '[') warp = Math.max(warp - 1, 0);
+    if (mode === 'levels') return;                       // the list has its own keys
+    if (e.key === 'Escape') select(null);
     if (e.key === 'f' || e.key === 'F') focusOn(sel);
-    if (e.key === 'h' || e.key === 'H') focusOn({ kind: 'body', id: def.root });
-    const i = Number(e.key) - 1;
-    if (meta && i >= 0 && i < meta.systems.length) openSystem(meta.systems[i].id);
+    if (e.key === 'h' || e.key === 'H') map.frameAll();
+    if ((e.key === 'l' || e.key === 'L') && mode === 'map') toLevels();
   }
+
+  // ---- levels and the workshop ------------------------------------------------------------------
+  async function previewLevel(id) { if (id !== systemId) await openSystem(id); lastLevel = id; }
+  async function enter(id) { await previewLevel(id); mode = 'map'; }
+  function toLevels() {
+    mode = 'levels';
+    const back = meta.systems.find((s) => s.id === (systemId === 'draft' ? lastLevel : systemId)) ?? meta.systems[0];
+    if (back) previewLevel(back.id);
+  }
+
+  async function openWorkshop(id, copy) {
+    schema ??= await api.workshop.schema();
+    if (id) {
+      const src = await api.workshop.source(id);
+      wdoc = src.doc;
+      if (copy) {
+        let n = 1, nid = `${id}-copy`;
+        while (meta.systems.some((s) => s.id === nid)) nid = `${id}-copy-${++n}`;
+        wdoc.system.id = nid;
+        wdoc.system.name = `${wdoc.system.name ?? id} (copy)`;
+      }
+    } else {
+      const star = { ...(schema.presets['g-dwarf'] ?? { kind: 'star', mass_msun: 1, radius_rsun: 1, luminosity_lsun: 1, teff_k: 5772 }) };
+      delete star.label;
+      wdoc = { system: { id: 'new-system', name: 'New System', epoch: 'J2000' }, frame: { kind: 'untied' },
+               body: [{ id: 'star', name: 'Star', ...star }], binary: [] };
+    }
+    mode = 'workshop';
+  }
+  async function draftBuilt(draftId) { await openSystem(draftId, systemId === draftId, systemId === draftId); }
+  async function workshopSaved() { await loadMeta(); }
   const trackUI = (e) => { overUI = !!e.target.closest?.('[data-ui]'); };
   function toggleLayer(k) { layers[k] = !layers[k]; map.setLayer(k, layers[k]); }
-  function resetClock() { t = meta.systems.find((s) => s.id === systemId).start; }
+  function resetClock() { t = def.start; }
 
   async function checkStatus() {
     try {
       const s = await api.status();
       errors = s.errors;
-      if (s.version !== version) { await loadMeta(); await openSystem(systemId, true); }
+      if (s.version !== version) { await loadMeta(); if (systemId) await openSystem(systemId, true, true); }
     } catch { error = 'Cannot reach the server. Start it with: python serve.py'; return; }
     error = null;
   }
@@ -147,7 +186,7 @@
     try {
       await loadMeta();
       scale = style.display.scale_default;
-      await openSystem(meta.systems.find((s) => s.id === 'sol')?.id ?? meta.systems[0].id);
+      await previewLevel(meta.systems.find((s) => s.id === 'sol')?.id ?? meta.systems[0].id);
     } catch (e) { error = 'Cannot reach the server. Start it with: python serve.py'; }
     raf = requestAnimationFrame(frame);
     poll = setInterval(checkStatus, 2000);
@@ -161,12 +200,17 @@
 <Overlay {map} {style} {scale} {layers} {contacts} />
 <HudCursor {map} {style} {overUI} />
 
-<div class="bar" data-ui>
-  <span class="brand">INVICTUS <b>ASTRUM</b></span>
-  {#each meta?.systems ?? [] as s, i}
-    <button class:on={s.id === systemId} on:click={() => openSystem(s.id)} title="key {i + 1}">{s.name}</button>
-  {/each}
-</div>
+{#if mode === 'levels'}
+  <LevelSelect levels={meta?.systems ?? []} current={systemId} onpreview={previewLevel} onenter={enter} onworkshop={openWorkshop} />
+{:else if mode === 'workshop' && schema && wdoc}
+  <Workshop {schema} bind:doc={wdoc} onpreview={draftBuilt} onsaved={workshopSaved} onexit={toLevels} />
+{:else}
+  <div class="bar" data-ui>
+    <button on:click={toLevels} title="L">◂ Levels</button>
+    <span class="brand">INVICTUS <b>ASTRUM</b></span>
+    <span class="here">{def?.name ?? ''}</span>
+  </div>
+{/if}
 
 <div class="clock" data-ui>
   <span class="utc">{state?.utc?.replace('T', ' ').replace('Z', ' UTC') ?? '—'}</span>
@@ -178,7 +222,9 @@
   <span class="src">{state?.source ?? ''}</span>
 </div>
 
-{#if error || Object.keys(errors).length}
+{#if mode !== 'map'}
+  {#if error}<div class="banner loud low" data-ui><strong>Offline</strong><p>{error}</p></div>{/if}
+{:else if error || Object.keys(errors).length}
   <div class="banner loud" data-ui>
     <strong>{error ? 'Offline' : 'Data errors'}</strong>
     {#if error}<p>{error}</p>{/if}
@@ -192,6 +238,7 @@
   </div>
 {/if}
 
+{#if mode === 'map'}
 <div class="panel left" data-ui>
   <div class="row">
     <span class="lbl">Player</span>
@@ -210,6 +257,7 @@
   {/if}
   <p class="frame">{def?.frame.description ?? ''}{def && !def.frame.tied ? ' · untied' : ''}</p>
 </div>
+{/if}
 
 <div class="panel right" data-ui>
   {#each Object.keys(layers) as k}
@@ -233,9 +281,10 @@
   .bar { position: fixed; top: 20px; left: 20px; z-index: 30; display: flex; gap: 16px; align-items: baseline;
          background: var(--panel); border-left: 1px solid var(--violet); padding: 7px 14px; }
   .brand { font-family: var(--display); letter-spacing: 0.12em; color: var(--dim); font-size: 12px; margin-right: 6px; }
+  .here { font-family: var(--display); font-size: 15px; color: var(--ink); }
+  .banner.low { top: auto; bottom: 20px; left: 460px; }
   .brand b { color: var(--ink); font-weight: 600; }
   .bar button { background: none; border: 0; padding: 2px 0; color: var(--dim); font-family: var(--display); font-size: 14px; }
-  .bar button.on { color: var(--ink); box-shadow: inset 0 -1px 0 var(--fuchsia); }
   .bar button:hover { color: var(--ink); }
 
   .clock { position: fixed; top: 20px; right: 20px; z-index: 30; display: flex; gap: 10px; align-items: center;

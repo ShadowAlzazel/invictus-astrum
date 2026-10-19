@@ -12,7 +12,22 @@ export const api = {
   system: (id) => get(`/system/${id}`),
   orbits: (id, t) => get(`/system/${id}/orbits`, { t }),
   probe: (id, p, t, player, bullseye) => get(`/system/${id}/probe`, { x: p[0], y: p[1], z: p[2], t, player, bullseye }),
+  workshop: {
+    schema: () => get('/workshop/schema'),
+    source: (id) => get(`/workshop/source/${id}`),
+    check: (doc) => post('/workshop/check', doc),
+    save: (doc, overwrite = false) => post(`/workshop/save?overwrite=${overwrite}`, doc),
+  },
 };
+
+export class Rejected extends Error {}
+
+async function post(path, body) {
+  const r = await fetch(`/api${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Rejected(data.detail ?? `${r.status} ${path}`);
+  return data;
+}
 
 // One request in flight at a time: the latest wanted time wins, so a fast clock never queues up.
 export class StateStream {

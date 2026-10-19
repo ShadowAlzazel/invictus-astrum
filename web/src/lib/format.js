@@ -9,7 +9,7 @@ export function km(v) {
   const a = Math.abs(v);
   if (a < 10) return `${n(v, 2)} km`;
   if (a < 7.4e6) return `${n(v)} km`;                    // from 0.05 AU on, read in AU
-  return `${n(v / AU_KM, a < 1e9 ? 3 : 1)} AU`;
+  return `${(v / AU_KM).toLocaleString('en-US', { maximumFractionDigits: a < 1e9 ? 3 : 1 })} AU`;
 }
 
 export function kmFull(v) {

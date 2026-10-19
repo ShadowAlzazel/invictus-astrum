@@ -107,6 +107,7 @@ class StellarSystem:
     sources: tuple[str, ...] = ()
     notes: str = ""
     ephemeris: dict | None = None       # optional numerical ephemeris; see ephemeris.py
+    source: str = ""                    # the file it was loaded from, if any
 
     def __getitem__(self, body_id: str) -> Body:
         return self.bodies[body_id]

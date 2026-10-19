@@ -82,11 +82,31 @@ equinox. The engine itself uses each system's default (the root, system axes).
 
 Bearings run clockwise from 000 seen from Eve. Elevation is Eve (above) or Haid (below).
 
+## Levels and the workshop
+
+A level is a system file. The selector lists `data/systems/` with what each holds (stars,
+planets, moons, distance, findings), so adding a level is adding a file, by hand or from the map.
+
+The workshop edits a *document*: the system file's own structure, as JSON. It never decides
+anything. Each edit is sent to `POST /api/workshop/check`, where the same `SystemBuilder` that
+loads files builds it; the result comes back as findings, and if it built, as a draft the map
+shows under the id `draft` through the same API and socket as any level. The form's choices
+(kinds, units, planes, frames, roles, presets) come from `GET /api/workshop/schema`.
+
+Saving (`POST /api/workshop/save`) refuses a document that does not build, refuses unsafe ids,
+asks before overwriting, and never overwrites a hand-written file: files the workshop writes start
+with a marker line, and only those are replaced. Comments in hand-written files survive because
+they are only ever copied.
+
 ## The map
 
 - **Floating origin.** Float32 GPU coordinates cannot hold a solar system (at Neptune a float32
   keeps ~500 km). The camera's target is always the scene origin, and every object is placed at
   its float64 position minus the focus. Near the focus, everything is exact.
+- **Zoom is ours, not three.js's.** Its zoom-to-cursor drove the camera to NaN when pushed in
+  close, which blanked the map for good. The map zooms in log space itself: in toward the point
+  under the cursor, out about the centre, never closer than 10 m to the focus and never inside a
+  body; a non-finite camera is restored from the last good frame.
 - **Marks, not models.** Bodies draw as flat discs sized by tactical role (`style.toml [roles]`),
   or as their true sphere when that is larger; the display can be resized or switched off. Units
   draw as APP-6-style frames: shape for affiliation, colour second.
