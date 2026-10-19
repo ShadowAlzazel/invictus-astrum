@@ -92,8 +92,8 @@
     }
   }
 
-  // Formations fold top-down: a formation draws as one symbol while its units are too close to
-  // tell apart. A selection overrides folding (display.toml [selection]): the selected formation
+  // Formations fold where their units are too close to tell apart (see fold, below). A selection
+  // overrides folding (display.toml [selection]): the selected formation
   // opens to show the units that answer to it, highlighted and joined to it by lines; the chain
   // above it stays open, and the formation it answers to is marked. Everything else dims.
   function drawContacts(marks) {
@@ -124,25 +124,53 @@
       marks.push({ kind: 'contact', id: c.id, x: s.x, y: s.y, r: h, depth: s.depth });
     };
 
-    const draw = (c) => {
-      const k = kids(c.id), s = scrOf(c.id);
-      if (k.length && !(rv.children.has(c.id) && !rv.open.has(c.id))) {   // a revealed unit stays whole
-        let unfold = rv.open.has(c.id);
-        if (!unfold && !isHot('contact', c.id)) {
-          const pts = [...leaves(c.id).map(scrOf), c.has_position ? s : null].filter(Boolean);
-          const spread = pts.length ? Math.max(...pts.map((a) => Math.max(...pts.map((b) => Math.hypot(a.x - b.x, a.y - b.y))))) : 0;
-          unfold = spread >= S.folding.aggregate_px;
+    // Folding by clusters, bottom-up. Each formation gathers what its units became ("blobs": a
+    // unit, or a formation folded around its core), links blobs closer than aggregate_px on screen,
+    // and folds its biggest linked cluster into its own symbol, if that cluster holds more than
+    // core_share of the formation's ships (its main body). Blobs outside the core stay as
+    // they are, at their own echelon: a far picket squadron reads as a squadron, while the tight
+    // body around it folds. Its parent then does the same with what is passed up.
+    const R = S.folding.aggregate_px;
+    const nLeaves = (id) => leaves(id).length;
+    const near = (a, b) => Math.hypot(a.s.x - b.s.x, a.s.y - b.s.y) < R;
+
+    function clusters(blobs) {                     // single-linkage: a chain of near blobs is one cluster
+      const seen = new Set(), out = [];
+      for (const b of blobs) {
+        if (seen.has(b)) continue;
+        const group = [b], queue = [b];
+        seen.add(b);
+        while (queue.length) {
+          const x = queue.pop();
+          for (const y of blobs) if (!seen.has(y) && near(x, y)) { seen.add(y); group.push(y); queue.push(y); }
         }
-        if (unfold) {
-          // the formation itself still shows where it is a place (its HQ), or where it is the focus
-          if (s && ((c.has_position && S.icons.hq_staff) || c.id === selId || rv.parents.has(c.id))) symbol(c, s);
-          k.forEach((id) => draw(byId[id]));
-          return;
-        }
+        out.push(group);
       }
-      if (s) symbol(c, s);
-    };
-    contacts.filter((c) => !c.parent).forEach(draw);
+      return out;
+    }
+
+    function fold(c) {
+      const k = kids(c.id), s = scrOf(c.id);
+      if (!k.length) return s ? [{ id: c.id, s, leaves: 1 }] : [];
+      const whole = () => (s ? [{ id: c.id, s, leaves: nLeaves(c.id) }] : []);
+      if (rv.children.has(c.id) && !rv.open.has(c.id)) return whole();       // a revealed unit stays whole
+      if (!rv.open.has(c.id) && isHot('contact', c.id)) return whole();      // hovered: hold still
+      const blobs = k.flatMap((id) => fold(byId[id]));
+      // the formation still shows where it is a place (its HQ), or where it is the focus
+      const hq = s && ((c.has_position && S.icons.hq_staff) || c.id === selId || rv.parents.has(c.id))
+        ? [{ id: c.id, s, leaves: 0, hq: true }] : [];
+      if (rv.open.has(c.id)) return [...hq, ...blobs];                       // opened by the selection
+      const core = clusters(blobs).sort((a, b) => b.reduce((n, x) => n + x.leaves, 0) - a.reduce((n, x) => n + x.leaves, 0))[0];
+      const coreLeaves = core ? core.reduce((n, x) => n + x.leaves, 0) : 0;
+      // the symbol stands for the main body only: a cluster that holds most of the formation's ships
+      const total = nLeaves(c.id);
+      if (!core || (core.length < 2 && coreLeaves < total) || coreLeaves <= S.folding.core_share * total) return [...hq, ...blobs];
+      // drawn on its HQ or flagship when that sits in the core, else at the core's centre
+      const cx = core.reduce((n, x) => n + x.s.x, 0) / core.length, cy = core.reduce((n, x) => n + x.s.y, 0) / core.length;
+      const at = s && Math.hypot(s.x - cx, s.y - cy) < R ? s : { x: cx, y: cy, depth: core[0].s.depth };
+      return [{ id: c.id, s: at, leaves: coreLeaves }, ...blobs.filter((b) => !core.includes(b))];
+    }
+    for (const top of contacts.filter((c) => !c.parent)) for (const b of fold(top)) symbol(byId[b.id], b.s);
 
     // lines: from each open formation to the units it reveals, and from the selection up
     if (S.selection.hierarchy_lines && selId) {

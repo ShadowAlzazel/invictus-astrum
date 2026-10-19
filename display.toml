@@ -32,7 +32,12 @@ hq_staff         = { default = true, label = "HQ staff on formations with their 
 [folding]
 label = "Folding"
 declutter_px = { default = 14, min = 0, max = 60, step = 1, label = "A body folds into its parent within (px)" }
-aggregate_px = { default = 26, min = 0, max = 120, step = 1, label = "Units fold into their formation within (px)" }
+# Units closer than aggregate_px on screen link into a cluster; a formation folds its biggest cluster
+# into its own symbol and leaves its outlying units (far pickets) drawn at their own echelon.
+aggregate_px = { default = 40, min = 0, max = 160, step = 1, label = "Units fold into their formation within (px)" }
+# A formation's symbol stands for its main body: the folded cluster must hold more than this share
+# of its ships, or the formation stays open and its parts are drawn as themselves.
+core_share   = { default = 0.5, min = 0.0, max = 0.95, step = 0.05, label = "A folded core holds more than (share of ships)" }
 
 # ---- selection: what a click on a formation shows --------------------------------------------------
 [selection]

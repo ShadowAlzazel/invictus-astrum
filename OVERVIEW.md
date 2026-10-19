@@ -129,8 +129,11 @@ Scenario units can name a class; the engagement simulator will read the same reg
 - **Marks, not models.** Bodies draw as flat discs sized by tactical role (`style.toml [roles]`),
   or as their true sphere when that is larger; the display can be resized or switched off. Units
   draw as APP-6-style frames: shape for affiliation, colour second.
-- **Folding.** A body inside what it orbits (as drawn) folds into it; formation members closer
-  than `aggregate_px` fold into the formation's symbol, with its echelon mark. Zooming in only
+- **Folding.** A body inside what it orbits (as drawn) folds into it. Units fold by clusters,
+  bottom-up: each formation links what its units became wherever they sit closer than
+  `aggregate_px` on screen, and folds its biggest cluster into its own symbol if that cluster
+  holds more than `core_share` of its ships. Outliers stay as themselves at their own echelon,
+  so a tight task force folds while its far pickets still read as squadrons. Zooming in only
   resolves.
 - **Display rules are data.** `display.toml` declares every setting (default, range, label) and
   the fixed rules beside them; `astrum/display.py` loads and checks it for any client, and the
