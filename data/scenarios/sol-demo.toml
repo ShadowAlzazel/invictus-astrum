@@ -146,7 +146,7 @@ formation = "tf2-lf1"
 
 [[contact]]
 id = "tf2-lf1-bs-1"
-callsign = "L1 Battle 1"
+callsign = "AVC Katarina"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-bs"
@@ -634,7 +634,7 @@ formation = "tf-2"
 
 [[contact]]
 id = "tf2-lp2-1"
-callsign = "TF Picket 2 1"
+callsign = "AVC Antwerp"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lp2"
@@ -643,7 +643,7 @@ position = { bullseye = "wedge", aer = [23.719, -4.906, 1754055] }
 
 [[contact]]
 id = "tf2-lp2-2"
-callsign = "TF Picket 2 2"
+callsign = "AVC Diadem City"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lp2"
@@ -652,7 +652,7 @@ position = { bullseye = "wedge", aer = [23.629, -4.88, 1752778] }
 
 [[contact]]
 id = "tf2-lp2-3"
-callsign = "TF Picket 2 3"
+callsign = "AVC Murkwood"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lp2"
