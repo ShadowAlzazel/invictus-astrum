@@ -101,3 +101,9 @@ order = 7
 [effect.dazzle]
 label = "Dazzles an open sensor"
 order = 8
+
+# ---- drive: what every class's [drive] is read against ----------------------------------------------
+# cruise_g is doctrine: the band a fleet holds whatever its load. A drive that cannot reach the floor
+# when fully loaded is shown, with the thrust it would need. A class may give its own cruise_g.
+[drive]
+cruise_g = [0.4, 0.5]

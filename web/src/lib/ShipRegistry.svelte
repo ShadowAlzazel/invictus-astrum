@@ -64,6 +64,10 @@
     if (e.key === 'ArrowUp' && flat.length) { e.preventDefault(); open(flat[(i - 1 + flat.length) % flat.length].id); }
   }
   const tierLabel = (t) => reg?.rules.crew[t]?.label ?? t;
+  // a figure scaled into another unit, bounds and flags kept
+  const scale = (x, k) => (x && x.lo != null ? { ...x, lo: x.lo * k, hi: x.hi * k } : x);
+  const g3 = (x) => (x && x.lo != null ? (x.lo === x.hi ? x.lo.toFixed(3) : `${x.lo.toFixed(3)}–${x.hi.toFixed(3)}`) + ' g' : '—');
+  const loadName = (r) => `${r.load || 'hull'}, tanks ${r.tanks}`;
   const effectRows = (c) => c.reach;
 </script>
 
@@ -136,6 +140,58 @@
           {:else}<p class="blank">No particulars stated yet.</p>{/if}
         </section>
       </div>
+
+      {#if cls.drive}
+        {@const d = cls.drive}
+        <section>
+          <h2>Drive <span class="sub">{d.module.name}{d.count > 1 ? ` × ${d.count}` : ''} · drives.toml [drive.{d.module_id}]</span></h2>
+          <div class="cols">
+            <dl>
+              <dt>Thrust, at the pulse ceiling</dt><dd>{q(d.thrust_mn, 'MN')}</dd>
+              <dt>Exhaust velocity</dt><dd>{q(d.exhaust_kms, 'km/s')}</dd>
+              <dt>Propellant, tanks full</dt><dd class:blank={!d.propellant_t}>{q(d.propellant_t, 't')}</dd>
+              <dt>Pulse rate</dt><dd class:blank={!d.pulse_rate_hz}>{q(d.pulse_rate_hz, 'Hz')}</dd>
+              <dt>Hull heat share</dt><dd class:blank={!d.hull_heat_fraction}>{q(d.hull_heat_fraction)}</dd>
+            </dl>
+            <dl>
+              <dt>Jet power</dt><dd class="der" title="½ × thrust × exhaust velocity">{q(d.jet_pw, 'PW')}</dd>
+              <dt>Mass flow, flat out</dt><dd class="der" title="thrust ÷ exhaust velocity">{q(d.mass_flow_kgs, 'kg/s')}</dd>
+              <dt>Tanks last, flat out</dt><dd class="der" class:blank={!d.full_burn_h}>{q(scale(d.full_burn_h, 1 / 24), 'days')}</dd>
+              {#if d.hull_heat_gw}<dt>Hull heat, flat out</dt><dd class="der">{q(d.hull_heat_gw, 'GW')}</dd>{/if}
+              {#if d.hot_burn_h}<dt>Store full after</dt><dd class="der" title="thermal store ÷ hull heat">{q(d.hot_burn_h, 'h')}</dd>{/if}
+            </dl>
+          </div>
+          {#if d.loads.length}
+            <table class="loads">
+              <thead><tr><th>Load</th><th>Mass</th><th>Most acceleration</th><th></th><th>Δv in the tanks</th><th>Propellant per 100 km/s</th></tr></thead>
+              <tbody>
+                {#each d.loads as r}
+                  <tr>
+                    <td>{loadName(r)}</td>
+                    <td class="num">{q(r.mass_t, 't')}</td>
+                    <td class="num der">{g3(r.accel_g)}</td>
+                    <td class="num dimc">{q(r.accel_ms2, 'm/s²')}</td>
+                    <td class="num der">{r.dv_kms ? q(r.dv_kms, 'km/s') : ''}</td>
+                    <td class="num der">{r.per_100kms_t ? q(r.per_100kms_t, 't') : ''}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          {/if}
+          {#if d.cruise}
+            {@const c = d.cruise}
+            <p class="dim" class:short={!c.holds}>
+              Cruise {c.band_g.lo}–{c.band_g.hi} g:
+              {#if c.reaches_top}she holds the whole band at her heaviest ({loadName(c.heaviest)}).
+              {:else if c.holds}she holds the floor at her heaviest ({loadName(c.heaviest)}, {g3(c.heaviest.accel_g)}), not the top.
+              {:else}at her heaviest ({loadName(c.heaviest)}) she makes only {g3(c.heaviest.accel_g)}.{/if}
+              Holding the band there takes {q(c.thrust_needed_mn, 'MN')}.{#if !d.propellant_t} Propellant is not yet stated, so this is the dry hull.{/if}
+            </p>
+          {/if}
+          {#if d.module.notes}<p class="dim">{d.module.notes}</p>{/if}
+          {#if d.notes}<p class="dim">{d.notes}</p>{/if}
+        </section>
+      {/if}
 
       {#if Object.keys(cls.aim.tiers).length}
         <section>
@@ -285,6 +341,10 @@
   td { padding: 3px 8px 3px 0; font-variant-numeric: tabular-nums; }
   td.num { text-align: right; }
   td.aim { color: var(--cyan, #9ff0ff); }
+  td.dimc { color: var(--dim); font-size: 11px; }
+  .short { color: #ffe3a6; }
+  table.loads { margin-top: 12px; }
+  section .cols dl { align-content: start; }
   .bat { margin: 10px 0 0; padding-left: 10px; border-left: 1px solid var(--rule); }
   .dim { color: var(--dim); font-size: 11px; margin: 4px 0 0; }
   .link { color: var(--violet); filter: brightness(1.5); }

@@ -22,6 +22,10 @@ material = "MAJOR-6 woven silk"
 protection_kgm2 = { citadel = 547, bumper = 18 }
 complement = { value = 500, approx = true, note = "line rate: a line crew and a splice party" }
 
+[drive]
+module = "line-pulse"
+propellant_t = 30000
+
 [aim]
 rated_urad = 6.5
 demasted_urad = 18

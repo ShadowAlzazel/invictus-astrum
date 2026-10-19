@@ -9,6 +9,7 @@ figure.
 |---|---|
 | `rules.toml` | rates, lineages (the Garden, the Old Forest), crew tiers, the aim walls, beam effects |
 | `components.toml` | the parts batteries are built from: channels, guns and their rounds, panels, domes, strips, cells |
+| `drives.toml` | drive modules: thrust at the pulse ceiling, exhaust velocity, pulse rate, hull heat share |
 | `classes/<id>.toml` | one class |
 
 ## Figures
@@ -25,7 +26,7 @@ cycle_s = "—"                                    # a blank: not yet stated
 ```
 
 The unit is the key's suffix: `_m`, `_t`, `_ms2`, `_kgm2`, `_km`, `_s`, `_h`, `_days`, `_tj`, `_gw`,
-`_mw`, `_mj`, `_gj`, `_gev`, `_urad`. A new field with a known suffix displays itself.
+`_mw`, `_mj`, `_gj`, `_gev`, `_urad`, `_mn`, `_hz`, `_g`, `_kgs`, `_pw`. A new field with a known suffix displays itself.
 
 ## A class
 
@@ -45,6 +46,11 @@ in_classis = [58, 72]
 
 [hull]                                # length_m, wingspan_m, mass_t, acceleration_ms2, material,
                                       # protection_kgm2, complement, and anything else with a unit suffix
+
+[drive]                               # connects a module in drives.toml
+module = "line-pulse"
+propellant_t = 30000                  # tanks full; hull.mass_t is read as tanks dry
+# optional: count (modules), cruise_g = [lo, hi] (else rules.toml [drive]), notes
 
 [aim]
 rated_urad = 6.5
@@ -79,7 +85,14 @@ crew = "aim"                          # the beam carries it past every wall: the
 - **A round's energy**, ½mv² from the component's round mass and velocity; a broadside; rounds
   per second.
 - **Thrust**, mass × acceleration, checked to agree between light and full loading.
+- **The drive**, from its module: for every load (light, full) with tanks dry and full, the mass,
+  the most acceleration, the Δv in the tanks (vₑ ln(wet/dry)) and the propellant the next
+  100 km/s costs; the jet power (½Fvₑ), mass flow, how long the tanks last flat out; whether she
+  holds the cruise band at her heaviest and the thrust that would take; with a hull heat share,
+  how long a flat-out burn takes to fill the thermal store. The canon's accelerations are checked
+  against the module's thrust. Ranges carry through. Working figures: `docs/DRIVE_AND_PROPELLANT.md`.
 - **The author's list**: template fields not yet stated (rate, sail term, length, mass,
-  acceleration, protection, complement, numbers in a Classis) and every explicit "—".
+  acceleration, protection, complement, drive, numbers in a Classis), every explicit "—", and the
+  drive module's own blanks.
 
 Units in a scenario can name a class (`class = "papilion"`); their symbol takes its type from it.

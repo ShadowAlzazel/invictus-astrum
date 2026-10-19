@@ -70,10 +70,54 @@ def test_thrust_agrees_light_and_full(reg):
 
 
 def test_blanks_are_the_authors_list(reg):
-    assert reg.classes["papilion"].blanks == ["Main battery: cycle"]
+    assert reg.classes["papilion"].blanks == ["Main battery: cycle", "drive line-pulse: pulse rate",
+                                              "drive line-pulse: hull heat fraction"]
+    assert "drive: propellant" in reg.classes["phalaena"].blanks
+    assert "drive" in reg.classes["aeshna"].blanks
     assert {"sail term", "acceleration", "protection", "complement"} <= set(reg.classes["aeshna"].blanks)
     assert "rate" in reg.classes["salticidae"].blanks
     assert "Missiles: count" in reg.classes["bacillus"].blanks
+
+
+def test_drive_figures(reg):
+    """PAPILION on the line drive with 30,000 t: the math check, from the data."""
+    d = reg.classes["papilion"].drive
+    loads = {(r["load"], r["tanks"]): r for r in d["loads"]}
+    assert loads["full", "dry"]["accel_ms2"].value == pytest.approx(5.40, abs=0.01)      # the canon
+    assert loads["light", "dry"]["accel_ms2"].value == pytest.approx(6.09, abs=0.01)
+    assert loads["full", "full"]["mass_t"].value == 100340
+    assert loads["full", "full"]["accel_g"].value == pytest.approx(0.386, abs=0.001)
+    assert loads["full", "full"]["dv_kms"].value == pytest.approx(3179, abs=1)
+    assert loads["light", "full"]["dv_kms"].value == pytest.approx(3516, abs=1)
+    assert d["jet_pw"].value == pytest.approx(1.70, abs=0.01)
+    assert d["mass_flow_kgs"].value == pytest.approx(42.5, abs=0.1)
+    assert d["full_burn_h"].value / 24 == pytest.approx(8.2, abs=0.05)
+    c = d["cruise"]
+    assert not c["holds"] and (c["heaviest"]["load"], c["heaviest"]["tanks"]) == ("full", "full")
+    assert (round(c["thrust_needed_mn"].lo), round(c["thrust_needed_mn"].hi)) == (394, 492)
+    assert d["hot_burn_h"] is None                                   # hull heat share not yet stated
+    p = reg.classes["papilion"].performance("light", 0)
+    assert p["dv_kms"] == 0 and p["max_accel_g"] == pytest.approx(0.622, abs=0.001)
+
+
+def test_drive_ranges_heat_and_rule_of_thumb(reg):
+    """Ranges carry through; "1,000 t per 100 km/s at 90,000 t" round-trips to its exhaust velocity."""
+    from astrum.ships import build_class
+    drives = {"x": {"name": "X", "thrust_mn": [350, 450], "exhaust_kms": 8950, "hull_heat_fraction": 1e-6}}
+    doc = {"class": {"id": "t", "name": "T", "lineage": "garden"},
+           "hull": {"mass_t": 60000}, "drive": {"module": "x", "propellant_t": 30000},
+           "endurance": {"thermal_store_tj": 10.8}}
+    sc = build_class(doc, reg.rules, reg.components, drives=drives)
+    assert not [f for f in sc.findings if f.level == "error"]
+    wet = next(r for r in sc.drive["loads"] if r["tanks"] == "full")
+    assert wet["per_100kms_t"].value == pytest.approx(1000, abs=1)
+    assert wet["dv_kms"].value == pytest.approx(3629, abs=1)
+    assert (round(wet["accel_g"].lo, 3), round(wet["accel_g"].hi, 3)) == (0.397, 0.51)
+    assert sc.drive["cruise"]["holds"] is False                     # the low end of the range misses 0.4 g
+    assert sc.drive["hot_burn_h"].lo == pytest.approx(10.8e12 / (0.5 * 450e6 * 8.95e6 * 1e-6) / 3600)
+    bad = build_class({**doc, "drive": {"module": "nope", "fuel": 1}}, reg.rules, reg.components, drives=drives)
+    msgs = " | ".join(f.message for f in bad.findings)
+    assert "unknown key 'fuel'" in msgs and "unknown module 'nope'" in msgs
 
 
 @pytest.mark.parametrize("v,expect", [

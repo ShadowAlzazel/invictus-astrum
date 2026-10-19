@@ -18,6 +18,10 @@ length_m = { value = 150, approx = true }
 mass_t = { value = 16000, approx = true }
 acceleration_ms2 = { value = 5.2, approx = true }
 
+[drive]
+module = "cutter-pulse"
+propellant_t = "—"
+
 [[battery]]
 id = "main"
 label = "Main battery"

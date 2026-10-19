@@ -23,6 +23,10 @@ material = "MAJOR-6 woven silk"
 protection_kgm2 = { citadel = 200 }
 complement = { note = "reduced; damage-control weaving, no splice party" }
 
+[drive]
+module = "frigate-pulse"
+propellant_t = "—"
+
 [aim]
 rated_urad = 5.5
 demasted_urad = 15

@@ -2,6 +2,7 @@
 
     data/ships/rules.toml          rates, lineages, crew tiers, walls, beam effects
     data/ships/components.toml     the parts batteries are built from
+    data/ships/drives.toml         the drive modules a class's [drive] connects to
     data/ships/classes/<id>.toml   one class per file
 
 Every figure in a class file is a *quantity*, written the way the canon writes it:
@@ -16,11 +17,13 @@ Every figure in a class file is a *quantity*, written the way the canon writes i
 
 Units are in the key's suffix (length_m, mass_t, acceleration_ms2, thermal_store_tj), so a new
 field displays itself. The registry derives only what the canon defines by formula: a round's
-energy (½mv²), thrust (mass × acceleration), and the aim walls and usable reaches of
-DE COLLINEATIONE (R = size / θ; usable reach = the lesser of beam and wall).
+energy (½mv²), thrust (mass × acceleration), the aim walls and usable reaches of
+DE COLLINEATIONE (R = size / θ; usable reach = the lesser of beam and wall), and from a drive
+module the rocket's figures: Δv = vₑ ln(wet / dry), acceleration = thrust / mass, jet power = ½ F vₑ.
 """
 from __future__ import annotations
 
+import itertools
 import math
 import re
 import tomllib
@@ -33,20 +36,23 @@ BLANK = "—"
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 TIER_ORDER = ("green", "rated", "veteran", "exceptional")       # worst aim to best
 
-SECTIONS = {"class", "hull", "aim", "battery", "reach", "point_defence", "endurance", "combat", "sensor",
+SECTIONS = {"class", "hull", "drive", "aim", "battery", "reach", "point_defence", "endurance", "combat", "sensor",
             "tending", "history"}
 CLASS_KEYS = {"id", "name", "lineage", "genus", "epithet", "designation", "rate", "terms", "body", "summary",
               "symbol", "in_classis", "places", "successor_of", "old_rating"}
 BATTERY_KEYS = {"id", "label", "component", "count", "stacks", "mounts", "facets", "cycle_s", "fire",
                 "rounds_per_cycle", "stack_salvo_mj", "power_mw", "magazine", "reach_km", "arrangement", "notes"}
+DRIVE_KEYS = {"module", "count", "propellant_t", "cruise_g", "notes"}
+MODULE_KEYS = {"name", "kind", "thrust_mn", "exhaust_kms", "pulse_rate_hz", "hull_heat_fraction", "notes"}
+G0 = 9.80665                      # m/s² in a g
 # what every hull should state; missing ones are the author's open list
 TEMPLATE = [("rate", "rate"), ("terms.sail", "sail term"), ("hull.length_m", "length"), ("hull.mass_t", "mass"),
             ("hull.acceleration_ms2", "acceleration"), ("hull.protection_kgm2", "protection"),
-            ("hull.complement", "complement"), ("in_classis", "numbers in a Classis")]
+            ("hull.complement", "complement"), ("drive.module", "drive"), ("in_classis", "numbers in a Classis")]
 
 UNITS = {"m": "m", "t": "t", "ms2": "m/s²", "kgm2": "kg/m²", "km": "km", "kms": "km/s", "s": "s", "h": "h",
          "days": "days", "tj": "TJ", "gw": "GW", "mw": "MW", "mj": "MJ", "gj": "GJ", "gev": "GeV", "kg": "kg",
-         "urad": "µrad", "mn": "MN"}
+         "urad": "µrad", "mn": "MN", "hz": "Hz", "g": "g", "kgs": "kg/s", "pw": "PW"}
 
 
 @dataclass(frozen=True)
@@ -75,6 +81,15 @@ class Q:
 
     def as_dict(self) -> dict:
         return {"lo": self.lo, "hi": self.hi, "est": self.est, "approx": self.approx, "note": self.note}
+
+
+def combine(f, *qs: "Q | None") -> "Q | None":
+    """f over figures, for f monotone in each: the bounds are the extremes over every corner.
+    Estimates and approximations carry through; a blank anywhere gives a blank."""
+    if any(q is None or q.lo is None for q in qs):
+        return None
+    vals = [f(*c) for c in itertools.product(*[(q.lo, q.hi) for q in qs])]
+    return Q(min(vals), max(vals), any(q.est for q in qs), any(q.approx for q in qs))
 
 
 def quantity(v, where: str, findings: list[Finding]) -> Q | dict | None:
@@ -122,13 +137,15 @@ class ShipRules:
     crew: dict
     walls: dict
     effects: dict
+    drive: dict = field(default_factory=dict)
 
     @staticmethod
     def load(path: Path) -> "ShipRules":
         with path.open("rb") as f:
             d = tomllib.load(f)
         effects = dict(sorted(d.get("effect", {}).items(), key=lambda kv: kv[1].get("order", 99)))
-        return ShipRules(d.get("rate", {}), d.get("lineage", {}), d.get("crew", {}), d.get("wall", {}), effects)
+        return ShipRules(d.get("rate", {}), d.get("lineage", {}), d.get("crew", {}), d.get("wall", {}), effects,
+                         d.get("drive", {}))
 
 
 @dataclass
@@ -141,6 +158,7 @@ class ShipClass:
     aim: dict[str, Q] = field(default_factory=dict)        # tier -> µrad
     beam: dict[str, Q | str] = field(default_factory=dict) # effect -> km, or "aim": the beam outruns every wall
     batteries: list[dict] = field(default_factory=list)
+    drive: dict | None = None       # the drive's figures, derived; see _drive
     derived: dict = field(default_factory=dict)
     blanks: list[str] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
@@ -169,6 +187,23 @@ class ShipClass:
         by = "beam" if beam.hi <= wall.lo else "aim"
         return Q(lo, hi, beam.est or wall.est, beam.approx, beam.note), by
 
+    def performance(self, ammo: str | None = None, propellant_t: float | None = None) -> dict | None:
+        """What the simulation asks of a hull in a given state: its mass, the most it can accelerate,
+        the Δv left in its tanks and its plume. ammo names a load in hull.mass_t (the heaviest if
+        None); propellant_t is what is in the tanks (full if None). Central values."""
+        d = self.drive
+        if not d or not d["thrust_mn"] or not d["exhaust_kms"] or not d["masses"]:
+            return None
+        hull = d["masses"].get(ammo) if ammo else max(d["masses"].values(), key=lambda q: q.value)
+        if hull is None:
+            raise KeyError(f"{self.id}: no load {ammo!r}; loads are {sorted(d['masses'])}")
+        prop = propellant_t if propellant_t is not None else (d["propellant_t"].value if d["propellant_t"] else 0.0)
+        mass = hull.value + prop
+        ve, thrust = d["exhaust_kms"].value, d["thrust_mn"].value
+        return {"mass_t": mass, "max_accel_ms2": thrust * 1e3 / mass, "max_accel_g": thrust * 1e3 / mass / G0,
+                "dv_kms": ve * math.log(mass / hull.value), "jet_pw": 0.5 * thrust * 1e6 * ve * 1e3 / 1e15,
+                "mass_flow_kgs": thrust * 1e6 / (ve * 1e3)}
+
 
 def _get(d: dict, path: str):
     for part in path.split("."):
@@ -191,7 +226,98 @@ def _blanks_in(v, where: str, key: str, out: list[str]) -> None:
                 _blanks_in(x, x.get("label") or x.get("id") or where, key, out)
 
 
-def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "") -> ShipClass:
+def _drive(sc: ShipClass, doc: dict, rules: ShipRules, drives: dict, f: list[Finding], where: str) -> None:
+    """A class's drive: its module's thrust and exhaust, pushing the hull's masses and its propellant.
+
+    hull.mass_t is the mass with tanks dry; each of its loads (light, full) is read twice, tanks dry
+    and tanks full. Every figure is a Q, so ranges and estimates carry through to what is derived."""
+    d = doc.get("drive")
+    if d is None:
+        return
+    for k in set(d) - DRIVE_KEYS:
+        f.append(Finding("error", where, f"[drive] unknown key {k!r}"))
+    mid = d.get("module")
+    mod = drives.get(mid)
+    if mod is None:
+        f.append(Finding("error", where, f"[drive] unknown module {mid!r}; modules are in drives.toml"))
+        return
+    count = d.get("count", 1)
+    if not (isinstance(count, int) and not isinstance(count, bool) and count > 0):
+        f.append(Finding("error", where, "[drive] count is a whole number above zero"))
+        count = 1
+
+    def fig(v, key) -> Q | None:
+        q = quantity(v, f"{where} drive.{key}", f)
+        if isinstance(q, dict):
+            f.append(Finding("error", where, f"[drive] {key} is one figure, not named values"))
+            return None
+        return q if isinstance(q, Q) and q.lo is not None else None
+
+    thrust = fig(mod.get("thrust_mn"), "thrust_mn")
+    thrust = thrust.map(lambda x: x * count) if thrust else None
+    ve = fig(mod.get("exhaust_kms"), "exhaust_kms")
+    prop = fig(d.get("propellant_t"), "propellant_t")
+    cruise = fig(d.get("cruise_g", rules.drive.get("cruise_g")), "cruise_g")
+    heat = fig(mod.get("hull_heat_fraction"), "hull_heat_fraction")
+    store = quantity((doc.get("endurance") or {}).get("thermal_store_tj"), where, [])
+    store = store if isinstance(store, Q) and store.lo is not None else None
+
+    m = quantity((doc.get("hull") or {}).get("mass_t"), where, [])
+    masses = m if isinstance(m, dict) else ({"": m} if isinstance(m, Q) and m.lo is not None else {})
+    masses = {k: q for k, q in masses.items() if q.lo is not None}
+
+    accel = lambda F, M: F * 1e3 / M                                  # MN / t -> m/s²
+    loads = []
+    for name, hull in masses.items():
+        for tanks in ("dry", "full") if prop else ("dry",):
+            mass = hull if tanks == "dry" else combine(lambda a, b: a + b, hull, prop)
+            a = combine(accel, thrust, mass)
+            row = {"load": name, "tanks": tanks, "mass_t": mass, "accel_ms2": a,
+                   "accel_g": a.map(lambda x: x / G0) if a else None}
+            if tanks == "full":
+                row["dv_kms"] = combine(lambda v, h, p: v * math.log((h + p) / h), ve, hull, prop)
+                row["per_100kms_t"] = combine(lambda M, v: M * (1 - math.exp(-100 / v)), mass, ve)
+            loads.append(row)
+
+    out = {"module_id": mid, "module": {k: mod.get(k) for k in ("name", "kind", "notes")}, "count": count,
+           "thrust_mn": thrust, "exhaust_kms": ve, "propellant_t": prop,
+           "pulse_rate_hz": fig(mod.get("pulse_rate_hz"), "pulse_rate_hz"), "hull_heat_fraction": heat, "notes": d.get("notes", ""), "masses": masses, "loads": loads,
+           "jet_pw": combine(lambda F, v: 0.5 * F * 1e6 * v * 1e3 / 1e15, thrust, ve),
+           "mass_flow_kgs": combine(lambda F, v: F * 1e6 / (v * 1e3), thrust, ve),
+           "full_burn_h": combine(lambda p, F, v: p * 1e3 / (F * 1e6 / (v * 1e3)) / 3600, prop, thrust, ve),
+           "cruise": None, "hot_burn_h": None, "hull_heat_gw": None}
+
+    # doctrine: can she hold the cruise band at her heaviest?
+    if cruise and loads and thrust:
+        heavy = max(loads, key=lambda r: r["mass_t"].hi)
+        need = combine(lambda g, M: g * G0 * M / 1e3, cruise, heavy["mass_t"])
+        out["cruise"] = {"band_g": cruise, "heaviest": heavy, "thrust_needed_mn": need,
+                         "holds": heavy["accel_g"].lo >= cruise.lo - 1e-9,
+                         "reaches_top": heavy["accel_g"].lo >= cruise.hi - 1e-9}
+    # heat: how long a flat-out burn takes to fill the thermal store
+    if heat and out["jet_pw"]:
+        out["hull_heat_gw"] = combine(lambda P, h: P * 1e6 * h, out["jet_pw"], heat)
+        if store:
+            out["hot_burn_h"] = combine(lambda E, W: E * 1e3 / W / 3600, store, out["hull_heat_gw"])
+
+    # the canon's accelerations against the drive (tanks dry)
+    acc = quantity((doc.get("hull") or {}).get("acceleration_ms2"), where, [])
+    acc = acc if isinstance(acc, dict) else ({"": acc} if isinstance(acc, Q) else {})
+    if thrust:
+        for name in set(acc) & set(masses):
+            implied = masses[name].value * acc[name].value / 1e3
+            if abs(implied / thrust.value - 1) > 0.02:
+                f.append(Finding("warning", where, f"[drive] the canon's acceleration{' ' + name if name else ''} "
+                                 f"implies {implied:.0f} MN; {mid} gives {thrust.value:.0f} MN"))
+
+    for k, v in mod.items():                                            # the module's open figures
+        if v == BLANK:
+            sc.blanks.append(f"drive {mid}: {label_unit(k)[0].lower()}")
+    sc.drive = out
+
+
+def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "",
+                drives: dict | None = None) -> ShipClass:
     f: list[Finding] = []
     c = doc.get("class", {})
     cid = str(c.get("id", ""))
@@ -318,6 +444,8 @@ def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "")
     if (succ := c.get("successor_of")) is not None:
         sc.derived["successor_of"] = succ
 
+    _drive(sc, doc, rules, drives or {}, f, where)
+
     # the author's open list: template fields not stated, and explicit blanks
     for path, label in TEMPLATE:
         v = _get(c, path) if path in ("rate", "in_classis") or path.startswith("terms.") else _get(doc, path)
@@ -327,6 +455,7 @@ def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "")
     for section, v in doc.items():
         _blanks_in(v, "" if section == "class" else section, section, explicit)
     sc.blanks += [p for p in explicit if p not in sc.blanks]
+    sc.blanks.sort(key=lambda b: b.startswith("drive "))                  # module blanks last
 
     sc.findings = f
     return sc
@@ -336,6 +465,7 @@ def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "")
 class ShipRegistry:
     rules: ShipRules
     components: dict
+    drives: dict
     classes: dict[str, ShipClass]
     findings: list[Finding]
 
@@ -346,6 +476,15 @@ class ShipRegistry:
         with (folder / "components.toml").open("rb") as f:
             components = tomllib.load(f).get("component", {})
         findings: list[Finding] = []
+        drives = {}
+        if (folder / "drives.toml").exists():
+            with (folder / "drives.toml").open("rb") as f:
+                drives = tomllib.load(f).get("drive", {})
+        for mid, mod in drives.items():
+            for k in set(mod) - MODULE_KEYS:
+                findings.append(Finding("error", f"drive {mid}", f"unknown key {k!r}"))
+            if not mod.get("name"):
+                findings.append(Finding("error", f"drive {mid}", "needs a name"))
         classes: dict[str, ShipClass] = {}
         for p in sorted((folder / "classes").glob("*.toml")):
             try:
@@ -354,7 +493,7 @@ class ShipRegistry:
             except tomllib.TOMLDecodeError as e:
                 findings.append(Finding("error", p.name, str(e)))
                 continue
-            sc = build_class(doc, rules, components, p.name)
+            sc = build_class(doc, rules, components, p.name, drives)
             if sc.id and sc.id != p.stem:
                 sc.findings.append(Finding("error", sc.id, f"id must match its file name, {p.stem!r}"))
             if sc.id in classes:
@@ -368,7 +507,7 @@ class ShipRegistry:
         for cid, comp in components.items():
             if comp.get("facet") and comp["facet"] not in components:
                 findings.append(Finding("error", f"component {cid}", f"facet {comp['facet']!r} is not a component"))
-        return ShipRegistry(rules, components, classes, findings)
+        return ShipRegistry(rules, components, drives, classes, findings)
 
     @property
     def ok(self) -> bool:
@@ -381,6 +520,8 @@ def _json(v):
         return v.as_dict()
     if isinstance(v, dict):
         return {k: _json(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_json(x) for x in v]
     return v
 
 
@@ -461,7 +602,7 @@ def class_detail(reg: ShipRegistry, sc: ShipClass) -> dict:
         "tending": figures(sc.doc.get("tending", {}), sc.id),
         "sensors": sc.doc.get("sensor", []),
         "history": sc.doc.get("history", {}),
-        "derived": sc.derived, "blanks": sc.blanks,
+        "drive": _json(sc.drive), "derived": sc.derived, "blanks": sc.blanks,
         "findings": [x.__dict__ for x in sc.findings], "file": sc.source,
         "successor": next((o.id for o in reg.classes.values() if o.derived.get("successor_of") == sc.id), None),
     }
@@ -470,4 +611,4 @@ def class_detail(reg: ShipRegistry, sc: ShipClass) -> dict:
 def rules_dict(reg: ShipRegistry) -> dict:
     r = reg.rules
     return {"rates": r.rates, "lineages": r.lineages, "crew": r.crew, "walls": r.walls, "effects": r.effects,
-            "tiers": list(TIER_ORDER)}
+            "drive": r.drive, "drives": reg.drives, "tiers": list(TIER_ORDER)}
