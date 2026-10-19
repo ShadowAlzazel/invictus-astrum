@@ -19,7 +19,8 @@ SHAPES = ("rect", "diamond", "quatrefoil", "square", "circle")
 AFFILIATIONS = ("friend", "hostile", "unknown", "neutral")
 
 CONFIG_SCHEMA = {
-    "paths": {"systems": str, "scenarios": str, "players": str, "style": str, "ships": str},
+    "paths": {"systems": str, "scenarios": str, "players": str, "style": str, "ships": str,
+              "display": str, "settings": str},
     "server": {"host": str, "port": int},
     "live": {"check_seconds": float},
     "sim": {"start": str, "orbit_samples": int},
@@ -73,7 +74,7 @@ def load_config(path: str | Path = ROOT / "config.toml") -> dict:
 def load_style(path: str | Path) -> dict:
     path = Path(path)
     doc, problems = _read(path), []
-    allowed = {"palette", "affiliation", "status", "echelon", "roles", "display"}
+    allowed = {"palette", "affiliation", "status", "echelon", "roles"}
     for sec in set(doc) - allowed:
         problems.append(f"unknown section [{sec}]")
     for sec in allowed - set(doc):
@@ -110,14 +111,6 @@ def load_style(path: str | Path) -> dict:
             problems.append(f"[roles.{r}] unknown key {key!r}")
         if not isinstance(spec.get("size_px"), (int, float)) or spec["size_px"] < 0:
             problems.append(f"[roles.{r}] size_px must be a number ≥ 0")
-    d = doc["display"]
-    need = {"scale_default", "scale_min", "scale_max", "scale_step", "symbol_px", "declutter_px", "aggregate_px"}
-    for key in need - set(d):
-        problems.append(f"[display] missing {key!r}")
-    for key in set(d) - need:
-        problems.append(f"[display] unknown key {key!r}")
-    if not problems and not d["scale_min"] <= d["scale_default"] <= d["scale_max"]:
-        problems.append("[display] scale_default must sit between scale_min and scale_max")
     if problems:
         raise ConfigError(path.name, problems)
     return doc

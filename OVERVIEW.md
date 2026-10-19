@@ -132,6 +132,15 @@ Scenario units can name a class; the engagement simulator will read the same reg
 - **Folding.** A body inside what it orbits (as drawn) folds into it; formation members closer
   than `aggregate_px` fold into the formation's symbol, with its echelon mark. Zooming in only
   resolves.
+- **Display rules are data.** `display.toml` declares every setting (default, range, label) and
+  the fixed rules beside them; `astrum/display.py` loads and checks it for any client, and the
+  map's Settings panel is generated from it. A player's choices go to `settings.toml`.
+- **Selection opens the tree.** Selecting a formation opens it `reveal_children` levels: the units
+  that answer to it draw on their own, ringed and joined to it, even where zoom would fold them.
+  The chain above stays open, and the formation it answers to is marked. The rule is written
+  once in `display.reveal` (Python, tested) and followed by the map; the server sends each unit
+  its parent, children and ancestors. A formation with its own position is a headquarters, drawn
+  with the APP-6 staff.
 - **Style is data.** Palette, affiliation shapes and colours, status modifiers, echelon marks,
   role sizes: all in `style.toml`, checked strictly, reloaded live.
 

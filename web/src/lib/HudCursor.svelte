@@ -8,6 +8,7 @@
   export let map = null;
   export let style = null;
   export let overUI = false;    // pointer is over a panel: hide hairlines
+  export let settings = null;   // display settings: hairlines, readout, text sizes
 
   let canvas, ctx, unhook;
   let W = 0, H = 0, dpr = 1;
@@ -86,7 +87,9 @@
     const d = overUI ? 9 : 14;
     const gap = d + 6;
 
-    if (!overUI) {
+    const C = settings?.cursor ?? { hairlines: true, readout: true };
+    const px = settings?.text.readout_px ?? 9, namePx = settings?.text.unit_label_px ?? 12;
+    if (!overUI && C.hairlines) {
       ctx.lineWidth = 0.8;
       ctx.strokeStyle = col(V, 0.35);
       ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(hx - gap, hy); ctx.stroke();
@@ -107,13 +110,13 @@
     if (!overUI && map?.state) {
       if (lock) {
         const p = map.position(hover);
-        text(nameOf(hover), dx + d + 8, dy - 3, col(INK, 0.95), 12, '"Chakra Petch", sans-serif');
-        if (p) text(readout(p), dx + d + 8, dy + 10, col(V, 0.85), 9);
+        text(nameOf(hover), dx + d + 8, dy - 3, col(INK, 0.95), namePx, '"Chakra Petch", sans-serif');
+        if (p && C.readout) text(readout(p), dx + d + 8, dy + 1 + px, col(V, 0.85), px);
         tick(p, col(V, 0.8));
       } else {
         const p = map.planeAt(mx, my);
         const a = p && map.aer(p);
-        if (a) text(`${bearing(a.bearing)}  ${km(a.range)}`, dx + d + 8, dy + 4, col(V, 0.6), 9);
+        if (a && C.readout) text(`${bearing(a.bearing)}  ${km(a.range)}`, dx + d + 8, dy + 4, col(V, 0.6), px);
       }
     }
 

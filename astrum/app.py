@@ -34,6 +34,7 @@ from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify, magnetopause
 from . import workshop
 from .ships import ShipRegistry, class_detail, class_summary, rules_dict
+from . import display
 
 KM = 1e-3
 
@@ -50,6 +51,9 @@ class World:
         self.systems, self.ephemerides, self.players, self.scenarios = {}, {}, {}, {}
         self.drafts: dict[str, tuple] = {}       # workshop previews: "draft" -> (system, ephemeris)
         self.ships: ShipRegistry | None = None
+        self.display_rules: dict = {}
+        self.settings: dict = {}
+        self.trees: dict[str, dict] = {}         # scenario id -> formation tree
         self.style = {}
         self._stamp = None
         self._checked = 0.0
@@ -59,7 +63,7 @@ class World:
         p = self.config["paths"]
         files = list(Path(p["systems"]).glob("*.toml")) + list(Path(p["scenarios"]).glob("*.toml"))
         files += list(Path(p["ships"]).glob("*.toml")) + list((Path(p["ships"]) / "classes").glob("*.toml"))
-        return files + [Path(p["players"]), Path(p["style"])]
+        return files + [Path(p["players"]), Path(p["style"]), Path(p["display"]), Path(p["settings"])]
 
     def _mtimes(self):
         return tuple(sorted((str(f), f.stat().st_mtime) for f in self._files() if f.exists()))
@@ -89,10 +93,22 @@ class World:
                     errors[f"ships/{f.where}"] = f.message
         except (OSError, tomllib.TOMLDecodeError, KeyError) as e:
             errors["ships"] = str(e)
+        rules, settings = self.display_rules, self.settings
+        try:
+            rules = display.load_rules(p["display"])
+            settings, problems = display.load_settings(rules, p["settings"])
+            for i, msg in enumerate(problems):
+                errors[f"settings.toml #{i + 1}"] = msg
+        except (ConfigError, tomllib.TOMLDecodeError) as e:
+            errors["display.toml"] = str(e)
+        trees = {}
         for sc_ in scenarios.values():                       # units must name classes that exist
             for c in sc_.contacts.values():
                 if c.ship_class and ships and c.ship_class not in ships.classes:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown ship class {c.ship_class!r}"
+            trees[sc_.id], problems = display.tree([c.__dict__ for c in sc_.contacts.values()], list(style.get("echelon", {})))
+            for msg in problems:
+                errors[f"scenarios/{sc_.id}/{msg.split(':')[0]}"] = msg.split(": ", 1)[1]
         for pl in players.values():                          # bullseyes must resolve in their system
             for b in pl.bullseyes.values():
                 if b.system not in systems:
@@ -115,6 +131,7 @@ class World:
                     errors[f"systems/{sid} ephemeris"] = self.ephemerides[sid].numerical_error
             self.scenarios = {**self.scenarios, **scenarios} if sc_err else scenarios
             self.players, self.style, self.errors, self.ships = players, style, errors, ships
+            self.display_rules, self.settings, self.trees = rules, settings, trees
             self.version += 1
             self._stamp = self._mtimes()
 
@@ -205,9 +222,12 @@ def body_dict(s, b, zones) -> dict:
     }
 
 
-def contact_dict(world: "World", c) -> dict:
-    """A unit for the map; its type label comes from its ship class when it names one."""
+def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
+    """A unit for the map; its type label comes from its ship class when it names one, and its
+    place in the formation tree comes with it (parent, children, ancestors, depth)."""
     d = dict(c.__dict__)
+    d.update((tree or {}).get(c.id, {}))
+    d["has_position"] = bool(c.position)
     sc = world.ships.classes.get(c.ship_class) if world.ships and c.ship_class else None
     if sc:
         d["class_name"] = sc.name
@@ -250,11 +270,12 @@ def create_app(config: dict | None = None) -> FastAPI:
                          "bullseyes": [{"id": b.id, "name": b.name, "system": b.system} for b in p.bullseyes.values()]}
                         for p in world.players.values()],
             "scenarios": [{"id": sc.id, "name": sc.name, "system": sc.system, "player": sc.player,
-                           "contacts": [contact_dict(world, c) for c in sc.contacts.values()]}
+                           "contacts": [contact_dict(world, c, world.trees.get(sc.id)) for c in sc.contacts.values()]}
                           for sc in world.scenarios.values()],
             "style": world.style,
             "speed_of_light_kms": k.C * KM,
             "ship_classes": len(world.ships.classes) if world.ships else 0,
+            "display": {"rules": world.display_rules, "settings": world.settings},
         }
 
     @app.get("/api/status")
@@ -308,6 +329,21 @@ def create_app(config: dict | None = None) -> FastAPI:
             out["aer"] = {"bullseye": bullseye, "bearing_deg": math.degrees(az), "elevation_deg": math.degrees(el),
                           "range_km": rng * KM, "light_s": rng / k.C}
         return out
+
+    # ---- display rules and settings -------------------------------------------------------------
+    @app.get("/api/display")
+    def display_get():
+        world.check()
+        return {"rules": world.display_rules, "settings": world.settings}
+
+    @app.post("/api/display/settings")
+    def display_save(values: dict = Body(...)):
+        try:
+            merged = display.save_settings(world.display_rules, values, config["paths"]["settings"])
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        world.reload()
+        return {"settings": merged, "version": world.version}
 
     # ---- ship classes ---------------------------------------------------------------------------
     @app.get("/api/ships")

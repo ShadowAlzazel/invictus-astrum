@@ -1,0 +1,61 @@
+# Invictus: Astrum — display rules. How the map shows what the simulation knows.
+#
+# style.toml says how things LOOK (colours, frame shapes, echelon marks). This file says how the map
+# BEHAVES and how big things are. Any client can read it: astrum/display.py loads and checks it.
+#
+# An entry with a `default` is a SETTING: players can change it from the map's Settings panel,
+# and their choices are saved to settings.toml (which overrides this file; delete it to reset).
+#   default   the value; its type (true/false, whole number, number, text) is the setting's type
+#   min, max  the allowed range (numbers)          step   the slider's step (numbers)
+#   choices   the allowed values (text)            label  what the Settings panel calls it
+# An entry without a `default` is a RULE: fixed unless you edit it here.
+
+# ---- text ---------------------------------------------------------------------------------------
+[text]
+label = "Text"
+panel_scale   = { default = 1.0, min = 0.8, max = 1.6, step = 0.05, label = "Panels and menus" }
+body_label_px = { default = 12, min = 8, max = 24, step = 1, label = "Body names on the map" }
+unit_label_px = { default = 12, min = 8, max = 24, step = 1, label = "Unit callsigns on the map" }
+unit_tag_px   = { default = 9, min = 7, max = 18, step = 1, label = "Unit tags (Pry, brevity)" }
+readout_px    = { default = 9, min = 7, max = 18, step = 1, label = "Cursor readout and ring labels" }
+
+# ---- icons --------------------------------------------------------------------------------------
+[icons]
+label = "Icons"
+unit_px          = { default = 15, min = 8, max = 40, step = 1, label = "Ship frame height" }
+formation_scale  = { default = 1.2, min = 1.0, max = 2.0, step = 0.05, label = "Formations, larger by" }
+body_display     = { default = 1.0, min = 0.0, max = 3.0, step = 0.25, label = "Body display size" }
+body_mark_px     = { default = 7, min = 4, max = 20, step = 1, label = "Body mark (display off)" }
+hq_staff         = { default = true, label = "HQ staff on formations with their own position" }
+
+# ---- folding: zoom only resolves, never clutters --------------------------------------------------
+[folding]
+label = "Folding"
+declutter_px = { default = 14, min = 0, max = 60, step = 1, label = "A body folds into its parent within (px)" }
+aggregate_px = { default = 26, min = 0, max = 120, step = 1, label = "Units fold into their formation within (px)" }
+
+# ---- selection: what a click on a formation shows --------------------------------------------------
+[selection]
+label = "Selection"
+reveal_children = { default = 1, min = 0, max = 4, step = 1, label = "Levels of a selected formation to unfold" }
+reveal_parent   = { default = true, label = "Show what the selection answers to" }
+hierarchy_lines = { default = true, label = "Lines from a formation to its units" }
+dim_others      = { default = 0.35, min = 0.0, max = 1.0, step = 0.05, label = "Opacity of unrelated units" }
+child_color  = "cyan"       # palette key in style.toml for revealed units and their lines
+parent_color = "violet"     # palette key for the line up to the parent
+
+# ---- layers: what is drawn at all -----------------------------------------------------------------
+[layers]
+label = "Layers"
+orbits   = { default = true, label = "Orbits" }
+bullseye = { default = true, label = "Bullseye" }
+display  = { default = true, label = "Body display" }
+labels   = { default = true, label = "Labels" }
+contacts = { default = true, label = "Units" }
+zones    = { default = true, label = "Zones" }
+
+# ---- cursor --------------------------------------------------------------------------------------
+[cursor]
+label = "Cursor"
+hairlines = { default = true, label = "Full-screen hairlines" }
+readout   = { default = true, label = "Bearing and range readout" }

@@ -8,6 +8,7 @@
     { id: 'build', title: 'System workshop', text: 'Build a stellar system, or copy one and change it. Saved systems become levels.' },
     { id: 'ships', title: 'Ship registry', text: 'The classes of the fleet: particulars, batteries, reaches by crew, and what is still blank.' },
     { id: 'shipyard', title: 'Ship workshop', text: 'Design ship classes.', soon: true },
+    { id: 'settings', title: 'Settings', text: 'Text and icon sizes, folding, what a selection shows. Saved on this machine.' },
   ];
   function key(e) {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;

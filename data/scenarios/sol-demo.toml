@@ -93,6 +93,32 @@ echelon = "squadron"
 formation = "tf-1"
 position = { bullseye = "burn", aer = [35, -30, 86000] }
 
+# Escort squadron: the task force's cruisers. Ship names are placeholders.
+[[contact]]
+id = "escort-1"
+callsign = "Escort Squadron"
+affiliation = "friend"
+echelon = "squadron"
+formation = "tf-1"
+
+[[contact]]
+id = "escort-1-1"
+callsign = "Larkspur"
+class = "aeshna"
+affiliation = "friend"
+echelon = "ship"
+formation = "escort-1"
+position = { bullseye = "burn", aer = [180, 2, 9000] }
+
+[[contact]]
+id = "escort-1-2"
+callsign = "Thistle"
+class = "aeshna"
+affiliation = "friend"
+echelon = "ship"
+formation = "escort-1"
+position = { bullseye = "burn", aer = [200, -3, 12000] }
+
 # ---- the local picture --------------------------------------------------------------------------------
 [[contact]]
 id = "g1"

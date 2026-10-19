@@ -9,12 +9,13 @@
   import { onMount, onDestroy } from 'svelte';
   import { rgba, text, display, unitSymbol, bodyDisplay, bodyMark, barycentreMark, zoneRing } from './symbols.js';
   import { km } from './format.js';
+  import { reveal } from './hierarchy.js';
 
   export let map = null;
   export let style = null;
-  export let scale = 1;              // display-size slider
-  export let layers = {};
-  export let contacts = [];          // scenario contacts (static definitions)
+  export let settings = null;        // display.toml values, with the player's settings applied
+  export let drules = {};            // display.toml rules
+  export let contacts = [];          // scenario contacts (static definitions, with their tree)
 
   let canvas, ctx, unhook, W = 0, H = 0, dpr = 1;
 
@@ -39,7 +40,7 @@
   }
 
   function drawBodies(marks) {
-    const def = map.bodies, st = map.state, D = style.display;
+    const def = map.bodies, st = map.state, S = settings, layers = S.layers;
     const scr = {};
     for (const b of map.def.bodies) {
       const p = st.bodies[b.id];
@@ -52,8 +53,8 @@
       if (!scr[b.id] || b.kind === 'barycenter') continue;
       const trueR = map.pxRadius(st.bodies[b.id], b.radius_km);
       const role = style.roles[b.display.role] ?? { size_px: 20 };
-      const dispR = layers.display ? (role.size_px * scale) / 2 : 0;
-      drawn[b.id] = trueR >= dispR && trueR > 3 ? { r: trueR, how: 'true' } : dispR > 0 ? { r: dispR, how: 'display' } : { r: D.symbol_px / 2, how: 'mark' };
+      const dispR = layers.display ? (role.size_px * S.icons.body_display) / 2 : 0;
+      drawn[b.id] = trueR >= dispR && trueR > 3 ? { r: trueR, how: 'true' } : dispR > 0 ? { r: dispR, how: 'display' } : { r: S.icons.body_mark_px / 2, how: 'mark' };
     }
     // fold: a body hides when it sits inside what it orbits, as drawn (unless selected or hovered)
     const folded = new Set();
@@ -61,7 +62,7 @@
     for (const b of map.def.bodies) {
       const vp = visualParent(def, b), s = scr[b.id], ps = vp && scr[vp];
       if (!s || !ps || isHot('body', b.id)) continue;
-      const reach = Math.max(D.declutter_px, (drawn[vp]?.r ?? 0) * 0.9);
+      const reach = Math.max(S.folding.declutter_px, (drawn[vp]?.r ?? 0) * 0.9);
       if (Math.hypot(s.x - ps.x, s.y - ps.y) < reach) folded.add(b.id);
     }
     for (const b of map.def.bodies) {                     // a moon of a folded planet folds with it
@@ -81,43 +82,89 @@
       if (how === 'true') {                                // the true sphere is bigger: let it show
         if (hot) { ctx.strokeStyle = style.palette.fuchsia; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(s.x, s.y, r + 3, 0, Math.PI * 2); ctx.stroke(); }
       } else if (how === 'display') bodyDisplay(ctx, style, b, s.x, s.y, r, hot);
-      else bodyMark(ctx, style, b, s.x, s.y, D.symbol_px, hot);
+      else bodyMark(ctx, style, b, s.x, s.y, S.icons.body_mark_px, hot);
       if (layers.labels || hot) {
         const lx = s.x + Math.min(r, H) + 7;
-        display(ctx, b.name, lx, s.y + 4, rgba(hot ? style.palette.fuchsia : style.palette.ink, hot ? 1 : 0.8), b.kind === 'moon' ? 11 : 12);
+        const px = S.text.body_label_px - (b.kind === 'moon' ? 1 : 0);
+        display(ctx, b.name, lx, s.y + px / 3, rgba(hot ? style.palette.fuchsia : style.palette.ink, hot ? 1 : 0.8), px);
       }
       marks.push({ kind: 'body', id: b.id, x: s.x, y: s.y, r: Math.max(r, 6), depth: s.depth });
     }
   }
 
-  // formations fold top-down: draw a formation when its members are too close to tell apart
+  // Formations fold top-down: a formation draws as one symbol while its units are too close to
+  // tell apart. A selection overrides folding (display.toml [selection]): the selected formation
+  // opens to show the units that answer to it, highlighted and joined to it by lines; the chain
+  // above it stays open, and the formation it answers to is marked. Everything else dims.
   function drawContacts(marks) {
     const pos = map.state.contacts ?? {};
+    const S = settings, pal = style.palette;
     const byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
-    const members = (id) => contacts.filter((c) => c.formation === id);
-    const leaves = (id) => { const m = members(id); return m.length ? m.flatMap((c) => leaves(c.id)) : [id]; };
+    const kids = (id) => (byId[id]?.children ?? []).filter((k) => byId[k]);
+    const leaves = (id) => (kids(id).length ? kids(id).flatMap(leaves) : [id]);
     const scrOf = (id) => pos[id] && map.project(pos[id]);
+    const selId = map.selected?.kind === 'contact' ? map.selected.id : null;
+    const rv = reveal(byId, selId, S.selection);
+    const related = new Set([selId, ...rv.open, ...rv.children, ...rv.parents]);
+    const childCol = pal[drules.selection?.rules.child_color] ?? pal.cyan;
+    const parentCol = pal[drules.selection?.rules.parent_color] ?? pal.violet;
+    const drawnAt = {};
+
+    const symbol = (c, s) => {
+      const hot = isHot('contact', c.id), formation = kids(c.id).length > 0;
+      const h = S.icons.unit_px * (formation || c.echelon !== 'ship' ? S.icons.formation_scale : 1);
+      const ring = rv.children.has(c.id) ? childCol : rv.parents.has(c.id) ? parentCol : null;
+      unitSymbol(ctx, style, c, s.x, s.y, {
+        h, hot, ring, label: S.layers.labels || hot || ring !== null,
+        alpha: selId && !related.has(c.id) ? S.selection.dim_others : 1,
+        hq: S.icons.hq_staff && formation && c.has_position,
+        labelPx: S.text.unit_label_px, tagPx: S.text.unit_tag_px,
+      });
+      drawnAt[c.id] = s;
+      marks.push({ kind: 'contact', id: c.id, x: s.x, y: s.y, r: h, depth: s.depth });
+    };
 
     const draw = (c) => {
-      const s = scrOf(c.id);
-      const kids = members(c.id);
-      if (kids.length) {
-        const pts = leaves(c.id).map(scrOf).filter(Boolean);
-        const spread = pts.length ? Math.max(...pts.map((a) => Math.max(...pts.map((b) => Math.hypot(a.x - b.x, a.y - b.y))))) : 0;
-        if (spread >= style.display.aggregate_px && !isHot('contact', c.id)) { kids.forEach(draw); return; }
+      const k = kids(c.id), s = scrOf(c.id);
+      if (k.length && !(rv.children.has(c.id) && !rv.open.has(c.id))) {   // a revealed unit stays whole
+        let unfold = rv.open.has(c.id);
+        if (!unfold && !isHot('contact', c.id)) {
+          const pts = [...leaves(c.id).map(scrOf), c.has_position ? s : null].filter(Boolean);
+          const spread = pts.length ? Math.max(...pts.map((a) => Math.max(...pts.map((b) => Math.hypot(a.x - b.x, a.y - b.y))))) : 0;
+          unfold = spread >= S.folding.aggregate_px;
+        }
+        if (unfold) {
+          // the formation itself still shows where it is a place (its HQ), or where it is the focus
+          if (s && ((c.has_position && S.icons.hq_staff) || c.id === selId || rv.parents.has(c.id))) symbol(c, s);
+          k.forEach((id) => draw(byId[id]));
+          return;
+        }
       }
-      if (!s) return;
-      const hot = isHot('contact', c.id);
-      unitSymbol(ctx, style, c, s.x, s.y, { h: c.echelon === 'ship' ? 15 : 18, hot, label: layers.labels || hot });
-      marks.push({ kind: 'contact', id: c.id, x: s.x, y: s.y, r: 14, depth: s.depth });
+      if (s) symbol(c, s);
     };
-    contacts.filter((c) => !c.formation || !byId[c.formation]).forEach(draw);
+    contacts.filter((c) => !c.parent).forEach(draw);
+
+    // lines: from each open formation to the units it reveals, and from the selection up
+    if (S.selection.hierarchy_lines && selId) {
+      const line = (a, b, col, dash) => {
+        ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.setLineDash(dash);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.setLineDash([]);
+      };
+      for (const id of rv.children) {
+        const from = drawnAt[byId[id].parent] ?? scrOf(byId[id].parent), to = drawnAt[id];
+        if (from && to) line(from, to, rgba(childCol, 0.6), [4, 4]);
+      }
+      for (const id of rv.parents) {
+        const from = drawnAt[selId], to = drawnAt[id] ?? scrOf(id);
+        if (from && to) line(from, to, rgba(parentCol, 0.55), [2, 5]);
+      }
+    }
   }
 
   // the selected body's wells, as rings around it
   function drawZones() {
     const sel = map.selected;
-    if (!sel || sel.kind !== 'body' || !layers.zones) return;
+    if (!sel || sel.kind !== 'body' || !settings.layers.zones) return;
     const b = map.bodies[sel.id], p = map.state.bodies[sel.id];
     const s = p && map.project(p);
     if (!b || !s) return;
@@ -135,18 +182,19 @@
 
   function drawBullseyeLabels() {
     const pal = style.palette;
-    for (const { r, p } of map.ringLabels()) text(ctx, km(r), p.x + 4, p.y - 4, rgba(pal.violet, 0.65), 9);
-    for (const { deg, p } of map.bearingLabels()) text(ctx, String(deg).padStart(3, '0'), p.x, p.y + 3, rgba(deg === 0 ? pal.cyan : pal.violet, deg === 0 ? 0.8 : 0.5), 9, undefined, 'center');
+    const px = settings.text.readout_px;
+    for (const { r, p } of map.ringLabels()) text(ctx, km(r), p.x + 4, p.y - 4, rgba(pal.violet, 0.65), px);
+    for (const { deg, p } of map.bearingLabels()) text(ctx, String(deg).padStart(3, '0'), p.x, p.y + 3, rgba(deg === 0 ? pal.cyan : pal.violet, deg === 0 ? 0.8 : 0.5), px, undefined, 'center');
   }
 
   function draw() {
     ctx.clearRect(0, 0, W, H);
-    if (!map || !style || !map.state || !map.def || map.state.system !== map.def.id) return;
+    if (!map || !style || !settings || !map.state || !map.def || map.state.system !== map.def.id) return;
     const marks = [];
     drawBullseyeLabels();
     drawZones();
     drawBodies(marks);
-    if (layers.contacts) drawContacts(marks);
+    if (settings.layers.contacts) drawContacts(marks);
     map.marks = marks;
   }
 

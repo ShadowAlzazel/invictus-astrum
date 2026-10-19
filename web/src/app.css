@@ -15,3 +15,6 @@ body { font-family: var(--mono); font-size: 12px; cursor: none; }
 @media (hover: none) { body { cursor: auto; } }
 button, input { font: inherit; color: inherit; cursor: none; }
 :focus-visible { outline: 1px solid var(--fuchsia); outline-offset: 2px; }
+
+/* panels and menus scale with the player's text setting (display.toml [text] panel_scale) */
+[data-ui] { zoom: var(--ui-scale, 1); }

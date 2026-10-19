@@ -8,6 +8,7 @@
   import LevelSelect from './lib/LevelSelect.svelte';
   import MainMenu from './lib/MainMenu.svelte';
   import ShipRegistry from './lib/ShipRegistry.svelte';
+  import Settings from './lib/Settings.svelte';
   import Workshop from './lib/Workshop.svelte';
 
   // sim seconds per real second; the clock runs in TDB seconds since J2000, like the server
@@ -18,9 +19,8 @@
   let systemId = null, playerId = 'arcvs', bullseyeId = 'system', scenarioOn = true;
   let t = 0, warp = 6, paused = false, last = 0, raf;
   let orbitsT = null, orbitsBusy = false;
-  let layers = { orbits: true, bullseye: true, display: true, labels: true, contacts: true, zones: true };
-  const LAYER_LABELS = { orbits: 'Orbits', bullseye: 'Bullseye', display: 'Body display', labels: 'Labels', contacts: 'Units', zones: 'Zones' };
-  let scale = 1, sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
+  let drules = {}, settings = null, showSettings = false, settingsStatus = '', saveTimer, pendingSave = false;
+  let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
   let showFindings = false, down = null, poll;
   let mode = 'menu';                    // 'menu' | 'levels' | 'map' | 'workshop' | 'ships'
   let purpose = 'play';                 // what the level list is for: 'play' or 'build'
@@ -35,6 +35,33 @@
   $: warnings = def?.findings.filter((f) => f.level === 'warning') ?? [];
   $: if (map) { map.bullseyeId = bullseyeId; map.contactName = (id) => contacts.find((c) => c.id === id)?.callsign ?? id; }
 
+  // ---- settings: display.toml defaults, the player's settings.toml on top -----------------------
+  function applySettings() {
+    if (!settings) return;
+    document.documentElement.style.setProperty('--ui-scale', settings.text.panel_scale);
+    if (map) for (const [k, v] of Object.entries(settings.layers)) map.setLayer(k, v);
+  }
+  function setSetting(sec, k, v) {
+    settings = { ...settings, [sec]: { ...settings[sec], [k]: v } };
+    applySettings();
+    settingsStatus = '';
+    pendingSave = true;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveSettings, 500);
+  }
+  async function saveSettings() {
+    try { settings = (await api.saveSettings(settings)).settings; settingsStatus = 'Saved'; applySettings(); }
+    catch (e) { settingsStatus = e.message; }
+    pendingSave = false;
+  }
+  function resetSettings(sec) {
+    const d = (s) => Object.fromEntries(Object.entries(drules[s].settings).map(([k, v]) => [k, v.default]));
+    settings = sec ? { ...settings, [sec]: d(sec) } : Object.fromEntries(Object.keys(drules).map((s) => [s, d(s)]));
+    applySettings();
+    clearTimeout(saveTimer);
+    saveSettings();
+  }
+
   function applyStyle(s) {
     style = s;
     const root = document.documentElement.style;
@@ -45,6 +72,9 @@
   async function loadMeta() {
     meta = await api.meta();
     applyStyle(meta.style);
+    drules = meta.display.rules;
+    if (!pendingSave) settings = meta.display.settings;   // unsaved changes here win over the file
+    applySettings();
     version = meta.version;
   }
 
@@ -128,17 +158,24 @@
     if (e.key === ' ') { e.preventDefault(); paused = !paused; }
     if (e.key === ']') warp = Math.min(warp + 1, WARPS.length - 1);
     if (e.key === '[') warp = Math.max(warp - 1, 0);
+    if (e.key === ',') { showSettings = !showSettings; return; }
+    if (e.key === 'Escape' && showSettings) { showSettings = false; return; }
     if (!inMap) return;                                  // menus have their own keys
     if (e.key === 'Escape') select(null);
     if (e.key === 'f' || e.key === 'F') focusOn(sel);
     if (e.key === 'h' || e.key === 'H') map.frameAll();
     if ((e.key === 'l' || e.key === 'L') && mode === 'map') toLevels();
+    if ((e.key === 'u' || e.key === 'U') && sel?.kind === 'contact') {          // up the chain of command
+      const parent = contacts.find((c) => c.id === sel.id)?.parent;
+      if (parent) select({ kind: 'contact', id: parent });
+    }
   }
 
   // ---- the menu, levels and the workshop --------------------------------------------------------
   function choose(what) {
     if (what === 'play' || what === 'build') { purpose = what; mode = 'levels'; }
     if (what === 'ships') mode = 'ships';
+    if (what === 'settings') showSettings = true;
   }
   function toMenu() { mode = 'menu'; select(null); }
   async function previewLevel(id) { if (id !== systemId) await openSystem(id); lastLevel = id; }
@@ -171,7 +208,6 @@
   async function draftBuilt(draftId) { await openSystem(draftId, systemId === draftId, systemId === draftId); }
   async function workshopSaved() { await loadMeta(); }
   const trackUI = (e) => { overUI = !!e.target.closest?.('[data-ui]'); };
-  function toggleLayer(k) { layers[k] = !layers[k]; map.setLayer(k, layers[k]); }
   function resetClock() { t = def.start; }
 
   async function checkStatus() {
@@ -199,7 +235,6 @@
     stream = new StateStream(onstate);
     try {
       await loadMeta();
-      scale = style.display.scale_default;
       await previewLevel(meta.systems.find((s) => s.id === 'sol')?.id ?? meta.systems[0].id);
     } catch (e) { error = 'Cannot reach the server. Start it with: python serve.py'; }
     raf = requestAnimationFrame(frame);
@@ -211,8 +246,8 @@
 <svelte:window on:keydown={key} on:pointermove={trackUI} />
 
 <canvas class="map" bind:this={canvas}></canvas>
-<Overlay {map} {style} {scale} {layers} {contacts} />
-<HudCursor {map} {style} {overUI} />
+<Overlay {map} {style} {settings} {drules} {contacts} />
+<HudCursor {map} {style} {settings} {overUI} />
 
 {#if mode === 'menu'}
   <MainMenu onchoose={choose} counts={{ systems: meta?.systems.length ?? 0, ships: meta?.ship_classes ?? 0 }} />
@@ -226,6 +261,7 @@
   <div class="bar" data-ui>
     <button on:click={toMenu}>◂ Menu</button>
     <button on:click={toLevels} title="L">Levels</button>
+    <button on:click={() => (showSettings = !showSettings)} title=",">Settings</button>
     <span class="brand">INVICTUS <b>ASTRUM</b></span>
     <span class="here">{def?.name ?? ''}</span>
   </div>
@@ -280,23 +316,31 @@
 </div>
 {/if}
 
-{#if inMap}
+{#if inMap && settings}
 <div class="panel right" data-ui>
-  {#each Object.keys(layers) as k}
-    <button class="toggle" class:on={layers[k]} on:click={() => toggleLayer(k)}><i></i>{LAYER_LABELS[k]}</button>
+  {#each Object.entries(drules.layers.settings) as [k, spec]}
+    <button class="toggle" class:on={settings.layers[k]} on:click={() => setSetting('layers', k, !settings.layers[k])}><i></i>{spec.label}</button>
   {/each}
-  {#if style}
+  {#each [['icons', 'body_display'], ['icons', 'unit_px'], ['text', 'unit_label_px']] as [sec, k]}
+    {@const spec = drules[sec].settings[k]}
     <label class="count">
-      <span class="lbl">Display size</span>
-      <input type="range" min={style.display.scale_min} max={style.display.scale_max} step={style.display.scale_step} bind:value={scale} />
-      <output>{Number(scale).toFixed(2)}</output>
+      <span class="lbl">{spec.label}</span>
+      <input type="range" min={spec.min} max={spec.max} step={spec.step} value={settings[sec][k]} on:input={(e) => setSetting(sec, k, Number(e.target.value))} />
+      <output>{settings[sec][k]}</output>
     </label>
-  {/if}
+  {/each}
+  <button class="more" on:click={() => (showSettings = true)}>All settings ,</button>
 </div>
 
+{#if !showSettings}
 <InfoPanel {map} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
-  onclose={() => select(null)} onfocus={focusOn} />
+  onclose={() => select(null)} onfocus={focusOn} onselect={select} />
+{/if}
+{/if}
+
+{#if showSettings && settings}
+  <Settings rules={drules} values={settings} status={settingsStatus} onchange={setSetting} onreset={resetSettings} onclose={() => (showSettings = false)} />
 {/if}
 
 <style>
@@ -335,7 +379,9 @@
   .toggle.on { color: var(--ink); }
   .toggle.on i { background: var(--violet); }
   .toggle:hover { color: var(--ink); }
-  .count { display: grid; grid-template-columns: auto 1fr 2.6em; align-items: center; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--rule); }
+  .more { background: none; border: 0; color: var(--violet); filter: brightness(1.5); font: inherit; text-align: left; padding: 6px 0 0; }
+  .more:hover { color: var(--fuchsia); filter: none; }
+  .count { display: grid; grid-template-columns: 9em 1fr 2.6em; align-items: center; gap: 8px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--rule); }
   output { text-align: right; font-variant-numeric: tabular-nums; }
 
   .banner { position: fixed; top: 64px; left: 20px; width: 520px; z-index: 40; background: var(--panel);

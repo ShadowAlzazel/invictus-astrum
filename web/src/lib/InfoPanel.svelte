@@ -11,6 +11,7 @@
   export let bullseyeName = '';
   export let onclose = () => {};
   export let onfocus = () => {};
+  export let onselect = () => {};   // pick another unit: a member, or the formation above
 
   const G = 6.6743e-20;             // km³/(kg·s²)
   $: body = sel?.kind === 'body' ? map?.bodies[sel.id] : null;
@@ -19,7 +20,16 @@
   $: a = p ? map.aer(p) : null;
   $: mine = body ? findings.filter((f) => f.where === body.id || f.where.startsWith(body.id + ' ')) : [];
   $: parentName = body?.parent ? map.bodies[body.parent]?.name : null;
-  $: members = contact ? contacts.filter((c) => c.formation === contact.id) : [];
+  $: byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
+  $: members = contact ? (contact.children ?? []).map((id) => byId[id]).filter(Boolean) : [];
+  $: chain = contact ? (contact.ancestors ?? []).map((id) => byId[id]).filter(Boolean) : [];
+  // every ship under a formation, counted by class: what the formation is made of
+  $: makeup = contact && members.length ? tally(contact.id) : [];
+  function tally(id) {
+    const counts = {}, walk = (x) => { const c = byId[x]; if (!c) return; if (c.children?.length) c.children.forEach(walk); else { const k = c.class_name || c.unit_type || (c.echelon === 'ship' ? 'ship' : `${c.echelon}, no ships listed`); counts[k] = (counts[k] ?? 0) + 1; } };
+    walk(id);
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  }
   $: surfaceG = body && body.radius_km ? (body.gm_km3s2 / body.radius_km ** 2) * 1000 : null;
   const KIND = { star: 'Star', planet: 'Planet', dwarf: 'Dwarf planet', moon: 'Moon', barycenter: 'Barycentre', station: 'Station' };
   const REGION = { interior: 'Interior', orbis: 'Orbis', well: 'Well', astrum: 'Astrum' };
@@ -87,7 +97,23 @@
     <button class="act" on:click={() => onfocus(sel)}>Centre and follow (F)</button>
   {:else if contact}
     {#if members.length}
-      <section><h2>Members</h2>{#each members as m}<p>{m.callsign} <span class="dim">{m.class_name || m.unit_type || m.echelon}</span></p>{/each}</section>
+      <section>
+        <h2>Answers to it <span class="dim">{members.length}</span></h2>
+        {#each members as m}
+          <button class="unit" on:click={() => onselect({ kind: 'contact', id: m.id })}>
+            <span>{m.callsign}</span><span class="dim">{m.children?.length ? m.echelon : m.class_name || m.unit_type || m.echelon}</span>
+          </button>
+        {/each}
+        {#if makeup.length}<p class="dim makeup">{makeup.map(([k, n]) => `${n} × ${k}`).join(' · ')}</p>{/if}
+      </section>
+    {/if}
+    {#if chain.length}
+      <section>
+        <h2>Chain of command</h2>
+        {#each chain as a}
+          <button class="unit" on:click={() => onselect({ kind: 'contact', id: a.id })}><span>{a.callsign}</span><span class="dim">{a.echelon}</span></button>
+        {/each}
+      </section>
     {/if}
     {#if contact.status?.length}<p class="dim">Status: {contact.status.join(', ')}</p>{/if}
     {#if contact.notes}<p class="note">{contact.notes}</p>{/if}
@@ -130,6 +156,9 @@
   section p { margin: 3px 0; }
   .big { font-family: var(--display); font-size: 16px; color: var(--ink); }
   .dim { color: var(--dim); }
+  .unit { display: flex; justify-content: space-between; gap: 10px; width: 100%; padding: 2px 0; color: var(--ink); text-align: left; }
+  .unit:hover span:first-child { color: var(--fuchsia); }
+  .makeup { margin-top: 6px; font-size: 11px; }
   .finding { margin: 8px 0 0; color: #ffd27a; font-size: 11px; }
   .note { margin: 8px 0 0; color: var(--dim); font-size: 11px; }
 </style>

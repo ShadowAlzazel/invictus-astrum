@@ -47,10 +47,13 @@ export function frameExtent(shape, h) {
 }
 
 // one unit or formation symbol. c = contact (affiliation, echelon, unit_type, status, callsign, pry, brevity)
-export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = true } = {}) {
+// opts: h frame height; hot (hover/selected); label; alpha (dimming); ring (highlight colour);
+// hq (draw the headquarters staff); labelPx, tagPx (text sizes)
+export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = true, alpha: dim = 1, ring = null,
+                                                   hq = false, labelPx = 12, tagPx = 9 } = {}) {
   const aff = style.affiliation[c.affiliation] ?? style.affiliation.unknown;
   const statuses = (c.status ?? []).map((s) => style.status[s]).filter(Boolean);
-  const alpha = Math.min(1, ...statuses.map((s) => s.opacity ?? 1));
+  const alpha = dim * Math.min(1, ...statuses.map((s) => s.opacity ?? 1));
   const dash = statuses.find((s) => s.dash)?.dash ?? [];
   const col = hot ? style.palette.fuchsia : aff.color;
 
@@ -68,6 +71,14 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
   ctx.setLineDash([]);
 
   const [ew, eh] = frameExtent(aff.shape, h);
+  if (hq) {                                                    // APP-6 headquarters staff: down from the left edge
+    ctx.strokeStyle = rgba(col, 0.95 * alpha); ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(x - ew, y); ctx.lineTo(x - ew, y + eh + h * 0.9); ctx.stroke();
+  }
+  if (ring) {
+    ctx.strokeStyle = rgba(ring, 0.9); ctx.lineWidth = 1.2; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.arc(x, y, Math.max(ew, eh) + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  }
   if (statuses.some((s) => s.cross)) {
     ctx.beginPath(); ctx.moveTo(x - ew, y - eh); ctx.lineTo(x + ew, y + eh); ctx.moveTo(x + ew, y - eh); ctx.lineTo(x - ew, y + eh); ctx.stroke();
   }
@@ -78,9 +89,9 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
     ctx.fillStyle = rgba(col, 0.8 * alpha); ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
   }
   if (!label) return;
-  display(ctx, c.callsign, x + ew + 6, y - 1, rgba(hot ? style.palette.fuchsia : style.palette.ink, 0.92 * alpha), 12);
+  display(ctx, c.callsign, x + ew + 6, y - 1, rgba(hot ? style.palette.fuchsia : style.palette.ink, 0.92 * alpha), labelPx);
   const tags = [c.pry ? `Pry-${c.pry}` : null, c.brevity ? c.brevity.toUpperCase() : null].filter(Boolean).join('  ');
-  if (tags) text(ctx, tags, x + ew + 6, y + 11, rgba(aff.color, 0.85 * alpha), 9);
+  if (tags) text(ctx, tags, x + ew + 6, y + 2 + tagPx, rgba(aff.color, 0.85 * alpha), tagPx);
 }
 
 // ---- bodies ------------------------------------------------------------------------------------

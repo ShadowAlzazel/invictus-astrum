@@ -101,11 +101,4 @@ label = "Station"
 size_px = 0
 label = "Barycentre"
 
-[display]
-scale_default = 1.0    # the display-size slider
-scale_min     = 0.0
-scale_max     = 3.0
-scale_step    = 0.25
-symbol_px     = 7      # the small fixed mark every body keeps when its display is off
-declutter_px  = 14     # a body this close on screen to its parent folds into it
-aggregate_px  = 26     # members this close together fold into their formation's symbol
+# Sizes, folding distances and selection behaviour live in display.toml.

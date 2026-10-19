@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010
-python -m pytest -q tests             # 97 tests
+python -m pytest -q tests             # 104 tests
 ```
 
 Frontend work: `python serve.py` in one terminal, `cd web && npm run dev` in another (live
@@ -27,6 +27,7 @@ The map opens on the main menu, over a live system:
 2. **System workshop**: build a system, or copy one and change it.
 3. **Ship registry**: the classes of the fleet.
 4. **Ship workshop**: next.
+5. **Settings**: text and icon sizes, folding, what a selection shows (also `,` anywhere).
 
 ## Levels and the workshop
 
@@ -56,6 +57,9 @@ the author*. The format is in `data/ships/README.md`.
 |---|---|
 | Left-drag / right-drag / wheel | pan / rotate / zoom (in toward the cursor; out about the centre; never inside a body) |
 | Click | select a body or unit; on empty space, probe the point (zone, gravity, field) |
+| Click a formation | it opens: the units that answer to it are shown, highlighted and joined to it; the formation it answers to is marked; the rest dims |
+| U | up the chain of command: select the formation the selected unit answers to |
+| `,` | settings |
 | Double-click, or F | centre on the selection and ride with it |
 | H | frame the whole system |
 | Space, `[` `]` | pause, slower, faster (1 s/s up to 1 yr/s) |
@@ -75,6 +79,8 @@ player and one of their bullseyes at the bottom left.
 | `data/players.toml` | players and their bullseyes |
 | `data/scenarios/*.toml` | units placed in a system (symbols only; no engagement is simulated yet) |
 | `style.toml` | colours, affiliation frames, echelon marks, body display sizes by role |
+| `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |
+| `settings.toml` | your settings, written by the map; overrides `display.toml`; not committed (delete to reset) |
 | `config.toml` | paths, port, clock start, orbit sampling |
 | `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server |
 | `web/` | the map (Svelte + Three.js) |
