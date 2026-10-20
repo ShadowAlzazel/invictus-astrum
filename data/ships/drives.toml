@@ -17,8 +17,8 @@ name = "Line fusion pulse drive"
 kind = "fusion-pulse"
 thrust_mn = 380
 exhaust_kms = 8950
-pulse_rate_hz = "—"
-hull_heat_fraction = "—"
+pulse_rate_hz = 140
+hull_heat_fraction = 0.00001
 notes = "Thrust from PAPILION's canon: 70,340 t × 5.40 m/s² = 62,340 t × 6.09 m/s² ≈ 380 MN."
 
 [drive.frigate-pulse]
@@ -26,8 +26,8 @@ name = "Frigate fusion pulse drive"
 kind = "fusion-pulse"
 thrust_mn = { value = 119, est = true }
 exhaust_kms = 8950
-pulse_rate_hz = "—"
-hull_heat_fraction = "—"
+pulse_rate_hz = 140
+hull_heat_fraction = 0.00001
 notes = "Thrust from PHALAENA's estimate: 19,340 t × 6.16 m/s²."
 
 [drive.cutter-pulse]
@@ -35,6 +35,6 @@ name = "Cutter fusion pulse drive"
 kind = "fusion-pulse"
 thrust_mn = { value = 83, approx = true }
 exhaust_kms = 8950
-pulse_rate_hz = "—"
-hull_heat_fraction = "—"
+pulse_rate_hz = 140
+hull_heat_fraction = 0.00001
 notes = "Thrust from BACILLUS: ~16,000 t × ~5.2 m/s²."
