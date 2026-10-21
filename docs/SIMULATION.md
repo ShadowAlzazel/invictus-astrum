@@ -68,8 +68,11 @@ Select a ship and press **A**. A vector runs from her to the cursor:
 - over a unit or a body, it takes theirs: she will rendezvous, stopping 50 km short of a unit, or
   three radii (at least 1,000 km) short of a body, and hold station there;
 - anywhere else, it reads a point on the plane through her parallel to the active bullseye's;
-  **E** / **Q** tilt it toward Eve or Haid in 5° steps. The point is kept as an AER from that
-  bullseye, so it moves with the bullseye's frame.
+  **E** / **Q** tilt it toward Eve or Haid in 5° steps, as seen from her. **B** measures Eve and
+  Haid from the bullseye instead: level is then on the bullseye's own plane (a formation 20° Eve
+  of it, ordered level, comes down to it), and E / Q set the point's elevation from the bullseye.
+  The choice is kept for the next order. The point is kept as an AER from that bullseye, so it
+  moves with the bullseye's frame.
 
 The telegraph sets the acceleration she will hold, from her most down to stop: **W** / **S** step
 through Full, Cruise (the doctrine band), Cruise floor, Half, Slow, Dead slow and Stop; **Shift**
@@ -134,6 +137,19 @@ so a squadron shows its ships. Those carry their figures. "Ranges: selection onl
 legend (`[ranges] selected_only`) hides every other ring. Her panel lists them.
 
 Every order given to several ships shares an id (`order_id`, with `by`, the unit it was given to).
+
+**Bullseyes.** Every player reads the map from bullseyes: the star centre (the system's root, in
+the stellar plane: always there, never deleted), the ones in `data/players.toml`, and their own,
+made on the map. **+ New** in the bullseye panel makes one at what is selected: a body, a unit's
+place now, or a point picked on the map, carried with the body whose space it is in (the innermost
+whose Hill sphere holds it, else the one that dominates there), another body, or nothing (fixed
+in space); Eve from the stellar plane's north, ecliptic or galactic north, or a body's pole; 000
+from the stellar plane's, the vernal equinox, the galactic centre or toward a body; and a roll.
+They are kept in `bullseyes.toml` (the map writes it; it is not data, so making one never reloads
+anything). A commander's own can be deleted (✕, twice): it is no longer listed and takes no new
+orders, but the orders and stations already given off it keep it. `POST /api/bullseyes {player,
+system, name, origin, up, ref, roll_deg}` (origin as players.toml has it, or `{point_km, t,
+carry}`), `DELETE /api/bullseyes/{player}/{id}`. Ids come from the name and are never given twice.
 
 `POST /api/order {scenario, unit, t, g, player, target}`: unit a ship, or a formation for all the
 ships under it; target `{bullseye, aer: [deg, deg, km]}`, `{unit}` or `{body}`; `g = 0` cuts the
@@ -244,7 +260,9 @@ The simulation is the server's; the browser only draws. What keeps it quick:
   less than a round trip to a GPU would cost. It pays at thousands of objects (projectiles,
   missiles); the kernels are where it would go.
 - **Bullseyes once per moment, and only the one needed.** A bullseye whose axes are fixed
-  directions keeps them; only its origin is worked out again.
+  directions keeps them; only its origin is worked out again. Where a track or a time to target
+  needs one at many moments, they are worked out at once (`resolve_many`, from the table's
+  `positions_many`): 300 moments in 2.8 ms, where one by one took 25 ms.
 - **Two processes.** `serve.py` runs the simulation in a process of its own (`ProcessSim`,
   `astrum/simhost.py`): the fleets, the run-ahead and the pictures for the map all live there,
   and the web server only passes orders and frame requests over a pipe and sends back what comes.

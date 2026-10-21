@@ -182,10 +182,11 @@ class Fleet:
     places them; the fleet asks it where its station ships stand."""
 
     def __init__(self, scenario, system, eph, registry, place, t0: float, orders: list[Order] | None = None,
-                 bullseyes=None):
+                 bullseyes=None, bullseyes_many=None):
         self.scenario, self.system, self.eph, self.place = scenario, system, eph, place
-        # bullseyes(player, body positions, only) -> {id: Resolved}; a player's own, for orders from the map
-        self.bullseyes = bullseyes
+        # bullseyes(player, body positions, only) -> {id: Resolved}; a player's own, for orders from the map;
+        # bullseyes_many(player, id, moments) -> (origins, axes) or None: one of them at many moments at once
+        self.bullseyes, self.bullseyes_many = bullseyes, bullseyes_many
         self.t0 = t0
         self.orders = sorted(orders or [], key=lambda o: o.at)
         self.lock = threading.RLock()
@@ -722,7 +723,7 @@ class Fleet:
                 if j is not None and c.mode[j] == FREE:
                     kinds.append(1); trow.append(j); knots.append(np.zeros((K, 3)))
                 else:
-                    pts = [self._point(spec, T0 + k * TRACK_DT) for k in range(K)]
+                    pts = self._points(spec, [T0 + k * TRACK_DT for k in range(K)])
                     if any(p is None for p in pts):
                         keys[key] = -1
                         continue
@@ -954,6 +955,29 @@ class Fleet:
             return placed[u] + off if u in placed else None
         return None
 
+    def _points(self, spec: dict, ts: list[float]) -> list:
+        """_point at many moments: a bullseye's or a body's point worked out for all of those not
+        kept yet at once (bullseyes_many, the table's positions_many), the rest one by one."""
+        if not ("bullseye" in spec or "body" in spec) or not ts:
+            return [self._point(spec, t) for t in ts]
+        key = (spec.get("player"), spec.get("bullseye"), tuple(spec.get("aer") or ()), spec.get("body"))
+        cache = self._point_cache
+        miss = [t for t in ts if key + (t,) not in cache]
+        if len(miss) > 1 and hasattr(self.eph, "positions_many"):
+            if "body" in spec:
+                P = self.eph.positions_many(miss)[:, self.eph.ids.index(spec["body"])]
+            elif self.bullseyes_many is not None:
+                got = self.bullseyes_many(spec.get("player") or self.scenario.player, spec["bullseye"], miss)
+                brg, el, rng = spec["aer"]
+                P = None if got is None else got[0] + got[1] @ from_aer(math.radians(brg), math.radians(el), rng)
+            else:
+                P = None
+            if P is not None:
+                if len(cache) + len(miss) > 50000:
+                    cache.clear()
+                cache.update(zip((key + (t,) for t in miss), P))
+        return [self._point(spec, t) for t in ts]
+
     def _station_pos(self, i: int, t: float, placed: dict | None = None, depth: int = 0) -> np.ndarray | None:
         sa = self.c.station_at[i]
         if sa:
@@ -1016,9 +1040,11 @@ class Fleet:
         # most get there well inside the horizon: the target's track that far first, all of it only if
         # she runs past that (the same flight either way: it reads only the track up to her arrival)
         for span in sorted({min(horizon, 1.5 * est + 1800.0), horizon}):
-            while not moving and len(knots) < int((t0 - g0 + span) / PREDICT_KNOT_S) + 3:
-                p = self._point(goal["target"], g0 + len(knots) * PREDICT_KNOT_S)
-                knots.append(p + hold if p is not None else knots[-1] if knots else R0)
+            if not moving:
+                more = self._points(goal["target"], [g0 + k * PREDICT_KNOT_S for k in
+                                                     range(len(knots), int((t0 - g0 + span) / PREDICT_KNOT_S) + 3)])
+                for p in more:
+                    knots.append(p + hold if p is not None else knots[-1] if knots else R0)
             at = kernels.predict(np.asarray(r, float), np.asarray(v, float), float(a), float(t0), R0, V0, moving,
                                  np.array(knots), float(g0), PREDICT_KNOT_S,
                                  0.0 if goal.get("hold_m") is not None else float(goal.get("standoff_m", 0.0)),

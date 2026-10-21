@@ -7,6 +7,7 @@
     GET  /api/system/{id}/probe?x&y&z&t  what is at a point: zone, gravity, magnetism, AER
     POST /api/order                      an order for one ship, from the map: go to a point, a unit or a
                                          body at an acceleration; or cut her drive
+    POST /api/bullseyes                  a commander's new bullseye; DELETE /api/bullseyes/{player}/{id}
     WS   /ws                             send {system, t, player, scenario}; receive the state at t,
                                          with the scenario's ships flown to t (astrum/sim.py)
 
@@ -29,7 +30,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import constants as k
-from .bullseye import Bullseye, BullseyeError, resolve
+from .bullseye import Bullseye, BullseyeError, from_dict, resolve, resolve_many
 from .config import ROOT, ConfigError, load_config, load_style
 from .ephemeris import Ephemeris, Tabled
 from .fields import gravity, magnetic, potential
@@ -63,6 +64,8 @@ class World:
         self.settings: dict = {}
         self.trees: dict[str, dict] = {}         # scenario id -> formation tree
         self.fleets: dict[str, Fleet] = {}       # scenario id -> its ships, flown; rebuilt on reload
+        self.made: dict[str, dict[str, Bullseye]] = {}     # player -> bullseyes commanders made on the map
+        self.retired: dict[str, dict[str, Bullseye]] = {}  # ... and deleted: still flown to, never listed
         self.tables: dict[str, Tabled] = {}      # system id -> its body table, filled up front (see _prefill)
         self.style = {}
         self._stamp = None
@@ -118,6 +121,9 @@ class World:
                 errors[f"settings.toml #{i + 1}"] = msg
         except (ConfigError, tomllib.TOMLDecodeError) as e:
             errors["display.toml"] = str(e)
+        made, problem = self._read_made()
+        if problem:
+            errors["bullseyes.toml"] = problem
         trees = {}
         for sc_ in scenarios.values():                       # units must name classes and bullseyes that exist
             own = {"system"} | {b.id for b in players.get(sc_.player, None).bullseyes.values()
@@ -171,6 +177,7 @@ class World:
             self.scenarios = {**self.scenarios, **scenarios} if sc_err else scenarios
             self.players, self.style, self.errors, self.ships = players, style, errors, ships
             self.factions = factions
+            self.made, self.retired = made, {}
             self.display_rules, self.settings, self.trees = rules, settings, trees
             self.fleets = {}
             self._specs = {}
@@ -225,13 +232,109 @@ class World:
             raise HTTPException(404, f"no system {sid!r}")
         return got
 
-    def bullseyes(self, sid: str, player: str | None) -> dict[str, Bullseye]:
+    # ---- bullseyes commanders make and delete on the map --------------------------------------------
+    def _read_made(self) -> tuple[dict, str | None]:
+        """bullseyes.toml: the bullseyes commanders made on the map. The map writes it and it is not
+        watched as data, so making or deleting one never reloads the world (nor rebuilds a fleet)."""
+        path, made = Path(self.config["paths"]["bullseyes"]), {}
+        if not path.exists():
+            return made, None
+        try:
+            with path.open("rb") as f:
+                for d in tomllib.load(f).get("bullseye", []):
+                    d = dict(d)
+                    player = d.pop("player")
+                    b = from_dict(d, owner=player)
+                    made.setdefault(player, {})[b.id] = b
+        except (tomllib.TOMLDecodeError, BullseyeError, KeyError) as e:
+            return made, str(e)
+        return made, None
+
+    def _save_made(self) -> None:
+        import os
+        import tempfile
+        doc = {"bullseye": [{"player": p, **b.spec()} for p, bulls in self.made.items() for b in bulls.values()]}
+        text = ("# Bullseyes commanders made on the map. The map writes this file; delete a bullseye there.\n\n"
+                + (workshop.dumps(doc) if doc["bullseye"] else ""))
+        path = Path(self.config["paths"]["bullseyes"])
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+
+    def make_bullseye(self, player: str, d: dict, save: bool = True) -> Bullseye:
+        """A commander's new bullseye. d: name, system, origin (as players.toml has it, or a point:
+        {point_km, t, carry}, carried with a body: "auto" for the innermost whose Hill sphere it is
+        in, else the one whose space it is, or "fixed" in the system frame), up, ref, roll_deg; the
+        id is made from the name unless given. Checked by resolving it."""
+        if player not in self.players:
+            raise BullseyeError(f"no player {player!r}")
+        got = self.get(d.get("system") or "")
+        if got is None:
+            raise BullseyeError(f"no system {d.get('system')!r}")
+        s, eph = got
+        origin = dict(d.get("origin") or {"body": s.root})
+        if "point_km" in origin:
+            pos = eph.positions(float(origin.get("t", self.start_time(s))))
+            p = np.asarray(origin["point_km"], dtype=float) / KM
+            carry = origin.get("carry", "auto")
+            if carry == "auto":
+                where, zones = classify(s, pos, p), all_zones(s)
+                carry = min(where["inside_hill"], key=lambda b: zones[b].hill, default=where["dominant"])
+            if carry == "fixed":
+                origin = {"xyz_km": (p * KM).tolist()}
+            elif carry in pos:
+                origin = {"body": carry, "offset_km": ((p - pos[carry]) * KM).tolist()}
+            else:
+                raise BullseyeError(f"no body {carry!r} in {s.name} to carry it")
+        bid = d.get("id") or self._new_id(player, s.id, d.get("name") or "bullseye")
+        b = from_dict({"id": bid, "name": (d.get("name") or bid).strip(), "system": s.id, "origin": origin,
+                       "up": d.get("up", "system"), "ref": d.get("ref", "system"), "roll_deg": d.get("roll_deg", 0.0)},
+                      owner=player)
+        resolve(s, b, eph.positions(self.start_time(s)), {**self.bullseyes(s.id, player), b.id: b})
+        with self.lock:
+            self.made.setdefault(player, {})[b.id] = b
+            self.retired.get(player, {}).pop(b.id, None)
+        if save:
+            self._save_made()
+        return b
+
+    def drop_bullseye(self, player: str, bid: str, save: bool = True) -> None:
+        """Delete a commander's bullseye: no longer listed, but orders and stations already given off
+        it keep reading it. The star centre and players.toml's bullseyes stay."""
+        b = self.made.get(player, {}).get(bid)
+        if b is None:
+            raise BullseyeError("the star centre cannot be deleted" if bid == "system" else
+                                f"{bid!r} is not a bullseye made on the map by {player!r}")
+        with self.lock:
+            del self.made[player][bid]
+            self.retired.setdefault(player, {})[bid] = b
+        if save:
+            self._save_made()
+
+    def _new_id(self, player: str, sid: str, name: str) -> str:
+        """An id from the name, never one the player has had (orders keep reading old ones)."""
+        import re
+        base = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "bullseye"
+        taken = {"system", *self.players[player].bullseyes, *self.made.get(player, {}), *self.retired.get(player, {})}
+        bid, n = base, 1
+        while bid in taken:
+            n += 1
+            bid = f"{base}-{n}"
+        return bid
+
+    def bullseyes(self, sid: str, player: str | None, listed: bool = False) -> dict[str, Bullseye]:
+        """A player's bullseyes in a system: the star centre, players.toml's, those made on the map
+        (listed: only those the map lists; else those deleted too, which orders still fly to)."""
         s = self.get(sid)[0]
         if sid in self.drafts:                               # a draft is read from its own centre
             return {"system": Bullseye.default(s)}
-        out = {"system": Bullseye.default(s)}
+        out = {"system": Bullseye.default(s)}             # the star centre, in the stellar plane: always there
         if player and player in self.players:
-            out.update({b.id: b for b in self.players[player].bullseyes.values() if b.system == sid})
+            mine = [*self.players[player].bullseyes.values(), *self.made.get(player, {}).values()]
+            if not listed:                                   # deleted ones are still flown to
+                mine += self.retired.get(player, {}).values()
+            out.update({b.id: b for b in mine if b.system == sid})
         return out
 
     def resolved(self, sid: str, player: str | None, positions: dict, only: str | None = None) -> dict:
@@ -252,6 +355,18 @@ class World:
             except BullseyeError:
                 pass                                         # reported at load time
         return out
+
+    def resolved_many(self, sid: str, player: str | None, bid: str, ts) -> tuple | None:
+        """One of a player's bullseyes at many moments at once, off the system's table:
+        (origins T × 3, axes T × 3 × 3), or None if it cannot be resolved."""
+        bulls = self.bullseyes(sid, player)
+        tb = self.table(sid)
+        if bid not in bulls or not hasattr(tb, "positions_many"):
+            return None
+        try:
+            return resolve_many(self.get(sid)[0], bulls[bid], tb.ids, tb.positions_many(ts), bulls)
+        except BullseyeError:
+            return None
 
     def spec(self, class_id: str) -> ShipSpec | None:
         """What the simulation reads from a class, once per load of the data."""
@@ -283,7 +398,8 @@ class World:
         orders = [Order(o["unit"], t0 + float(o["at_s"]), "burn" if "burn" in o else "coast", o.get("burn") or {})
                   for o in sc.orders]
         f = self.fleets[sc.id] = Fleet(sc, s, eph, self.ships, place, t0, orders,
-                                       bullseyes=lambda player, pos, only=None: self.resolved(sc.system, player, pos, only))
+                                       bullseyes=lambda player, pos, only=None: self.resolved(sc.system, player, pos, only),
+                                       bullseyes_many=lambda player, bid, ts: self.resolved_many(sc.system, player, bid, ts))
         return f
 
     def start_time(self, s) -> float:
@@ -405,7 +521,8 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             "version": world.version,
             "systems": [level_dict(world, s) for s in sorted(world.systems.values(), key=lambda s: s.name)],
             "players": [{"id": p.id, "name": p.name,
-                         "bullseyes": [{"id": b.id, "name": b.name, "system": b.system} for b in p.bullseyes.values()]}
+                         "bullseyes": [{"id": b.id, "name": b.name, "system": b.system, "made": b.id in world.made.get(p.id, {})}
+                                       for b in [*p.bullseyes.values(), *world.made.get(p.id, {}).values()]]}
                         for p in world.players.values()],
             "scenarios": [{"id": sc.id, "name": sc.name, "system": sc.system, "player": sc.player,
                            "contacts": [contact_dict(world, c, world.trees.get(sc.id)) for c in sc.contacts.values()]}
@@ -542,6 +659,26 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             raise HTTPException(409, str(e))
         world.reload()
         return {"saved": path.name, "id": doc["system"]["id"], "version": world.version}
+
+    @app.post("/api/bullseyes")
+    async def bullseye_make(req: dict = Body(...)):
+        """A commander's new bullseye (World.make_bullseye); the simulation's side reads it too."""
+        try:
+            b = world.make_bullseye(req.get("player") or "", req)
+        except (BullseyeError, ValueError, TypeError) as e:
+            raise HTTPException(400, str(e))
+        await sim.call("bullseye", {"player": req["player"], "make": b.spec()})
+        return {"ok": True, "bullseye": {"id": b.id, "name": b.name, "system": b.system, "made": True, "origin": b.origin}}
+
+    @app.delete("/api/bullseyes/{player}/{bid}")
+    async def bullseye_drop(player: str, bid: str):
+        """Delete one: orders and stations given off it keep it (World.drop_bullseye)."""
+        try:
+            world.drop_bullseye(player, bid)
+        except BullseyeError as e:
+            raise HTTPException(400, str(e))
+        await sim.call("bullseye", {"player": player, "drop": bid})
+        return {"ok": True}
 
     @app.post("/api/order")
     async def order(req: dict = Body(...)):

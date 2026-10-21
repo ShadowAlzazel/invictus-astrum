@@ -118,10 +118,11 @@ def give_order(world, req: dict) -> dict:
     s, _ = world.system(sc.system)
     tg, player = req.get("target") or {}, req.get("player") or sc.player
     if "bullseye" in tg:
-        if tg["bullseye"] not in world.bullseyes(sc.system, player):
+        listed = world.bullseyes(sc.system, player, listed=True)        # not a deleted one
+        if tg["bullseye"] not in listed:
             raise OrderRefused(400, f"no bullseye {tg['bullseye']!r} for {player!r}")
         brg, el, rng = (float(x) for x in tg["aer"])
-        bname = world.bullseyes(sc.system, player)[tg["bullseye"]].name
+        bname = listed[tg["bullseye"]].name
         tilt = "level" if abs(el) < 0.5 else f"{'Eve' if el > 0 else 'Haid'} {abs(el):.0f}°"
         target = {"bullseye": tg["bullseye"], "player": player, "aer": [brg, el, rng * 1e3],
                   "label": tg.get("label") or f"{round(brg) % 360:03d}° {tilt}, {rng:,.0f} km from {bname}"}
@@ -169,6 +170,13 @@ class SimHost:
                 return {"ok": False, "status": e.status, "detail": e.detail}
         if kind == "close":
             self._encoders.pop(payload, None)
+            return None
+        if kind == "bullseye":                          # made or deleted on the map (the web side saved it)
+            player, made = payload["player"], self.world.made.get(payload["player"], {})
+            if "make" in payload:
+                self.world.make_bullseye(player, payload["make"], save=False)
+            elif payload["drop"] in made:
+                self.world.drop_bullseye(player, payload["drop"], save=False)
             return None
         if kind == "draft":
             from .ephemeris import Ephemeris

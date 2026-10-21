@@ -21,7 +21,7 @@ ROLE_MARKS = ("oval", "cross", "slash", "chevron", "dome")     # what a formatio
 
 CONFIG_SCHEMA = {
     "paths": {"systems": str, "scenarios": str, "players": str, "style": str, "ships": str,
-              "display": str, "settings": str},
+              "display": str, "settings": str, "bullseyes": str},
     "server": {"host": str, "port": int},
     "live": {"check_seconds": float},
     "sim": {"start": str, "orbit_samples": int, "table_days": float, "run_ahead": bool},

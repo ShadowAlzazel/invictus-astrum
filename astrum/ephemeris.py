@@ -240,6 +240,17 @@ class Tabled:
         P, _ = self._at(t, False)
         return dict(zip(self.ids, P))
 
+    def positions_many(self, ts) -> np.ndarray:
+        """Every body at many moments at once: T × M × 3, bodies in self.ids order."""
+        ts = np.asarray(ts, dtype=float)
+        node_t0, NP, NV = self.nodes(float(ts.min()), float(ts.max()))
+        x = (ts - node_t0) / self.h
+        k = np.minimum(np.floor(x).astype(np.int64), len(NP) - 2)
+        u = (x - k)[:, None, None]
+        u2, u3, h = u * u, u * u * u, self.h
+        return ((2 * u3 - 3 * u2 + 1) * NP[k] + (u3 - 2 * u2 + u) * h * NV[k]
+                + (3 * u2 - 2 * u3) * NP[k + 1] + (u3 - u2) * h * NV[k + 1])
+
     def states(self, t: float) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         P, V = self._at(t, True)
         return {i: (p, v) for i, p, v in zip(self.ids, P, V)}

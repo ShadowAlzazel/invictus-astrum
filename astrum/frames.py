@@ -67,6 +67,14 @@ def basis(x, z) -> np.ndarray:
                      [x2, z0 * x1 - z1 * x0, z2]])
 
 
+def basis_many(x: np.ndarray, z: np.ndarray) -> np.ndarray:
+    """basis for many frames at once: x and z are n × 3; returns n × 3 × 3."""
+    z = z / np.linalg.norm(z, axis=-1, keepdims=True)
+    x = x - np.sum(x * z, axis=-1, keepdims=True) * z
+    x = x / np.linalg.norm(x, axis=-1, keepdims=True)
+    return np.stack([x, np.cross(z, x), z], axis=-1)
+
+
 # ---- fixed frames, all relative to ICRS ----------------------------------------------------
 
 ECLIPTIC_J2000 = rot_x(OBLIQUITY_J2000)          # ecliptic axes in ICRS

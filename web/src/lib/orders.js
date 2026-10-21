@@ -8,10 +8,12 @@ const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const mul = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
 const len = (a) => Math.hypot(a[0], a[1], a[2]);
 
-// What the cursor points at: a unit or a body under it (their own coordinates), else the point on
-// the plane through the ship parallel to the bullseye's, tilted toward Eve (up) or Haid (down).
+// What the cursor points at: a unit or a body under it (their own coordinates), else a point by the
+// bullseye's plane. plane 'her': on the plane through the ship parallel to the bullseye's, tilted
+// toward Eve (up) or Haid (down) as seen from her; plane 'bullseye': at that elevation as seen from
+// the bullseye (0: on its own plane, level with it, wherever she is now).
 // `unit` is the ship, or the formation, the order is for; `ships` are the ships it goes to.
-export function aimAt(map, unit, ships, cursor, tiltDeg) {
+export function aimAt(map, unit, ships, cursor, tiltDeg, plane = 'her') {
   const from = map.position({ kind: 'contact', id: unit });
   if (!from) return null;
   const h = map.hover;
@@ -26,10 +28,11 @@ export function aimAt(map, unit, ships, cursor, tiltDeg) {
       return { from, to: p, kind: h.kind, id: h.id, label: name, standoff: stand, target: { [h.kind === 'body' ? 'body' : 'unit']: h.id } };
     }
   }
-  const flat = map.planeAt(cursor.x, cursor.y, from);
+  const onBull = plane === 'bullseye';
+  const flat = map.planeAt(cursor.x, cursor.y, onBull ? null : from);
   const b = map.bullseye();
   if (!flat || !b) return null;
-  const across = sub(flat, from), up = b.axes[2];
+  const across = sub(flat, onBull ? b.origin : from), up = b.axes[2];
   const to = add(flat, mul(up, len(across) * Math.tan((tiltDeg * Math.PI) / 180)));
   const a = map.aer(to);
   return { from, to, kind: 'point', label: 'point', standoff: 0,

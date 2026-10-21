@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .frames import ECLIPTIC_J2000, GALACTIC, basis, from_aer, pole_frame, rot_z, to_aer, unit
+from .frames import ECLIPTIC_J2000, GALACTIC, basis, basis_many, from_aer, pole_frame, rot_z, to_aer, unit
 from .model import StellarSystem
 
 DEFAULT_ID = "system"
@@ -41,6 +41,11 @@ class Bullseye:
     ref: object = "system"
     roll_deg: float = 0.0
     owner: str = ""
+
+    def spec(self) -> dict:
+        """As players.toml (and bullseyes.toml) has it."""
+        return {"id": self.id, "name": self.name, "system": self.system, "origin": dict(self.origin),
+                "up": self.up, "ref": self.ref, "roll_deg": self.roll_deg}
 
     @staticmethod
     def default(system: StellarSystem) -> "Bullseye":
@@ -142,6 +147,51 @@ def resolve(system: StellarSystem, b: Bullseye, positions: dict[str, np.ndarray]
 
 
 _FIXED_AXES: dict[tuple, np.ndarray] = {}
+
+
+def resolve_many(system: StellarSystem, b: Bullseye, ids: list[str], P: np.ndarray,
+                 others: dict[str, "Bullseye"] | None = None, _depth: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """resolve at many moments at once, from the bodies' positions then (P: T × len(ids) × 3):
+    origins (T × 3) and axes (T × 3 × 3). The same frames resolve gives, one numpy pass for all."""
+    if _depth > 8:
+        raise BullseyeError(f"bullseye {b.id!r}: origins refer to each other in a loop")
+    col = {bid: k for k, bid in enumerate(ids)}
+    body = lambda bid: P[:, col[bid]] if bid in col else _no_body(system, b, bid)
+    T = len(P)
+    o = b.origin or {"body": system.root}
+    if "body" in o:
+        origin = body(o["body"]) + np.asarray(o.get("offset_km", (0, 0, 0)), dtype=float) * 1e3
+    elif "xyz_km" in o:
+        origin = np.broadcast_to(np.asarray(o["xyz_km"], dtype=float) * 1e3, (T, 3))
+    elif "aer" in o:
+        src_id = o.get("from", DEFAULT_ID)
+        src = Bullseye.default(system) if src_id == DEFAULT_ID else (others or {}).get(src_id)
+        if src is None:
+            raise BullseyeError(f"bullseye {b.id!r}: origin is placed from unknown bullseye {src_id!r}")
+        az, el, rng = o["aer"]
+        O, A = resolve_many(system, src, ids, P, others, _depth + 1)
+        origin = O + A @ from_aer(math.radians(az), math.radians(el), rng * 1e3)
+    else:
+        raise BullseyeError(f"bullseye {b.id!r}: origin needs body, xyz_km or aer")
+    toward = [x[7:] for x in (b.up, b.ref) if isinstance(x, str) and x.startswith("toward:")]
+    if not toward:                                   # fixed directions: the axes of any one moment
+        first = {bid: P[0, k] for bid, k in col.items()}
+        return origin, np.broadcast_to(resolve(system, b, first, others, _depth).axes, (T, 3, 3))
+    dirs = []
+    for spec, what in ((b.up, "up"), (b.ref, "ref")):
+        if isinstance(spec, str) and spec.startswith("toward:"):
+            d = body(spec[7:]) - origin
+            dirs.append(d / np.linalg.norm(d, axis=-1, keepdims=True))
+        else:
+            dirs.append(np.broadcast_to(_direction(system, spec, {}, None, what), (T, 3)))
+    up, ref = dirs
+    if (np.abs(np.sum(ref * up, axis=-1)) > 0.999).any():
+        raise BullseyeError(f"bullseye {b.id!r}: 000 is parallel to Eve; choose another reference")
+    return origin, basis_many(ref, up) @ rot_z(-math.radians(b.roll_deg))
+
+
+def _no_body(system: StellarSystem, b: Bullseye, bid: str):
+    raise BullseyeError(f"bullseye {b.id!r}: no body {bid!r} in {system.name}")
 
 
 def from_dict(d: dict, owner: str = "") -> Bullseye:

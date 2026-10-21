@@ -4,6 +4,7 @@
   import { api, StateStream } from './lib/api.js';
   import HudCursor from './lib/HudCursor.svelte';
   import Orders from './lib/Orders.svelte';
+  import Bullseyes from './lib/Bullseyes.svelte';
   import { group, hms, orderGroups, shipsUnder, stepG } from './lib/orders.js';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
@@ -24,7 +25,9 @@
   let drules = {}, settings = null, showSettings = false, settingsStatus = '', saveTimer, pendingSave = false;
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
   let showFindings = false, down = null, poll;
-  let ordering = null, orderTool, orderMsg = '', msgTimer;   // an order being aimed: { unit, g, tilt }
+  let ordering = null, orderTool, orderMsg = '', msgTimer;   // an order being aimed: { unit, g, tilt, plane }
+  let orderPlane = 'her';                                    // the last order's plane (B), kept for the next
+  $: if (ordering?.plane) orderPlane = ordering.plane;
   $: if (ordering && (mode !== 'map' || (state && !ordering.ships.some((id) => state.ships?.[id])))) ordering = null;
   let mode = 'menu';                    // 'menu' | 'levels' | 'map' | 'workshop' | 'ships'
   let purpose = 'play';                 // what the level list is for: 'play' or 'build'
@@ -33,7 +36,7 @@
   let schema = null, wdoc = null, lastLevel = null;
 
   $: player = meta?.players.find((p) => p.id === playerId);
-  $: bullseyes = [{ id: 'system', name: `${def?.name ?? ''} centre` }, ...(player?.bullseyes.filter((b) => b.system === systemId) ?? [])];
+  $: bullseyes = [{ id: 'system', name: `${def?.name ?? ''} centre` }, ...(player?.bullseyes.filter((b) => b.system === systemId) ?? [])];   // the star centre always first
   $: scenario = meta?.scenarios.find((s) => s.system === systemId);
   $: contacts = scenarioOn && scenario ? scenario.contacts : [];
   $: warnings = def?.findings.filter((f) => f.level === 'warning') ?? [];
@@ -177,7 +180,7 @@
     if (!able.length) return say('No ship there has a drive stated; they cannot be ordered to move.');
     const grp = group(state, contacts, able);
     const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
-    ordering = { unit: sel.id, ships: able, g, tilt: 0 };
+    ordering = { unit: sel.id, ships: able, g, tilt: 0, plane: orderPlane };
   }
   // a telegraph moved for orders already being flown: only their g changes. With an order
   // ({id, by}) only that order's ships, all of them; without, the selected ship
@@ -398,15 +401,7 @@
 
 {#if mode === 'map'}
 <div class="leftcol">
-<!-- the bullseyes, one to a row: bearings and ranges everywhere read from the one chosen -->
-<div class="panel bulls" data-ui>
-  <h3>Bullseye <span>{bullseyes.length}</span></h3>
-  <ol>
-    {#each bullseyes as b}
-      <li><button class:on={b.id === bullseyeId} on:click={() => (bullseyeId = b.id)}><i></i><span>{b.name}</span></button></li>
-    {/each}
-  </ol>
-</div>
+<Bullseyes {bullseyes} bind:bullseyeId {def} {sel} {map} {t} {playerId} onchange={loadMeta} />
 <div class="panel left" data-ui>
   <div class="row">
     <span class="lbl">Player</span>
@@ -495,17 +490,6 @@
   .row { display: flex; gap: 10px; align-items: center; }
   .lbl { color: var(--dim); }
   select { background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: inherit; padding: 2px 4px; flex: 1; }
-  .bulls { padding: 10px 14px 6px; max-height: 40vh; overflow: auto; }
-  .bulls h3 { margin: 0 0 6px; font-family: var(--display); font-weight: 400; font-size: 11px; letter-spacing: 0.14em;
-              text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; }
-  .bulls ol { list-style: none; margin: 0; padding: 0; }
-  .bulls li + li { border-top: 1px solid var(--rule); }
-  .bulls button { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 6px 0;
-                  color: var(--dim); font-family: var(--display); font-size: 14px; text-align: left; }
-  .bulls button i { flex: none; width: 7px; height: 7px; transform: rotate(45deg); border: 1px solid var(--violet); }
-  .bulls button:hover { color: var(--ink); }
-  .bulls button.on { color: var(--ink); }
-  .bulls button.on i { background: var(--fuchsia); border-color: var(--fuchsia); }
   .frame { margin: 2px 0 0; color: var(--dim); font-size: 10px; }
 
   .toggle { background: none; border: 0; padding: 3px 0; display: flex; align-items: center; gap: 8px; color: var(--dim); text-align: left; }

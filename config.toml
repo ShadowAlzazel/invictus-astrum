@@ -9,6 +9,7 @@ ships     = "data/ships"
 style     = "style.toml"
 display   = "display.toml"      # display rules and the defaults of every setting
 settings  = "settings.toml"     # your settings from the map; overrides display.toml; not committed
+bullseyes = "bullseyes.toml"    # bullseyes commanders make on the map; written by the map; not committed
 
 [server]
 host = "127.0.0.1"

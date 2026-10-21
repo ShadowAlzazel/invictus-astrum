@@ -17,6 +17,8 @@ export const api = {
   ships: () => get('/ships'),
   ship: (id) => get(`/ships/${id}`),
   order: (o) => post('/order', o),
+  makeBullseye: (b) => post('/bullseyes', b),
+  dropBullseye: (player, id) => send('DELETE', `/bullseyes/${encodeURIComponent(player)}/${encodeURIComponent(id)}`),
   workshop: {
     schema: () => get('/workshop/schema'),
     source: (id) => get(`/workshop/source/${id}`),
@@ -27,8 +29,10 @@ export const api = {
 
 export class Rejected extends Error {}
 
-async function post(path, body) {
-  const r = await fetch(`/api${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+async function post(path, body) { return send('POST', path, body); }
+
+async function send(method, path, body) {
+  const r = await fetch(`/api${path}`, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Rejected(data.detail ?? `${r.status} ${path}`);
   return data;

@@ -14,7 +14,7 @@
   export let state = null;
   export let contacts = [];
   export let sel = null;
-  export let ordering = null;       // { unit, ships, g, tilt } while an order is being aimed
+  export let ordering = null;       // { unit, ships, g, tilt, plane } while an order is being aimed
   export let message = '';
 
   let canvas, ctx, unhook, W = 0, H = 0, dpr = 1;
@@ -26,15 +26,25 @@
   $: selShips = sel?.kind === 'contact' ? new Set(shipsUnder(contacts, state, sel.id)) : new Set();
 
   // what the cursor points at now; App asks for it when the order is given
-  export function aim() { return ordering && map ? aimAt(map, ordering.unit, ordering.ships, cursor, ordering.tilt) : null; }
+  export function aim() { return ordering && map ? aimAt(map, ordering.unit, ordering.ships, cursor, ordering.tilt, ordering.plane) : null; }
+  // Eve and Haid from her own height, or from the bullseye (level: on its plane)
+  function togglePlane() { ordering.plane = ordering.plane === 'bullseye' ? 'her' : 'bullseye'; ordering.tilt = 0; ordering = ordering; }
+  $: onBull = ordering?.plane === 'bullseye';
+  $: note = onBull ? (ordering.tilt ? `${elev(ordering.tilt)} of the bullseye` : 'level with the bullseye')
+                   : (ordering?.tilt ? `${elev(ordering.tilt)} from her` : 'level with her, along the bullseye');
 
-  // keys while aiming: W/S step the telegraph (Shift: by 0.01 g), E/Q tilt toward Eve or Haid
+  // keys while aiming: W/S step the telegraph (Shift: by 0.01 g), E/Q tilt toward Eve or Haid,
+  // B: Eve and Haid from her own height or from the bullseye's plane
   export function key(e) {
     if (!ordering || !grp) return false;
     const k = e.key.toLowerCase();
     if (k === 'w' || k === 's') {
       ordering.g = stepG(ordering.g, grp.maxG, grp.cruise, k === 'w', e.shiftKey);
       ordering = ordering;
+      return true;
+    }
+    if (k === 'b') {
+      togglePlane();
       return true;
     }
     if (k === 'e' || k === 'q') {
@@ -134,12 +144,15 @@
     <header><b>Order</b><span>{name}</span>{#if ordering.ships.length > 1}<i>{ordering.ships.length} ships</i>{/if}</header>
     <div class="body">
       <Telegraph maxG={grp.maxG} cruise={grp.cruise} value={shown}
-                 note={`${ordering.tilt ? elev(ordering.tilt) : 'level'} of the bullseye`}
+                 {note}
                  onset={(g) => { ordering.g = g; ordering = ordering; }}>
         {#if ordering.ships.length > 1}<span class="dim">held to the slowest ship's most</span>{/if}
       </Telegraph>
     </div>
-    <p class="keys"><kbd>W</kbd><kbd>S</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>E</kbd><kbd>Q</kbd> Eve / Haid · click to order · <kbd>Esc</kbd> cancel</p>
+    <button class="plane" class:on={onBull} on:click={togglePlane} title="B: Eve and Haid from her own height, or from the bullseye's plane">
+      <i></i>{onBull ? "Bullseye's plane" : 'Her own height'}<kbd>B</kbd>
+    </button>
+    <p class="keys"><kbd>W</kbd><kbd>S</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>E</kbd><kbd>Q</kbd> Eve / Haid · <kbd>B</kbd> plane · click to order · <kbd>Esc</kbd> cancel</p>
     {#if message}<p class="msg">{message}</p>{/if}
   </aside>
 {:else if message}
@@ -156,6 +169,12 @@
   .body { margin-top: 10px; }
   header i { margin-left: auto; font-style: normal; font-size: 11px; color: var(--dim); }
   .keys { margin: 10px 0 0; font-size: 10px; color: var(--dim); }
+  .plane { display: flex; align-items: center; gap: 8px; margin-top: 8px; background: none; border: 1px solid var(--rule);
+           color: var(--dim); font: inherit; font-size: 11px; padding: 3px 8px; cursor: pointer; }
+  .plane i { width: 7px; height: 7px; transform: rotate(45deg); border: 1px solid var(--violet); }
+  .plane.on { color: var(--ink); border-color: var(--violet); }
+  .plane.on i { background: var(--violet); }
+  .plane kbd { margin-left: auto; }
   kbd { border: 1px solid var(--rule); padding: 0 3px; font-family: var(--mono); font-size: 9px; }
   .msg { margin: 6px 0 0; color: #ffd27a; font-size: 11px; }
   .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 40; margin: 0; padding: 6px 12px;

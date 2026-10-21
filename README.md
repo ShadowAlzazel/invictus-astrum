@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 167 tests
+python -m pytest -q tests             # 170 tests
 ```
 
 The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
@@ -71,7 +71,9 @@ the author*. The format is in `data/ships/README.md`.
 | Esc | clear the selection |
 
 The cursor reads bearing, range, Eve/Haid and light time from the **active bullseye**: pick a
-player and one of their bullseyes at the bottom left.
+player and one of their bullseyes at the bottom left. **+ New** there makes a bullseye of your own
+at what is selected (a body, a unit's place, a point picked on the map); ✕ deletes one of your own
+(orders already given off it keep flying). The star centre is always there.
 
 ## What is where
 
@@ -81,6 +83,7 @@ player and one of their bullseyes at the bottom left.
 | `data/presets.toml` | the workshop's starting bodies; add your own |
 | `data/ships/` | ship classes, their components, and the rules they are read against |
 | `data/players.toml` | players and their bullseyes |
+| `bullseyes.toml` | bullseyes commanders made on the map (written by the map; not committed) |
 | `data/factions.toml` | factions: a name, and the prefix a ship's name reads with; units take theirs from the formation above |
 | `data/scenarios/*.toml` | units placed in a system (symbols only; no engagement is simulated yet) |
 | `style.toml` | colours, affiliation frames, echelon marks, formation roles (their APP-6 marks), body display sizes by role |
