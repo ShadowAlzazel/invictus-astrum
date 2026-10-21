@@ -74,22 +74,22 @@ armada     = "XXXX"
 # formation's role (role = "battle"); if it does not, the first word of its callsign that one of
 # these lists under words gives it ("Battle Squadron 1": battle).
 [formation_role.vanguard]
-label = "Vanguard: armoured cavalry"
+label = "Vanguard, Forward Recon"
 marks = ["oval", "slash"]
 words = ["Vanguard"]
 
 [formation_role.battle]
-label = "Battle: armour"
+label = "Battle"
 marks = ["oval"]
 words = ["Battle"]
 
 [formation_role.line]
-label = "Line: infantry"
+label = "Line"
 marks = ["cross"]
 words = ["Line"]
 
 [formation_role.escort]
-label = "Escort: anti-armour, air defence"
+label = "Escort, PD, Missile Defence"
 marks = ["chevron", "dome"]
 words = ["Escort"]
 
@@ -99,12 +99,12 @@ label = "Anti-armour"
 marks = ["chevron"]
 
 [formation_role.picket]
-label = "Picket: reconnaissance"
+label = "Picket, Reconaissance"
 marks = ["slash"]
 words = ["Picket"]
 
 [formation_role.strike]
-label = "Strike: mechanised"
+label = "Strike, Shock"
 marks = ["oval", "cross"]
 words = ["Strike"]
 
