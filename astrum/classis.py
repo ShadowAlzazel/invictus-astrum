@@ -69,21 +69,23 @@ class Classis:
             new[: self.n] = old[: self.n]
             setattr(self, name, new)
 
-    def add(self, rid: str, kind: int = SHIP, callsign: str = "", spec: ShipSpec | None = None, load: str = "") -> int:
-        if self.n == self.cap:
-            self._grow()
-        i = self.n
-        self.n += 1
+    def add(self, rid: str, kind: int = SHIP, callsign: str = "", spec: ShipSpec | None = None, load: str = "",
+            reuse: int | None = None) -> int:
+        """A new row, at the end, or made new in place of one nothing flies any more (reuse)."""
+        if reuse is None:
+            if self.n == self.cap:
+                self._grow()
+            i = self.n
+            self.n += 1
+            for lst in (self.ids, self.callsign, self.spec, self.load, self.meta, self.burn_meta, self.station_at):
+                lst.append(None)
+        else:
+            i = reuse
         for name, (shape, dtype, fill) in COLUMNS.items():
             getattr(self, name)[i] = fill
         self.kind[i] = kind
-        self.ids.append(rid)
-        self.callsign.append(callsign)
-        self.spec.append(spec)
-        self.load.append(load)
-        self.meta.append(None)
-        self.burn_meta.append(None)
-        self.station_at.append(None)
+        self.ids[i], self.callsign[i], self.spec[i], self.load[i] = rid, callsign, spec, load
+        self.meta[i] = self.burn_meta[i] = self.station_at[i] = None
         if kind == SHIP:
             self.row[rid] = i
             if spec is not None:

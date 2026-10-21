@@ -833,3 +833,45 @@ def test_a_ship_leaving_station_is_where_she_flies():
         fb = _demo(create_app().state.world)
         fb.command(order())
         assert np.linalg.norm(fa.picture(to + dt)["r"][i] - fb.at(to + dt)["kiki-2"].state.r) < 1.0
+
+
+@pytest.mark.parametrize("finish", [True, False])
+def test_a_rewind_after_orders_given_in_the_past_flies_each_once(finish):
+    """Orders given in the past, the later ones earlier still, then the map scrubs back (with the
+    last order's rows still on their way, or not): the fleet is the one given them all at the
+    start. Checkpoints count the orders given into their past; those a re-fly had not reached go."""
+    from astrum.app import create_app
+    from astrum.sim import Order
+    fa, fb = _demo(create_app().state.world), _demo(create_app().state.world)
+    order = lambda f, at, u: Order(u, f.t0 + at, "goto", target={"body": "moon", "label": "Moon"}, g=0.3)
+    plan = [(3600, "kiki-1"), (1500, "paris-1"), (2500, "kiki-2")]
+    fa.at(fa.t0 + 4 * 3600)
+    for at, u in plan:
+        fa.command(order(fa, at, u))
+        if finish:
+            fa.at(fa.t)
+    fa.at(fa.t0 + 2.6 * 3600)
+    for at, u in plan:
+        fb.command(order(fb, at, u))
+    fb.at(fb.t0 + 2.6 * 3600)
+    n = len(fa.c.row)
+    assert np.abs(fa.c.r[:n] - fb.c.r[:n]).max() < 100.0     # was 87 km off: an order given twice
+    assert fa.c.meta[fa.c.row["kiki-1"]]["issued"] == pytest.approx(fa.t0 + 3600)
+
+
+def test_a_formation_ordered_again_and_again_in_the_past_keeps_its_rows():
+    """A formation's lead an order sets back for good leaves its row to the lead the replay makes:
+    a row for each order given, not one more every time the orders are flown again."""
+    from astrum.app import create_app
+    from astrum.simhost import give_order
+    world = create_app().state.world
+    f = _demo(world)
+    req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo", "unit": "kiki", "g": 0.3}
+    f.at(f.t0 + 3 * 3600)
+    give_order(world, {**req, "t": f.t0 + 900, "target": {"body": "moon"}})
+    f.at(f.t)
+    ships = len(f.c.row)
+    for k in range(4):                                      # an order again, a little earlier each time: all flown again
+        give_order(world, {**req, "t": f.t0 + 800 - 60 * k, "target": {"body": "moon"}})
+        f.at(f.t)
+    assert f.c.n == ships + 5                               # five orders, five leads (it was 62: leads made again each time)

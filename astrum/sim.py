@@ -233,6 +233,7 @@ class Fleet:
         self.timeline: Timeline | None = None      # kept when a run-ahead worker flies the fleet (keep_timeline)
         self.versions = Versions()                 # every change to what a row was given, from when (astrum/timeline.py)
         self.mending: Mend | None = None           # an order's rows flying again, partway (command)
+        self._spare: list[int] = []                # leads' rows an order set back for good: the next leads take them
         self._now = t0                             # the moment what is being changed changes
         for i in range(cl.n):
             self._touch(i)
@@ -243,7 +244,7 @@ class Fleet:
         """Keep every row's state a minute apart from here on (astrum/timeline.py)."""
         with self.lock:
             if self.timeline is None:
-                self.timeline = Timeline(self.t0, TIMELINE_S, self.c.cap)
+                self.timeline = Timeline(self.t0, TIMELINE_S, self.c.cap + 64)    # room for leads to come
                 k = math.floor(self.timeline.k_of(self.t) + 1e-9)
                 if abs(self.timeline.time(k) - self.t) < 1e-6:
                     self._record(self.timeline.open(k, k), np.arange(self.c.n), flown=np.zeros(0, dtype=np.int64), whole=True)
@@ -309,7 +310,7 @@ class Fleet:
         self.versions.cut_all(self.c.mver[: self.c.n])
         self.leads = {oid: LeadView(self.c, i) for oid, i in leads.items()}
         self.t, self._order_i, self._station_t = t, order_i, station_t
-        self.mending = None
+        self.mending, self._spare = None, []
         self._place_cache.clear()
         if self.timeline is not None:
             self.timeline.cut(t)
@@ -330,6 +331,9 @@ class Fleet:
             for o in orders:
                 o.at = max(o.at, self.t0)
                 bisect.insort(self.orders, o, key=lambda o: o.at)
+            # a checkpoint after an order has it given (the re-fly mends it, or it goes): count it
+            self._checkpoints = [(t, snap, oi + sum(1 for o in orders if o.at < t - 1e-9), st)
+                                 for t, snap, oi, st in self._checkpoints]
             t_o = min(o.at for o in orders)
             if self.t < t_o - 1e-9:
                 return None
@@ -350,11 +354,25 @@ class Fleet:
                     break
                 rows |= more
             names = {self.c.ids[i] for i in rows}
+            replay = [o for o in self.orders if t_k - 1e-9 <= o.at < self.t and o.unit in names]
+            self._free_leads(snap[0]["n"], {o.order_id or f"{o.unit}@{o.at:.0f}" for o in replay})
             m = self.mending = Mend(rows, np.array(sorted(rows), dtype=np.int64), t_k, st_t, self.t,
-                                    [o for o in self.orders if t_k - 1e-9 <= o.at < self.t and o.unit in names],
-                                    set(map(id, orders)))
+                                    replay, set(map(id, orders)))
             self._mend(max(o.at for o in orders))
             return m.reply
+
+    def _free_leads(self, nk: int, oids: set[str]) -> None:
+        """Leads made since the checkpoint (rows from nk) for orders about to be flown again: their
+        rows go to the leads the replay makes, not to new rows."""
+        c = self.c
+        for j in range(nk, c.n):
+            if c.kind[j] == LEAD and c.ids[j] in oids and j not in self._spare:
+                c.mode[j], c.goal[j], c.mver[j] = DEAD, False, 0
+                self.versions.cut(j, 0)
+                L = self.leads.get(c.ids[j])
+                if L is not None and L.row == j:
+                    del self.leads[c.ids[j]]
+                self._spare.append(j)
 
     def _affected(self, ids: set[str], rows: set[int]) -> set[int]:
         """The rows the given ships' (and rows') flight bears on: their formation (its lead, its
@@ -388,8 +406,9 @@ class Fleet:
                     getattr(c, name)[i] = cols[name][i]
                 for k in ("meta", "burn_meta", "station_at"):
                     getattr(c, k)[i] = copy.deepcopy(cols[k][i])
-            else:
+            else:                                       # made since: gone, and its row free for the next lead
                 c.mode[i], c.goal[i], c.mver[i] = DEAD, False, 0
+                self._spare.append(i)
             self.versions.cut(i, int(c.mver[i]))
         for oid, L in list(self.leads.items()):
             if L.row in rows:
@@ -398,12 +417,19 @@ class Fleet:
             if j in rows:
                 self.leads[oid] = LeadView(c, j)
 
+    def _forget_mend(self) -> None:
+        """Set back while an order's rows are still on their way: the checkpoints they had not
+        reached never got the order, so they go (the fleet makes them again as it flies past)."""
+        if self.mending is not None:
+            self._checkpoints = [cp for cp in self._checkpoints if cp[0] <= self.mending.t + 1e-9]
+            self.mending = None
+
     def _mend(self, t_end: float, until: float = math.inf) -> None:
         """Fly an order's rows on (command), up to t_end (its orders given) or until the wall clock
         passes `until`; done when they reach the rest of the fleet."""
         c, m = self.c, self.mending
         while m is not None:
-            applied, n_before = [], c.n
+            applied, had = [], {L.row for L in self.leads.values()}
             while m.q < len(m.replay) and m.replay[m.q].at <= m.t + 1e-9:
                 o = m.replay[m.q]
                 m.st_t = self._station_grid(m.st_t, o.at, m.scope, partial=True)
@@ -411,8 +437,9 @@ class Fleet:
                 applied.append(o)
                 m.q += 1
             if applied:
-                if c.n > n_before:                    # a lead the orders made is flown with them
-                    m.scope = np.union1d(m.scope, np.arange(n_before, c.n)).astype(np.int64)
+                made = {L.row for L in self.leads.values()} - had
+                if made:                              # a lead the orders made is flown with them
+                    m.scope = np.union1d(m.scope, sorted(made)).astype(np.int64)
                 self._fly(m.t, m.t, steer_only=True, scope=m.scope)
                 if any(id(o) in m.given for o in applied):
                     m.reply = {o.unit: c.ship(c.row[o.unit]) for o in applied if id(o) in m.given}
@@ -510,6 +537,7 @@ class Fleet:
                 if t <= self.t0:
                     return t, view(self._before_start(t))
                 if t < self.t:
+                    self._forget_mend()
                     i = bisect.bisect_right([c[0] for c in self._checkpoints], t) - 1
                     self._restore(*self._checkpoints[max(i, 0)])
                 if self.mending is not None:              # an order's rows reach the rest of the fleet first
@@ -532,6 +560,7 @@ class Fleet:
 
     def _before_start(self, t: float) -> dict[str, Ship]:
         """Before the scenario starts, everyone is on station with the tanks she starts with."""
+        self._forget_mend()
         self._restore(*self._checkpoints[0])
         _, placed, _ = self._placed(t)
         for sid, i in self.c.row.items():
@@ -1120,7 +1149,7 @@ class Fleet:
                 L = self.leads.get(oid)
                 if L is None or c.meta[L.row]["issued"] != o.at:
                     base = {k: v for k, v in tg.items() if k != "offset_m"}
-                    j = c.add(oid, LEAD)
+                    j = c.add(oid, LEAD, reuse=self._spare.pop() if self._spare else None)
                     c.mode[j], c.r[j], c.v[j], c.t[j] = FREE, c.r[i] - slot, c.v[i], o.at
                     c.meta[j] = {"target": base, "label": tg.get("label"), "g": float(o.g or 0.0), "standoff_m": stand,
                                  "issued": o.at, "order_id": oid, "n": 1}
