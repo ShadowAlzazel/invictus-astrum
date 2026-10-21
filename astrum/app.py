@@ -379,13 +379,14 @@ def level_dict(world: "World", s) -> dict:
 
 def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool = False) -> FastAPI:
     """The web server. The simulation answers its pictures and orders: in a process of its own
-    (sim="process", as serve.py runs it; it flies ahead of the clock there), or in this one
-    (sim="inline", sharing this world: for tests and tools; run_ahead to fly ahead here too)."""
+    (sim="process", as serve.py runs it), or in this one (sim="inline", sharing this world: for
+    tests and tools). run_ahead: a worker keeps the fleet flown ahead of the map's clock (serve.py
+    takes it from config.toml's [sim] run_ahead)."""
     config = config or load_config()
     world = World(config)
     if sim == "process":
         from .simhost import ProcessSim
-        sim = ProcessSim(config)
+        sim = ProcessSim(config, run_ahead)
     else:
         from .simhost import InlineSim
         sim = InlineSim(world, run_ahead)

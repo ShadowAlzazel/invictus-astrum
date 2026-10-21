@@ -315,13 +315,13 @@ class InlineSim:
         self.host.stop()
 
 
-def _child(conn, config: dict) -> None:
-    """The simulation's process: its own World, a SimHost with its run-ahead worker, and requests
-    over the pipe, each answered in a thread of a small pool."""
+def _child(conn, config: dict, run_ahead: bool) -> None:
+    """The simulation's process: its own World, a SimHost (with its run-ahead worker, if asked),
+    and requests over the pipe, each answered in a thread of a small pool."""
     from concurrent.futures import ThreadPoolExecutor
     from .app import World
     world = World(config)
-    host = SimHost(world, run_ahead=True)
+    host = SimHost(world, run_ahead)
     send = threading.Lock()
     pool = ThreadPoolExecutor(4)
 
@@ -347,11 +347,11 @@ def _child(conn, config: dict) -> None:
 class ProcessSim:
     """The SimHost in a process of its own: the web server's process only talks."""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, run_ahead: bool = True):
         import multiprocessing as mp
         ctx = mp.get_context("spawn")
         self._conn, child = ctx.Pipe()
-        self.proc = ctx.Process(target=_child, args=(child, config), name="astrum-sim", daemon=True)
+        self.proc = ctx.Process(target=_child, args=(child, config, run_ahead), name="astrum-sim", daemon=True)
         self.proc.start()
         self._ids = itertools.count(1)
         self._waiting: dict[int, tuple] = {}

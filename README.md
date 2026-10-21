@@ -13,8 +13,12 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 163 tests
+python -m pytest -q tests             # 166 tests
 ```
+
+The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
+`run_ahead = false` under `[sim]` in `config.toml` turns it off (each picture then flies the fleet
+there itself; everything else works the same).
 
 Frontend work: `python serve.py` in one terminal, `cd web && npm run dev` in another (live
 reload on :5173, proxied to the server).

@@ -707,10 +707,13 @@ def test_the_fleet_flies_ahead_of_the_clock():
     app.state.sim.close()
 
 
-def test_the_simulation_runs_in_a_process_of_its_own():
+@pytest.mark.parametrize("run_ahead", [True, False])
+def test_the_simulation_runs_in_a_process_of_its_own(run_ahead):
+    """The server's other process answers pictures and orders, with the run-ahead worker or
+    without it (config.toml's [sim] run_ahead): each picture then flies the fleet there itself."""
     from fastapi.testclient import TestClient
     from astrum.app import create_app
-    app = create_app(sim="process")
+    app = create_app(sim="process", run_ahead=run_ahead)
     with TestClient(app) as c:
         sol = next(s for s in c.get("/api/meta").json()["systems"] if s["id"] == "sol")["start"]
         req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo"}
@@ -727,6 +730,31 @@ def test_the_simulation_runs_in_a_process_of_its_own():
             assert not later["full"] and later["ships"]["kiki-1"]["goal"]["label"].startswith("090°")
         assert app.state.sim.proc.is_alive()
     assert not app.state.sim.proc.is_alive()                 # the server's end stops it
+
+
+def test_the_flight_does_not_depend_on_who_flies_it():
+    """Without the run-ahead worker each picture flies the fleet up to its moment, wherever the
+    map's clock happens to fall; blocks keep to their grid all the same, so the flight is the one
+    flown straight through."""
+    import random
+    from astrum.app import create_app
+    from astrum.sim import Order
+    from astrum.simhost import SimHost
+
+    def make():
+        w = create_app().state.world
+        f = _demo(w)
+        f.command(Order("kiki-1", f.t0 + 600, "goto", target={"body": "moon", "label": "Moon"}, g=0.3))
+        return w, f
+    (wa, fa), (_, fb) = make(), make()
+    host, rnd, t = SimHost(wa), random.Random(1), fa.t0
+    while t < fa.t0 + 4 * 3600:
+        t += rnd.uniform(5, 400)
+        host.frame({"system": "sol", "player": "arcvs", "scenario": "sol-demo", "t": t}, conn=1)
+    T = fa.t0 + 4 * 3600
+    fa.at(T), fb.at(T)
+    assert np.abs(fa.c.r[: fa.c.n] - fb.c.r[: fb.c.n]).max() < 1e-3
+    assert all((c[0] - fa.t0) % 600 < 1e-6 for c in fa._checkpoints)
 
 
 def test_where_everyone_was_comes_off_the_timeline():

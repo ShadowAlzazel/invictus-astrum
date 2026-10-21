@@ -52,6 +52,15 @@ def test_shipped_settings_and_data_load():
     assert not errors and "sol-demo" in scenarios
 
 
+def test_the_run_ahead_worker_is_a_setting(tmp_path):
+    """[sim] run_ahead is true or false, nothing else."""
+    assert isinstance(load_config(ROOT / "config.toml")["sim"]["run_ahead"], bool)
+    f = tmp_path / "config.toml"
+    f.write_text((ROOT / "config.toml").read_text().replace("run_ahead = true", 'run_ahead = "yes"'))
+    with pytest.raises(ConfigError, match="run_ahead"):
+        load_config(f)
+
+
 def test_style_errors_are_listed_together(tmp_path):
     bad = (ROOT / "style.toml").read_text().replace('shape = "diamond"', 'shape = "hexagon"').replace(
         'color = "#2ec4b6"', 'color = "teal"')

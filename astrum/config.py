@@ -24,7 +24,7 @@ CONFIG_SCHEMA = {
               "display": str, "settings": str},
     "server": {"host": str, "port": int},
     "live": {"check_seconds": float},
-    "sim": {"start": str, "orbit_samples": int, "table_days": float},
+    "sim": {"start": str, "orbit_samples": int, "table_days": float, "run_ahead": bool},
 }
 
 
@@ -56,7 +56,7 @@ def load_config(path: str | Path = ROOT / "config.toml") -> dict:
                 problems.append(f"[{sec}] missing {key!r}")
             elif typ is float and isinstance(got[key], int) and not isinstance(got[key], bool):
                 got[key] = float(got[key])
-            elif not isinstance(got[key], typ) or isinstance(got[key], bool):
+            elif not isinstance(got[key], typ) or (typ is not bool and isinstance(got[key], bool)):
                 problems.append(f"[{sec}] {key!r} must be {typ.__name__}")
     if not problems:
         if not 1 <= doc["server"]["port"] <= 65535:

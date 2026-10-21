@@ -21,3 +21,4 @@ check_seconds = 2      # how often the server looks for edits to data/ and style
 start = "system"       # "system" = each system's own epoch, "now" = the wall clock, or an ISO UTC date
 orbit_samples = 360    # points per drawn orbit
 table_days = 60        # body positions worked out up front, from each game's start (the rest as it goes)
+run_ahead = true       # a worker keeps the fleet flown ahead of the map's clock; off, each picture flies it there

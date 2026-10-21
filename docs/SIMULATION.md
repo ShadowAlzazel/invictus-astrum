@@ -183,8 +183,11 @@ velocity, tanks, Δv, thrust, aim and how the order stands. Blocks sit on a 10-m
 the scenario's start, so the samples and the checkpoints fall at the same moments whoever drives
 the fleet. A worker thread (the **run-ahead**) keeps every fleet the map is watching flown ahead
 of its clock: three seconds of wall clock at the warp the map is running (10 min – 12 h), in short
-chunks under the fleet's lock, idle a minute after the map stops asking. The timeline keeps 2048
-samples (a day and a half); a moment off its ends is flown as before.
+chunks under the fleet's lock, idle a minute after the map stops asking. The worker is a setting
+(`config.toml`, `[sim] run_ahead`): off, each picture flies the fleet up to its own moment (the
+next whole minute) before reading it, and nothing else changes. Blocks keep to their grid however
+the fleet is driven, so the flight is the same either way, to the micrometre (tests). The timeline
+keeps 2048 samples (a day and a half); a moment off its ends is flown as before.
 
 **What each ship was given, from the moment it was given.** Orders, arrivals and places change
 at moments of their own, between samples. Each change to what a row was given is a **version**
