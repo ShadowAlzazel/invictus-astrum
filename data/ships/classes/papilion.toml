@@ -37,6 +37,7 @@ tiers = { green = [7.5, 8.0], rated = 6.5, veteran = 6.0, exceptional = 5.5 }
 id = "spinal"
 label = "Spinal battery"
 component = "nervvs-mk2"
+focus = true                # the ship's main weapon: the battery her tactics are built around
 count = 16
 stacks = 2
 cycle_s = 10

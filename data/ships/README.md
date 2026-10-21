@@ -68,6 +68,9 @@ stacks = 2
 cycle_s = 10
 # optional: mounts, facets, rounds_per_cycle, stack_salvo_mj, power_mw, magazine = {...},
 # reach_km = { "what" = km, ... }, fire, arrangement, notes
+# engage_km: the range it fights at (else derived: spinal, the usable reach of its first effect
+#   at a rated crew; a gun, its first reach_km; an optical battery, its farthest point defence)
+# focus = true: the battery her tactics are built around (else the battery listed first)
 
 [reach]                               # beam reach of each effect in rules.toml, km
 mast = 11600

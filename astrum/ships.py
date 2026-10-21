@@ -42,7 +42,9 @@ SECTIONS = {"class", "hull", "drive", "aim", "battery", "reach", "point_defence"
 CLASS_KEYS = {"id", "name", "lineage", "genus", "epithet", "designation", "rate", "terms", "body", "summary",
               "symbol", "in_classis", "places", "successor_of", "old_rating"}
 BATTERY_KEYS = {"id", "label", "component", "count", "stacks", "mounts", "facets", "cycle_s", "fire",
-                "rounds_per_cycle", "stack_salvo_mj", "power_mw", "magazine", "reach_km", "arrangement", "notes"}
+                "rounds_per_cycle", "stack_salvo_mj", "power_mw", "magazine", "reach_km", "arrangement", "notes",
+                "engage_km", "focus"}
+PD_KINDS = {"panel", "dome", "strip"}             # optical batteries that answer for point defence
 DRIVE_KEYS = {"module", "count", "hull_mass", "propellant_t", "dv_kms", "sized_g", "cruise_g", "notes"}
 G0 = 9.80665                      # m/s² in a g
 # what every hull should state; missing ones are the author's open list
@@ -203,6 +205,34 @@ class ShipClass:
         return {"mass_t": mass, "max_accel_ms2": thrust * 1e3 / mass, "max_accel_g": thrust * 1e3 / mass / G0,
                 "dv_kms": ve * math.log(mass / hull.value), "jet_pw": 0.5 * thrust * 1e6 * ve * 1e3 / 1e15,
                 "mass_flow_kgs": thrust * 1e6 / (ve * 1e3)}
+
+
+def _engagement(sc: ShipClass, b: dict, comp: dict, rules: ShipRules, doc: dict, where: str,
+                f: list[Finding]) -> dict | None:
+    """The range a battery fights at, and what gives it: engage_km as stated; for a spinal battery
+    the usable reach of its first effect at a rated crew; for a gun its first stated reach; for an
+    optical battery the farthest its point defence is stated."""
+    if "engage_km" in b:
+        q = quantity(b["engage_km"], f"{where} engage_km", f)
+        return {"q": q, "how": "stated"} if isinstance(q, Q) and q.lo is not None else None
+    kind = comp.get("kind")
+    if kind == "spinal-channel":
+        for e, spec in rules.effects.items():
+            if e in sc.beam:
+                q, by = sc.reach_km(rules, e, "rated")
+                if q is not None:
+                    return {"q": q, "how": f"{spec['label'].lower()}, rated crew ({by})"}
+    reach = b.get("reach_km")
+    if isinstance(reach, dict) and reach:
+        what, km = next(iter(reach.items()))
+        q = quantity(km, where, [])
+        if isinstance(q, Q) and q.lo is not None:
+            return {"q": q, "how": what}
+    if kind in PD_KINDS:
+        ats = [p["at_km"] for p in doc.get("point_defence", []) if isinstance(p.get("at_km"), (int, float))]
+        if ats:
+            return {"q": Q(float(max(ats)), float(max(ats))), "how": "point defence"}
+    return None
 
 
 def _get(d: dict, path: str):
@@ -498,7 +528,15 @@ def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "",
                 d["broadside_gj"] = mj * count / 1e3
             if isinstance(b.get("rounds_per_cycle"), int) and isinstance(b.get("cycle_s"), (int, float)):
                 d["rounds_per_s"] = b["rounds_per_cycle"] / b["cycle_s"]
+        if "focus" in b and not isinstance(b["focus"], bool):
+            f.append(Finding("error", bw, "focus is true or false"))
+        out["engage"] = _engagement(sc, b, comp, rules, doc, bw, f)
         sc.batteries.append(out)
+    focused = [b for b in sc.batteries if b["raw"].get("focus") is True]
+    if len(focused) > 1:
+        f.append(Finding("error", where, "only one battery can be the focus"))
+    for i, b in enumerate(sc.batteries):                # the focus: as stated, else the battery listed first
+        b["focus"] = b in focused[:1] if focused else i == 0
 
     # hull: thrust from mass and acceleration, light and full should agree
     hull = doc.get("hull", {})
@@ -666,6 +704,8 @@ def class_detail(reg: ShipRegistry, sc: ShipClass) -> dict:
             "component_id": raw.get("component"), "figures": figures(rest, sc.id),
             "fire": raw.get("fire"), "arrangement": raw.get("arrangement"), "notes": raw.get("notes"),
             "reach_km": raw.get("reach_km"), "magazine": raw.get("magazine"), "derived": b["derived"],
+            "engage": {"q": b["engage"]["q"].as_dict(), "how": b["engage"]["how"]} if b["engage"] else None,
+            "focus": b["focus"], "count": raw.get("count") if isinstance(raw.get("count"), int) else None,
         })
     pd = [{"bearing": p.get("bearing", "best bearing"), "at_km": p.get("at_km"),
            "kills_per_s": _json(quantity(p.get("kills_per_s"), sc.id, []))} for p in sc.doc.get("point_defence", [])]

@@ -107,19 +107,52 @@
   $: heavy = d ? d.cruise?.heaviest ?? [...d.loads].sort((a, b) => (v(b.mass_t) ?? 0) - (v(a.mass_t) ?? 0))[0] ?? null : null;
   $: heavyDry = d && heavy ? d.loads.find((r) => r.load === heavy.load && r.tanks === 'dry') : null;
 
-  // the Overview's attribute row
+  // the Overview: what the hull is, and what the simulation reads from it
+  $: lightDry = d ? [...d.loads].filter((r) => r.tanks === 'dry').sort((a, b) => (v(a.mass_t) ?? 0) - (v(b.mass_t) ?? 0))[0] ?? null : null;
+  $: crew = cls ? v(pickNamed(hullRow('complement'))) : null;
   $: attrs = cls ? [
     { icon: 'length', label: 'Length', value: q(pickNamed(hullRow('length_m'))), unit: 'm' },
-    { icon: 'mass', label: 'Mass', value: q(pickNamed(hullRow('mass_t'))), unit: 't', sub: hullRow('mass_t')?.named ? 'full' : '' },
-    { icon: 'accel', label: 'Acceleration', value: heavy?.accel_g ? g3(heavy.accel_g) : '—', unit: 'g', sub: heavy ? 'full load' : '' },
-    { icon: 'dv', label: 'Δv', value: heavy?.dv_kms ? q(heavy.dv_kms) : '—', unit: 'km/s', sub: heavy?.dv_kms ? 'tanks full' : '' },
+    { icon: 'mass', label: 'Mass', value: heavy ? num(v(heavy.mass_t)) : q(pickNamed(hullRow('mass_t'))), unit: 't', sub: heavy ? 'full load' : hullRow('mass_t')?.named ? 'full' : '' },
+    { icon: 'crew', label: 'Crew', value: crew != null ? num(crew) : '—', unit: 'hands' },
+    { icon: 'shield', label: 'Citadel', value: (() => { const r = hullRow('protection_kgm2'); const x = r?.named?.citadel ?? r?.q; return x ? q(x) : '—'; })(), unit: 'kg/m²' },
   ] : [];
-  $: trio = cls ? [
-    { icon: 'crew', label: 'Complement', value: q(pickNamed(hullRow('complement'))) },
-    { icon: 'shield', label: 'Citadel', value: (() => { const r = hullRow('protection_kgm2'); const x = r?.named?.citadel ?? r?.q; return x ? q(x, 'kg/m²') : '—'; })() },
-    { icon: 'heat', label: 'Thermal store', value: (() => { const r = cls.endurance.find((x) => x.key === 'thermal_store_tj'); return r ? row(r) : '—'; })() },
+  // point defence, at each range the best the canon states
+  const pdSummary = (pd) => {
+    const best = {};
+    for (const p of pd) if (p.at_km != null && p.kills_per_s) best[p.at_km] = Math.max(best[p.at_km] ?? 0, v(p.kills_per_s));
+    return Object.entries(best).sort((a, b) => a[0] - b[0]).map(([km, k]) => `${num(k, k < 10 ? 1 : 0)}/s at ${num(+km)} km`).join(' · ');
+  };
+  const simValue = (x, unit, digits) => (x && x.lo != null ? (digits != null ? `${num(v(x), digits)} ${unit}` : q(x, unit)) : '—');
+  $: simPrime = cls ? [
+    { icon: 'thrust', label: 'Thrust', value: d ? simValue(d.thrust_mn, 'MN', 1) : '—' },
+    { icon: 'dv', label: 'Δv', sub: 'full load', value: heavy?.dv_kms ? simValue(heavy.dv_kms, 'km/s', 0) : '—' },
+    { icon: 'accel', label: 'Most acceleration', sub: 'full load', value: heavy?.accel_g ? `${g3(heavy.accel_g)} g` : '—' },
   ] : [];
+  $: simGroups = cls ? [
+    { title: 'Movement', rows: d ? [
+      ['Mass, tanks full / dry', heavy && heavyDry ? `${num(v(heavy.mass_t))} / ${num(v(heavyDry.mass_t))} t` : '—'],
+      ['Propellant', simValue(d.propellant_t, 't', 0)],
+      ['Exhaust velocity', simValue(d.exhaust_kms, 'km/s', 0)],
+      ['Most acceleration, light and dry', lightDry?.accel_g ? `${g3(lightDry.accel_g)} g` : '—'],
+      ['Cruise band', d.cruise ? `${d.cruise.band_g.lo}–${d.cruise.band_g.hi} g · ${d.cruise.reaches_top ? 'holds' : d.cruise.holds ? 'holds the floor' : 'short'}` : '—', d.cruise && !d.cruise.holds],
+    ] : [['Drive', 'not yet stated']] },
+    { title: 'Heat and signature', rows: [
+      ...(d ? [['Plume', simValue(d.jet_pw, 'PW', 2)], ['Pulse rate', simValue(d.pulse_rate_hz, 'Hz', 1)],
+               ['Hull leak, flat out', d.heat ? `${num(v(d.heat.leak_gw) * 1e3, 0)} MW` : '—']] : []),
+      ['Manes reject', d?.heat?.mane_gw ? q(d.heat.mane_gw, 'GW') : '—', d?.heat && d.heat.steady === false],
+      ['Thermal store', (() => { const r = cls.endurance.find((x) => x.key === 'thermal_store_tj'); return r ? row(r) : '—'; })()],
+    ] },
+    { title: 'Combat', rows: [
+      ['Aim, rated crew', cls.aim.tiers.rated ? q(cls.aim.tiers.rated, 'µrad') : '—'],
+      ['Walls, rated: citadel / silhouette', cls.walls.rated ? `${num(v(cls.walls.rated.citadel))} / ${num(v(cls.walls.rated.silhouette))} km` : '—'],
+      ['Point defence', cls.point_defence.length ? pdSummary(cls.point_defence) || '—' : '—'],
+      ['Protection', hullRow('protection_kgm2') ? row(hullRow('protection_kgm2')) : '—'],
+    ] },
+  ] : [];
+  // the armament: engagement range first, then how many
+  const engage = (b) => (b.engage?.q ? `${num(v(b.engage.q))}` : '—');
   const KIND_MARK = { 'spinal-channel': 'SPN', gun: 'GUN', panel: 'OPT', dome: 'DOM', strip: 'STR', 'missile-cell': 'MSL', tube: 'TUB', telescope: 'TEL', sensor: 'SNS' };
+  $: focusBat = cls?.batteries.find((b) => b.focus) ?? null;
 
   // the Drive tab: each figure the simulation reads, and how the technical values give it
   $: primary = d ? [
@@ -135,6 +168,8 @@
       why: heavy?.accel_ms2 ? `thrust ÷ mass = ${num(v(d.thrust_mn), 1)} MN ÷ ${num(v(heavy.mass_t))} t = ${num(v(heavy.accel_ms2), 3)} m/s²` : '' },
   ] : [];
   $: other = d ? [
+    { k: 'read', label: 'Hull masses read', value: d.hull_mass === 'wet' ? 'tanks full' : 'tanks dry', why: 'what the class\'s hull.mass_t means ([drive] hull_mass)' },
+    ...(d.dv_target_kms ? [{ k: 'holds', label: 'Propellant holds', value: q(d.dv_target_kms, 'km/s'), why: 'the class\'s [drive] dv_kms, at the heaviest load' }] : []),
     { k: 'prop', label: 'Propellant, tanks full', value: q(d.propellant_t, 't'),
       why: d.dv_target_kms ? `the tank that holds ${num(v(d.dv_target_kms))} km/s at the heaviest load: ${d.hull_mass === 'wet' ? 'M × (1 − e^(−Δv / vₑ))' : 'M × (e^(Δv / vₑ) − 1)'}` : 'typed on the class' },
     ...(d.stores ? [
@@ -209,7 +244,7 @@
       <h4>{g.sub}</h4>
       {#each g.list as c (c.id)}
         <button class="ship" class:on={c.id === current} on:click={() => open(c.id)}>
-          {#if style}<canvas use:symbol={{ sym: c.symbol, size: 12, color: c.id === current ? '#ffe03d' : null }}></canvas>{/if}
+          {#if style}<canvas use:symbol={{ sym: c.symbol, size: 12, color: c.id === current ? '#9ff0ff' : null }}></canvas>{/if}
           <span class="nm">{c.name}</span>
           <span class="tm">{[c.terms.sail, c.terms.modern].filter(Boolean).join(' · ') || '—'}</span>
           {#if c.errors}<span class="flag ex">{c.errors}</span>{:else if c.blanks}<span class="flag" title="figures not yet stated">{c.blanks}</span>{/if}
@@ -251,6 +286,7 @@
               {#if cls.terms.sail}<span>{cls.terms.sail}</span>{/if}
               {#if cls.terms.modern}<span>{cls.terms.modern}</span>{/if}
             </div>
+            {#if cls.summary}<p class="summary">{cls.summary}</p>{/if}
 
             <div class="bar"><span>Particulars</span><button on:click={() => (tab = 'systems')} title="All particulars">•••</button></div>
             <div class="attrs">
@@ -263,19 +299,15 @@
                 </div>
               {/each}
             </div>
-            <div class="trio">
-              {#each trio as t}
-                <div><svg viewBox="0 0 24 24"><path d={ICONS[t.icon]} /></svg><span>{t.label}</span><b class:blank={t.value === '—'}>{t.value}</b></div>
-              {/each}
-            </div>
 
             {#if cls.batteries.length}
-              <div class="bar"><span>Batteries</span><button on:click={() => (tab = 'armament')} title="Armament">•••</button></div>
-              <div class="skills">
+              <div class="bar"><span>Armament</span><button on:click={() => (tab = 'armament')} title="Armament">•••</button></div>
+              <div class="arms">
                 {#each cls.batteries as b}
-                  <button class="skill" on:click={() => (tab = 'armament')}>
-                    <i>{KIND_MARK[b.component?.kind] ?? 'BAT'}</i>
-                    <span class="ct">{b.figures.find((r) => r.key === 'count')?.q ? q(b.figures.find((r) => r.key === 'count').q) : '—'}</span>
+                  <button class="arm" class:focus={b.focus} on:click={() => (tab = 'armament')} title={b.engage ? `engages at ${engage(b)} km: ${b.engage.how}` : 'engagement range not yet stated'}>
+                    <span class="hex"><span>{KIND_MARK[b.component?.kind] ?? 'BAT'}</span></span>
+                    <span class="rng"><b class:blank={!b.engage}>{engage(b)}</b>{#if b.engage}<small>km</small>{/if}</span>
+                    <span class="ct">{b.count != null ? `× ${b.count}` : '× —'}</span>
                     <span class="lb">{b.label}</span>
                   </button>
                 {/each}
@@ -292,29 +324,20 @@
           </section>
 
           <section class="ov-r">
-            <div class="level">
-              <b>{cls.in_classis ? num(v(cls.in_classis)) : '—'}</b>
-              <div>
-                <span class="cap">In a Classis</span>
-                <span class="sub">{cls.in_classis ? q(cls.in_classis) : 'not yet stated'}</span>
+            <h2 class="uline">Simulation</h2>
+            {#each simPrime as s}
+              <div class="prim">
+                <svg viewBox="0 0 24 24"><path d={ICONS[s.icon]} /></svg>
+                <span class="lb">{s.label}{#if s.sub}<i class="lbs">{s.sub}</i>{/if}</span>
+                <b class:blank={s.value === '—'}>{s.value}</b>
               </div>
-              <i class="wedge"></i>
-            </div>
-            <p class="summary">{cls.summary || '—'}</p>
-            <div class="readers">
-              {#each [['Sail reader', cls.terms.sail], ['Modern reader', cls.terms.modern], ['ARCVS reader', cls.terms.arcvs]] as [who, word]}
-                <div><span>{who}</span><b class:blank={!word}>{word ?? '—'}</b></div>
+            {/each}
+            {#each simGroups as g}
+              <h2 class="caps">{g.title}</h2>
+              {#each g.rows as [label, value, bad], i}
+                <div class="oth slim" class:band={i % 2}><span class="lb">{label}</span><b class:blank={value === '—'} class:bad>{value}</b></div>
               {/each}
-            </div>
-            <dl class="rows">
-              {#if cls.derived.commanded_by}<dt>Commanded by</dt><dd>{cls.derived.commanded_by}</dd>{/if}
-              {#if cls.rate_rules.hands}<dt>Hands</dt><dd>{cls.rate_rules.hands}</dd>{/if}
-              {#if cls.designation}<dt>Designation</dt><dd>{cls.designation}</dd>{/if}
-              {#if cls.old_rating}<dt>Old Forest rating</dt><dd class:blank={cls.old_rating === '—'}>{cls.old_rating}</dd>{/if}
-              {#if cls.places.length}<dt>Places</dt><dd>{cls.places.join(', ')}</dd>{/if}
-              {#if cls.successor}<dt>Succeeded by</dt><dd><button class="link" on:click={() => open(cls.successor)}>{cls.successor}</button></dd>{/if}
-              {#if cls.derived.successor_of}<dt>Successor of</dt><dd><button class="link" on:click={() => open(cls.derived.successor_of)}>{cls.derived.successor_of}</button></dd>{/if}
-            </dl>
+            {/each}
           </section>
         </div>
 
@@ -327,47 +350,13 @@
             <section class="cards">
               <h2 class="uline">Pattern</h2>
               {#if pat}
-                <div class="card main">
-                  <p class="tag">Drive pattern <i>[mark.{pat.mark}]</i></p>
-                  <p class="nm">{pat.mark_name}</p>
-                  <p class="big">{pat.mark_label ?? ''}</p>
-                  <p class="ft">φ {pat.phi} · η {pat.eta} · k {pat.k.toFixed(3)}</p>
-                </div>
-                <div class="card">
-                  <p class="tag">Stores <i>[mix.{pat.mix}]</i></p>
-                  <p class="nm">{pat.mix_name}</p>
-                  <p class="big">f {pat.f}</p>
-                  <p class="ft">n {num(pat.n_frac * 100, 1)}% · tamper bonus +{num(pat.bonus * 100, 1)}% · X {pat.x.toFixed(4)}</p>
-                </div>
-                {#if d.block}
-                  <div class="card">
-                    <p class="tag">Engines <i>[block.{pat.block}]</i></p>
-                    <p class="nm">{pat.block_name}</p>
-                    <p class="big">{d.block.engines} <small>@ {d.block.hz} Hz</small></p>
-                    <p class="ft">{num(d.block.rate_hz, 1)} Hz phased · {num(d.block.pellet_kg, 2)} kg pellets</p>
-                  </div>
-                {/if}
-                <div class="card">
-                  <p class="tag">Fuel <i>[fuel.{pat.fuel.id}]</i></p>
-                  <p class="nm">{pat.fuel.name}</p>
-                  <p class="big">{num(pat.ceiling_kms)} <small>km/s</small></p>
-                  <p class="ft">ceiling, perfect burn and nozzle · in {pat.tamper.name}</p>
-                </div>
+                <div class="card main"><p class="tag">Drive pattern</p><p class="big">{pat.mark_name}</p><p class="ft">{pat.mark_label ?? ''}</p></div>
+                <div class="card"><p class="tag">Stores</p><p class="big">f {pat.f}</p><p class="ft">{pat.mix_name}</p></div>
+                {#if d.block}<div class="card"><p class="tag">Engines</p><p class="big">{d.block.engines} <small>@ {d.block.hz} Hz</small></p><p class="ft">{pat.block_name}</p></div>{/if}
+                <div class="card"><p class="tag">Fuel</p><p class="big">{pat.fuel.name.split(' ')[0]}</p><p class="ft">in {pat.tamper.name.toLowerCase()}</p></div>
               {:else}
-                <div class="card main">
-                  <p class="tag">Typed drive <i>[drive.{d.module_id}]</i></p>
-                  <p class="nm">{d.module.name}</p>
-                  <p class="big">no pattern</p>
-                  <p class="ft">the simulation's figures are typed on the drive</p>
-                </div>
+                <div class="card main"><p class="tag">Typed drive</p><p class="big">{d.module.name}</p><p class="ft">figures typed on the drive</p></div>
               {/if}
-              <dl class="rows small">
-                <dt>Module</dt><dd>{d.module.name}{d.count > 1 ? ` × ${d.count}` : ''}</dd>
-                <dt>Hull masses read</dt><dd>{d.hull_mass === 'wet' ? 'tanks full' : 'tanks dry'}</dd>
-                {#if d.dv_target_kms}<dt>Propellant holds</dt><dd>{q(d.dv_target_kms, 'km/s')}</dd>{/if}
-                {#if d.thrust_sized_g}<dt>Thrust sized to</dt><dd>{q(d.thrust_sized_g, 'g')}, full load</dd>{/if}
-              </dl>
-              {#if d.module.notes}<p class="note">{d.module.notes}</p>{/if}
             </section>
 
             <section class="stats">
@@ -475,11 +464,15 @@
         {/if}
 
         {#if cls.batteries.length}
-          <h2 class="caps">Batteries</h2>
+          <h2 class="caps">Batteries <span class="sub">engagement range first; the focus is the battery her tactics are built around</span></h2>
           <div class="bats">
-            {#each cls.batteries as b}
-              <div class="bat">
-                <header><i>{KIND_MARK[b.component?.kind] ?? 'BAT'}</i><div><h3>{b.label}</h3><span>{b.component?.name ?? b.component_id}</span></div></header>
+            {#each [...cls.batteries].sort((a, b) => b.focus - a.focus) as b}
+              <div class="bat" class:focus={b.focus}>
+                <header>
+                  <span class="hex"><span>{KIND_MARK[b.component?.kind] ?? 'BAT'}</span></span>
+                  <div><p class="tag">{b.focus ? 'Focus' : 'Battery'}</p><h3>{b.label}</h3><span>{b.component?.name ?? b.component_id}</span></div>
+                  <div class="eng"><b class:blank={!b.engage}>{engage(b)}</b>{#if b.engage}<small>km</small>{/if}<i>{b.engage?.how ?? 'engagement range not yet stated'}</i></div>
+                </header>
                 <dl class="rows small">
                   {#each b.figures as r}<dt>{r.label}</dt><dd class:blank={r.blank}>{row(r)}</dd>{/each}
                   {#if b.component?.round}<dt>Round</dt><dd>{b.component.round}, {b.component.round_kg} kg at {b.component.velocity_kms} km/s</dd>{/if}
@@ -560,6 +553,20 @@
             {#each cls.history.notable ?? [] as n}<p class="note">· {n}</p>{/each}
           </section>
           <section>
+            <div class="level">
+              <b>{cls.in_classis ? num(v(cls.in_classis)) : '—'}</b>
+              <div>
+                <span class="cap">In a Classis</span>
+                <span class="sub">{cls.in_classis ? q(cls.in_classis) : 'not yet stated'}{cls.in_classis?.note ? ` · ${cls.in_classis.note}` : ''}</span>
+              </div>
+              <i class="wedge"></i>
+            </div>
+            <dl class="rows">
+              {#if cls.designation}<dt>Designation</dt><dd>{cls.designation}</dd>{/if}
+              {#if cls.old_rating}<dt>Old Forest rating</dt><dd class:blank={cls.old_rating === '—'}>{cls.old_rating}</dd>{/if}
+              {#if cls.successor}<dt>Succeeded by</dt><dd><button class="link" on:click={() => open(cls.successor)}>{cls.successor}</button></dd>{/if}
+              {#if cls.derived.successor_of}<dt>Successor of</dt><dd><button class="link" on:click={() => open(cls.derived.successor_of)}>{cls.derived.successor_of}</button></dd>{/if}
+            </dl>
             <h2 class="caps">{cls.lineage_rules.label ?? 'Lineage'}</h2>
             <dl class="rows">
               {#if cls.lineage_rules.names}<dt>Names</dt><dd>{cls.lineage_rules.names}</dd>{/if}
@@ -596,12 +603,12 @@
 <style>
   /* the registry speaks its own design language: neutral dark panels, one yellow, big numerals */
   .reg {
-    --y: #ffe03d; --y-ink: #16140c; --t: #ececf0; --t2: #9a9aa6; --t3: #5d5d68;
+    --y: #fa1f99; --y-ink: #ffffff; --c: #9ff0ff; --c-ink: #06141a; --t: #ececf0; --t2: #9a9aa6; --t3: #5d5d68;
     --p: rgba(20, 20, 25, 0.94); --p2: rgba(34, 34, 41, 0.9); --line: rgba(255, 255, 255, 0.1); --band: rgba(255, 255, 255, 0.035);
     --sans: 'Barlow', 'Chakra Petch', sans-serif; --cond: 'Barlow Condensed', 'Barlow', sans-serif;
     position: fixed; inset: 0; z-index: 25; color: var(--t); font-family: var(--sans); font-size: 13px;
     display: grid; grid-template-columns: 300px 1fr 88px; grid-template-rows: 68px 1fr;
-    background: linear-gradient(115deg, rgba(14, 14, 18, 0.97) 0%, rgba(10, 10, 14, 0.9) 60%, rgba(20, 18, 8, 0.9) 100%);
+    background: linear-gradient(115deg, rgba(14, 13, 20, 0.97) 0%, rgba(10, 9, 16, 0.9) 60%, rgba(26, 8, 22, 0.9) 100%);
     backdrop-filter: blur(4px);
   }
   button { background: none; border: 0; color: inherit; font: inherit; padding: 0; text-align: left; }
@@ -613,13 +620,14 @@
   .top { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; padding: 10px 22px 6px; }
   .logo { width: 34px; height: 28px; color: var(--t); }
   .crumb p { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: 0.01em; }
-  .crumb b { font-weight: 600; color: var(--y); }
+  .crumb b { font-weight: 600; color: var(--c); }
   .sl { color: var(--t2); margin: 0 2px; }
   .code { display: flex; align-items: center; gap: 8px; margin-top: 3px; font-family: var(--mono); font-size: 9px; color: var(--t3); letter-spacing: 0.1em; }
   .bars { display: inline-block; width: 64px; height: 8px; background: repeating-linear-gradient(90deg, var(--t2) 0 1px, transparent 1px 3px, var(--t2) 3px 5px, transparent 5px 6px, var(--t2) 6px 7px, transparent 7px 10px); opacity: 0.7; }
-  .close { margin-left: auto; width: 40px; height: 40px; border-radius: 50%; background: var(--t); display: grid; place-items: center; }
+  .close { margin-left: auto; width: 40px; height: 40px; background: var(--t); display: grid; place-items: center; clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
   .close svg { width: 22px; height: 22px; stroke: #111; stroke-width: 3; fill: none; }
   .close:hover { background: var(--y); }
+  .close:hover svg { stroke: #fff; }
 
   /* ---- roster ---- */
   .roster { overflow: auto; padding: 4px 10px 16px 22px; border-right: 1px solid var(--line); }
@@ -631,9 +639,9 @@
           width: 100%; padding: 6px 8px; margin: 2px 0; background: var(--band); border-left: 3px solid transparent; }
   .ship canvas { grid-row: span 2; }
   .ship:hover { background: rgba(255, 255, 255, 0.07); }
-  .ship.on { background: rgba(255, 224, 61, 0.09); border-left-color: var(--y); }
+  .ship.on { background: rgba(250, 31, 153, 0.1); border-left-color: var(--y); }
   .ship .nm { font-weight: 600; font-size: 13px; letter-spacing: 0.02em; }
-  .ship.on .nm { color: var(--y); }
+  .ship.on .nm { color: var(--c); }
   .ship .tm { grid-column: 2; font-size: 11px; color: var(--t2); }
   .flag { grid-row: 1 / span 2; grid-column: 3; min-width: 18px; padding: 1px 5px; font-size: 10px; text-align: center; color: var(--t2); border: 1px solid var(--line); }
   .flag.ex { color: #ff8fb8; border-color: #ff8fb8; }
@@ -643,13 +651,13 @@
 
   /* ---- tab rail ---- */
   .rail { grid-row: 2; grid-column: 3; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 0 8px; }
-  .rail button { position: relative; height: 70px; background: var(--p2); border: 1px solid var(--line); display: grid; place-items: center; align-content: center; gap: 4px; color: var(--t2); }
+  .rail button { position: relative; height: 70px; clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px)); background: var(--p2); border: 1px solid var(--line); display: grid; place-items: center; align-content: center; gap: 4px; color: var(--t2); }
   .rail button:hover { color: var(--t); border-color: rgba(255, 255, 255, 0.25); }
   .rail button.on { background: var(--y); color: var(--y-ink); border-color: var(--y); }
   .rail svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
   .rail span { font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
   .rail .no { position: absolute; top: 3px; left: 5px; font-style: normal; font-family: var(--mono); font-size: 8px; opacity: 0.6; }
-  .rail .dot { position: absolute; top: 3px; right: 4px; font-size: 9px; font-weight: 700; color: var(--y); }
+  .rail .dot { position: absolute; top: 3px; right: 4px; font-size: 9px; font-weight: 700; color: var(--c); }
   .rail button.on .dot { color: var(--y-ink); }
 
   /* ---- main ---- */
@@ -660,7 +668,7 @@
   h2.uline::after { content: ''; position: absolute; left: -2px; bottom: -6px; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--t); background: #111; }
   .note { margin: 8px 0 0; color: var(--t2); font-size: 12px; line-height: 1.45; }
   .empty { color: var(--t2); margin: 24px 0; }
-  .link { color: var(--y); }
+  .link { color: var(--c); }
   .link:hover { text-decoration: underline; }
   dl.rows { display: grid; grid-template-columns: auto 1fr; margin: 0; }
   dl.rows dt, dl.rows dd { padding: 6px 10px; border-bottom: 1px solid var(--line); }
@@ -673,9 +681,9 @@
   .r { text-align: right; }
   tr.band, .band { background: var(--band); }
   td.strong { font-weight: 600; font-size: 14px; }
-  td.aim { color: var(--y); }
-  tr.hl td { box-shadow: inset 0 -1px 0 rgba(255, 224, 61, 0.35); }
-  tr.cur { background: rgba(255, 224, 61, 0.1); }
+  td.aim { color: var(--c); }
+  tr.hl td { box-shadow: inset 0 -1px 0 rgba(159, 240, 255, 0.4); }
+  tr.cur { background: rgba(250, 31, 153, 0.12); }
   tr.cur b { color: var(--y); }
   .pip { display: inline-block; width: 7px; height: 7px; margin-right: 8px; background: var(--y); transform: rotate(45deg); }
 
@@ -689,38 +697,45 @@
   .bin span { margin: 0 6px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; }
   .chips span { padding: 4px 12px; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line); font-size: 13px; }
-  .chips span.hl { background: var(--y); color: var(--y-ink); border-color: var(--y); font-weight: 600; }
+  .chips span.hl { background: var(--c); color: var(--c-ink); border-color: var(--c); font-weight: 600; }
   .bar { display: flex; justify-content: space-between; align-items: center; margin: 20px 0 10px; padding: 6px 12px; background: rgba(255, 255, 255, 0.1); border-left: 3px solid var(--t); }
   .bar span { font-size: 16px; font-weight: 600; }
   .bar button { color: var(--t2); letter-spacing: 0.1em; }
-  .bar button:hover { color: var(--y); }
+  .bar button:hover { color: var(--c); }
   .attrs { display: grid; grid-template-columns: repeat(4, 1fr); }
   .attr { display: grid; justify-items: center; gap: 2px; padding: 4px 6px; border-right: 1px solid var(--line); text-align: center; }
   .attr:last-child { border-right: 0; }
-  .attr svg, .trio svg { width: 30px; height: 30px; fill: none; stroke: var(--t); stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+  .attr svg { width: 30px; height: 30px; fill: none; stroke: var(--t); stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
   .attr .lb { color: var(--t2); font-size: 12px; }
   .attr b { font-family: var(--cond); font-size: 26px; font-weight: 600; line-height: 1.05; font-variant-numeric: tabular-nums; }
   .attr .un { color: var(--t2); font-size: 11px; }
-  .trio { display: flex; gap: 0; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
-  .trio div { flex: 1; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-right: 1px solid var(--line); }
-  .trio div:last-child { border-right: 0; }
-  .trio svg { width: 20px; height: 20px; }
-  .trio span { color: var(--t2); font-size: 12px; }
-  .trio b { margin-left: auto; font-family: var(--cond); font-size: 18px; font-weight: 600; }
-  .skills { display: flex; flex-wrap: wrap; gap: 16px; }
-  .skill { display: grid; justify-items: center; gap: 4px; width: 84px; }
-  .skill i { display: grid; place-items: center; width: 62px; height: 62px; border-radius: 50%; border: 2px solid var(--t); font-style: normal; font-family: var(--cond); font-weight: 700; font-size: 16px; letter-spacing: 0.06em;
-             background: radial-gradient(circle at 50% 120%, rgba(255, 224, 61, 0.55) 0 38%, transparent 39%), var(--p2); }
-  .skill:hover i { border-color: var(--y); }
-  .skill .ct { margin-top: -14px; padding: 0 8px; background: #2c2c33; border-radius: 9px; font-size: 11px; font-weight: 600; }
-  .skill .lb { font-size: 11px; color: var(--t2); text-align: center; }
+  .arms { display: flex; flex-wrap: wrap; gap: 14px 18px; }
+  .arm { display: grid; justify-items: center; width: 96px; gap: 1px; }
+  .hex { display: grid; place-items: center; width: 60px; height: 54px; background: var(--t2);
+         clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%); }
+  .hex span { display: grid; place-items: center; width: calc(100% - 4px); height: calc(100% - 4px); background: var(--p2); color: var(--t);
+              clip-path: inherit; font-family: var(--cond); font-weight: 700; font-size: 15px; letter-spacing: 0.06em; }
+  .arm:hover .hex { background: var(--c); }
+  .arm.focus .hex, .bat.focus .hex { background: var(--y); }
+  .arm.focus .hex span, .bat.focus .hex span { background: repeating-linear-gradient(-55deg, rgba(250, 31, 153, 0.55) 0 5px, rgba(250, 31, 153, 0.85) 5px 11px); color: #fff; }
+  .arm .rng { margin-top: 6px; }
+  .arm .rng b { font-family: var(--cond); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .arm.focus .rng b { color: var(--y); }
+  .arm .rng small, .bat .eng small { margin-left: 3px; font-size: 11px; color: var(--t2); }
+  .arm .ct { font-size: 11px; font-weight: 600; color: var(--c); }
+  .arm .lb { font-size: 11px; color: var(--t2); text-align: center; }
   .chips.drive { margin-top: 0; }
-  .level { position: relative; display: flex; align-items: flex-end; gap: 14px; padding: 6px 0 14px; overflow: hidden; }
+  .level { position: relative; display: flex; align-items: flex-end; gap: 14px; padding: 6px 0 14px; margin-bottom: 6px; overflow: hidden; }
   .level b { font-family: var(--cond); font-size: 104px; font-weight: 700; line-height: 0.85; letter-spacing: -0.02em; }
   .level .cap { display: block; padding: 3px 10px; background: rgba(255, 255, 255, 0.12); font-size: 15px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
   .level .sub { display: block; margin-top: 4px; color: var(--t2); font-size: 12px; }
-  .wedge { position: absolute; right: -40px; top: -20px; width: 200px; height: 160px; background: var(--y); clip-path: polygon(40% 0, 100% 0, 100% 100%); opacity: 0.9; }
-  .summary { margin: 4px 0 16px; font-size: 15px; line-height: 1.5; color: var(--t); max-width: 62ch; }
+  .wedge { position: absolute; right: -40px; top: -20px; width: 200px; height: 160px; background: var(--y); clip-path: polygon(40% 0, 100% 0, 100% 100%); opacity: 0.85; }
+  .summary { margin: 14px 0 0; font-size: 14px; line-height: 1.5; color: var(--t2); max-width: 64ch; }
+  .ov-r h2.uline { margin-top: 10px; }
+  .lbs { margin-left: 8px; font-style: normal; font-size: 12px; color: var(--t2); }
+  .oth.slim { min-height: 30px; padding: 5px 14px; grid-template-columns: 1fr auto; }
+  .oth.slim .lb { font-size: 13px; color: var(--t2); }
+  .oth.slim b { font-size: 14px; }
   .readers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin-bottom: 12px; }
   .readers div { padding: 8px 10px; background: var(--band); }
   .readers span { display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--t2); }
@@ -729,18 +744,16 @@
   /* ---- drive: attribute cards and stat rows ---- */
   .st { display: grid; grid-template-columns: 330px 1fr; gap: 34px; margin-top: 10px; }
   .cards { display: grid; align-content: start; gap: 10px; }
-  .card { position: relative; padding: 10px 14px 9px; background: var(--p2); border: 1px solid var(--line); overflow: hidden; }
-  .card .tag { margin: 0; display: flex; justify-content: space-between; font-size: 11px; color: var(--t2); }
-  .card .tag i { font-style: normal; font-family: var(--mono); font-size: 9px; opacity: 0.8; }
-  .card .nm { margin: 2px 0 0; font-size: 17px; font-weight: 600; }
-  .card .big { margin: 6px 0 4px; padding-top: 4px; border-top: 1px solid var(--line); font-family: var(--cond); font-size: 30px; font-weight: 600; line-height: 1.05; }
-  .card .big small { font-size: 15px; font-weight: 500; color: var(--t2); }
-  .card .ft { margin: 0; font-size: 11px; color: var(--t2); }
-  .card.main { background: var(--y); color: var(--y-ink); border-color: var(--y); }
-  .card.main::after { content: ''; position: absolute; right: -10px; top: 0; bottom: 0; width: 46%; opacity: 0.22;
-                      background: repeating-linear-gradient(-55deg, var(--y-ink) 0 6px, transparent 6px 16px); clip-path: polygon(30% 0, 100% 0, 100% 100%, 0 100%); }
-  .card.main .tag, .card.main .ft, .card.main .big small { color: rgba(22, 20, 12, 0.72); }
-  .card.main .big { border-top-color: rgba(22, 20, 12, 0.25); }
+  .card { position: relative; padding: 9px 14px 10px; background: var(--p2); border: 1px solid var(--line); overflow: hidden;
+          clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%); }
+  .card .tag { margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--t2); }
+  .card .big { margin: 2px 0 0; font-family: var(--cond); font-size: 32px; font-weight: 600; line-height: 1.05; }
+  .card .big small { font-size: 16px; font-weight: 500; color: var(--t2); }
+  .card .ft { margin: 0; font-size: 12px; color: var(--t2); }
+  .card.main, .bat.focus header { background: var(--y); color: var(--y-ink); border-color: var(--y); }
+  .card.main::after, .bat.focus header::after { content: ''; position: absolute; right: -10px; top: 0; bottom: 0; width: 46%; opacity: 0.28; pointer-events: none;
+                      background: repeating-linear-gradient(-55deg, #fff 0 6px, transparent 6px 16px); clip-path: polygon(30% 0, 100% 0, 100% 100%, 0 100%); }
+  .card.main .tag, .card.main .ft, .card.main .big small { color: rgba(255, 255, 255, 0.8); }
   .prim { display: grid; grid-template-columns: 34px 1fr auto 28px; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 6px; background: var(--p2); }
   .prim svg { width: 26px; height: 26px; fill: none; stroke: var(--t); stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; }
   .prim .lb { font-size: 17px; font-weight: 500; }
@@ -750,10 +763,11 @@
   .oth .sub { color: var(--t2); font-size: 11px; text-align: right; }
   .oth b { font-weight: 600; font-size: 15px; font-variant-numeric: tabular-nums; text-align: right; }
   .oth b.bad { color: #ff8fb8; }
-  .typed { margin-left: 8px; padding: 1px 6px; font-style: normal; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--y-ink); background: var(--y); }
-  .q { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--t3); color: var(--t2); display: grid; place-items: center; font-size: 12px; font-weight: 700; justify-self: end; }
-  .q:hover, .q.on { border-color: var(--y); color: var(--y); }
-  .why { margin: -2px 0 8px; padding: 8px 14px 8px 16px; border-left: 2px solid var(--y); background: rgba(255, 224, 61, 0.06); font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--t); }
+  .typed { margin-left: 8px; padding: 1px 6px; font-style: normal; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c-ink); background: var(--c); }
+  .q { width: 22px; height: 22px; border: 1.5px solid var(--t3); color: var(--t2); display: grid; place-items: center; font-size: 12px; font-weight: 700; justify-self: end;
+       clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%); }
+  .q:hover, .q.on { border-color: var(--c); color: var(--c); }
+  .why { margin: -2px 0 8px; padding: 8px 14px 8px 16px; border-left: 2px solid var(--c); background: rgba(159, 240, 255, 0.06); font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--t); }
   .verdict { margin: 10px 0 0; padding: 8px 12px; background: var(--band); border-left: 3px solid var(--t2); color: var(--t2); }
   .verdict b { color: var(--t); margin-right: 6px; }
   .verdict.short { border-left-color: #ff8fb8; }
@@ -762,15 +776,28 @@
   .seg { display: flex; flex-wrap: wrap; gap: 0; align-items: center; margin-bottom: 10px; }
   .seg button { padding: 6px 14px; background: var(--p2); border: 1px solid var(--line); margin-right: -1px; font-weight: 600; }
   .seg button i { font-style: normal; font-weight: 400; font-size: 11px; color: var(--t2); margin-left: 4px; }
-  .seg button.on { background: var(--y); color: var(--y-ink); border-color: var(--y); }
-  .seg button.on i { color: rgba(22, 20, 12, 0.7); }
+  .seg button.on { background: var(--c); color: var(--c-ink); border-color: var(--c); }
+  .seg button.on i { color: rgba(6, 20, 26, 0.7); }
   .seg .dim { margin-left: 14px; font-size: 12px; }
-  .bats { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; }
-  .bat { padding: 10px 12px; background: var(--p2); border: 1px solid var(--line); }
-  .bat header { display: flex; gap: 12px; align-items: center; margin-bottom: 6px; }
-  .bat header i { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; border: 1.5px solid var(--t); font-style: normal; font-family: var(--cond); font-weight: 700; font-size: 12px; }
+  .bats { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
+  .bat { background: var(--p2); border: 1px solid var(--line); clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); }
+  .bat.focus { grid-column: 1 / -1; border-color: var(--y); }
+  .bat header { position: relative; display: flex; gap: 14px; align-items: center; padding: 10px 14px; overflow: hidden; }
+  .bat header .tag { margin: 0; font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--t2); }
+  .bat.focus header .tag, .bat.focus header span, .bat.focus .eng i, .bat.focus .eng small { color: rgba(255, 255, 255, 0.82); }
+  .bat .hex { width: 48px; height: 43px; }
+  .bat .hex span { font-size: 12px; }
+  .bat.focus .hex { background: #fff; }
+  .bat.focus .hex span { background: #fff; color: var(--y); }
+  .bat.focus dl.rows { grid-template-columns: auto 1fr auto 1fr; column-gap: 28px; }
   .bat h3 { margin: 0; font-size: 16px; font-weight: 600; }
   .bat header span { color: var(--t2); font-size: 12px; }
+  .bat .eng { position: relative; z-index: 1; margin-left: auto; text-align: right; }
+  .bat .eng b { font-family: var(--cond); font-size: 30px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .bat .eng i { display: block; font-style: normal; font-size: 11px; color: var(--t2); }
+  .bat dl, .bat > .note { margin-left: 14px; margin-right: 14px; }
+  .bat dl { margin-top: 6px; }
+  .bat > .note:last-child { margin-bottom: 10px; }
   .two { display: grid; grid-template-columns: 1fr 1fr; gap: 34px; }
   .prose { font-size: 15px; line-height: 1.55; max-width: 64ch; margin: 0 0 14px; }
   .names { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin-bottom: 12px; }
