@@ -26,8 +26,13 @@
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
   let showFindings = false, down = null, poll;
   let ordering = null, orderTool, orderMsg = '', msgTimer;   // an order being aimed: { unit, g, tilt, plane }
-  let orderPlane = 'her';                                    // the last order's plane (B), kept for the next
+  // where orders measure Eve and Haid from: 'her' own height, or the active 'bullseye''s plane (level:
+  // on it, so a formation above comes down to it). B while aiming, or the switch under the bullseyes
+  let orderPlane = 'her';
+  try { orderPlane = localStorage.getItem('astrum.orderPlane') === 'bullseye' ? 'bullseye' : 'her'; } catch {}
   $: if (ordering?.plane) orderPlane = ordering.plane;
+  $: try { localStorage.setItem('astrum.orderPlane', orderPlane); } catch {}
+  function setPlane(p) { orderPlane = p; if (ordering) ordering = { ...ordering, plane: p, tilt: 0 }; }
   $: if (ordering && (mode !== 'map' || (state && !ordering.ships.some((id) => state.ships?.[id])))) ordering = null;
   let mode = 'menu';                    // 'menu' | 'levels' | 'map' | 'workshop' | 'ships'
   let purpose = 'play';                 // what the level list is for: 'play' or 'build'
@@ -401,7 +406,7 @@
 
 {#if mode === 'map'}
 <div class="leftcol">
-<Bullseyes {bullseyes} bind:bullseyeId {def} {sel} {map} {t} {playerId} onchange={loadMeta} />
+<Bullseyes {bullseyes} bind:bullseyeId {def} {sel} {map} {t} {playerId} onchange={loadMeta} {orderPlane} onplane={setPlane} />
 <div class="panel left" data-ui>
   <div class="row">
     <span class="lbl">Player</span>

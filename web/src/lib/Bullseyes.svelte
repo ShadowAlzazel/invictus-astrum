@@ -3,7 +3,9 @@
   // centre (the stellar plane) is always first and always there; players.toml's come next; a
   // commander's own, made here, can be deleted here (orders already given off one keep flying).
   // A new one stands at what is selected: a body, a unit's place now, or a point picked on the map
-  // (carried with the body whose space it is in, unless told otherwise).
+  // (carried with the body whose space it is in, unless told otherwise). Under the list: whether
+  // orders aim level with the chosen bullseye's plane (a formation above it comes down to it) or
+  // keep the ship's own height; B while aiming switches it too.
   import { api } from './api.js';
 
   export let bullseyes = [];        // [{ id, name, made }]
@@ -14,6 +16,8 @@
   export let t = 0;
   export let playerId = '';
   export let onchange = async () => {};
+  export let orderPlane = 'her';    // orders' Eve and Haid: from 'her' own height, or this 'bullseye''s plane
+  export let onplane = () => {};
 
   let making = null, error = '', dropping = null;
   $: bodies = (def?.bodies ?? []).filter((b) => b.kind !== 'barycenter' || b.id === def?.root);
@@ -66,6 +70,10 @@
       </li>
     {/each}
   </ol>
+  <button class="plane" class:on={orderPlane === 'bullseye'} title="Orders aimed level with this bullseye's plane, or at the ship's own height (B while aiming)"
+          on:click={() => onplane(orderPlane === 'bullseye' ? 'her' : 'bullseye')}>
+    <i></i><span>{orderPlane === 'bullseye' ? `Orders level with ${bullseyes.find((b) => b.id === bullseyeId)?.name ?? 'the bullseye'}` : 'Orders keep their own height'}</span><kbd>B</kbd>
+  </button>
   {#if making}
     <form class="maker" on:submit|preventDefault={make}>
       <label>Name<input bind:value={making.name} maxlength="40" /></label>
@@ -126,6 +134,13 @@
   .drop { background: none; border: 0; color: var(--dim); font: inherit; font-size: 11px; padding: 2px 4px; cursor: pointer; opacity: 0; }
   li:hover .drop, .drop:focus-visible, .drop.sure { opacity: 1; }
   .drop:hover, .drop.sure { color: var(--fuchsia); }
+  .plane { display: flex; align-items: center; gap: 8px; width: 100%; margin: 6px 0 2px; background: none; border: 1px solid var(--rule);
+           color: var(--dim); font: inherit; font-size: 11px; padding: 4px 8px; cursor: pointer; text-align: left; }
+  .plane i { flex: none; width: 7px; height: 7px; transform: rotate(45deg); border: 1px solid var(--violet); }
+  .plane span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .plane.on { color: var(--ink); border-color: var(--violet); }
+  .plane.on i { background: var(--violet); }
+  .plane kbd { border: 1px solid var(--rule); padding: 0 3px; font-size: 9px; }
   .maker { display: grid; gap: 5px; margin: 8px 0 4px; padding-top: 8px; border-top: 1px solid var(--violet); }
   label { display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 11px; }
   input, select { flex: 1; min-width: 0; background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: inherit; padding: 2px 4px; }

@@ -73,7 +73,9 @@ the author*. The format is in `data/ships/README.md`.
 The cursor reads bearing, range, Eve/Haid and light time from the **active bullseye**: pick a
 player and one of their bullseyes at the bottom left. **+ New** there makes a bullseye of your own
 at what is selected (a body, a unit's place, a point picked on the map); ✕ deletes one of your own
-(orders already given off it keep flying). The star centre is always there.
+(orders already given off it keep flying). The star centre is always there. The switch under the
+list (B while aiming an order) aims orders level with the chosen bullseye's plane: a formation
+above it comes down to it.
 
 ## What is where
 

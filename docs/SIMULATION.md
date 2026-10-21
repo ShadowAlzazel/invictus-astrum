@@ -68,10 +68,11 @@ Select a ship and press **A**. A vector runs from her to the cursor:
 - over a unit or a body, it takes theirs: she will rendezvous, stopping 50 km short of a unit, or
   three radii (at least 1,000 km) short of a body, and hold station there;
 - anywhere else, it reads a point on the plane through her parallel to the active bullseye's;
-  **E** / **Q** tilt it toward Eve or Haid in 5° steps, as seen from her. **B** measures Eve and
-  Haid from the bullseye instead: level is then on the bullseye's own plane (a formation 20° Eve
-  of it, ordered level, comes down to it), and E / Q set the point's elevation from the bullseye.
-  The choice is kept for the next order. The point is kept as an AER from that bullseye, so it
+  **E** / **Q** tilt it toward Eve or Haid in 5° steps, as seen from her. The switch under the
+  bullseye list (**B** while aiming) measures Eve and Haid from the chosen bullseye instead: level
+  is then on that bullseye's own plane (a formation above it, ordered level, comes down to it; one
+  below comes up), and E / Q set the point's elevation from the bullseye. The choice stays, for
+  every order after, until switched back (and across reloads of the map). The point is kept as an AER from that bullseye, so it
   moves with the bullseye's frame.
 
 The telegraph sets the acceleration she will hold, from her most down to stop: **W** / **S** step
