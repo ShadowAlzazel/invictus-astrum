@@ -64,3 +64,12 @@ zones    = { default = true, label = "Zones" }
 label = "Cursor"
 hairlines = { default = true, label = "Full-screen hairlines" }
 readout   = { default = true, label = "Bearing and range readout" }
+
+# ---- weapon ranges: hold G -------------------------------------------------------------------------
+# Rings where each kind of weapon starts to matter (a ship class's ranges). A selected ship's are
+# drawn in fuchsia; a selected formation's units' (its own ships, or those of the units under it) in
+# the selection's child colour.
+[ranges]
+label = "Weapon ranges (hold G)"
+selected_only = { default = false, label = "Only the selection's rings" }
+min_px        = { default = 14, min = 4, max = 60, step = 1, label = "Smallest ring drawn (px)" }

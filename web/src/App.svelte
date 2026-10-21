@@ -208,6 +208,13 @@
 
   // G held: weapon ranges on the map
   let ranges = false;
+  // the display legend opens on hover; pinned, it stays open (remembered in this browser)
+  let legendPinned = false;
+  try { legendPinned = localStorage.getItem('astrum.legend.pinned') === '1'; } catch { /* not remembered */ }
+  function pinLegend() {
+    legendPinned = !legendPinned;
+    try { localStorage.setItem('astrum.legend.pinned', legendPinned ? '1' : '0'); } catch { /* not remembered */ }
+  }
   function keyUp(e) { if (e.key === 'g' || e.key === 'G') ranges = false; }
 
   function key(e) {
@@ -400,19 +407,28 @@
 {/if}
 
 {#if inMap && settings}
-<div class="panel right" data-ui>
-  {#each Object.entries(drules.layers.settings) as [k, spec]}
-    <button class="toggle" class:on={settings.layers[k]} on:click={() => setSetting('layers', k, !settings.layers[k])}><i></i>{spec.label}</button>
-  {/each}
-  {#each [['icons', 'body_display'], ['icons', 'unit_px'], ['text', 'unit_label_px']] as [sec, k]}
-    {@const spec = drules[sec].settings[k]}
-    <label class="count">
-      <span class="lbl">{spec.label}</span>
-      <input type="range" min={spec.min} max={spec.max} step={spec.step} value={settings[sec][k]} on:input={(e) => setSetting(sec, k, Number(e.target.value))} />
-      <output>{settings[sec][k]}</output>
-    </label>
-  {/each}
-  <button class="more" on:click={() => (showSettings = true)}>All settings ,</button>
+<!-- the display legend: a tab that opens while the pointer is over it, or stays open once pinned -->
+<div class="panel right" class:pinned={legendPinned} data-ui>
+  <button class="legend" on:click={pinLegend} title={legendPinned ? 'Unpin: open only on hover' : 'Pin open'}>
+    <span>Display</span><i class:pin={legendPinned}></i>
+  </button>
+  <div class="legend-body">
+    {#each Object.entries(drules.layers.settings) as [k, spec]}
+      <button class="toggle" class:on={settings.layers[k]} on:click={() => setSetting('layers', k, !settings.layers[k])}><i></i>{spec.label}</button>
+    {/each}
+    {#if drules.ranges}
+      <button class="toggle" class:on={settings.ranges?.selected_only} on:click={() => setSetting('ranges', 'selected_only', !settings.ranges?.selected_only)}><i></i>Ranges: selection only</button>
+    {/if}
+    {#each [['icons', 'body_display'], ['icons', 'unit_px'], ['text', 'unit_label_px']] as [sec, k]}
+      {@const spec = drules[sec].settings[k]}
+      <label class="count">
+        <span class="lbl">{spec.label}</span>
+        <input type="range" min={spec.min} max={spec.max} step={spec.step} value={settings[sec][k]} on:input={(e) => setSetting(sec, k, Number(e.target.value))} />
+        <output>{settings[sec][k]}</output>
+      </label>
+    {/each}
+    <button class="more" on:click={() => (showSettings = true)}>All settings ,</button>
+  </div>
 </div>
 
 {#if !showSettings}
@@ -451,7 +467,15 @@
   .leftcol { position: fixed; left: 20px; bottom: 20px; z-index: 20; width: 300px; display: flex; flex-direction: column; gap: 8px; }
   .leftcol .panel { position: static; }
   .left { display: grid; gap: 6px; }
-  .right { right: 20px; display: grid; gap: 2px; min-width: 200px; }
+  .right { right: 20px; display: grid; gap: 2px; min-width: 0; padding: 6px 12px; }
+  .legend { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: none; border: 0; padding: 0;
+            color: var(--dim); font-family: var(--display); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+  .legend i { width: 6px; height: 6px; border: 1px solid var(--violet); transform: rotate(45deg); }
+  .legend i.pin { background: var(--fuchsia); border-color: var(--fuchsia); }
+  .legend:hover { color: var(--ink); }
+  .legend-body { display: none; gap: 2px; min-width: 200px; margin-top: 6px; }
+  .right:hover .legend-body, .right.pinned .legend-body { display: grid; }
+  .right:hover, .right.pinned { padding: 10px 14px; }
   .row { display: flex; gap: 10px; align-items: center; }
   .lbl { color: var(--dim); }
   select { background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: inherit; padding: 2px 4px; flex: 1; }

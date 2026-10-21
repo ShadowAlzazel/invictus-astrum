@@ -500,3 +500,11 @@ def test_where_her_weapons_start_to_matter(reg):
     spec = ShipSpec.from_class(reg.classes["papilion"])
     assert spec.reach_km == 40000.0 and {x["what"]: x["km"] for x in spec.ranges}["de-mast"] == 11600.0
     assert ShipSpec.from_class(reg.classes["aeshna"]).as_dict()["ranges"][1]["what"] == "de-mast"
+
+
+def test_the_ranges_settings_are_player_settings():
+    from astrum.display import load_rules
+    from astrum.config import ROOT as R
+    d = load_rules(R / "display.toml")
+    assert d["ranges"]["settings"]["selected_only"]["default"] is False
+    assert d["ranges"]["settings"]["min_px"]["default"] == 14

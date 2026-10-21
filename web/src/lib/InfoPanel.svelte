@@ -57,6 +57,15 @@
     draw(c);
     return { update: draw };
   }
+  $: role = contact?.role ? style?.formation_role?.[contact.role]?.label ?? '' : '';
+  // every section folds; which ones are folded is remembered in this browser
+  const FOLD_KEY = 'astrum.panel.folded';
+  let shut = {};
+  try { shut = JSON.parse(localStorage.getItem(FOLD_KEY) ?? '{}') ?? {}; } catch { shut = {}; }
+  function flip(k) {
+    shut = { ...shut, [k]: !shut[k] };
+    try { localStorage.setItem(FOLD_KEY, JSON.stringify(shut)); } catch { /* not remembered */ }
+  }
   $: affColor = contact && style ? (style.affiliation[contact.affiliation] ?? style.affiliation.unknown).color : null;
   $: doing = !ship ? '' : ship.goal ? (ship.burning ? `on her order, ${ship.accel_g.toFixed(2)} g` : 'on her order, coasting') : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
     : ship.mode === 'station' ? 'holding station' : 'coasting';
@@ -82,7 +91,7 @@
         <p class="kind">{KIND[body.kind] ?? body.kind}{#if parentName} · of {parentName}{/if}{#if body.inhabited} · inhabited{/if}</p>
       {:else if contact}
         <h1>{contact.name ?? contact.callsign}{#if contact.hull_number}<span class="hull">{contact.hull_number}</span>{/if}</h1>
-        <p class="kind">{contact.class_name || contact.unit_type || contact.echelon}{#if contact.brevity} · {contact.brevity}{/if}{#if contact.pry} · Pry-{contact.pry}{/if}</p>
+        <p class="kind">{contact.class_name || contact.unit_type || contact.echelon}{#if role}{` · ${role}`}{/if}{#if contact.brevity}{` · ${contact.brevity}`}{/if}{#if contact.pry}{` · Pry-${contact.pry}`}{/if}</p>
         <p class="aff" style="--aff:{affColor ?? 'var(--dim)'}">{contact.faction?.name ?? contact.affiliation}{#if contact.faction}<span>{contact.affiliation}</span>{/if}</p>
       {:else}
         <h1>Point</h1>
@@ -95,9 +104,11 @@
 
   {#if a}
     <section>
-      <h2>From {bullseyeName}</h2>
-      <p class="big">{bearing(a.bearing)} for {km(a.range)}</p>
-      <p class="dim">{elev(a.elevation)} · light {lightTime(a.range)}</p>
+      <h2><button class="fold" class:shut={shut.aer} on:click={() => flip('aer')}><i></i>From {bullseyeName}</button>{#if shut.aer} <span class="dim">{bearing(a.bearing)} for {km(a.range)}</span>{/if}</h2>
+      {#if !shut.aer}
+        <p class="big">{bearing(a.bearing)} for {km(a.range)}</p>
+        <p class="dim">{elev(a.elevation)} · light {lightTime(a.range)}</p>
+      {/if}
     </section>
   {/if}
 
@@ -137,18 +148,21 @@
   {:else if contact}
     {#if members.length}
       <section>
-        <h2>Under its command <span class="dim">{members.length} unit{members.length > 1 ? 's' : ''}{under.length && !ship ? ` · ${under.length} ship${under.length > 1 ? 's' : ''}` : ''}</span></h2>
-        {#each members as m}
-          <button class="unit" on:click={() => onselect({ kind: 'contact', id: m.id })}>
-            <span>{m.name ?? m.callsign}</span><span class="dim">{m.children?.length ? m.echelon : m.class_name || m.unit_type || m.echelon}</span>
-          </button>
-        {/each}
-        {#if makeup.length}<p class="dim makeup">{makeup.map(([k, n]) => `${n} × ${k}`).join(' · ')}</p>{/if}
+        <h2><button class="fold" class:shut={shut.units} on:click={() => flip('units')}><i></i>Under its command</button> <span class="dim">{members.length} unit{members.length > 1 ? 's' : ''}{under.length && !ship ? ` · ${under.length} ship${under.length > 1 ? 's' : ''}` : ''}</span></h2>
+        {#if !shut.units}
+          {#each members as m}
+            <button class="unit" on:click={() => onselect({ kind: 'contact', id: m.id })}>
+              <span>{m.name ?? m.callsign}</span><span class="dim">{m.children?.length ? m.echelon : m.class_name || m.unit_type || m.echelon}</span>
+            </button>
+          {/each}
+          {#if makeup.length}<p class="dim makeup">{makeup.map(([k, n]) => `${n} × ${k}`).join(' · ')}</p>{/if}
+        {/if}
       </section>
     {/if}
     {#if orders.length}
       <section class="orders">
-        <h2>Orders <span class="dim">{orders.length} order{orders.length > 1 ? 's' : ''} · {flying.length} of {under.length} ships flying</span></h2>
+        <h2><button class="fold" class:shut={shut.orders} on:click={() => flip('orders')}><i></i>Orders</button> <span class="dim">{orders.length} order{orders.length > 1 ? 's' : ''} · {flying.length} of {under.length} ships flying</span></h2>
+        {#if !shut.orders}
         {#each orders as o (o.id)}
           <div class="order">
             <p><b>To {o.label}</b> <span>at {o.g.toFixed(2)} g</span></p>
@@ -159,6 +173,7 @@
                        onset={(g) => { tgs[o.id] = g; onretune(g, false, o); }} oncommit={() => onretune(tgs[o.id] ?? o.g, true, o)} />
           </div>
         {/each}
+        {/if}
         <p class="dim hint">{#if orders.length === 1}<kbd>W</kbd><kbd>S</kbd> telegraph · {/if}<kbd>A</kbd> a new order for all of them</p>
       </section>
     {/if}
@@ -180,6 +195,8 @@
         {:else if ship.station_at}
           <p class="dim held">Holding at {ship.station_at}</p>
         {/if}
+        <h3><button class="fold" class:shut={shut.drive} on:click={() => flip('drive')}><i></i>Propulsion</button>{#if shut.drive} <span class="dim">{n(ship.dv_left_kms, 0)} km/s left · most {ship.max_accel_g.toFixed(2)} g</span>{/if}</h3>
+        {#if !shut.drive}
         <dl class="tight">
           <dt>Mass</dt><dd>{n(ship.mass_t)} t</dd>
           <dt class="sub">dry{ship.load !== 'hull' ? `, ${ship.load} load` : ''}</dt><dd class="sub">{n(ship.dry_t)} t</dd>
@@ -193,8 +210,16 @@
           <dt>Δv spent</dt><dd>{ship.dv_spent_kms < 1 ? `${n(ship.dv_spent_kms * 1000, 1)} m/s` : `${n(ship.dv_spent_kms, 2)} km/s`}</dd>
           {#if spec?.length_m}<dt>Length</dt><dd>{n(spec.length_m)} m</dd>{/if}
           {#if spec?.cruise_g}<dt>Cruise band</dt><dd>{spec.cruise_g[0]}–{spec.cruise_g[1]} g</dd>{/if}
-          {#each spec?.ranges ?? [] as r}<dt title={r.note}>{r.what[0].toUpperCase() + r.what.slice(1)}</dt><dd title={r.note}>{km(r.km)}</dd><dt class="sub">{r.battery.toLowerCase()}</dt><dd class="sub">{r.note}</dd>{/each}
         </dl>
+        {/if}
+        {#if spec?.ranges?.length}
+          <h3><button class="fold" class:shut={shut.weapons} on:click={() => flip('weapons')}><i></i>Weapons</button>{#if shut.weapons} <span class="dim">{spec.ranges.map((r) => `${r.what} ${km(r.km)}`).join(' · ')}</span>{/if}</h3>
+          {#if !shut.weapons}
+          <dl class="tight">
+            {#each spec.ranges as r}<dt title={r.note}>{r.what[0].toUpperCase() + r.what.slice(1)}</dt><dd title={r.note}>{km(r.km)}</dd><dt class="sub">{r.battery.toLowerCase()}</dt><dd class="sub">{r.note}</dd>{/each}
+          </dl>
+          {/if}
+        {/if}
         {#if spec?.has_drive}<p class="dim hint"><kbd>A</kbd> order her{#if ship.goal} · <kbd>W</kbd><kbd>S</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>G</kbd> weapon ranges{/if}</p>{/if}
       </section>
     {:else if spec && !spec.has_drive}
@@ -202,13 +227,15 @@
     {/if}
     {#if chain.length}
       <section>
-        <h2>Chain of command</h2>
+        <h2><button class="fold" class:shut={shut.chain} on:click={() => flip('chain')}><i></i>Chain of command</button>{#if shut.chain} <span class="dim">{chain.map((a) => a.name ?? a.callsign).join(' · ')}</span>{/if}</h2>
+        {#if !shut.chain}
         <ol class="ladder">
           <li class="self"><span class="nm">{contact.name ?? contact.callsign}</span><span class="ech">{contact.echelon}</span></li>
           {#each chain as a}
             <li><button on:click={() => onselect({ kind: 'contact', id: a.id })}><span class="nm">{a.name ?? a.callsign}</span><span class="ech">{a.echelon}</span></button></li>
           {/each}
         </ol>
+        {/if}
       </section>
     {/if}
     {#if contact.status?.length}<p class="dim">Status: {contact.status.join(', ')}</p>{/if}
@@ -293,6 +320,15 @@
   .ladder .ech { color: var(--dim); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
   .ladder button:hover .nm { color: var(--fuchsia); }
   .hint { margin-top: 8px; font-size: 10px; }
+  /* a section's heading folds it: a small diamond, open below, shut to the side */
+  .fold { display: inline-flex; align-items: center; gap: 7px; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  .fold i { width: 5px; height: 5px; border-right: 1px solid var(--violet); border-bottom: 1px solid var(--violet);
+            transform: rotate(45deg) translate(-1px, -1px); transition: transform 0.12s; filter: brightness(1.6); }
+  .fold.shut i { transform: rotate(-45deg); }
+  .fold:hover { color: var(--ink); }
+  .fold:hover i { border-color: var(--fuchsia); }
+  h2 .dim, h3 .dim { font-size: 11px; margin-left: 6px; }
+  h3 { font-family: var(--display); font-weight: 400; font-size: 12px; color: var(--dim); margin: 10px 0 5px; }
   kbd { border: 1px solid var(--rule); padding: 0 3px; font-family: var(--mono); font-size: 9px; }
   .finding { margin: 8px 0 0; color: #ffd27a; font-size: 11px; }
   .note { margin: 8px 0 0; color: var(--dim); font-size: 11px; }

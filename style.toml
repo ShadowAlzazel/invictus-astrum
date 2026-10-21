@@ -67,7 +67,7 @@ task-force = "XX"
 classis    = "XXX"
 armada     = "XXXX"
 
-# A formation's role, drawn inside its frame as the APP-6 marks it borrows (ships keep their
+# A formation's role, named in its panel by label, drawn inside its frame as the APP-6 marks it borrows (ships keep their
 # class's type). marks: oval (armour), cross (infantry), slash (reconnaissance: one diagonal,
 # lower left to upper right), chevron (anti-armour: an inverted V), dome (air defence: an arc on
 # the bottom edge). A scenario names a

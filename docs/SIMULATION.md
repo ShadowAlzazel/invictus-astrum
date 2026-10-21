@@ -122,9 +122,11 @@ every ship of the class shares them:
 | guns | the farthest reach the class states for its guns | 47 km | 2,500 km | — |
 
 Hold **G** on the map: every armed ship shows a dotted ring for each, where the ring is at least
-14 px across on screen (zoomed out they would only be clutter). Each kind has its own dash. The
-selected ship's rings, and the first ring of each kind and range, carry the figure; her panel lists
-them.
+14 px across on screen (zoomed out they would only be clutter; display.toml `[ranges] min_px`). Each
+kind has its own dash. A selected ship's rings are fuchsia; a selected formation's units' rings (its
+own ships, or if it has none, the ships of the units under it) take the selection's child colour,
+so a squadron shows its ships. Those carry their figures. "Ranges: selection only" in the display
+legend (`[ranges] selected_only`) hides every other ring. Her panel lists them.
 
 Every order given to several ships shares an id (`order_id`, with `by`, the unit it was given to).
 
