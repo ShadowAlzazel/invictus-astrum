@@ -612,3 +612,147 @@ def test_the_fleet_is_rows_and_its_ships_are_views():
     copy = f.at(t + 900)["kiki-1"]
     copy.state.r[:] = 0
     assert np.linalg.norm(rows.r[i]) > 0                                      # what at() gives is a copy
+
+
+# ---- the timeline, and orders that fly again only what they touch ---------------------------------
+
+def _demo(world, timeline=True):
+    f = world.fleet(world.scenarios["sol-demo"])
+    if timeline:
+        f.keep_timeline()
+    return f
+
+
+def test_the_timeline_is_what_the_fleet_flew():
+    """At its samples the timeline is the flight itself; between them, a ship under thrust (the
+    flip included) is read within a few hundred metres of where the fleet flies her."""
+    from astrum.app import create_app
+    from astrum.sim import Order
+    fa = _demo(create_app().state.world)
+    t0 = fa.t0
+    order = lambda: Order("kiki-1", t0 + 600, "goto", target={"bullseye": "burn", "player": "arcvs", "aer": [90, 0, 3e7], "label": "pt"}, g=0.4)
+    fa.command(order())
+    fa.at(t0 + 3 * 3600)
+    tl, i = fa.timeline, fa.c.row["kiki-1"]
+    worst = 0.0
+    for t in t0 + np.array([1234.5, 3333.3, 4050.0, 5555.5]):
+        fb = _demo(create_app().state.world)               # the same flight, flown straight to t itself
+        fb.command(order())
+        ref = fb.at(t)["kiki-1"].state
+        pic = tl.at(t, fa.c.n)
+        worst = max(worst, float(np.linalg.norm(pic["r"][i] - ref.r)))
+        assert pic["prop"][i] == pytest.approx(ref.propellant_kg, rel=1e-4)
+    assert worst < 200.0
+
+
+def test_an_order_in_the_past_flies_again_only_what_it_touches():
+    from astrum.app import create_app
+    from astrum.sim import Order
+    a, b = create_app().state.world, create_app().state.world
+    fa, fb = _demo(a), _demo(b, timeline=False)
+    t0 = fa.t0
+    goto = lambda: Order("kiki-1", t0 + 4000, "goto", target={"body": "moon", "label": "Moon"}, g=0.3)
+    fa.at(t0 + 6 * 3600)                                   # flown ahead, then the order comes in the past
+    before = fa.c.r[: fa.c.n].copy(), fa.c.prop[: fa.c.n].copy()
+    others = [i for sid, i in fa.c.row.items() if sid != "kiki-1"]
+    reply = fa.command(goto())
+    assert set(reply) == {"kiki-1"} and reply["kiki-1"].state.goal["label"] == "Moon"
+    assert np.array_equal(fa.c.r[others], before[0][others]) and np.array_equal(fa.c.prop[others], before[1][others])
+    fb.command(goto())                                      # the same order given before anything flew
+    ref = fb.at(t0 + 6 * 3600)["kiki-1"].state
+    i = fa.c.row["kiki-1"]
+    assert np.allclose(fa.c.r[i], ref.r, rtol=1e-7, atol=10.0) and fa.c.prop[i] == pytest.approx(ref.propellant_kg, rel=1e-7)
+    tl = fa.timeline                                        # and what the map reads of her changed from the order on
+    assert np.linalg.norm(tl.at(t0 + 5 * 3600, fa.c.n)["r"][i] - fb.at(t0 + 5 * 3600)["kiki-1"].state.r) < 3e3
+
+
+def test_a_formation_ordered_in_the_past_flies_as_one():
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = _demo(world)
+    t = f.t0 + 600
+    f.at(t + 6 * 3600)
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.4, "player": "arcvs",
+                                   "target": {"bullseye": "burn", "aer": [90, 0, 30000]}}).json()
+    assert set(r["ships"]) == {"kiki-1", "kiki-2", "kiki-3"} and all(s["goal"]["in_formation"] for s in r["ships"].values())
+    assert len({f.c.lead[f.c.row[s]] for s in r["ships"]}) == 1 and f.t == pytest.approx(t + 6 * 3600)
+    after = f.at(t + 6 * 3600)
+    assert all(after[s].state.mode == "station" for s in ("kiki-1", "kiki-2", "kiki-3"))  # long since there, laid out
+
+
+# ---- the simulation's side: ahead of the clock, and in a process of its own -----------------------
+
+def test_the_fleet_flies_ahead_of_the_clock():
+    """With the run-ahead worker, the fleet goes on ahead of what was asked; a picture asked for
+    behind it is read off the timeline, and the fleet is not set back for it."""
+    import time as _t
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app(run_ahead=True)
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo"}
+    with c.websocket_connect("/ws") as ws:
+        ws.send_json({**req, "t": f.t0 + 60})
+        assert ws.receive_json()["full"]
+        deadline = _t.monotonic() + 10
+        while f.t < f.t0 + 600 and _t.monotonic() < deadline:
+            _t.sleep(0.05)
+        ahead = f.t
+        assert ahead >= f.t0 + 600
+        ws.send_json({**req, "t": f.t0 + 300})
+        m = ws.receive_json()
+        assert m["t"] == pytest.approx(f.t0 + 300) and m["behind_s"] == 0 and f.t >= ahead
+    app.state.sim.close()
+
+
+def test_the_simulation_runs_in_a_process_of_its_own():
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app(sim="process")
+    with TestClient(app) as c:
+        sol = next(s for s in c.get("/api/meta").json()["systems"] if s["id"] == "sol")["start"]
+        req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo"}
+        with c.websocket_connect("/ws") as ws:
+            ws.send_json({**req, "t": sol + 60})
+            first = ws.receive_json()
+            assert first["full"] and len(first["ships"]) == 51 and "kiki" in first["contacts"]
+            r = c.post("/api/order", json={**req, "unit": "kiki-1", "t": sol + 60, "g": 0.4,
+                                           "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
+            assert r.status_code == 200 and r.json()["ship"]["goal"]["eta_s"] > 0
+            assert c.post("/api/order", json={**req, "unit": "nope", "t": sol, "g": 1}).status_code == 400
+            ws.send_json({**req, "t": sol + 600})
+            later = ws.receive_json()
+            assert not later["full"] and later["ships"]["kiki-1"]["goal"]["label"].startswith("090°")
+        assert app.state.sim.proc.is_alive()
+    assert not app.state.sim.proc.is_alive()                 # the server's end stops it
+
+
+def test_where_everyone_was_comes_off_the_timeline():
+    """Every ship has a place at a past moment, the ones that have left station since included."""
+    from astrum.app import create_app
+    world = create_app().state.world
+    f = _demo(world)
+    f.at(f.t0 + 3 * 3600)                                   # the scenario's burn has had tf2-lf1-pa-1 leave station
+    then = f.positions_at(f.t0 + 900)
+    assert set(then) == set(f.ships) and f.t == pytest.approx(f.t0 + 3 * 3600)
+
+
+def test_an_order_shows_at_the_moment_it_is_given():
+    """With the fleet already flown past it, an order given at the paused clock (on a sample time,
+    or between two) shows in the picture at that very moment."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = _demo(world)
+    f.at(f.t0 + 2 * 3600)
+    req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo"}
+    for unit, t in (("kiki-1", f.t0 + 600), ("kiki-2", f.t0 + 630)):
+        c.post("/api/order", json={**req, "unit": unit, "t": t, "g": 0.4, "target": {"body": "moon"}})
+        with c.websocket_connect("/ws") as ws:
+            ws.send_json({**req, "t": t})
+            m = ws.receive_json()
+        assert m["ships"][unit]["goal"]["label"] == "Moon" and m["ships"][unit]["mode"] == "free"

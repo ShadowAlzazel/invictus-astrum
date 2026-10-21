@@ -83,6 +83,18 @@ class Placement:
                 P[i] = r
         return P
 
+    def arrays(self, bullseyes: dict, bodies: dict, ships: dict | None = None) -> tuple[list[str], np.ndarray]:
+        """positions() as (ids, positions n×3): what rests on a bullseye or body not given is left out."""
+        P = self.base_positions(bullseyes, bodies, ships)
+        if not len(self.ids):
+            return [], np.zeros((0, 3))
+        unplaced = np.isnan(P).any(axis=1)
+        X = self.W @ np.where(unplaced[:, None], 0.0, P)
+        if unplaced.any():
+            ok = ~(self.W[:, unplaced] != 0).any(axis=1)
+            return [cid for k, cid in enumerate(self.ids) if ok[k]], X[ok]
+        return self.ids, X
+
     def positions(self, bullseyes: dict, bodies: dict, ships: dict | None = None) -> dict[str, np.ndarray]:
         """{contact id: position (m)} at the moment the bullseyes and bodies are given for. What
         rests on a bullseye or body not given is not placed."""

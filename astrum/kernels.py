@@ -20,7 +20,7 @@ import numpy as np
 try:
     import numba
     HAVE_NUMBA = True
-    jit = numba.njit(cache=True, error_model="numpy")
+    jit = numba.njit(cache=True, error_model="numpy", nogil=True)    # nogil: other threads run while a kernel does
 except ImportError:                                  # optional: the numpy paths stand in
     HAVE_NUMBA = False
 
@@ -360,7 +360,8 @@ def fly(rows, T0, T1, base, steer_only,
         goal, gg, track, off, stand, hold, hashold, lead, solo, amax, aim, rng, clos, eta1, arr_t,
         trk_kind, trk_row, trk_knots, trk_n, trk_t0, trk_dt, trk_hold,
         node_t0, node_h, NP, NV, gm, oblate, oblate_k, oblate_E,
-        G0, brake, arrive_m, arrive_ms, form_t_steps, form_t_min, close_share, close_min):
+        G0, brake, arrive_m, arrive_ms, form_t_steps, form_t_min, close_share, close_min,
+        smp_dt, smp_first, smp_slots, tl_r, tl_v, tl_prop, tl_dvs, tl_thrust, tl_mode, tl_aim, tl_rng, tl_clos, tl_eta1):
     """Fly the given rows (whole units: a formation's lead with its ships, or ships on their own)
     from T0 to T1, in steps of `base` that shrink to a fiftieth of the time left as an order
     closes in. Each step: gravity at every row (point masses and J2, bodies off the table);
@@ -368,7 +369,10 @@ def fly(rows, T0, T1, base, steer_only,
     formation steer for their places on their lead (its acceleration, the difference in gravity,
     and a damped correction over max(4 steps, 2 min)); then kick-drift-kick, the burn's Δv given
     half before the drift and half after. Arrivals are marked in arr_t for the fleet to settle.
-    With steer_only, it steers at T0 and flies nothing."""
+    With steer_only, it steers at T0 and flies nothing.
+    With smp_dt > 0 it keeps the timeline: steps land on every sample time (smp_first, then every
+    smp_dt, as many as smp_slots has), and at each the rows' state is written to the timeline's
+    arrays at that sample's slot."""
     n = rows.shape[0]
     M = gm.shape[0]
     B = np.empty((M, 3))
@@ -381,16 +385,20 @@ def fly(rows, T0, T1, base, steer_only,
         at[rows[k]] = k
     t = T0
     first = True
+    S = smp_slots.shape[0] if smp_dt > 0.0 else 0
+    s = 0
+    ns = smp_first
     while first or t < T1 - 1e-9:
         first = False
-        h = min(base, T1 - t) if not steer_only else base
+        end = min(T1, ns) if s < S else T1        # a step lands on the next sample time
+        h = min(base, end - t) if not steer_only else base
         for k in range(n):                        # as an order closes in, its steps shrink with the time left
             i = rows[k]
             if mode[i] == FREE and goal[i] and (kind[i] == LEAD or lead[i] < 0 or solo[i] or mode[lead[i]] != FREE):
                 if eta1[i] < 1e300:
                     h = min(h, max(close_share * eta1[i], close_min))
-        if not steer_only and T1 - t - h < 0.25 * h:   # no sliver of a step at the end
-            h = T1 - t
+        if not steer_only and end - t - h < 0.25 * h:  # no sliver of a step at the end
+            h = end - t
         _bodies_at(t, node_t0, node_h, NP, NV, B)
         for k in range(n):
             i = rows[k]
@@ -463,6 +471,24 @@ def fly(rows, T0, T1, base, steer_only,
                     v[i, c] += g1[k, c] * h / 2 + kick[k, c] / 2
             tt[i] = t + h
         t += h
+        if s < S and abs(t - ns) < 1e-6:          # a sample time: the timeline takes the rows' state
+            t = ns
+            slot = smp_slots[s]
+            for k in range(n):
+                i = rows[k]
+                for c in range(3):
+                    tl_r[slot, i, c] = r[i, c]
+                    tl_v[slot, i, c] = v[i, c]
+                    tl_aim[slot, i, c] = aim[i, c]
+                tl_prop[slot, i] = prop[i]
+                tl_dvs[slot, i] = dvs[i]
+                tl_thrust[slot, i] = thrust[i]
+                tl_mode[slot, i] = mode[i]
+                tl_rng[slot, i] = rng[i]
+                tl_clos[slot, i] = clos[i]
+                tl_eta1[slot, i] = eta1[i]
+            s += 1
+            ns += smp_dt
 
 
 def warm_up() -> None:

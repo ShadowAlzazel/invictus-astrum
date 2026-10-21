@@ -40,6 +40,9 @@ COLUMNS = {
     "aim": ((3,), float, 0.0), "rng": ((), float, math.nan), "clos": ((), float, math.nan),
     "eta1": ((), float, math.inf), "eta": ((), float, math.nan),
     "arr_t": ((), float, math.nan),            # she (or the lead) arrived at this moment, in the last block
+    "arrive": ((), float, math.nan),           # when her order gets her there, flown ahead (absolute)
+    "pmax": ((), float, 0.0),                  # her tanks full
+    "mver": ((), np.int64, 0),                 # which of her orders/places as given she is on (fleet-wide count)
 }
 
 
@@ -85,6 +88,7 @@ class Classis:
             self.row[rid] = i
             if spec is not None:
                 self.dry[i] = spec.hull_kg[load]
+                self.pmax[i] = spec.propellant_kg
                 self.fmax[i] = spec.thrust_n or 0.0
                 self.ve[i] = spec.exhaust_ms or 0.0
         return i

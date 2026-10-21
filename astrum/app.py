@@ -14,8 +14,8 @@ Positions on the wire are kilometres in the system frame, as float64 JSON number
 """
 from __future__ import annotations
 
-import asyncio
 import itertools
+from contextlib import asynccontextmanager
 import math
 import threading
 import tomllib
@@ -36,7 +36,7 @@ from .fields import gravity, magnetic, potential
 from .frames import to_spherical
 from .loader import contact_positions, load_factions, load_players, load_scenarios, load_systems
 from .timescale import iso, utc_to_tdb
-from .zones import all_zones, classify, magnetopause
+from .zones import all_zones, classify
 from . import workshop
 from .ships import ShipRegistry, class_detail, class_summary, rules_dict
 from .entity import ShipSpec, SpecError
@@ -44,9 +44,7 @@ from .sim import Fleet, Order
 from . import display
 
 KM = 1e-3
-FRAME_BUDGET_S = 0.2          # wall time the map's picture may spend flying the fleet; past it, the picture lags
-_order_n = itertools.count(1)   # order ids stay unique however many are given in one second
-ORDER_BUDGET_S = 0.5          # ... and an order: if the fleet is far behind, offsets are read where it got to
+_conn_n = itertools.count(1)    # the map's connections, for the simulation's side to tell apart
 
 
 class World:
@@ -302,33 +300,6 @@ def _km(v) -> list[float]:
     return [round(x, 3) for x in (np.asarray(v) * KM).tolist()]
 
 
-def _tidy(x, key: str = ""):
-    """A ship's figures as the map shows them: six significant figures; positions (…_km
-    lists) to the metre."""
-    if isinstance(x, float):
-        return float(f"{x:.6g}") if math.isfinite(x) else x
-    if isinstance(x, dict):
-        return {k: _tidy(v, k) for k, v in x.items()}
-    if isinstance(x, (list, tuple)):
-        return [round(v, 3) if key.endswith("_km") and isinstance(v, float) else _tidy(v) for v in x]
-    return x
-
-
-def _delta(prev: dict, now: dict) -> dict:
-    """What changed from prev to now: the keys whose values differ, and inside a value that is
-    a dict in both, only its keys that differ (the map merges one level deep)."""
-    out = {}
-    for k, v in now.items():
-        p = prev.get(k, _delta)
-        if p == v:
-            continue
-        if isinstance(v, dict) and isinstance(p, dict):
-            out[k] = {kk: vv for kk, vv in v.items() if p.get(kk, _delta) != vv}
-        else:
-            out[k] = v
-    return out
-
-
 def _deg(x):
     return None if x is None else math.degrees(x)
 
@@ -406,35 +377,25 @@ def level_dict(world: "World", s) -> dict:
     }
 
 
-def order_ships(world: "World", sc, fleet, unit) -> list[str]:
-    """The ships an order goes to: the unit itself if she is a ship, else every ship under it."""
-    if fleet is None or unit not in sc.contacts:
-        return []
-    if unit in fleet.ships:
-        return [unit]
-    tree = world.trees.get(sc.id, {})
-    out, todo = [], list(tree.get(unit, {}).get("children", []))
-    while todo:
-        c = todo.pop(0)
-        if c in fleet.ships:
-            out.append(c)
-        todo += tree.get(c, {}).get("children", [])
-    return out
-
-
-def order_reply(fleet, t: float, unit: str, ships: list[str]) -> dict:
-    _, flown = fleet.advance(t, ORDER_BUDGET_S)
-    out = {"ok": True, "unit": unit, "ships": {sid: flown[sid].as_dict() for sid in ships}}
-    if len(ships) == 1:
-        out["ship"] = out["ships"][ships[0]]
-    return out
-
-
-def create_app(config: dict | None = None) -> FastAPI:
+def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool = False) -> FastAPI:
+    """The web server. The simulation answers its pictures and orders: in a process of its own
+    (sim="process", as serve.py runs it; it flies ahead of the clock there), or in this one
+    (sim="inline", sharing this world: for tests and tools; run_ahead to fly ahead here too)."""
     config = config or load_config()
     world = World(config)
-    app = FastAPI(title="Invictus: Astrum")
-    app.state.world = world
+    if sim == "process":
+        from .simhost import ProcessSim
+        sim = ProcessSim(config)
+    else:
+        from .simhost import InlineSim
+        sim = InlineSim(world, run_ahead)
+    @asynccontextmanager
+    async def lifespan(_):
+        yield
+        sim.close()
+
+    app = FastAPI(title="Invictus: Astrum", lifespan=lifespan)
+    app.state.world, app.state.sim = world, sim
 
     @app.get("/api/meta")
     def meta():
@@ -555,8 +516,7 @@ def create_app(config: dict | None = None) -> FastAPI:
             raise HTTPException(404, f"{sid!r} has no file")
         return workshop.source(Path(s.source))
 
-    @app.post("/api/workshop/check")
-    def workshop_check(doc: dict = Body(...)):
+    def workshop_check_here(doc: dict) -> dict:
         """Build a document. If it builds, it becomes the draft the map can show as "draft"."""
         system, findings = workshop.check(doc)
         out = {"ok": system is not None, "findings": [f.__dict__ for f in findings]}
@@ -564,6 +524,13 @@ def create_app(config: dict | None = None) -> FastAPI:
             with world.lock:
                 world.drafts["draft"] = (system, Ephemeris(system))
             out["draft"] = "draft"
+        return out
+
+    @app.post("/api/workshop/check")
+    async def workshop_check_and_tell(doc: dict = Body(...)):
+        out = workshop_check_here(doc)
+        if out["ok"]:
+            await sim.call("draft", doc)                 # the simulation's side draws the draft too
         return out
 
     @app.post("/api/workshop/save")
@@ -576,133 +543,27 @@ def create_app(config: dict | None = None) -> FastAPI:
         return {"saved": path.name, "id": doc["system"]["id"], "version": world.version}
 
     @app.post("/api/order")
-    def order(req: dict = Body(...)):
-        """An order at the map's clock, for one ship or for every ship under a formation.
-        target: {bullseye, aer: [deg, deg, km]} (the ordering player's bullseye, so the point moves
-        with its frame), {unit}, or {body}. g is the acceleration held, each ship capped at her most;
-        0 cuts the drive. keep_target: only the g of the order they are flying changes.
-        A formation's ships each keep their offset from the formation as it stands now, so they
-        arrive laid out as they left, not on one point."""
-        world.check()
-        sc = world.scenarios.get(req.get("scenario") or "")
-        if sc is None:
-            raise HTTPException(404, f"no scenario {req.get('scenario')!r}")
-        fleet = world.fleet(sc)
-        unit, g, t = req.get("unit"), req.get("g"), req.get("t")
-        if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
-            raise HTTPException(400, "an order needs t, and g of 0 or more")
-        t = float(t)
-        ships = order_ships(world, sc, fleet, unit)
-        if not ships:
-            raise HTTPException(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
-        if req.get("keep_target"):                      # the telegraph: one order's g, or every order under the unit
-            for sid in ships:
-                fleet.command(Order(sid, t, "setg", g=float(g), source="map", order_id=req.get("order_id")))
-            return order_reply(fleet, t, unit, ships)
-        if g == 0:
-            for sid in ships:
-                fleet.command(Order(sid, t, "coast", source="map"))
-            return order_reply(fleet, t, unit, ships)
-        s, eph = world.system(sc.system)
-        tg, player = req.get("target") or {}, req.get("player") or sc.player
-        if "bullseye" in tg:
-            if tg["bullseye"] not in world.bullseyes(sc.system, player):
-                raise HTTPException(400, f"no bullseye {tg['bullseye']!r} for {player!r}")
-            brg, el, rng = (float(x) for x in tg["aer"])
-            bname = world.bullseyes(sc.system, player)[tg["bullseye"]].name
-            tilt = "level" if abs(el) < 0.5 else f"{'Eve' if el > 0 else 'Haid'} {abs(el):.0f}°"
-            target = {"bullseye": tg["bullseye"], "player": player, "aer": [brg, el, rng * 1e3],
-                      "label": tg.get("label") or f"{round(brg) % 360:03d}° {tilt}, {rng:,.0f} km from {bname}"}
-        elif "unit" in tg:
-            c = sc.contacts.get(tg["unit"])
-            if c is None or tg["unit"] == unit or tg["unit"] in ships:
-                raise HTTPException(400, f"{tg['unit']!r} is not another unit in {sc.id}")
-            target = {"unit": c.id, "label": c.callsign}
-        elif "body" in tg:
-            b = next((b for b in s if b.id == tg["body"]), None)
-            if b is None:
-                raise HTTPException(400, f"no body {tg['body']!r} in {s.name}")
-            target = {"body": b.id, "label": b.name}
-        else:
-            raise HTTPException(400, "target is {bullseye, aer}, {unit} or {body}")
-        _, flown = fleet.advance(t, ORDER_BUDGET_S)
-        offsets = {sid: np.zeros(3) for sid in ships}
-        if len(ships) > 1 or unit not in ships:          # a formation: each ship keeps her place in it
-            pos = eph.positions(t)
-            where = contact_positions(sc, world.resolved(sc.system, sc.player, pos), pos,
-                                      {i: f.state.r for i, f in flown.items()})
-            anchor = where.get(unit)
-            if anchor is not None:
-                offsets = {sid: flown[sid].state.r - anchor for sid in ships}
-        oid = f"{unit}@{t:.0f}#{next(_order_n)}"
-        for sid in ships:
-            tgt = dict(target, offset_m=offsets[sid].tolist()) if np.any(offsets[sid]) else target
-            fleet.command(Order(sid, t, "goto", target=tgt, g=float(g), source="map", order_id=oid, by=unit))
-        return order_reply(fleet, t, unit, ships)
-
-    def frame(req: dict, sent: dict | None = None) -> dict:
-        """One picture of the system for the map. Runs in a worker thread, never the event loop:
-        the fleet may have hours to fly. It gets FRAME_BUDGET_S of wall time; if it falls short,
-        the picture is of the moment it reached (behind_s says how far behind the clock asked).
-        With `sent` (what this connection was sent before), ships carry only what changed since
-        (full: false); the first picture, and any after the system, the scenario or the data
-        changed, carries everything (full: true)."""
-        world.check()
-        sid = req.get("system")
-        got = world.get(sid)
-        if got is None:
-            return {"error": f"no system {sid!r}", "system": sid}
-        s, eph = got
-        asked = t = float(req.get("t", world.start_time(s)))
-        flown, ships = {}, {}
-        sc = world.scenarios.get(req.get("scenario") or "")
-        fleet = world.fleet(sc) if sc and sc.system == sid else None
-        if fleet is not None:
-            t, (flown, ships) = fleet.advance(t, FRAME_BUDGET_S, view=lambda fl: (
-                {i: f.state.r.copy() for i, f in fl.items()}, {i: f.as_dict() for i, f in fl.items()}))
-        pos = world.table(sid).positions(t)              # the table: what the fleet flew among
-        bulls = world.resolved(sid, req.get("player"), pos)
-        contacts = {}
-        if sc and sc.system == sid:
-            # units are placed from their scenario's own bullseyes, whoever is watching;
-            # ships stand where the simulation has flown them, formations follow
-            placed = world.resolved(sid, sc.player, pos)
-            contacts = {cid: _km(v) for cid, v in contact_positions(sc, placed, pos, flown).items()}
-        return {
-            "t": t, "utc": iso(t), "behind_s": asked - t, "system": sid, "version": world.version, "source": eph.source(t),
-            "bodies": {bid: _km(v) for bid, v in pos.items()},
-            "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
-            "contacts": contacts,
-            "ships": ships if sent is None else _ship_deltas(sent, (sid, req.get("scenario"), world.version), ships),
-            "full": sent is None or sent.get("fresh", False),
-            "magnetopause_km": {b.id: round(m * KM, 1) for b in s if (m := magnetopause(s, pos, b))},
-        }
-
-    def _ship_deltas(sent: dict, key, ships: dict) -> dict:
-        ships = {i: _tidy(d) for i, d in ships.items()}
-        if sent.get("key") != key:
-            sent.clear()
-            sent.update(key=key, ships=ships, fresh=True)
-            return ships
-        sent["fresh"] = False
-        prev, out = sent["ships"], {}
-        for i, d in ships.items():
-            delta = _delta(prev.get(i, {}), d)
-            if delta:
-                out[i] = delta
-        sent["ships"] = ships
-        return out
+    async def order(req: dict = Body(...)):
+        """An order at the map's clock, for one ship or for every ship under a formation: given by
+        the simulation's side (simhost.give_order), which flies again only what it touches."""
+        out = await sim.call("order", req)
+        if not out["ok"]:
+            raise HTTPException(out["status"], out["detail"])
+        return out["reply"]
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
+        """The map's pictures: asked for and answered by the simulation's side, JSON ready to send."""
         await sock.accept()
-        sent: dict = {}                                  # what this connection has been sent: ships go as changes
+        conn = next(_conn_n)
         try:
             while True:
                 req = await sock.receive_json()
-                await sock.send_json(await asyncio.to_thread(frame, req, sent))
+                await sock.send_text(await sim.call("frame", (req, conn)))
         except WebSocketDisconnect:
             return
+        finally:
+            await sim.call("close", conn)
 
     dist = ROOT / "web" / "dist"
     if dist.exists():

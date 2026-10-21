@@ -1,0 +1,418 @@
+"""The simulation's side of the server: fleets flown ahead of the clock, pictures and orders.
+
+The web server only talks: it hands the map's picture requests and orders to a SimHost and sends
+back what it answers. The SimHost owns its own World (the data, the body tables, the fleets) and
+answers from it:
+
+    a picture   read off the fleet's timeline at the moment asked (nothing flown for it), the
+                station ships and the scenario's contacts placed at that moment, all at once,
+                the ships' figures made from the arrays (astrum/encode.py), JSON ready to send
+    an order    given to the fleet: if the fleet has flown past it, only the rows it touches fly
+                again (Fleet.command)
+
+A run-ahead worker keeps every fleet someone watches ahead of their clock: by how fast the clock
+runs (three seconds of it, from ten minutes to twelve hours), so the timeline is there before it
+is asked for.
+
+It runs in a process of its own (ProcessSim: the server's other process, over a pipe), or in the
+server's (InlineSim, for tests and tools): the same SimHost either way.
+"""
+from __future__ import annotations
+
+import asyncio
+import itertools
+import json
+import math
+import threading
+import time
+
+import numpy as np
+
+from .classis import STATION
+from .encode import ShipEncoder, ship_columns
+from .loader import contact_positions
+from .placement import plan
+from .sim import BLOCK_S, TIMELINE_S, Order
+from .timescale import iso
+from .zones import magnetopause
+
+KM = 1e-3
+FRAME_BUDGET_S = 0.2          # wall time a picture may spend flying the fleet; past it, the picture lags
+ORDER_BUDGET_S = 0.5          # ... and an order: if the fleet is far behind, offsets are read where it got to
+LOOKAHEAD_WALL_S = 3.0        # the run-ahead keeps this much of the clock's wall time ahead ...
+LOOKAHEAD_S = (600.0, 12 * 3600.0)   # ... within these (sim seconds); the timeline holds a day and a half
+IDLE_S = 60.0                 # a fleet nobody has asked about for this long is left alone
+_order_n = itertools.count(1)   # order ids stay unique however many are given in one second
+
+
+def _km(v) -> list[float]:
+    """A position in km, to the metre."""
+    return [round(x, 3) for x in (np.asarray(v) * KM).tolist()]
+
+
+def _km_all(ids, X) -> dict:
+    """Many positions in km, to the metre, rounded at once."""
+    return dict(zip(ids, np.round(np.asarray(X) * KM, 3).tolist()))
+
+
+class OrderRefused(Exception):
+    def __init__(self, status: int, detail: str):
+        super().__init__(detail)
+        self.status, self.detail = status, detail
+
+
+# ---- orders --------------------------------------------------------------------------------------
+def order_ships(world, sc, fleet, unit) -> list[str]:
+    """The ships an order goes to: the unit itself if she is a ship, else every ship under it."""
+    if fleet is None or unit not in sc.contacts:
+        return []
+    if unit in fleet.ships:
+        return [unit]
+    tree = world.trees.get(sc.id, {})
+    out, todo = [], list(tree.get(unit, {}).get("children", []))
+    while todo:
+        c = todo.pop(0)
+        if c in fleet.ships:
+            out.append(c)
+        todo += tree.get(c, {}).get("children", [])
+    return out
+
+
+def order_reply(fleet, t: float, unit: str, ships: list[str], orders: list) -> dict:
+    """Give the orders (all at once: one formation, one lead, one flight again) and say how the
+    ships stand once they are given."""
+    flown = fleet.command(*orders)
+    if flown is None:                                   # the fleet has not got there yet: it flies there now
+        _, flown = fleet.advance(t, ORDER_BUDGET_S)
+    out = {"ok": True, "unit": unit, "ships": {sid: flown[sid].as_dict() for sid in ships if sid in flown}}
+    if len(ships) == 1:
+        out["ship"] = out["ships"][ships[0]]
+    return out
+
+
+def give_order(world, req: dict) -> dict:
+    """An order at the map's clock, for one ship or for every ship under a formation.
+    target: {bullseye, aer: [deg, deg, km]} (the ordering player's bullseye, so the point moves
+    with its frame), {unit}, or {body}. g is the acceleration held, each ship capped at her most;
+    0 cuts the drive. keep_target: only the g of the order they are flying changes.
+    A formation's ships each keep their offset from the formation as it stands now, so they
+    arrive laid out as they left, not on one point."""
+    world.check()
+    sc = world.scenarios.get(req.get("scenario") or "")
+    if sc is None:
+        raise OrderRefused(404, f"no scenario {req.get('scenario')!r}")
+    fleet = world.fleet(sc)
+    unit, g, t = req.get("unit"), req.get("g"), req.get("t")
+    if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
+        raise OrderRefused(400, "an order needs t, and g of 0 or more")
+    t = float(t)
+    ships = order_ships(world, sc, fleet, unit)
+    if not ships:
+        raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
+    if req.get("keep_target"):                      # the telegraph: one order's g, or every order under the unit
+        return order_reply(fleet, t, unit, ships, [Order(sid, t, "setg", g=float(g), source="map",
+                                                         order_id=req.get("order_id")) for sid in ships])
+    if g == 0:
+        return order_reply(fleet, t, unit, ships, [Order(sid, t, "coast", source="map") for sid in ships])
+    s, _ = world.system(sc.system)
+    tg, player = req.get("target") or {}, req.get("player") or sc.player
+    if "bullseye" in tg:
+        if tg["bullseye"] not in world.bullseyes(sc.system, player):
+            raise OrderRefused(400, f"no bullseye {tg['bullseye']!r} for {player!r}")
+        brg, el, rng = (float(x) for x in tg["aer"])
+        bname = world.bullseyes(sc.system, player)[tg["bullseye"]].name
+        tilt = "level" if abs(el) < 0.5 else f"{'Eve' if el > 0 else 'Haid'} {abs(el):.0f}°"
+        target = {"bullseye": tg["bullseye"], "player": player, "aer": [brg, el, rng * 1e3],
+                  "label": tg.get("label") or f"{round(brg) % 360:03d}° {tilt}, {rng:,.0f} km from {bname}"}
+    elif "unit" in tg:
+        c = sc.contacts.get(tg["unit"])
+        if c is None or tg["unit"] == unit or tg["unit"] in ships:
+            raise OrderRefused(400, f"{tg['unit']!r} is not another unit in {sc.id}")
+        target = {"unit": c.id, "label": c.callsign}
+    elif "body" in tg:
+        b = next((b for b in s if b.id == tg["body"]), None)
+        if b is None:
+            raise OrderRefused(400, f"no body {tg['body']!r} in {s.name}")
+        target = {"body": b.id, "label": b.name}
+    else:
+        raise OrderRefused(400, "target is {bullseye, aer}, {unit} or {body}")
+    offsets = {sid: np.zeros(3) for sid in ships}
+    if len(ships) > 1 or unit not in ships:          # a formation: each ship keeps her place in it
+        flown = fleet.positions_at(t)
+        pos = world.table(sc.system).positions(t)
+        where = contact_positions(sc, world.resolved(sc.system, sc.player, pos), pos, flown)
+        anchor = where.get(unit)
+        if anchor is not None:
+            offsets = {sid: flown[sid] - anchor for sid in ships}
+    oid = f"{unit}@{t:.0f}#{next(_order_n)}"
+    orders = [Order(sid, t, "goto", target=dict(target, offset_m=offsets[sid].tolist()) if np.any(offsets[sid]) else target,
+                    g=float(g), source="map", order_id=oid, by=unit) for sid in ships]
+    return order_reply(fleet, t, unit, ships, orders)
+
+
+# ---- the host ------------------------------------------------------------------------------------
+class SimHost:
+    def __init__(self, world, run_ahead: bool = False):
+        self.world = world
+        self._encoders: dict = {}                       # connection -> what it has been sent
+        self.ahead = RunAhead(world) if run_ahead else None
+
+    def handle(self, kind: str, payload):
+        if kind == "frame":
+            req, conn = payload
+            return self.frame(req, conn)
+        if kind == "order":
+            try:
+                return {"ok": True, "reply": give_order(self.world, payload)}
+            except OrderRefused as e:
+                return {"ok": False, "status": e.status, "detail": e.detail}
+        if kind == "close":
+            self._encoders.pop(payload, None)
+            return None
+        if kind == "draft":
+            from .ephemeris import Ephemeris
+            from . import workshop
+            system, _ = workshop.check(payload)
+            if system is not None:
+                with self.world.lock:
+                    self.world.drafts["draft"] = (system, Ephemeris(system))
+            return None
+        raise ValueError(f"no such request {kind!r}")
+
+    def stop(self) -> None:
+        if self.ahead is not None:
+            self.ahead.stop()
+
+    # ---- a picture ------------------------------------------------------------------------------
+    def frame(self, req: dict, conn=None) -> str:
+        """One picture of the system for the map, as JSON text. Ships go as what changed since
+        this connection's last picture (full: false); its first, and any after the system, the
+        scenario or the data changed, has everything (full: true). If the fleet cannot be got to
+        the moment within FRAME_BUDGET_S, the picture is of the moment it reached (behind_s)."""
+        world = self.world
+        world.check()
+        sid = req.get("system")
+        got = world.get(sid)
+        if got is None:
+            return json.dumps({"error": f"no system {sid!r}", "system": sid})
+        s, eph = got
+        asked = t = float(req.get("t", world.start_time(s)))
+        sc = world.scenarios.get(req.get("scenario") or "")
+        fleet = world.fleet(sc) if sc and sc.system == sid else None
+        enc = self._encoders.setdefault(conn, ShipEncoder())
+        ships, full, flown = {}, True, {}
+        if fleet is not None:
+            if self.ahead is not None:
+                self.ahead.want(sc.id, fleet, t)
+            t, ids, cols, flown = self._ships_at(fleet, t)
+            ships, full = enc.encode(fleet, cols, ids, (sid, sc.id, world.version, id(fleet)))
+        else:
+            enc.key = None
+        table = world.table(sid)
+        pos = table.positions(t)                         # the table: what the fleet flew among
+        bulls = world.resolved(sid, req.get("player"), pos)
+        contacts = {}
+        if fleet is not None:
+            # units are placed from their scenario's own bullseyes, whoever is watching;
+            # ships stand where the simulation has flown them, formations follow
+            placed = world.resolved(sid, sc.player, pos)
+            contacts = _km_all(*plan(sc).arrays(placed, pos, flown))
+        return json.dumps({
+            "t": t, "utc": iso(t), "behind_s": asked - t, "system": sid, "version": world.version, "source": eph.source(t),
+            "bodies": _km_all(list(pos), np.array(list(pos.values()))),
+            "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
+            "contacts": contacts, "ships": ships, "full": full,
+            "magnetopause_km": {b.id: round(m * KM, 1) for b in s if (m := magnetopause(s, pos, b))},
+        })
+
+    def _ships_at(self, fleet, t: float):
+        """The ships at t (or as near as the fleet could be got): (the moment, ids, their figures,
+        {id: position}). Read off the timeline; station ships placed at the moment itself."""
+        tl = fleet.keep_timeline()
+        with fleet.lock:
+            if t <= fleet.t0:
+                fleet.advance(t, view=lambda _: None)    # before it starts: everyone on station
+                pic, tp = fleet.picture_now(), t
+            else:
+                if not tl.covers(t):
+                    if tl.lo is not None and t < tl.time(tl.lo):          # older than the timeline: fly it again
+                        fleet.advance(fleet.t0 + math.floor((t - fleet.t0) / BLOCK_S) * BLOCK_S, view=lambda _: None)
+                    goal = fleet.t0 + math.ceil((t - fleet.t0) / TIMELINE_S - 1e-9) * TIMELINE_S
+                    if goal > fleet.t:
+                        fleet.advance(goal, FRAME_BUDGET_S, view=lambda _: None)
+                if tl.covers(t):
+                    tp = t
+                elif tl.lo is not None and t > tl.time(tl.hi):
+                    tp = tl.time(tl.hi)                  # as far as it got
+                elif tl.lo is not None:
+                    tp = tl.time(tl.lo)
+                else:
+                    tp = fleet.t
+                pic = tl.at(tp, fleet.c.n) if tl.covers(tp) else fleet.picture_now()
+            if "next_mver" in pic:                      # an order given since the sample before, and by now: it shows
+                st = fleet.statics
+                newer = np.array([m != p and st.get(int(m), {}).get("from", math.inf) <= tp + 1e-6
+                                  for m, p in zip(pic["next_mver"], pic["mver"])], dtype=bool)
+                for name in ("mver", "goal", "gg", "lead", "off", "mode"):
+                    pic[name][newer] = pic["next_" + name][newer]
+            n = len(fleet.c.row)
+            rows, P = fleet._station_positions(tp)        # station ships stand at their places at the moment
+            at = pic["mode"][rows] == STATION
+            pic["r"][rows[at]] = P[at]
+            ids = fleet.c.ids[:n]
+            cols = ship_columns(fleet, pic, tp, n)
+            flown = {ids[i]: pic["r"][i] for i in range(n) if np.isfinite(pic["r"][i]).all()}
+        return tp, ids, cols, flown
+
+
+class RunAhead:
+    """Keeps the fleets someone watches ahead of their clock, in a thread of its own; the compiled
+    step lets go of the interpreter, so pictures and orders are answered while it flies."""
+
+    def __init__(self, world):
+        self.world = world
+        self._wants: dict[str, dict] = {}
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
+        self._stop = False
+        self._thread = threading.Thread(target=self._loop, name="run-ahead", daemon=True)
+        self._thread.start()
+
+    def want(self, sid: str, fleet, t: float) -> None:
+        """A picture was asked for at t: keep the fleet ahead of it, by how fast the clock runs."""
+        now = time.monotonic()
+        with self._lock:
+            w = self._wants.get(sid)
+            if w is None or w["fleet"] is not fleet:
+                w = self._wants[sid] = {"fleet": fleet, "t": t, "wall": now, "warp": 0.0}
+            else:
+                dw = now - w["wall"]
+                if dw > 0.02:
+                    rate = max(0.0, (t - w["t"]) / dw)
+                    w["warp"] = rate if w["warp"] == 0 else 0.7 * w["warp"] + 0.3 * rate
+                    w["t"], w["wall"] = t, now
+                else:
+                    w["t"] = max(w["t"], t)
+        self._wake.set()
+
+    def stop(self) -> None:
+        self._stop = True
+        self._wake.set()
+
+    def _loop(self) -> None:
+        while not self._stop:
+            busy = False
+            with self._lock:
+                wants = list(self._wants.items())
+            for sid, w in wants:
+                if time.monotonic() - w["wall"] > IDLE_S:
+                    with self._lock:
+                        self._wants.pop(sid, None)
+                    continue
+                f = w["fleet"]
+                ahead = min(max(w["warp"] * LOOKAHEAD_WALL_S, LOOKAHEAD_S[0]), LOOKAHEAD_S[1])
+                target = f.t0 + math.ceil((w["t"] + ahead - f.t0) / BLOCK_S - 1e-9) * BLOCK_S
+                if f.t < target - 1e-6:
+                    f.keep_timeline()
+                    f.advance(target, budget_s=0.02, view=lambda _: None)
+                    busy = True
+            if not busy:
+                self._wake.wait(0.1)
+                self._wake.clear()
+
+
+# ---- the two ways to run it ------------------------------------------------------------------------
+class InlineSim:
+    """The SimHost in the server's own process: its world is the server's."""
+
+    def __init__(self, world, run_ahead: bool = False):
+        self.host = SimHost(world, run_ahead)
+
+    async def call(self, kind: str, payload):
+        return await asyncio.to_thread(self.host.handle, kind, payload)
+
+    def close(self) -> None:
+        self.host.stop()
+
+
+def _child(conn, config: dict) -> None:
+    """The simulation's process: its own World, a SimHost with its run-ahead worker, and requests
+    over the pipe, each answered in a thread of a small pool."""
+    from concurrent.futures import ThreadPoolExecutor
+    from .app import World
+    world = World(config)
+    host = SimHost(world, run_ahead=True)
+    send = threading.Lock()
+    pool = ThreadPoolExecutor(4)
+
+    def answer(rid, kind, payload):
+        try:
+            out = (rid, True, host.handle(kind, payload))
+        except Exception as e:                           # say what went wrong, keep serving
+            out = (rid, False, f"{type(e).__name__}: {e}")
+        with send:
+            conn.send(out)
+
+    while True:
+        try:
+            msg = conn.recv()
+        except (EOFError, OSError):
+            break
+        if msg is None:
+            break
+        pool.submit(answer, *msg)
+    host.stop()
+
+
+class ProcessSim:
+    """The SimHost in a process of its own: the web server's process only talks."""
+
+    def __init__(self, config: dict):
+        import multiprocessing as mp
+        ctx = mp.get_context("spawn")
+        self._conn, child = ctx.Pipe()
+        self.proc = ctx.Process(target=_child, args=(child, config), name="astrum-sim", daemon=True)
+        self.proc.start()
+        self._ids = itertools.count(1)
+        self._waiting: dict[int, tuple] = {}
+        self._send = threading.Lock()
+        self._reader = threading.Thread(target=self._read, name="sim-pipe", daemon=True)
+        self._reader.start()
+
+    def _read(self) -> None:
+        while True:
+            try:
+                rid, ok, out = self._conn.recv()
+            except (EOFError, OSError):
+                break
+            loop, fut = self._waiting.pop(rid, (None, None))
+            if fut is not None:
+                loop.call_soon_threadsafe(_settle, fut, ok, out)
+
+    async def call(self, kind: str, payload):
+        loop = asyncio.get_running_loop()
+        fut = loop.create_future()
+        rid = next(self._ids)
+        self._waiting[rid] = (loop, fut)
+        with self._send:
+            self._conn.send((rid, kind, payload))
+        return await fut
+
+    def close(self) -> None:
+        try:
+            with self._send:
+                self._conn.send(None)
+        except OSError:
+            pass
+        self.proc.join(timeout=5)
+        if self.proc.is_alive():
+            self.proc.terminate()
+
+
+def _settle(fut, ok, out) -> None:
+    if fut.done():
+        return
+    if ok:
+        fut.set_result(out)
+    else:
+        fut.set_exception(RuntimeError(out))

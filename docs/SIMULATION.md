@@ -177,6 +177,26 @@ moment it is one product per bullseye, one sum per body and one product by that 
 for the demo's 81 contacts, where it was 0.93 ms. Station ships holding where an order left them
 are placed the same way, by bullseye and by body.
 
+**The fleet flies ahead of the clock.** As the compiled step flies, it writes every flying row's
+state at every whole minute into the fleet's **timeline** (`astrum/timeline.py`): position,
+velocity, aim, tanks, Δv, thrust, how the order stands, and which order she is on (a version
+number; what an order says as given is kept once per version). Blocks sit on a 10-minute grid from
+the scenario's start, so the samples and the checkpoints fall at the same moments whoever drives
+the fleet. A worker thread (the **run-ahead**) keeps every fleet the map is watching flown ahead
+of its clock: three seconds of wall clock at the warp the map is running (10 min – 12 h), in short
+chunks under the fleet's lock, idle a minute after the map stops asking. A picture for the map is
+then read off the timeline, not flown: positions and velocities by cubic Hermite between the two
+samples around the moment (exact for a held acceleration; within 24 m of flying straight there),
+the rest drawn straight between or taken from the sample before. The timeline keeps 2048 samples
+(a day and a half); a moment off its ends is flown as before.
+
+**An order flies again only what it touches.** An order given at a moment the fleet has already
+flown past sets back only the rows it touches (the unit ordered, its formation's lead and members,
+anyone chasing them, anyone holding on them) to the checkpoint before it, flies them up to where
+the fleet had reached, giving them their orders on the way, and writes their part of the timeline
+and of the later checkpoints again. Every other ship stays exactly as flown. Station ships are
+charged only for the rows taken back. The order shows at the moment it is given, paused or not.
+
 ## Where the time goes
 
 The simulation is the server's; the browser only draws. What keeps it quick:
@@ -200,25 +220,35 @@ The simulation is the server's; the browser only draws. What keeps it quick:
   missiles); the kernels are where it would go.
 - **Bullseyes once per moment, and only the one needed.** A bullseye whose axes are fixed
   directions keeps them; only its origin is worked out again.
-- **Off the event loop.** The server's event loop only talks; each picture for the map is built in
-  a worker thread. The fleet runs in chunks of 30 ms under its lock, so an order is taken between
-  two chunks however far it has to fly, and the map's picture gets 0.2 s: if the fleet cannot
-  reach the clock in that, the picture is of the moment it reached, sent with `behind_s`, and the
-  clock shows "sim … behind" until it catches up.
-- **Small pictures.** Figures go rounded (six significant figures, positions to the metre), and
-  ships go as what changed since the connection's last picture, one level deep (`full: false`);
-  the map merges them. The first picture, and any after the system, the scenario or the data
-  change, has everything (`full: true`).
+- **Two processes.** `serve.py` runs the simulation in a process of its own (`ProcessSim`,
+  `astrum/simhost.py`): the fleets, the run-ahead and the pictures for the map all live there,
+  and the web server only passes orders and frame requests over a pipe and sends back what comes.
+  So the server answers (the menu, the registry, the workshop) in a few milliseconds however far
+  behind the fleet is. Inside the simulation process a picture is built in a worker thread while
+  the run-ahead flies; the compiled step releases the GIL. The fleet runs in chunks under its
+  lock, so an order is taken between two chunks, and the map's picture gets 0.2 s: if the fleet
+  cannot reach the clock in that, the picture is of the moment it reached, sent with `behind_s`,
+  and the clock shows "sim … behind" until it catches up. Tests run the same host in the server's
+  own process (`InlineSim`).
+- **Pictures from the arrays.** Every figure the map shows of a ship (mass, tanks, Δv,
+  acceleration, thrust, how her order stands) is worked out for every ship at once, column by
+  column, off the timeline (`astrum/encode.py`), rounded once (six significant figures, positions
+  to the metre) and compared with what the connection was last sent the same way: ships go as
+  what changed, one level deep (`full: false`); the map merges them. What an order says as given
+  (its label, its target) goes only when the ship's order version changes. The first picture, and
+  any after the system, the scenario or the data change, has everything (`full: true`).
 
 Measured on the Sol demo (51 ships), 18 of them flying four orders, two of them formations:
 
-| | objects per ship | + Numba, tables, deltas | the Classis, one compiled step |
-|---|---|---|---|
-| 1 h / 6 h / 12 h of flight | 0.16 / 1.46 / 0.75 s | 0.10 / 0.78 / 0.40 s | 0.06 / 0.35 / 0.19 s |
-| a map frame at 1 min/s / 1 h/s / 1 d/s (fleet) | 2.5 / 3.9 / 46 ms | 3.2 / 3.5 / 26 ms | 2.3 / 2.5 / 14 ms |
-| placing the scenario's contacts | 0.93 ms | 0.93 ms | 0.05 ms |
-| a picture for the map | 39 KB | 13 KB | 13 KB |
-| the opening 60 days of Sol's bodies | as asked, 1.5 ms a moment | 0.7 s at load, in the background | same |
+| | objects per ship | + Numba, tables, deltas | the Classis, one compiled step | + timeline, run-ahead, two processes |
+|---|---|---|---|---|
+| 1 h / 6 h / 12 h of flight | 0.16 / 1.46 / 0.75 s | 0.10 / 0.78 / 0.40 s | 0.06 / 0.35 / 0.19 s | 12 h with the timeline kept: 0.44 s, ahead of the clock |
+| a map frame at 1 min/s / 1 h/s / 1 d/s (fleet) | 2.5 / 3.9 / 46 ms | 3.2 / 3.5 / 26 ms | 2.3 / 2.5 / 14 ms | about 2 ms at any warp, off the timeline |
+| an order 0.5 h / 2 h / 6 h back | | | 11 / 36 / 129 ms (all of the fleet) | 10 / 29 / 77 ms (only what it touches) |
+| placing the scenario's contacts | 0.93 ms | 0.93 ms | 0.05 ms | 0.05 ms |
+| a picture for the map (first / after) | 39 KB | 13 KB | 13 KB | 32 / 14 KB |
+| the web server while the fleet is behind | waits | waits | waits | 3 ms |
+| the opening 60 days of Sol's bodies | as asked, 1.5 ms a moment | 0.7 s at load, in the background | same | same |
 
 ## On the wire
 
