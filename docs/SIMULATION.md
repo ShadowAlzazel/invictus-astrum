@@ -7,7 +7,7 @@ The server owns the truth: it flies the ships, and the map draws what it is sent
 | | What it is | Where |
 |---|---|---|
 | Ship class | the constructor: everything the canon says about a design, lore included | `data/ships/classes/*.toml`, `astrum/ships.py` |
-| ShipSpec | what the simulation takes from a class, once: length, hull mass per ammunition load (tanks dry), tank capacity, thrust at the pulse ceiling, exhaust velocity, pulse rate, cruise band, and the range her main weapon fights at (the focus battery's engagement range, else her longest) | `astrum/entity.py` |
+| ShipSpec | what the simulation takes from a class, once: length, hull mass per ammunition load (tanks dry), tank capacity, thrust at the pulse ceiling, exhaust velocity, pulse rate, cruise band, and where each kind of weapon she carries starts to matter (her class's ranges, below) | `astrum/entity.py` |
 | Ship | one hull: a spec, a load, and a state | `astrum/entity.py` |
 | ShipState | what changes: time, position and velocity (system frame, SI), propellant, mode, thrust and its direction, the burn order, Δv spent | `astrum/entity.py` |
 | Fleet | a scenario's ships, flown forward in time, with checkpoints | `astrum/sim.py` |
@@ -111,10 +111,20 @@ telegraph, in the light blue of the order vectors on the map. Moving one retunes
 its ships (those outside the selected formation too), and no other; **W** / **S** do the same when
 the formation flies one order. Stop cuts the drive.
 
-**Weapon ranges.** Hold **G** on the map: every armed ship shows a dotted ring of her main weapon's
-range (her class's focus battery: 1,550 km for a Phalaena's spinal battery, 3,600 km for a
-Papilion's), where the ring is at least 14 px across on screen; zoomed out, the rings would only be
-clutter and are left off. The selected ship's ring, and the first of each range, carry the figure.
+**Weapon ranges.** A class's ranges are where each kind of weapon it carries starts to matter,
+read optimistically, and worked out once per class in the registry (`astrum/ships.py` `_ranges`);
+every ship of the class shares them:
+
+| Kind | Range | Phalaena | Papilion | Aeshna |
+|---|---|---|---|---|
+| de-mast | the spinal battery's reach to take a mast, at the best crew the class rates, upper bound | 5,450 km | 11,600 km | 5,450 km |
+| dazzle | how far its optical batteries dazzle an open sensor | 40,000 km | 40,000 km | 40,000 km |
+| guns | the farthest reach the class states for its guns | 47 km | 2,500 km | — |
+
+Hold **G** on the map: every armed ship shows a dotted ring for each, where the ring is at least
+14 px across on screen (zoomed out they would only be clutter). Each kind has its own dash. The
+selected ship's rings, and the first ring of each kind and range, carry the figure; her panel lists
+them.
 
 Every order given to several ships shares an id (`order_id`, with `by`, the unit it was given to).
 
@@ -158,7 +168,8 @@ Measured on the Sol demo (51 ships), 14 of them flying two formation orders: an 
 
 ## On the wire
 
-`/api/meta` gives each classed unit its spec (`ship`). The state stream gives `t` (the moment
+`/api/meta` gives each ship class's spec once (`specs`, by class id); a unit names its class and
+the map links it to that one spec. The state stream gives `t` (the moment
 pictured), `behind_s` (how far that is behind the clock asked for), and every ship, at t,
 her position (with the units) and `ships[id]`: mode, load, mass, dry mass, propellant and its
 share, Δv left and spent, most acceleration, acceleration and thrust now, jet power, the burn,

@@ -163,6 +163,7 @@ class ShipClass:
     batteries: list[dict] = field(default_factory=list)
     drive: dict | None = None       # the drive's figures, derived; see _drive
     derived: dict = field(default_factory=dict)
+    ranges: list[dict] = field(default_factory=list)   # where each kind of weapon starts to matter; see _ranges
     blanks: list[str] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
     source: str = ""
@@ -463,6 +464,36 @@ def _engagement(sc: ShipClass, bat: dict, rules: ShipRules, doc: dict, where: st
     return None
 
 
+def _ranges(sc: ShipClass, rules: ShipRules) -> list[dict]:
+    """Where each kind of weapon a class carries starts to matter, read optimistically: the spinal
+    battery as far as it takes a mast (de-mast) at the best crew the class rates, the upper bound;
+    the optical batteries as far as they dazzle an open sensor; the guns at the farthest reach the
+    class states for them. One range per kind, the farthest of its batteries, farthest first.
+    Worked out once per class: every ship of the class shares it."""
+    tiers = [t for t in rules.crew if t in sc.aim and sc.aim[t].lo is not None]
+    best = tiers[-1] if tiers else "rated"
+    out: dict[str, dict] = {}
+
+    def keep(what, km, battery, note=""):
+        if km and (what not in out or km > out[what]["km"]):
+            out[what] = {"what": what, "km": float(km), "battery": battery, "note": note}
+
+    for b in sc.batteries:
+        label = b["raw"].get("label") or b["raw"].get("id") or ""
+        if b["kind"] == "stack" and "mast" in rules.effects:
+            q, _ = sc.reach_km(rules, "mast", best)
+            if q is not None and q.hi:
+                keep("de-mast", q.hi, label, f"{rules.effects['mast']['label'].lower()}, {best} crew")
+        elif b["kind"] in ("strip", "dome", "panel") and (b.get("fig") or {}).get("dazzle_km"):
+            keep("dazzle", b["fig"]["dazzle_km"], label, rules.effects.get("dazzle", {}).get("label", "").lower())
+        elif b["kind"] == "turret" and isinstance(b["raw"].get("reach_km"), dict):
+            for what, v in b["raw"]["reach_km"].items():
+                q = quantity(v, "", [])
+                if isinstance(q, Q) and q.hi:
+                    keep("guns", q.hi, label, what)
+    return sorted(out.values(), key=lambda r: -r["km"])
+
+
 def _get(d: dict, path: str):
     for part in path.split("."):
         if not isinstance(d, dict) or part not in d:
@@ -754,6 +785,7 @@ def build_class(doc: dict, rules: ShipRules, arm: Armoury, source: str = "",
         f.append(Finding("warning", where, "reaches limited by aim need [aim] rated_urad to be read"))
     for i, bat in enumerate(sc.batteries):
         bat["engage"] = _engagement(sc, bat, rules, doc, f"{where} battery.{bat['raw'].get('id', i)}", f) if bat["kind"] else None
+    sc.ranges = _ranges(sc, rules)
 
     # hull: thrust from mass and acceleration, light and full should agree
     hull = doc.get("hull", {})

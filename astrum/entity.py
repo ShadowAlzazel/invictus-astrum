@@ -44,12 +44,16 @@ class ShipSpec:
     exhaust_ms: float | None
     pulse_rate_hz: float | None = None
     cruise_g: tuple[float, float] | None = None
-    weapon_km: float | None = None     # the range her main weapon fights at: the focus battery's, else her longest
-    weapon_label: str = ""
+    ranges: tuple[dict, ...] = ()      # where each kind of weapon starts to matter (her class's, ships.py _ranges)
 
     @property
     def has_drive(self) -> bool:
         return bool(self.thrust_n and self.exhaust_ms)
+
+    @property
+    def reach_km(self) -> float | None:
+        """The farthest any of her weapons matters."""
+        return self.ranges[0]["km"] if self.ranges else None
 
     @property
     def heaviest_load(self) -> str:
@@ -72,8 +76,6 @@ class ShipSpec:
         if not hull_kg:
             raise SpecError(f"{sc.id}: no mass stated; a ship needs [hull] mass_t")
         cruise = d["cruise"]["band_g"] if d and d.get("cruise") else None
-        ranged = [b for b in getattr(sc, "batteries", []) if b.get("engage") and b["engage"]["q"].lo is not None]
-        main = next((b for b in ranged if b.get("focus")), None) or max(ranged, key=lambda b: b["engage"]["q"].value, default=None)
         return ShipSpec(
             class_id=sc.id, name=sc.name, symbol=c.get("symbol", ""),
             length_m=float(length) if isinstance(length, (int, float)) else None,
@@ -83,15 +85,14 @@ class ShipSpec:
             exhaust_ms=val(d["exhaust_kms"]) * 1e3 if d and d["exhaust_kms"] else None,
             pulse_rate_hz=val(d["pulse_rate_hz"]) if d else None,
             cruise_g=(cruise.lo, cruise.hi) if cruise else None,
-            weapon_km=main["engage"]["q"].value if main else None,
-            weapon_label=(main["raw"].get("label") or main["raw"].get("id") or "") if main else "")
+            ranges=tuple(dict(r) for r in getattr(sc, "ranges", ())))
 
     def as_dict(self) -> dict:
         return {"class_id": self.class_id, "name": self.name, "length_m": self.length_m,
                 "hull_t": {k: v / 1e3 for k, v in self.hull_kg.items()}, "propellant_t": self.propellant_kg / 1e3,
                 "thrust_mn": self.thrust_n and self.thrust_n / 1e6, "exhaust_kms": self.exhaust_ms and self.exhaust_ms / 1e3,
                 "pulse_rate_hz": self.pulse_rate_hz, "cruise_g": self.cruise_g, "has_drive": self.has_drive,
-                "weapon_km": self.weapon_km, "weapon_label": self.weapon_label}
+                "ranges": list(self.ranges), "reach_km": self.reach_km}
 
 
 @dataclass

@@ -14,12 +14,12 @@
   import Workshop from './lib/Workshop.svelte';
 
   // sim seconds per real second; the clock runs in TDB seconds since J2000, like the server
-  const WARPS = [[1, '1×'], [10, '10×'], [60, '1 min/s'], [600, '10 min/s'], [3600, '1 h/s'], [21600, '6 h/s'],
-                 [86400, '1 d/s'], [604800, '1 wk/s'], [2629800, '1 mo/s'], [31557600, '1 yr/s']];
+  const WARPS = [[1, '1×'], [5, '5×'], [10, '10×'], [60, '1 min/s'], [600, '10 min/s'], [1800, '30 min/s'], [3600, '1 h/s'],
+                 [7200, '2 h/s'], [21600, '6 h/s'], [86400, '1 d/s'], [604800, '1 wk/s'], [2629800, '1 mo/s'], [31557600, '1 yr/s']];
 
   let canvas, map = null, stream, meta = null, style = null, def = null, state = null;
   let systemId = null, playerId = 'arcvs', bullseyeId = 'system', scenarioOn = true;
-  let t = 0, warp = 6, paused = false, last = 0, raf;
+  let t = 0, warp = WARPS.findIndex(([s]) => s === 86400), paused = false, last = 0, raf;
   let orbitsT = null, orbitsBusy = false;
   let drules = {}, settings = null, showSettings = false, settingsStatus = '', saveTimer, pendingSave = false;
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
@@ -75,6 +75,8 @@
 
   async function loadMeta() {
     meta = await api.meta();
+    // what the simulation reads of a ship class comes once per class; every ship of it shares that one
+    for (const sc of meta.scenarios) for (const c of sc.contacts) c.ship = c.ship_class ? meta.specs[c.ship_class] ?? null : null;
     applyStyle(meta.style);
     drules = meta.display.rules;
     if (!pendingSave) settings = meta.display.settings;   // unsaved changes here win over the file

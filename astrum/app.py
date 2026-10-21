@@ -304,7 +304,9 @@ def formation_role(style: dict | None, callsign: str) -> str:
 
 def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
     """A unit for the map; its type label comes from its ship class when it names one, and its
-    place in the formation tree comes with it (parent, children, ancestors, depth)."""
+    place in the formation tree comes with it (parent, children, ancestors, depth). What the
+    simulation reads of the class (its spec, ranges and all) is sent once per class, in
+    /api/meta specs, not with every ship."""
     d = dict(c.__dict__)
     d.update((tree or {}).get(c.id, {}))
     d["has_position"] = bool(c.position)
@@ -319,8 +321,6 @@ def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
         d["class_name"] = sc.name
         if not c.unit_type:
             d["unit_type"] = sc.doc.get("class", {}).get("symbol", "")
-        spec = world.spec(sc.id)
-        d["ship"] = spec.as_dict() if spec else None
     return d
 
 
@@ -384,6 +384,8 @@ def create_app(config: dict | None = None) -> FastAPI:
             "scenarios": [{"id": sc.id, "name": sc.name, "system": sc.system, "player": sc.player,
                            "contacts": [contact_dict(world, c, world.trees.get(sc.id)) for c in sc.contacts.values()]}
                           for sc in world.scenarios.values()],
+            "specs": {cid: spec.as_dict() for cid in (world.ships.classes if world.ships else {})
+                      if (spec := world.spec(cid)) is not None},
             "style": world.style,
             "speed_of_light_kms": k.C * KM,
             "ship_classes": len(world.ships.classes) if world.ships else 0,

@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 SHAPES = ("rect", "diamond", "quatrefoil", "square", "circle")
 AFFILIATIONS = ("friend", "hostile", "unknown", "neutral")
-ROLE_MARKS = ("oval", "cross", "slash", "chevron")     # what a formation's role is drawn with, inside its frame
+ROLE_MARKS = ("oval", "cross", "slash", "chevron", "dome")     # what a formation's role is drawn with, inside its frame
 
 CONFIG_SCHEMA = {
     "paths": {"systems": str, "scenarios": str, "players": str, "style": str, "ships": str,

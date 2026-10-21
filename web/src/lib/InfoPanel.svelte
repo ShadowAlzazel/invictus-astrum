@@ -57,7 +57,6 @@
     draw(c);
     return { update: draw };
   }
-  $: role = contact?.role ? style?.formation_role?.[contact.role]?.label ?? '' : '';
   $: affColor = contact && style ? (style.affiliation[contact.affiliation] ?? style.affiliation.unknown).color : null;
   $: doing = !ship ? '' : ship.goal ? (ship.burning ? `on her order, ${ship.accel_g.toFixed(2)} g` : 'on her order, coasting') : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
     : ship.mode === 'station' ? 'holding station' : 'coasting';
@@ -83,7 +82,7 @@
         <p class="kind">{KIND[body.kind] ?? body.kind}{#if parentName} · of {parentName}{/if}{#if body.inhabited} · inhabited{/if}</p>
       {:else if contact}
         <h1>{contact.name ?? contact.callsign}{#if contact.hull_number}<span class="hull">{contact.hull_number}</span>{/if}</h1>
-        <p class="kind">{contact.class_name || contact.unit_type || contact.echelon}{#if role} · {role}{/if}{#if contact.brevity} · {contact.brevity}{/if}{#if contact.pry} · Pry-{contact.pry}{/if}</p>
+        <p class="kind">{contact.class_name || contact.unit_type || contact.echelon}{#if contact.brevity} · {contact.brevity}{/if}{#if contact.pry} · Pry-{contact.pry}{/if}</p>
         <p class="aff" style="--aff:{affColor ?? 'var(--dim)'}">{contact.faction?.name ?? contact.affiliation}{#if contact.faction}<span>{contact.affiliation}</span>{/if}</p>
       {:else}
         <h1>Point</h1>
@@ -194,9 +193,9 @@
           <dt>Δv spent</dt><dd>{ship.dv_spent_kms < 1 ? `${n(ship.dv_spent_kms * 1000, 1)} m/s` : `${n(ship.dv_spent_kms, 2)} km/s`}</dd>
           {#if spec?.length_m}<dt>Length</dt><dd>{n(spec.length_m)} m</dd>{/if}
           {#if spec?.cruise_g}<dt>Cruise band</dt><dd>{spec.cruise_g[0]}–{spec.cruise_g[1]} g</dd>{/if}
-          {#if spec?.weapon_km}<dt>Main weapon</dt><dd>{km(spec.weapon_km)}</dd><dt class="sub">{spec.weapon_label.toLowerCase()}</dt><dd class="sub">hold G</dd>{/if}
+          {#each spec?.ranges ?? [] as r}<dt title={r.note}>{r.what[0].toUpperCase() + r.what.slice(1)}</dt><dd title={r.note}>{km(r.km)}</dd><dt class="sub">{r.battery.toLowerCase()}</dt><dd class="sub">{r.note}</dd>{/each}
         </dl>
-        {#if spec?.has_drive}<p class="dim hint"><kbd>A</kbd> order her{#if ship.goal} · <kbd>W</kbd><kbd>S</kbd> telegraph{/if}{#if spec.weapon_km} · hold <kbd>G</kbd> weapon ranges{/if}</p>{/if}
+        {#if spec?.has_drive}<p class="dim hint"><kbd>A</kbd> order her{#if ship.goal} · <kbd>W</kbd><kbd>S</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>G</kbd> weapon ranges{/if}</p>{/if}
       </section>
     {:else if spec && !spec.has_drive}
       <section><h2>Ship</h2><p class="dim">No drive stated for her class; she holds station.</p></section>

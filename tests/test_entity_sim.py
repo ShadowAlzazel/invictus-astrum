@@ -168,7 +168,8 @@ def test_sol_demo_fleet(reg):
     c = TestClient(app)
     meta = c.get("/api/meta").json()
     kiki = next(u for u in meta["scenarios"][0]["contacts"] if u["id"] == "kiki-1")
-    assert kiki["ship"]["length_m"] == 390 and kiki["ship"]["has_drive"]
+    spec = meta["specs"][kiki["ship_class"]]                       # once per class, not with every ship
+    assert spec["length_m"] == 390 and spec["has_drive"] and "ship" not in kiki
     with c.websocket_connect("/ws") as ws:
         ws.send_json({"system": "sol", "t": f.t0 + 3600, "scenario": "sol-demo", "player": "arcvs"})
         st = ws.receive_json()
@@ -491,7 +492,11 @@ def test_a_role_must_be_known(tmp_path):
         load_style(tmp_path / "style.toml")
 
 
-def test_a_ship_knows_her_main_weapon_range(reg):
-    spec = ShipSpec.from_class(reg.classes["phalaena"])
-    assert spec.weapon_km == 1550.0 and spec.weapon_label == "Spinal battery"      # her focus battery
-    assert ShipSpec.from_class(reg.classes["papilion"]).as_dict()["weapon_km"] == 3600.0
+def test_where_her_weapons_start_to_matter(reg):
+    """From her class, once: de-mast for the spinal battery at the best crew rated, dazzle for the
+    optical batteries, the guns' farthest stated reach; one per kind, farthest first."""
+    r = {x["what"]: x["km"] for x in reg.classes["phalaena"].ranges}
+    assert r == {"dazzle": 40000.0, "de-mast": 5450.0, "guns": 47.0}
+    spec = ShipSpec.from_class(reg.classes["papilion"])
+    assert spec.reach_km == 40000.0 and {x["what"]: x["km"] for x in spec.ranges}["de-mast"] == 11600.0
+    assert ShipSpec.from_class(reg.classes["aeshna"]).as_dict()["ranges"][1]["what"] == "de-mast"

@@ -16,7 +16,7 @@
   export let settings = null;        // display.toml values, with the player's settings applied
   export let drules = {};            // display.toml rules
   export let contacts = [];          // scenario contacts (static definitions, with their tree)
-  export let ranges = false;         // G held: every armed ship's main weapon range
+  export let ranges = false;         // G held: where every armed ship's weapons start to matter
 
   const RANGE_MIN_PX = 14;           // a ring smaller than this on screen says nothing: zoom in to see it
 
@@ -211,21 +211,29 @@
     ring(z.snow_line_km, rgba(pal.cyan, 0.35), 'Snow line', [1, 6]);
   }
 
-  // G held: a dotted ring of each ship's main weapon range, where it is big enough on screen to
-  // read. The selected ship's ring, and the first of each range, carry the figure.
+  // G held: a dotted ring for each kind of weapon a ship carries, where it starts to matter (her
+  // class's ranges: de-mast, dazzle, guns), each where it is big enough on screen to read. The
+  // selected ship's rings, and the first ring of each kind and range, carry the figure.
+  const RANGE_DASH = { 'de-mast': [2, 4], dazzle: [1, 7], guns: [5, 4] };
+  const RANGE_ALPHA = { 'de-mast': 0.5, dazzle: 0.3, guns: 0.45 };
   function drawRanges() {
     const pos = map.state.contacts ?? {}, sel = map.selected?.kind === 'contact' ? map.selected.id : null;
     const labelled = new Set();
     for (const c of contacts) {
-      const r = c.ship?.weapon_km, p = pos[c.id];
-      if (!r || !p) continue;
-      const s = map.project(p), px = s && map.pxRadius(p, r);
-      if (!s || px < RANGE_MIN_PX || px > 4 * Math.max(W, H)) continue;
+      const p = pos[c.id];
+      if (!c.ship?.ranges?.length || !p) continue;
+      const s = map.project(p);
+      if (!s) continue;
       const col = (style.affiliation[c.affiliation] ?? style.affiliation.unknown).color;
       const hot = c.id === sel || isHot('contact', c.id);
-      const label = hot || !labelled.has(r) ? `${c.ship.weapon_label ? c.ship.weapon_label.toLowerCase() + ' ' : ''}${km(r)}` : '';
-      labelled.add(r);
-      zoneRing(ctx, s.x, s.y, px, rgba(hot ? style.palette.fuchsia : col, hot ? 0.8 : 0.45), label, [2, 4]);
+      for (const r of c.ship.ranges) {
+        const px = map.pxRadius(p, r.km);
+        if (px < RANGE_MIN_PX || px > 4 * Math.max(W, H)) continue;
+        const key = `${r.what} ${r.km}`;
+        const label = hot || !labelled.has(key) ? `${r.what} ${km(r.km)}` : '';
+        labelled.add(key);
+        zoneRing(ctx, s.x, s.y, px, rgba(hot ? style.palette.fuchsia : col, hot ? 0.8 : RANGE_ALPHA[r.what] ?? 0.45), label, RANGE_DASH[r.what] ?? [2, 4]);
+      }
     }
   }
 

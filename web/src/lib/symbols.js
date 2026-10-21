@@ -48,7 +48,8 @@ export function frameExtent(shape, h) {
 
 // A formation's role, as the APP-6 marks it borrows, inside its frame: oval (armour), cross
 // (infantry, corner to corner), slash (reconnaissance, lower left to upper right), chevron
-// (anti-armour, an inverted V). A frame that is not a box takes them in the box inside it.
+// (anti-armour, an inverted V), dome (air defence, an arc on the bottom edge). A frame that is not
+// a box takes them in the box inside it.
 function roleMarks(ctx, marks, x, y, shape, ew, eh, color) {
   const box = shape === 'rect' || shape === 'square' ? 1 : 0.62;
   const w = ew * box, h = eh * box;
@@ -59,6 +60,7 @@ function roleMarks(ctx, marks, x, y, shape, ew, eh, color) {
     else if (m === 'cross') { ctx.moveTo(x - w, y - h); ctx.lineTo(x + w, y + h); ctx.moveTo(x + w, y - h); ctx.lineTo(x - w, y + h); }
     else if (m === 'slash') { ctx.moveTo(x - w, y + h); ctx.lineTo(x + w, y - h); }
     else if (m === 'chevron') { ctx.moveTo(x - w, y + h); ctx.lineTo(x, y - h); ctx.lineTo(x + w, y + h); }
+    else if (m === 'dome') { const r = Math.min(w * 0.5, h * 0.95); ctx.moveTo(x - r, y + h); ctx.arc(x, y + h, r, Math.PI, 0); }
   }
   ctx.stroke();
 }
