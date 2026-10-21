@@ -202,6 +202,10 @@
     };
     if (now) send(); else retuneTimer = setTimeout(send, 250);
   }
+  async function withdrawOrder(id) {
+    try { await api.withdrawOrder(scenario.id, id); say('Order withdrawn: as if it had never been given'); }
+    catch (err) { say(String(err.message ?? err)); }
+  }
   async function giveOrder() {
     const aim = orderTool?.aim();
     if (!aim || !scenario) return say('Nothing to aim at there.');
@@ -450,7 +454,7 @@
 {#if !showSettings}
 <InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
-  onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} />
+  onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} />
 {/if}
 {/if}
 

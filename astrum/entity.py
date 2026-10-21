@@ -218,6 +218,6 @@ def _goal_dict(g: dict | None) -> dict | None:
             "range_km": g["range_m"] / 1e3 if g.get("range_m") is not None else None,
             "closing_kms": g["closing_ms"] / 1e3 if g.get("closing_ms") is not None else None,
             "aim_km": (np.asarray(aim) / 1e3).tolist() if aim is not None else None, "issued": g.get("issued"),
-            "order_id": g.get("order_id"), "by": g.get("by"),
+            "order_id": g.get("order_id"), "by": g.get("by"), "source": g.get("source"),
             "in_formation": bool(g.get("formation") and not g.get("solo")),
             "eta_flown": g.get("arrive_at") is not None and math.isfinite(g["arrive_at"])}

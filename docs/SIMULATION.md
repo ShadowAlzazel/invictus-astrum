@@ -152,7 +152,7 @@ orders, but the orders and stations already given off it keep it. `POST /api/bul
 system, name, origin, up, ref, roll_deg}` (origin as players.toml has it, or `{point_km, t,
 carry}`), `DELETE /api/bullseyes/{player}/{id}`. Ids come from the name and are never given twice.
 
-`POST /api/order {scenario, unit, t, g, player, target}`: unit a ship, or a formation for all the
+`DELETE /api/order/{scenario}/{order_id}` takes an order from the map back. `POST /api/order {scenario, unit, t, g, player, target}`: unit a ship, or a formation for all the
 ships under it; target `{bullseye, aer: [deg, deg, km]}`, `{unit}` or `{body}`; `g = 0` cuts the
 drive. `{scenario, unit, t, g, keep_target: true, order_id?}` retunes the orders being flown by the
 ships under the unit, or only the one named. Orders from the map live in the running fleet; a
@@ -217,6 +217,21 @@ acceleration: an order's first minute is read from where she stood when it was g
 metre); how her order stands is drawn straight between samples of the same order, else taken
 from the side that flew it. Ships on station stand at their places at the moment itself, by the
 version they were on. At the fleet's own moment the picture is its rows as they stand.
+
+**The order book.** Every order is a row of the fleet's order book (`astrum/orders.py`), as the
+ships are rows of the Classis. What was given is said once (`Given`: its id, the unit it was given
+to, go to / burn / new g / cut the drive, the target, the label, the g), however many ships it goes
+to; each ship it goes to has an event (its moment, the ship, her place in the formation), and the
+events are kept in time order. A ship flying an order points at her event (Classis column
+`order`); one holding station where an order left her points at a place in the fleet's list of
+them; a burn, at its event. So everything a ship was given is numbers in her row, a checkpoint is
+a copy of arrays (0.03 ms for the demo's 110 rows, where copying each ship's order as a dictionary
+took 1 ms), and what a checkpoint has given is simply every event before its moment: nothing is
+counted, so an order given into the past cannot shift it. Targets are made into tracks once for
+each order as given, which all its ships share. An order from the map can be taken back
+(`Fleet.withdraw`, **Withdraw** in its panel, twice): struck from the book, and if the fleet has
+flown past it, the ships it went to fly again from before it, as if it had never been given. The
+scenario's own orders stay.
 
 **An order flies again only what it touches, and only as fast as it is needed.** An order given
 at a moment the fleet has already flown past sets back only the rows it touches (the unit ordered,

@@ -168,6 +168,10 @@ class SimHost:
                 return {"ok": True, "reply": give_order(self.world, payload)}
             except OrderRefused as e:
                 return {"ok": False, "status": e.status, "detail": e.detail}
+        if kind == "withdraw":                         # an order from the map taken back (Fleet.withdraw)
+            sc = self.world.scenarios.get(payload.get("scenario") or "")
+            fleet = self.world.fleet(sc) if sc else None
+            return {"ok": bool(fleet and fleet.withdraw(payload.get("order_id") or ""))}
         if kind == "close":
             self._encoders.pop(payload, None)
             return None

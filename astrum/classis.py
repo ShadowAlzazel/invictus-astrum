@@ -1,12 +1,13 @@
 """The Classis: every entity of a scenario's fleet, as columns.
 
-A row per hull, and a row per formation lead flying an order. What the simulation reads and
-writes every step is numbers in arrays (position, velocity, propellant, thrust and its
-direction, the order she flies and where it stands); what it reads only when an order is given
-or ends (her name, her class, her order's target and label) sits beside them, a row's worth of
-Python. The compiled step (kernels.fly) works on the arrays directly, all of a unit's ships at
-once; the rest of the program sees ships through views onto their rows (ShipView, LeadView), with
-the same shape a Ship has (astrum/entity.py).
+A row per hull, and a row per formation lead flying an order. Everything is numbers in arrays:
+position, velocity, propellant, thrust and its direction, and the order she flies and where it
+stands, as a row of the fleet's order book (astrum/orders.py: what was given, its target and
+label, said once for every ship it went to) and, on station, a place in the fleet's list of them.
+Only her name, class and load sit beside the arrays, a row's worth of Python, set when she is
+made. So a checkpoint is a copy of arrays. The compiled step (kernels.fly) works on the arrays
+directly, all of a unit's ships at once; the rest of the program sees ships through views onto
+their rows (ShipView, LeadView), with the same shape a Ship has (astrum/entity.py).
 """
 from __future__ import annotations
 
@@ -43,6 +44,13 @@ COLUMNS = {
     "arrive": ((), float, math.nan),           # when her order gets her there, flown ahead (absolute)
     "pmax": ((), float, 0.0),                  # her tanks full
     "mver": ((), np.int64, 0),                 # which of her orders/places as given she is on (fleet-wide count)
+    # what she was given, as rows of the fleet's order book and list of places (-1: none)
+    "order": ((), np.int64, -1),               # the go-to she flies (a lead: the event that made it)
+    "burn_ev": ((), np.int64, -1),             # the burn she holds
+    "place": ((), np.int64, -1),               # where she holds station, if not her scenario place
+    "arrive_at": ((), float, math.nan),        # her flight ahead to the target: when it gets there (may be inf) ...
+    "predicted": ((), float, math.nan),        # ... and when it was flown (nan: not yet)
+    "nmem": ((), np.int64, 0),                 # a lead: the ships it was made from (its point is their mean)
 }
 
 
@@ -56,10 +64,9 @@ class Classis:
         self.callsign: list[str] = []
         self.spec: list[ShipSpec | None] = []
         self.load: list[str] = []
-        self.meta: list[dict | None] = []       # her order as given: target, label, g, ids, formation...
-        self.burn_meta: list[dict | None] = []  # a scenario burn as given
-        self.station_at: list[dict | None] = []  # where she holds station, if not her scenario place
         self.row: dict[str, int] = {}           # ship id -> row
+        self.book = None                        # the fleet's order book (astrum/orders.py) ...
+        self.places: list[dict] = []            # ... and the places ships were left holding (never changed once made)
 
     def _grow(self) -> None:
         self.cap *= 2
@@ -77,7 +84,7 @@ class Classis:
                 self._grow()
             i = self.n
             self.n += 1
-            for lst in (self.ids, self.callsign, self.spec, self.load, self.meta, self.burn_meta, self.station_at):
+            for lst in (self.ids, self.callsign, self.spec, self.load):
                 lst.append(None)
         else:
             i = reuse
@@ -85,7 +92,6 @@ class Classis:
             getattr(self, name)[i] = fill
         self.kind[i] = kind
         self.ids[i], self.callsign[i], self.spec[i], self.load[i] = rid, callsign, spec, load
-        self.meta[i] = self.burn_meta[i] = self.station_at[i] = None
         if kind == SHIP:
             self.row[rid] = i
             if spec is not None:
@@ -99,8 +105,7 @@ class Classis:
     def snapshot(self) -> dict:
         snap = {name: getattr(self, name)[: self.n].copy() for name in COLUMNS}
         snap.update(n=self.n, ids=list(self.ids), callsign=list(self.callsign), spec=list(self.spec),
-                    load=list(self.load), meta=copy.deepcopy(self.meta), burn_meta=copy.deepcopy(self.burn_meta),
-                    station_at=copy.deepcopy(self.station_at), row=dict(self.row))
+                    load=list(self.load), row=dict(self.row))
         return snap
 
     def restore(self, snap: dict) -> None:
@@ -111,8 +116,6 @@ class Classis:
             getattr(self, name)[: self.n] = snap[name]
         for k in ("ids", "callsign", "spec", "load", "row"):
             setattr(self, k, type(snap[k])(snap[k]))
-        for k in ("meta", "burn_meta", "station_at"):
-            setattr(self, k, copy.deepcopy(snap[k]))
 
     # ---- what a row is now -------------------------------------------------------------------
     def mass(self, i: int) -> float:
@@ -121,21 +124,45 @@ class Classis:
     def max_accel(self, i: int) -> float:
         return float(self.fmax[i] / self.mass(i)) if self.fmax[i] > 0 and self.ve[i] > 0 else 0.0
 
+    def place_of(self, i: int) -> dict | None:
+        """Where she holds station, if not her scenario place (as players.toml would say it)."""
+        p = int(self.place[i])
+        return self.places[p] if p >= 0 else None
+
+    def target_of(self, i: int) -> dict:
+        """Where her go-to takes her (as given), with her place in her formation if she keeps one."""
+        e = int(self.order[i])
+        g = self.book.of(e)
+        slot = self.book.slot[e]
+        if self.kind[i] == LEAD or not slot.any():
+            return dict(g.target)
+        return {**g.target, "offset_m": slot.tolist()}
+
     def goal_dict(self, i: int) -> dict | None:
         """Her order as the rest of the program reads it: as given, with how it stands now. A ship
         keeping her place in a formation reads the lead's (time to target, closing speed), aiming at
         the lead's aim plus her offset."""
-        m = self.meta[i]
-        if m is None or not self.goal[i]:
+        e = int(self.order[i])
+        if e < 0 or not self.goal[i]:
             return None
+        g, slot = self.book.of(e), self.book.slot[e]
         L = int(self.lead[i])
         follow = L >= 0 and not self.solo[i] and self.mode[L] == FREE
         src = L if follow else i
         aim = self.aim[i] if not follow else self.aim[L] + self.off[i]
-        out = dict(m)
+        out = {"target": self.target_of(i), "label": g.label, "standoff_m": float(self.stand[i]),
+               "issued": float(self.book.at[e]), "source": g.source, "order_id": g.oid, "by": g.by}
+        if self.kind[i] == SHIP and g.by != self.ids[i]:
+            out.update(formation=g.oid, slot=slot.tolist())
+        if self.solo[i]:
+            out["solo"] = True
+        if self.hashold[i]:
+            out["hold_m"] = self.hold[i].tolist()
+        if not math.isnan(self.arrive_at[i]):
+            out.update(arrive_at=float(self.arrive_at[i]), predicted=float(self.predicted[i]))
         out.update(aim=aim.copy(), range_m=float(np.linalg.norm(aim - self.r[i])) if follow else _f(self.rng[i]),
                    closing_ms=_f(self.clos[src]), eta1_s=_f(self.eta1[src]), eta_s=_f(self.eta[src]),
-                   g=float(self.gg[src]) if follow else m.get("g"))
+                   g=float(self.gg[src]))
         return out
 
     def burn_dict(self, i: int) -> dict | None:
@@ -143,7 +170,8 @@ class Classis:
         if b == BURN_GUIDED:
             return {"g": float(self.bval[i]), "guided": True}
         if b in (BURN_G, BURN_THROTTLE):
-            return dict(self.burn_meta[i] or {})
+            e = int(self.burn_ev[i])
+            return {**self.book.of(e).burn, "from": float(self.book.at[e]), "until": float(self.buntil[i])}
         return None
 
     def state(self, i: int) -> ShipState:
@@ -152,7 +180,7 @@ class Classis:
                          mode=MODE_NAME[int(self.mode[i])], thrust_n=float(self.thrust[i]),
                          direction=self.dir[i].copy() if self.thrust[i] > 0 else None, burn=self.burn_dict(i),
                          dv_spent_ms=float(self.dvs[i]), goal=self.goal_dict(i),
-                         station_at=copy.deepcopy(self.station_at[i]))
+                         station_at=copy.deepcopy(self.place_of(i)))
 
     def ship(self, i: int) -> Ship:
         """A copy of her, as a Ship."""
@@ -180,7 +208,7 @@ class RowState:
     direction = property(lambda s: s._c.dir[s._i].copy() if s._c.thrust[s._i] > 0 else None)
     burn = property(lambda s: s._c.burn_dict(s._i))
     goal = property(lambda s: s._c.goal_dict(s._i))
-    station_at = property(lambda s: s._c.station_at[s._i])
+    station_at = property(lambda s: s._c.place_of(s._i))
 
     def copy(self) -> ShipState:
         return self._c.state(self._i)
@@ -201,4 +229,3 @@ class LeadView:
     r = property(lambda s: s._c.r[s.row])
     v = property(lambda s: s._c.v[s.row])
     a = property(lambda s: s._c.acc[s.row])
-    goal = property(lambda s: s._c.meta[s.row])

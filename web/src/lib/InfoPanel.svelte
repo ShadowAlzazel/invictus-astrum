@@ -17,6 +17,9 @@
   export let onfocus = () => {};
   export let onselect = () => {};   // pick another unit: a member, or the formation above
   export let onretune = () => {};   // (g, now, order): a telegraph moved; order {id, by} for one order, else the selection
+  export let onwithdraw = () => {}; // (order id): take an order from the map back, as if never given
+  let withdrawing = null;           // the order asked about once: a second click takes it back
+  const withdraw = (id) => { if (withdrawing !== id) { withdrawing = id; return; } withdrawing = null; onwithdraw(id); };
 
   const G = 6.6743e-20;             // km³/(kg·s²)
   $: body = sel?.kind === 'body' ? map?.bodies[sel.id] : null;
@@ -166,7 +169,9 @@
         {#each orders as o (o.id)}
           <div class="order">
             <p><b>To {o.label}</b> <span>at {o.g.toFixed(2)} g</span></p>
-            <p class="by dim">given to {nameOf(o.by)} · {o.ships.length} ship{o.ships.length > 1 ? 's' : ''}{o.here < o.ships.length ? `, ${o.here} of them here` : ''}</p>
+            <p class="by dim">given to {nameOf(o.by)} · {o.ships.length} ship{o.ships.length > 1 ? 's' : ''}{o.here < o.ships.length ? `, ${o.here} of them here` : ''}
+              {#if o.source === 'map'}<button class="withdraw" class:sure={withdrawing === o.id} on:click={() => withdraw(o.id)} on:blur={() => (withdrawing = null)}
+                title="Take the order back, as if it had never been given">{withdrawing === o.id ? 'Withdraw?' : 'Withdraw'}</button>{/if}</p>
             <p class="eta">{hms(o.soonest)}{#if o.latest - o.soonest > 60} <span>to {hms(o.latest)}, the last ship</span>{/if}</p>
             <Telegraph maxG={o.maxG} cruise={o.cruise} value={tgs[o.id] ?? o.g ?? 0} height={130} color="var(--cyan, #9ff0ff)"
                        note={o.ships.length > 1 ? "held to the slowest ship's most" : ''}
@@ -187,6 +192,8 @@
             <p class="eta">{hms(ship.goal.eta_s)}{#if arrives} <span>· arrives {arrives}</span>{/if}</p>
             <p class="dim">{km(ship.goal.range_km)} to go · closing {n(ship.goal.closing_kms, 2)} km/s</p>
             {#if ship.goal.in_formation}<p class="dim form">In formation: she keeps her place on {nameOf(ship.goal.by)}. Her own telegraph takes her out of it.</p>{/if}
+            {#if ship.goal.source === 'map'}<button class="withdraw" class:sure={withdrawing === ship.goal.order_id} on:click={() => withdraw(ship.goal.order_id)}
+              on:blur={() => (withdrawing = null)} title="Take the order back (all the ships it went to), as if it had never been given">{withdrawing === ship.goal.order_id ? 'Withdraw?' : 'Withdraw'}</button>{/if}
           </div>
           <div class="tgwrap">
             <Telegraph maxG={ship.max_accel_g} cruise={spec?.cruise_g} value={tg ?? ship.goal.g} height={130}
@@ -304,6 +311,8 @@
   .tgwrap { margin: 8px 0 12px; }
   .orders .order { margin-bottom: 12px; padding-bottom: 0; }
   .order .by { font-size: 11px; }
+  .withdraw { background: none; border: 1px solid var(--rule); color: var(--dim); font: inherit; font-size: 10px; padding: 0 5px; margin-left: 6px; cursor: pointer; }
+  .withdraw:hover, .withdraw.sure { color: var(--fuchsia); border-color: var(--fuchsia); }
   .order .form { font-size: 10px; margin-top: 3px; }
   /* the chain of command, read upward: a ladder of rungs joined by a rail */
   .ladder { list-style: none; margin: 4px 0 0; padding: 0; }

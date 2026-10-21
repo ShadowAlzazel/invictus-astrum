@@ -17,6 +17,7 @@ export const api = {
   ships: () => get('/ships'),
   ship: (id) => get(`/ships/${id}`),
   order: (o) => post('/order', o),
+  withdrawOrder: (scenario, id) => send('DELETE', `/order/${encodeURIComponent(scenario)}/${encodeURIComponent(id)}`),
   makeBullseye: (b) => post('/bullseyes', b),
   dropBullseye: (player, id) => send('DELETE', `/bullseyes/${encodeURIComponent(player)}/${encodeURIComponent(id)}`),
   workshop: {

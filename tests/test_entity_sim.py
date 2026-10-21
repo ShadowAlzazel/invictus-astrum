@@ -856,7 +856,7 @@ def test_a_rewind_after_orders_given_in_the_past_flies_each_once(finish):
     fb.at(fb.t0 + 2.6 * 3600)
     n = len(fa.c.row)
     assert np.abs(fa.c.r[:n] - fb.c.r[:n]).max() < 100.0     # was 87 km off: an order given twice
-    assert fa.c.meta[fa.c.row["kiki-1"]]["issued"] == pytest.approx(fa.t0 + 3600)
+    assert fa.c.goal_dict(fa.c.row["kiki-1"])["issued"] == pytest.approx(fa.t0 + 3600)
 
 
 def test_a_formation_ordered_again_and_again_in_the_past_keeps_its_rows():
@@ -875,3 +875,50 @@ def test_a_formation_ordered_again_and_again_in_the_past_keeps_its_rows():
         give_order(world, {**req, "t": f.t0 + 800 - 60 * k, "target": {"body": "moon"}})
         f.at(f.t)
     assert f.c.n == ships + 5                               # five orders, five leads (it was 62: leads made again each time)
+
+
+def test_an_order_withdrawn_is_as_if_never_given():
+    """An order from the map taken back (Fleet.withdraw): struck from the book, and the ships it
+    went to, flown past it, fly again as if it had never been given; a formation's lead gives its
+    row back; one not yet reached is never given; the scenario's own cannot be taken back."""
+    from astrum.app import create_app
+    from astrum.sim import Order
+    fa, fb = _demo(create_app().state.world), _demo(create_app().state.world)
+    t0 = fa.t0
+    keep = lambda f: f.command(Order("paris-1", t0 + 1200, "goto", target={"body": "moon", "label": "Moon"}, g=0.3, source="map"))
+    fa.at(t0 + 3 * 3600)
+    keep(fa)
+    fa.command(*[Order(s, t0 + 1800, "goto", target={"body": "moon", "label": "Moon", "offset_m": [k * 1e6, 0, 0]}, g=0.3,
+                       source="map", order_id="kiki-flight@1", by="kiki") for k, s in enumerate(("kiki-1", "kiki-2", "kiki-3"))])
+    fa.at(fa.t)
+    rows = fa.c.n
+    assert fa.withdraw("kiki-flight@1") and not fa.withdraw("kiki-flight@1")
+    fa.at(fa.t)
+    keep(fb)
+    fb.at(t0 + 3 * 3600)
+    n = len(fa.c.row)
+    assert np.abs(fa.c.r[:n] - fb.c.r[:n]).max() < 100.0
+    assert fa.c.goal_dict(fa.c.row["kiki-1"]) is None and fa.c.goal_dict(fa.c.row["paris-1"])["label"] == "Moon"
+    assert fa.book.struck.sum() == 3 and fa.c.n <= rows
+    fa.command(Order("kiki-2", t0 + 5 * 3600, "goto", target={"body": "moon", "label": "Moon"}, g=0.3, source="map",
+                     order_id="later"))
+    assert fa.withdraw("later")
+    assert fa.at(t0 + 6 * 3600)["kiki-2"].state.goal is None
+    burn = next(fa.book.of(e).oid for e in fa.book.queue if fa.book.of(e).source == "scenario")
+    assert not fa.withdraw(burn)
+
+
+def test_orders_are_withdrawn_from_the_map():
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = _demo(world)
+    req = {"scenario": "sol-demo", "player": "arcvs", "t": f.t0 + 600, "g": 0.3, "target": {"body": "moon"}}
+    goal = c.post("/api/order", json={**req, "unit": "kiki"}).json()["ships"]["kiki-1"]["goal"]
+    assert goal["source"] == "map"
+    from urllib.parse import quote
+    url = f"/api/order/sol-demo/{quote(goal['order_id'], safe='')}"         # ids carry a '#': the map encodes it
+    assert c.delete(url).status_code == 200
+    assert f.at(f.t0 + 3600)["kiki-1"].state.goal is None
+    assert c.delete(url).status_code == 404

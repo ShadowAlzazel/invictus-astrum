@@ -7,6 +7,7 @@
     GET  /api/system/{id}/probe?x&y&z&t  what is at a point: zone, gravity, magnetism, AER
     POST /api/order                      an order for one ship, from the map: go to a point, a unit or a
                                          body at an acceleration; or cut her drive
+    DELETE /api/order/{scenario}/{id}    take an order from the map back, as if never given
     POST /api/bullseyes                  a commander's new bullseye; DELETE /api/bullseyes/{player}/{id}
     WS   /ws                             send {system, t, player, scenario}; receive the state at t,
                                          with the scenario's ships flown to t (astrum/sim.py)
@@ -678,6 +679,13 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         except BullseyeError as e:
             raise HTTPException(400, str(e))
         await sim.call("bullseye", {"player": player, "drop": bid})
+        return {"ok": True}
+
+    @app.delete("/api/order/{scenario}/{order_id}")
+    async def order_withdraw(scenario: str, order_id: str):
+        """Take back an order given from the map: as if it had never been given (Fleet.withdraw)."""
+        if not (await sim.call("withdraw", {"scenario": scenario, "order_id": order_id}))["ok"]:
+            raise HTTPException(404, f"no order {order_id!r} from the map in {scenario}")
         return {"ok": True}
 
     @app.post("/api/order")
