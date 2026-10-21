@@ -110,3 +110,71 @@ class Ephemeris:
 def separation_angle(u, v) -> float:
     u, v = np.asarray(u, float), np.asarray(v, float)
     return math.atan2(np.linalg.norm(np.cross(u, v)), np.dot(u, v))
+
+
+TABLE_PER_TURN = 400           # table nodes per turn of the fastest body, at its periapsis rate
+TABLE_STEP_S = (10.0, 600.0)   # bounds on the table step
+
+
+def table_step(system: StellarSystem) -> float:
+    """The table step for a system: a 400th of the shortest time any body takes to turn a full
+    circle at its fastest (its periapsis rate), within 10 s – 10 min. Cubic Hermite over a 400th
+    of a turn is wrong by about θ⁴/384 of the radius, θ = 2π/400: a couple of metres at most in
+    the systems here (Mercury, in Sol), well under the 2 km a go-to counts as arrived."""
+    rates = [b.orbit.n * (1 + b.orbit.e) ** 2 / (1 - b.orbit.e ** 2) ** 1.5
+             for b in system if b.orbit is not None and b.orbit.n > 0]
+    if not rates:
+        return TABLE_STEP_S[1]
+    return min(max(2 * math.pi / max(rates) / TABLE_PER_TURN, TABLE_STEP_S[0]), TABLE_STEP_S[1])
+
+
+class Tabled:
+    """An ephemeris read through a table: body states are worked out exactly at nodes a step
+    apart (Ephemeris.states, JPL or orbits) and between them by cubic Hermite interpolation of
+    position and velocity. The simulation asks for bodies at every step of every ship; this way
+    most of those asks cost a few multiplications. Everything else is the ephemeris's own."""
+
+    MAX_NODES = 512
+
+    def __init__(self, eph: Ephemeris, step: float | None = None):
+        self.eph = eph
+        self.system = eph.system
+        self.h = step or table_step(eph.system)
+        self.ids = [b.id for b in eph.system]
+        self._nodes: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+
+    def __getattr__(self, name):                     # equator, source, body_fixed, numerical, ...
+        return getattr(self.eph, name)
+
+    def _node(self, k: int) -> tuple[np.ndarray, np.ndarray]:
+        n = self._nodes.get(k)
+        if n is None:
+            st = self.eph.states(k * self.h)
+            n = (np.array([st[i][0] for i in self.ids]), np.array([st[i][1] for i in self.ids]))
+            if len(self._nodes) >= self.MAX_NODES:
+                self._nodes.pop(next(iter(self._nodes)))
+            self._nodes[k] = n
+        return n
+
+    def _at(self, t: float, velocity: bool):
+        h = self.h
+        k = math.floor(t / h)
+        u = t / h - k
+        P0, V0 = self._node(k)
+        if u < 1e-12:
+            return P0, V0
+        P1, V1 = self._node(k + 1)
+        u2, u3 = u * u, u * u * u
+        P = (2 * u3 - 3 * u2 + 1) * P0 + (u3 - 2 * u2 + u) * h * V0 + (3 * u2 - 2 * u3) * P1 + (u3 - u2) * h * V1
+        if not velocity:
+            return P, None
+        V = ((6 * u2 - 6 * u) * P0 + (6 * u - 6 * u2) * P1) / h + (3 * u2 - 4 * u + 1) * V0 + (3 * u2 - 2 * u) * V1
+        return P, V
+
+    def positions(self, t: float) -> dict[str, np.ndarray]:
+        P, _ = self._at(t, False)
+        return dict(zip(self.ids, P))
+
+    def states(self, t: float) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+        P, V = self._at(t, True)
+        return {i: (p, v) for i, p, v in zip(self.ids, P, V)}

@@ -171,6 +171,7 @@
             <p><b>To {ship.goal.label}</b> <span>at {ship.goal.g.toFixed(2)} g</span></p>
             <p class="eta">{hms(ship.goal.eta_s)}{#if arrives} <span>· arrives {arrives}</span>{/if}</p>
             <p class="dim">{km(ship.goal.range_km)} to go · closing {n(ship.goal.closing_kms, 2)} km/s</p>
+            {#if ship.goal.in_formation}<p class="dim form">In formation: she keeps her place on {nameOf(ship.goal.by)}. Her own telegraph takes her out of it.</p>{/if}
           </div>
           <div class="tgwrap">
             <Telegraph maxG={ship.max_accel_g} cruise={spec?.cruise_g} value={tg ?? ship.goal.g} height={130}
@@ -275,6 +276,7 @@
   .tgwrap { margin: 8px 0 12px; }
   .orders .order { margin-bottom: 12px; padding-bottom: 0; }
   .order .by { font-size: 11px; }
+  .order .form { font-size: 10px; margin-top: 3px; }
   /* the chain of command, read upward: a ladder of rungs joined by a rail */
   .ladder { list-style: none; margin: 4px 0 0; padding: 0; }
   .ladder li { position: relative; padding: 0 0 14px 18px; }

@@ -47,10 +47,24 @@ def vec_to_radec(v) -> tuple[float, float]:
 
 
 def basis(x, z) -> np.ndarray:
-    """Right-handed frame from a primary axis z and a reference x (made orthogonal to z)."""
-    z = unit(z)
-    x = unit(np.asarray(x, dtype=float) - np.dot(x, z) * z)
-    return np.column_stack([x, np.cross(z, x), z])
+    """Right-handed frame from a primary axis z and a reference x (made orthogonal to z).
+    Written out by hand: it is called for every bullseye at every step, and numpy's own calls
+    cost more than the arithmetic on three numbers."""
+    z0, z1, z2 = (float(c) for c in z)
+    n = math.sqrt(z0 * z0 + z1 * z1 + z2 * z2)
+    if n == 0:
+        raise ValueError("zero vector has no direction")
+    z0, z1, z2 = z0 / n, z1 / n, z2 / n
+    x0, x1, x2 = (float(c) for c in x)
+    d = x0 * z0 + x1 * z1 + x2 * z2
+    x0, x1, x2 = x0 - d * z0, x1 - d * z1, x2 - d * z2
+    n = math.sqrt(x0 * x0 + x1 * x1 + x2 * x2)
+    if n == 0:
+        raise ValueError("zero vector has no direction")
+    x0, x1, x2 = x0 / n, x1 / n, x2 / n
+    return np.array([[x0, z1 * x2 - z2 * x1, z0],
+                     [x1, z2 * x0 - z0 * x2, z1],
+                     [x2, z0 * x1 - z1 * x0, z2]])
 
 
 # ---- fixed frames, all relative to ICRS ----------------------------------------------------

@@ -359,3 +359,107 @@ def test_a_ship_reads_with_her_faction():
     assert byid["tf2-lp2-1"]["name"] == "AVC Antwerp" and byid["tf2-lp2-1"]["hull_number"] == "BBC-382"
     assert byid["tf2-lp2-1"]["faction"]["name"] == "ARCVS Void Command"
     assert byid["tf-2"]["name"] == "Task Force 2"            # formations read as they are named
+
+
+# ---- speed and the server: tables, vector gravity, the fleet off the event loop -------------------
+
+def test_the_body_table_matches_the_ephemeris():
+    from astrum.app import create_app
+    from astrum.ephemeris import Tabled
+    world = create_app().state.world
+    s, eph = world.get("sol")
+    tb, t0 = Tabled(eph), world.start_time(s)
+    for t in t0 + np.linspace(0, 20 * 86400, 37) + 123.4:
+        a, b = eph.states(t), tb.states(t)
+        for i in a:
+            assert np.linalg.norm(a[i][0] - b[i][0]) < 10.0           # metres
+            assert np.linalg.norm(a[i][1] - b[i][1]) < 1e-2           # m/s
+
+
+def test_gravity_many_is_fields_gravity():
+    from astrum.app import create_app
+    from astrum.fields import gravity
+    from astrum.sim import gravity_many
+    world = create_app().state.world
+    s, eph = world.get("sol")
+    pos = eph.positions(world.start_time(s))
+    X = np.array([pos["earth"] + [7e6, 1e6, 2e6], pos["moon"] + [3e6, 0, 0], pos["jupiter"] + [1e8, 2e7, 0]])
+    ref = np.array([gravity(s, eph, pos, x) for x in X])
+    assert np.allclose(gravity_many(s, eph, pos, X), ref, rtol=1e-12, atol=0)
+
+
+def test_the_fleet_runs_in_chunks_and_takes_orders_between():
+    """With a budget it stops short and says where; an order taken meanwhile rewinds it."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    c.post("/api/order", json={"scenario": "sol-demo", "unit": "tf2-lf1", "t": t, "g": 0.3, "target": {"body": "moon"}})
+    reached, ships = f.advance(t + 30 * 86400, budget_s=0.05)
+    assert t < reached < t + 30 * 86400
+    ships["tf2-lf1-bs-1"].state.r[:] = 0                                     # copies: the fleet is untouched
+    assert np.linalg.norm(f.ships["tf2-lf1-bs-1"].state.r) > 0
+    with c.websocket_connect("/ws") as ws:
+        ws.send_json({"system": "sol", "t": t + 30 * 86400, "player": "arcvs", "scenario": "sol-demo"})
+        m = ws.receive_json()
+    assert m["behind_s"] > 0 and m["t"] + m["behind_s"] == pytest.approx(t + 30 * 86400)
+
+
+# ---- formations fly together; arrival is flown ahead ---------------------------------------------
+
+def test_a_formation_keeps_its_places_on_the_way():
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "tf2-lf1", "t": t, "g": 0.3, "target": {"body": "moon"}}).json()
+    ids = list(r["ships"])
+    assert all(s["goal"]["in_formation"] for s in r["ships"].values()) and len(f.leads) == 1
+    for T in (1800, 3 * 3600, 4.5 * 3600):         # settled from their station velocities: within metres of their places
+        fl = f.at(t + T)
+        L = next(iter(f.leads.values()))
+        off = max(np.linalg.norm(fl[s].state.r - (L.r + fl[s].state.goal["slot"])) for s in ids)
+        assert off < 100.0
+    # her own telegraph takes one ship out of it; the rest fly on in formation
+    c.post("/api/order", json={"scenario": "sol-demo", "unit": ids[0], "t": t + 4.5 * 3600, "g": 0.1, "keep_target": True})
+    fl = f.at(t + 4.5 * 3600 + 60)
+    assert not fl[ids[0]].state.goal.get("in_formation") and fl[ids[0]].as_dict()["goal"]["in_formation"] is False
+    assert fl[ids[1]].as_dict()["goal"]["in_formation"]
+
+
+def test_time_to_target_is_flown_ahead():
+    """The ETA given with the order is within a couple of percent of when she actually gets there."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-1", "t": t, "g": 0.4, "player": "arcvs",
+                                   "target": {"bullseye": "burn", "aer": [90, 0, 30000]}}).json()
+    eta = r["ship"]["goal"]["eta_s"]
+    assert r["ship"]["goal"]["eta_flown"]
+    T = t
+    while f.at(T)["kiki-1"].state.mode != "station":
+        T += 30
+    assert eta == pytest.approx(T - t, rel=0.03)
+
+
+def test_orders_given_in_the_same_second_are_told_apart():
+    """A retune of the first order does not reach the second, given the same second to the same unit."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    body = {"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.4, "player": "arcvs", "target": {"bullseye": "burn", "aer": [90, 0, 30000]}}
+    first = c.post("/api/order", json=body).json()["ships"]["kiki-1"]["goal"]["order_id"]
+    c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t + 300, "g": 0.1, "keep_target": True, "order_id": first})
+    second = c.post("/api/order", json=body).json()["ships"]["kiki-1"]["goal"]["order_id"]
+    assert first != second
+    assert f.at(t + 600)["kiki-1"].state.goal["g"] == 0.4

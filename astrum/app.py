@@ -14,6 +14,8 @@ Positions on the wire are kilometres in the system frame, as float64 JSON number
 """
 from __future__ import annotations
 
+import asyncio
+import itertools
 import math
 import threading
 import tomllib
@@ -29,7 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from . import constants as k
 from .bullseye import Bullseye, BullseyeError, resolve
 from .config import ROOT, ConfigError, load_config, load_style
-from .ephemeris import Ephemeris
+from .ephemeris import Ephemeris, Tabled
 from .fields import gravity, magnetic, potential
 from .frames import to_spherical
 from .loader import contact_positions, load_factions, load_players, load_scenarios, load_systems
@@ -42,6 +44,9 @@ from .sim import Fleet, Order
 from . import display
 
 KM = 1e-3
+FRAME_BUDGET_S = 0.2          # wall time the map's picture may spend flying the fleet; past it, the picture lags
+_order_n = itertools.count(1)   # order ids stay unique however many are given in one second
+ORDER_BUDGET_S = 0.5          # ... and an order: if the fleet is far behind, offsets are read where it got to
 
 
 class World:
@@ -230,7 +235,8 @@ class World:
         got = self.get(sc.system)
         if got is None or self.ships is None:
             return None
-        s, eph = got
+        s, exact = got
+        eph = Tabled(exact)                              # the simulation reads bodies from a table
 
         def place(t):
             pos = eph.positions(t)
@@ -343,7 +349,7 @@ def order_ships(world: "World", sc, fleet, unit) -> list[str]:
 
 
 def order_reply(fleet, t: float, unit: str, ships: list[str]) -> dict:
-    flown = fleet.at(t)
+    _, flown = fleet.advance(t, ORDER_BUDGET_S)
     out = {"ok": True, "unit": unit, "ships": {sid: flown[sid].as_dict() for sid in ships}}
     if len(ships) == 1:
         out["ship"] = out["ships"][ships[0]]
@@ -543,7 +549,7 @@ def create_app(config: dict | None = None) -> FastAPI:
             target = {"body": b.id, "label": b.name}
         else:
             raise HTTPException(400, "target is {bullseye, aer}, {unit} or {body}")
-        flown = fleet.at(t)
+        _, flown = fleet.advance(t, ORDER_BUDGET_S)
         offsets = {sid: np.zeros(3) for sid in ships}
         if len(ships) > 1 or unit not in ships:          # a formation: each ship keeps her place in it
             pos = eph.positions(t)
@@ -552,11 +558,45 @@ def create_app(config: dict | None = None) -> FastAPI:
             anchor = where.get(unit)
             if anchor is not None:
                 offsets = {sid: flown[sid].state.r - anchor for sid in ships}
-        oid = f"{unit}@{t:.0f}"
+        oid = f"{unit}@{t:.0f}#{next(_order_n)}"
         for sid in ships:
             tgt = dict(target, offset_m=offsets[sid].tolist()) if np.any(offsets[sid]) else target
             fleet.command(Order(sid, t, "goto", target=tgt, g=float(g), source="map", order_id=oid, by=unit))
         return order_reply(fleet, t, unit, ships)
+
+    def frame(req: dict) -> dict:
+        """One picture of the system for the map. Runs in a worker thread, never the event loop:
+        the fleet may have hours to fly. It gets FRAME_BUDGET_S of wall time; if it falls short,
+        the picture is of the moment it reached (behind_s says how far behind the clock asked)."""
+        world.check()
+        sid = req.get("system")
+        got = world.get(sid)
+        if got is None:
+            return {"error": f"no system {sid!r}", "system": sid}
+        s, eph = got
+        asked = t = float(req.get("t", world.start_time(s)))
+        flown, ships = {}, {}
+        sc = world.scenarios.get(req.get("scenario") or "")
+        fleet = world.fleet(sc) if sc and sc.system == sid else None
+        if fleet is not None:
+            t, (flown, ships) = fleet.advance(t, FRAME_BUDGET_S, view=lambda fl: (
+                {i: f.state.r.copy() for i, f in fl.items()}, {i: f.as_dict() for i, f in fl.items()}))
+        pos = (fleet.eph if fleet is not None else eph).positions(t)   # the fleet's table: what it flew among
+        bulls = world.resolved(sid, req.get("player"), pos)
+        contacts = {}
+        if sc and sc.system == sid:
+            # units are placed from their scenario's own bullseyes, whoever is watching;
+            # ships stand where the simulation has flown them, formations follow
+            placed = world.resolved(sid, sc.player, pos)
+            contacts = {cid: _km(v) for cid, v in contact_positions(sc, placed, pos, flown).items()}
+        return {
+            "t": t, "utc": iso(t), "behind_s": asked - t, "system": sid, "version": world.version, "source": eph.source(t),
+            "bodies": {bid: _km(v) for bid, v in pos.items()},
+            "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
+            "contacts": contacts,
+            "ships": ships,
+            "magnetopause_km": {b.id: m * KM for b in s if (m := magnetopause(s, pos, b))},
+        }
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
@@ -564,35 +604,7 @@ def create_app(config: dict | None = None) -> FastAPI:
         try:
             while True:
                 req = await sock.receive_json()
-                world.check()
-                sid = req.get("system")
-                got = world.get(sid)
-                if got is None:
-                    await sock.send_json({"error": f"no system {sid!r}", "system": sid})
-                    continue
-                s, eph = got
-                t = float(req.get("t", world.start_time(s)))
-                pos = eph.positions(t)
-                bulls = world.resolved(sid, req.get("player"), pos)
-                contacts, ships = {}, {}
-                sc = world.scenarios.get(req.get("scenario") or "")
-                if sc and sc.system == sid:
-                    # units are placed from their scenario's own bullseyes, whoever is watching;
-                    # ships stand where the simulation has flown them, formations follow
-                    placed = world.resolved(sid, sc.player, pos)
-                    fleet = world.fleet(sc)
-                    flown = fleet.at(t) if fleet else {}
-                    contacts = {cid: _km(v) for cid, v in
-                                contact_positions(sc, placed, pos, {i: f.state.r for i, f in flown.items()}).items()}
-                    ships = {i: f.as_dict() for i, f in flown.items()}
-                await sock.send_json({
-                    "t": t, "utc": iso(t), "system": sid, "version": world.version, "source": eph.source(t),
-                    "bodies": {bid: _km(v) for bid, v in pos.items()},
-                    "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
-                    "contacts": contacts,
-                    "ships": ships,
-                    "magnetopause_km": {b.id: m * KM for b in s if (m := magnetopause(s, pos, b))},
-                })
+                await sock.send_json(await asyncio.to_thread(frame, req))
         except WebSocketDisconnect:
             return
 

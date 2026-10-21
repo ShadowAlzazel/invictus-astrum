@@ -4,7 +4,7 @@
   import { api, StateStream } from './lib/api.js';
   import HudCursor from './lib/HudCursor.svelte';
   import Orders from './lib/Orders.svelte';
-  import { group, orderGroups, shipsUnder, stepG } from './lib/orders.js';
+  import { group, hms, orderGroups, shipsUnder, stepG } from './lib/orders.js';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
   import LevelSelect from './lib/LevelSelect.svelte';
@@ -340,6 +340,7 @@
 {#if inMap || mode === 'levels'}
 <div class="clock" data-ui>
   <span class="utc">{state?.utc?.replace('T', ' ').replace('Z', ' UTC') ?? '—'}</span>
+  {#if state?.behind_s > 30}<span class="lag" title="The simulation is catching up with the clock: the map shows the moment it has reached">sim {hms(state.behind_s)} behind</span>{/if}
   <button on:click={() => (paused = !paused)} title="Space">{paused ? '▶' : '❚❚'}</button>
   <button on:click={() => (warp = Math.max(warp - 1, 0))} title="[">◀</button>
   <span class="warp">{WARPS[warp][1]}</span>
@@ -437,6 +438,7 @@
   .clock .small { font-size: 11px; }
   .warp { min-width: 5.5em; text-align: center; color: var(--ink); }
   .src { color: var(--dim); font-size: 10px; }
+  .lag { color: #ffd27a; font-size: 11px; border-left: 2px solid #ffd27a; padding-left: 6px; }
 
   .panel { position: fixed; bottom: 20px; z-index: 20; background: var(--panel); border-left: 1px solid var(--violet); padding: 10px 14px; }
   .leftcol { position: fixed; left: 20px; bottom: 20px; z-index: 20; width: 300px; display: flex; flex-direction: column; gap: 8px; }

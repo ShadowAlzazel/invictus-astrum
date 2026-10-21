@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .frames import ECLIPTIC_J2000, GALACTIC, basis, from_aer, rot_z, to_aer, unit
+from .frames import ECLIPTIC_J2000, GALACTIC, basis, from_aer, pole_frame, rot_z, to_aer, unit
 from .model import StellarSystem
 
 DEFAULT_ID = "system"
@@ -88,11 +88,13 @@ def _direction(system: StellarSystem, spec, positions, origin, what: str) -> np.
     if spec == "icrs":
         return _icrs_dir(system, np.array([0.0, 0.0, 1.0]), spec)
     if isinstance(spec, str) and spec.startswith("pole:"):
-        from .ephemeris import Ephemeris
         bid = spec[5:]
         if bid not in system.bodies:
             raise BullseyeError(f"no body {bid!r} in {system.name}")
-        return Ephemeris(system).equator(bid)[:, 2]
+        b, T = system.bodies[bid], system.frame.to_icrs
+        if not b.pole or T is None:                  # as Ephemeris.equator: no sky, the pole is +z
+            return np.array([0.0, 0.0, 1.0])
+        return T.T @ pole_frame(*b.pole)[:, 2]
     if isinstance(spec, str) and spec.startswith("toward:"):
         bid = spec[7:]
         if bid not in positions:
