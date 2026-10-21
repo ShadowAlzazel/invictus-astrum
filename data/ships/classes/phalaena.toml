@@ -24,8 +24,9 @@ protection_kgm2 = { citadel = 200 }
 complement = { note = "reduced; damage-control weaving, no splice party" }
 
 [drive]
-module = "frigate-pulse"
-propellant_t = "—"
+module = "frigate"
+hull_mass = "wet"
+dv_kms = 4000
 
 [aim]
 rated_urad = 5.5

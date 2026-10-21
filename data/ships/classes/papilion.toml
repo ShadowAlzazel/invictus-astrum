@@ -23,8 +23,10 @@ protection_kgm2 = { citadel = 547, bumper = 18 }
 complement = { value = 500, approx = true, note = "line rate: a line crew and a splice party" }
 
 [drive]
-module = "line-pulse"
-propellant_t = 30000
+module = "line"
+hull_mass = "wet"          # the canon's masses are with tanks full: 5.40 m/s² at 70,340 t is the full-load figure
+dv_kms = 4000              # the bench's budget; the propellant follows from the mark and the mix
+sized_g = 0.55             # thrust sized to 0.55 g fully loaded, as on the bench
 
 [aim]
 rated_urad = 6.5
@@ -82,6 +84,7 @@ kills_per_s = { value = 140, approx = true }
 
 [endurance]
 thermal_store_tj = 10.8
+mane_gw = 1.0             # what the manes reject while she burns (the bench)
 cold_h = { "wings folded" = 36, "optics firing" = 28.4 }
 notes = "Wings spread, the clock does not run."
 

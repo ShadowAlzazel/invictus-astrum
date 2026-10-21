@@ -1,40 +1,161 @@
-# Drive modules: the engines a class connects to with [drive] module = "<id>".
-# Only the engine lives here. What it pushes (the hull's masses, the propellant it carries) lives on
-# the class, so one module can serve several classes and a refit is a one-line change.
+# Drives: from the bench's technical patterns to the figures the simulation flies on.
+# See docs/DRIVE_TEST_AND_BENCH.md for the bench, and tools/drive_bench.py to print one from this file.
 #
-#   thrust_mn             the most thrust, at the pulse ceiling. A drive throttles down freely, never up.
-#   exhaust_kms           exhaust velocity. Δv, propellant per Δv and the plume all follow from it:
-#                         "1,000 t per 100 km/s at 90,000 t" is 100 / ln(90000 / 89000) ≈ 8,950 km/s.
-#   pulse_rate_hz         the pulse ceiling that caps thrust (descriptive until the simulation needs it)
-#   hull_heat_fraction    the share of jet power that comes back into the hull as heat. With the class's
-#                         thermal store it gives how long she can burn flat out before the store is full.
+# A class connects to a [drive.*] with  [drive] module = "<id>".  A drive is built from a pattern:
+#   mark   how well it burns and steers the burn   ->  exhaust velocity, hull heat
+#   mix    the standard stores it burns            ->  exhaust velocity, propellant make-up
+#   block  how many engines share the work          ->  pulse rate, pellet, energy per pulse
+# so swapping a pattern is one line: mark = "mk3" refits a drive to Mk III.
 #
-# Every figure takes the registry's forms: 380, [360, 400], { value = 8950, est = true }, or "—".
-# Names here are placeholders until the canon names the drives.
+# The simulation reads four figures from a drive. Each comes from the pattern unless typed on the
+# drive itself, and a typed figure always wins:
+#   thrust_mn           the most thrust, at the pulse ceiling (or set per class with sized_g)
+#   exhaust_kms         ceiling × √(phi · eta · X), X the mix's yield
+#   pulse_rate_hz       banks × per_bank × hz
+#   hull_heat_fraction  the mark's
+#
+# Numbers are plain numbers here; a drive's typed figures may also be ranges or estimates.
 
-[drive.line-pulse]
-name = "Line fusion pulse drive"
-kind = "fusion-pulse"
-thrust_mn = 380
-exhaust_kms = 8950
-pulse_rate_hz = 140
-hull_heat_fraction = 0.00001
-notes = "Thrust from PAPILION's canon: 70,340 t × 5.40 m/s² = 62,340 t × 6.09 m/s² ≈ 380 MN."
+# ---- fuel: what burns --------------------------------------------------------------------------------
+[fuel.d-he3]
+name = "D-He3 capsule fuel"
+ceiling_kms = 26533                # √(2 × 18.35 MeV / 4,685 MeV) × c: a perfect burn through a perfect nozzle
+split = { "helium-3" = 0.6, deuterium = 0.4 }    # by mass
+density_tm3 = 0.2
+pbar_mg_per_t = 1.6727e-4          # antiprotons to ignite a tonne of capsule fuel
+notes = "Aneutronic in the main; the side reactions give the neutrons the tamper captures."
 
-[drive.frigate-pulse]
-name = "Frigate fusion pulse drive"
+# ---- tamper: what it burns in ------------------------------------------------------------------------
+# confinement: how fast the yield falls as the tamper thins (the f² term)
+# capture:     what neutron capture adds to jet energy, per unit of neutron fraction and of tamper share
+[tamper.lid]
+name = "Lithium deuteride"
+density_tm3 = 0.78
+mean_z = 2
+confinement = 0.432                # fitted to the bench's mix ladder
+capture = 12.77                    # fitted to the bench's neutron sweep: +13.7% at n 0.02, f 0.45
+
+# ---- marks: the drive patterns -----------------------------------------------------------------------
+# phi: share of the fuel that burns. eta: share of what burns that the nozzle puts into the jet.
+# k = phi × eta, and exhaust velocity goes as √k.
+[mark.mk1]
+name = "Mk I"
+label = "first pattern"
+phi = 0.33
+eta = 0.70
+
+[mark.mk2]
+name = "Mk II"
+label = "Old Forest"
+phi = 0.38
+eta = 0.75
+
+[mark.mk2c]
+name = "Mk II-C"
+label = "conversion"
+phi = 0.38
+eta = 0.80
+
+[mark.mk2-7]
+name = "Mk II.7"
+label = "modern"
+phi = 0.429
+eta = 0.785
+hull_heat_fraction = 4.5e-7        # the bench's hull leak; a mane rejects 1.0 GW, so the most is 4.81e-7
+
+[mark.mk3]
+name = "Mk III"
+label = "yard trial"
+phi = 0.45
+eta = 0.80
+
+[mark.mk4]
+name = "Mk IV"
+label = "test stand"
+phi = 0.55
+eta = 0.84
+
+[mark.ceiling]
+name = "Ceiling ◇"
+label = "pattern limit"
+phi = 0.60
+eta = 0.85
+
+# ---- mixes: the standard stores ----------------------------------------------------------------------
+# f: the capsule fuel's share of the propellant by mass; the rest is tamper. n_frac: neutron fraction.
+[mix.std-45]
+name = "Standard stores, f 0.45"
+f = 0.45
+fuel = "d-he3"
+tamper = "lid"
+n_frac = 0.02
+notes = "Every hull runs the same mix: standardised stores. The mark buys reserve, not mixture."
+
+# ---- blocks: the engines -----------------------------------------------------------------------------
+# Many engines share the work so each runs slowly. hz is reactions per engine per second; the
+# engines fire phased, so the plume stays constant.
+[block.line-2x7]
+name = "Line block, 2 × 7"
+banks = 2
+per_bank = 7
+hz = 1.7
+
+[block.frigate-1x7]
+name = "Frigate block, 1 × 7"
+banks = 1
+per_bank = 7
+hz = 1.7
+notes = "Placeholder layout."
+
+[block.cutter-1x4]
+name = "Cutter block, 1 × 4"
+banks = 1
+per_bank = 4
+hz = 1.7
+notes = "Placeholder layout."
+
+[block.bench-2x7]
+name = "Test bench, 2 × 7 at 10 Hz"
+banks = 2
+per_bank = 7
+hz = 10
+notes = "The block on DRIVE_TEST_AND_BENCH."
+
+# ---- stores ------------------------------------------------------------------------------------------
+[stores]
+bunker_mg = 3.713                  # the standard antimatter bunker, the same on every hull
+
+# ---- drives: what classes connect to -----------------------------------------------------------------
+[drive.line]
+name = "Line drive"
 kind = "fusion-pulse"
+mark = "mk2-7"
+mix = "std-45"
+block = "line-2x7"
+notes = "Thrust is sized per class (sized_g)."
+
+[drive.frigate]
+name = "Frigate drive"
+kind = "fusion-pulse"
+mark = "mk2-7"
+mix = "std-45"
+block = "frigate-1x7"
 thrust_mn = { value = 119, est = true }
-exhaust_kms = 8950
-pulse_rate_hz = 140
-hull_heat_fraction = 0.00001
 notes = "Thrust from PHALAENA's estimate: 19,340 t × 6.16 m/s²."
 
-[drive.cutter-pulse]
-name = "Cutter fusion pulse drive"
+[drive.cutter]
+name = "Cutter drive"
 kind = "fusion-pulse"
+mark = "mk2-7"
+mix = "std-45"
+block = "cutter-1x4"
 thrust_mn = { value = 83, approx = true }
-exhaust_kms = 8950
-pulse_rate_hz = 140
-hull_heat_fraction = 0.00001
 notes = "Thrust from BACILLUS: ~16,000 t × ~5.2 m/s²."
+
+# A drive can also skip the pattern and give the simulation its figures directly:
+# [drive.salvage]
+# name = "Salvaged drive"
+# thrust_mn = 120
+# exhaust_kms = [7000, 8000]
+# pulse_rate_hz = 12
+# hull_heat_fraction = 1e-6

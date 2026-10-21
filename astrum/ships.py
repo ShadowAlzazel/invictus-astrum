@@ -30,6 +30,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .drives import Catalogue, block_figures, store_figures
 from .model import Finding
 
 BLANK = "—"
@@ -42,8 +43,7 @@ CLASS_KEYS = {"id", "name", "lineage", "genus", "epithet", "designation", "rate"
               "symbol", "in_classis", "places", "successor_of", "old_rating"}
 BATTERY_KEYS = {"id", "label", "component", "count", "stacks", "mounts", "facets", "cycle_s", "fire",
                 "rounds_per_cycle", "stack_salvo_mj", "power_mw", "magazine", "reach_km", "arrangement", "notes"}
-DRIVE_KEYS = {"module", "count", "propellant_t", "cruise_g", "notes"}
-MODULE_KEYS = {"name", "kind", "thrust_mn", "exhaust_kms", "pulse_rate_hz", "hull_heat_fraction", "notes"}
+DRIVE_KEYS = {"module", "count", "hull_mass", "propellant_t", "dv_kms", "sized_g", "cruise_g", "notes"}
 G0 = 9.80665                      # m/s² in a g
 # what every hull should state; missing ones are the author's open list
 TEMPLATE = [("rate", "rate"), ("terms.sail", "sail term"), ("hull.length_m", "length"), ("hull.mass_t", "mass"),
@@ -226,25 +226,37 @@ def _blanks_in(v, where: str, key: str, out: list[str]) -> None:
                 _blanks_in(x, x.get("label") or x.get("id") or where, key, out)
 
 
-def _drive(sc: ShipClass, doc: dict, rules: ShipRules, drives: dict, f: list[Finding], where: str) -> None:
-    """A class's drive: its module's thrust and exhaust, pushing the hull's masses and its propellant.
+def _drive(sc: ShipClass, doc: dict, rules: ShipRules, cat: Catalogue, f: list[Finding], where: str) -> None:
+    """A class's drive: the module's figures (from its pattern, or typed), pushing the hull's masses
+    and its propellant. Each load in hull.mass_t (light, full) is read with tanks dry and full.
 
-    hull.mass_t is the mass with tanks dry; each of its loads (light, full) is read twice, tanks dry
-    and tanks full. Every figure is a Q, so ranges and estimates carry through to what is derived."""
+    hull_mass says what hull.mass_t means: "dry" (tanks empty) or "wet" (tanks full). The propellant
+    is propellant_t, or what holds dv_kms at the heaviest load. Thrust is the module's × count, or
+    sized_g at the heaviest load. Figures are Q, so ranges and estimates carry through."""
     d = doc.get("drive")
     if d is None:
         return
     for k in set(d) - DRIVE_KEYS:
         f.append(Finding("error", where, f"[drive] unknown key {k!r}"))
     mid = d.get("module")
-    mod = drives.get(mid)
-    if mod is None:
+    if mid not in cat.drive:
         f.append(Finding("error", where, f"[drive] unknown module {mid!r}; modules are in drives.toml"))
         return
+    if any(x.where.startswith("drive ") and x.where.split()[1] == mid for x in cat.findings):
+        f.append(Finding("error", where, f"[drive] module {mid!r} has errors in drives.toml"))
+        return
+    raw, built = cat.resolve(mid)
+    mod = cat.drive[mid]
     count = d.get("count", 1)
     if not (isinstance(count, int) and not isinstance(count, bool) and count > 0):
         f.append(Finding("error", where, "[drive] count is a whole number above zero"))
         count = 1
+    reading = d.get("hull_mass", "dry")
+    if reading not in ("dry", "wet"):
+        f.append(Finding("error", where, "[drive] hull_mass is \"dry\" (tanks empty) or \"wet\" (tanks full)"))
+        reading = "dry"
+    if "propellant_t" in d and "dv_kms" in d:
+        f.append(Finding("error", where, "[drive] give propellant_t or dv_kms, not both"))
 
     def fig(v, key) -> Q | None:
         q = quantity(v, f"{where} drive.{key}", f)
@@ -253,24 +265,55 @@ def _drive(sc: ShipClass, doc: dict, rules: ShipRules, drives: dict, f: list[Fin
             return None
         return q if isinstance(q, Q) and q.lo is not None else None
 
-    thrust = fig(mod.get("thrust_mn"), "thrust_mn")
-    thrust = thrust.map(lambda x: x * count) if thrust else None
-    ve = fig(mod.get("exhaust_kms"), "exhaust_kms")
-    prop = fig(d.get("propellant_t"), "propellant_t")
+    ve = fig(raw.get("exhaust_kms"), "exhaust_kms")
     cruise = fig(d.get("cruise_g", rules.drive.get("cruise_g")), "cruise_g")
-    heat = fig(mod.get("hull_heat_fraction"), "hull_heat_fraction")
-    store = quantity((doc.get("endurance") or {}).get("thermal_store_tj"), where, [])
+    heat = fig(raw.get("hull_heat_fraction"), "hull_heat_fraction")
+    rate = fig(raw.get("pulse_rate_hz"), "pulse_rate_hz")
+    rate = rate.map(lambda x: x * count) if rate else None
+    endurance = doc.get("endurance") or {}
+    store, mane = (quantity(endurance.get(k), where, []) for k in ("thermal_store_tj", "mane_gw"))
     store = store if isinstance(store, Q) and store.lo is not None else None
+    mane = mane if isinstance(mane, Q) and mane.lo is not None else None
 
     m = quantity((doc.get("hull") or {}).get("mass_t"), where, [])
-    masses = m if isinstance(m, dict) else ({"": m} if isinstance(m, Q) and m.lo is not None else {})
-    masses = {k: q for k, q in masses.items() if q.lo is not None}
+    stated = m if isinstance(m, dict) else ({"": m} if isinstance(m, Q) and m.lo is not None else {})
+    stated = {k: q for k, q in stated.items() if q.lo is not None}
+    heavy_key = max(stated, key=lambda k: stated[k].hi) if stated else None
+
+    # propellant: as typed, or what holds dv_kms at the heaviest load
+    dv_target = fig(d.get("dv_kms"), "dv_kms")
+    prop = fig(d.get("propellant_t"), "propellant_t")
+    if dv_target and ve and heavy_key is not None:
+        h = stated[heavy_key]
+        prop = (combine(lambda M, v, dv: M * (math.exp(dv / v) - 1), h, ve, dv_target) if reading == "dry" else
+                combine(lambda M, v, dv: M * (1 - math.exp(-dv / v)), h, ve, dv_target))
+    masses = stated                                                     # tanks dry, per load
+    if reading == "wet":
+        if not prop:
+            f.append(Finding("error", where, "[drive] hull_mass = \"wet\" needs propellant_t or dv_kms"))
+            masses = {}
+        else:
+            masses = {k: combine(lambda a, p: a - p, q, prop) for k, q in stated.items()}
+            if any(q.lo <= 0 for q in masses.values()):
+                f.append(Finding("error", where, "[drive] the propellant is heavier than the hull it is in"))
+                masses = {}
+    wet = {k: combine(lambda a, b: a + b, q, prop) if prop else None for k, q in masses.items()}
+
+    # thrust: the module's × count, or sized to a g at the heaviest load
+    sized = fig(d.get("sized_g"), "sized_g")
+    thrust = fig(raw.get("thrust_mn"), "thrust_mn")
+    thrust = thrust.map(lambda x: x * count) if thrust else None
+    if sized and heavy_key is not None and masses:
+        heaviest = wet[heavy_key] or masses[heavy_key]
+        thrust = combine(lambda g, M: g * G0 * M / 1e3, sized, heaviest)
+    if thrust is None:
+        sc.blanks.append("drive: thrust")
 
     accel = lambda F, M: F * 1e3 / M                                  # MN / t -> m/s²
     loads = []
     for name, hull in masses.items():
         for tanks in ("dry", "full") if prop else ("dry",):
-            mass = hull if tanks == "dry" else combine(lambda a, b: a + b, hull, prop)
+            mass = hull if tanks == "dry" else wet[name]
             a = combine(accel, thrust, mass)
             row = {"load": name, "tanks": tanks, "mass_t": mass, "accel_ms2": a,
                    "accel_g": a.map(lambda x: x / G0) if a else None}
@@ -280,35 +323,77 @@ def _drive(sc: ShipClass, doc: dict, rules: ShipRules, drives: dict, f: list[Fin
             loads.append(row)
 
     out = {"module_id": mid, "module": {k: mod.get(k) for k in ("name", "kind", "notes")}, "count": count,
-           "thrust_mn": thrust, "exhaust_kms": ve, "propellant_t": prop,
-           "pulse_rate_hz": fig(mod.get("pulse_rate_hz"), "pulse_rate_hz"), "hull_heat_fraction": heat, "notes": d.get("notes", ""), "masses": masses, "loads": loads,
+           "hull_mass": reading, "thrust_mn": thrust, "thrust_sized_g": sized, "exhaust_kms": ve,
+           "propellant_t": prop, "dv_target_kms": dv_target, "pulse_rate_hz": rate, "hull_heat_fraction": heat,
+           "typed": raw["typed"], "notes": d.get("notes", ""), "masses": masses, "loads": loads,
            "jet_pw": combine(lambda F, v: 0.5 * F * 1e6 * v * 1e3 / 1e15, thrust, ve),
            "mass_flow_kgs": combine(lambda F, v: F * 1e6 / (v * 1e3), thrust, ve),
            "full_burn_h": combine(lambda p, F, v: p * 1e3 / (F * 1e6 / (v * 1e3)) / 3600, prop, thrust, ve),
-           "cruise": None, "hot_burn_h": None, "hull_heat_gw": None}
+           "held_burn_h": None, "jet_energy_zj": combine(lambda p, v: 0.5 * p * 1e3 * (v * 1e3) ** 2 / 1e21, prop, ve),
+           "cruise": None, "heat": None, "pattern": None, "stores": None, "block": None, "ladder": []}
+    heavy = next((r for r in loads if r["load"] == heavy_key and r["tanks"] == ("full" if prop else "dry")), None)
 
+    # holding the full-load acceleration while she lightens: the whole tank lasts Δv / a
+    if heavy and heavy.get("dv_kms") and heavy["accel_ms2"]:
+        out["held_burn_h"] = combine(lambda dv, a: dv * 1e3 / a / 3600, heavy["dv_kms"], heavy["accel_ms2"])
     # doctrine: can she hold the cruise band at her heaviest?
-    if cruise and loads and thrust:
-        heavy = max(loads, key=lambda r: r["mass_t"].hi)
+    if cruise and heavy and heavy["accel_g"]:
         need = combine(lambda g, M: g * G0 * M / 1e3, cruise, heavy["mass_t"])
         out["cruise"] = {"band_g": cruise, "heaviest": heavy, "thrust_needed_mn": need,
                          "holds": heavy["accel_g"].lo >= cruise.lo - 1e-9,
                          "reaches_top": heavy["accel_g"].lo >= cruise.hi - 1e-9}
-    # heat: how long a flat-out burn takes to fill the thermal store
+    # heat: what a flat-out burn puts into the hull, against the mane and the thermal store
     if heat and out["jet_pw"]:
-        out["hull_heat_gw"] = combine(lambda P, h: P * 1e6 * h, out["jet_pw"], heat)
-        if store:
-            out["hot_burn_h"] = combine(lambda E, W: E * 1e3 / W / 3600, store, out["hull_heat_gw"])
+        leak = combine(lambda P, h: P * 1e6 * h, out["jet_pw"], heat)               # GW
+        h = {"leak_gw": leak, "mane_gw": mane, "store_tj": store,
+             "max_fraction": combine(lambda g, P: g / (P * 1e6), mane, out["jet_pw"]) if mane else None,
+             "steady": (leak.hi <= mane.lo) if mane else None, "fills_h": None}
+        if store and not h["steady"]:
+            net = combine(lambda a, b: a - b, leak, mane) if mane else leak
+            if net.lo > 0:
+                h["fills_h"] = combine(lambda E, W: E * 1e3 / W / 3600, store, net)
+        out["heat"] = h
 
-    # the canon's accelerations against the drive (tanks dry)
+    # the pattern behind the figures, and what it costs per class
+    if built:
+        out["pattern"] = {**built.as_dict(), "mark_name": cat.mark[built.mark].get("name"),
+                          "mark_label": cat.mark[built.mark].get("label"), "mix_name": cat.mix[built.mix].get("name"),
+                          "block_name": cat.block[built.block].get("name") if built.block else None}
+        if prop:
+            out["stores"] = store_figures(cat, built, prop.value)
+        if thrust and ve:
+            held = out["held_burn_h"].value * 3600 if out["held_burn_h"] else None
+            out["block"] = block_figures(built, thrust.value, ve.value, held)
+        # every mark on this hull: with the same tank, and with the tank that holds the same Δv
+        if heavy_key is not None and masses and prop:
+            h_dry, p = masses[heavy_key].value, prop.value
+            dv_hold = dv_target.value if dv_target else ve.value * math.log((h_dry + p) / h_dry)
+            for mk in cat.marks_in_order():
+                b = cat.build(mk, built.mix, built.block)
+                v = b.exhaust_kms
+                hold = h_dry * (math.exp(dv_hold / v) - 1)
+                if reading == "wet":                                     # the hull's stated mass is the full one
+                    wet_h = stated[heavy_key].value
+                    hold = wet_h * (1 - math.exp(-dv_hold / v))
+                    dry_h = wet_h - hold
+                    same = v * math.log(wet_h / (wet_h - p))
+                else:
+                    dry_h = h_dry
+                    same = v * math.log((h_dry + p) / h_dry)
+                out["ladder"].append({"mark": mk, "name": cat.mark[mk].get("name"), "label": cat.mark[mk].get("label"),
+                                      "k": b.k, "exhaust_kms": v, "dv_same_tank_kms": same,
+                                      "propellant_held_t": hold, "dry_held_t": dry_h, "current": mk == built.mark})
+            out["ladder_dv_kms"] = dv_hold
+
+    # the canon's accelerations against the drive, read with the hull's masses as stated
     acc = quantity((doc.get("hull") or {}).get("acceleration_ms2"), where, [])
     acc = acc if isinstance(acc, dict) else ({"": acc} if isinstance(acc, Q) else {})
     if thrust:
-        for name in set(acc) & set(masses):
-            implied = masses[name].value * acc[name].value / 1e3
+        for name in set(acc) & set(stated):
+            implied = stated[name].value * acc[name].value / 1e3
             if abs(implied / thrust.value - 1) > 0.02:
                 f.append(Finding("warning", where, f"[drive] the canon's acceleration{' ' + name if name else ''} "
-                                 f"implies {implied:.0f} MN; {mid} gives {thrust.value:.0f} MN"))
+                                 f"implies {implied:.0f} MN; the drive gives {thrust.value:.0f} MN"))
 
     for k, v in mod.items():                                            # the module's open figures
         if v == BLANK:
@@ -317,7 +402,7 @@ def _drive(sc: ShipClass, doc: dict, rules: ShipRules, drives: dict, f: list[Fin
 
 
 def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "",
-                drives: dict | None = None) -> ShipClass:
+                drives: Catalogue | None = None) -> ShipClass:
     f: list[Finding] = []
     c = doc.get("class", {})
     cid = str(c.get("id", ""))
@@ -444,7 +529,7 @@ def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "",
     if (succ := c.get("successor_of")) is not None:
         sc.derived["successor_of"] = succ
 
-    _drive(sc, doc, rules, drives or {}, f, where)
+    _drive(sc, doc, rules, drives or Catalogue(), f, where)
 
     # the author's open list: template fields not stated, and explicit blanks
     for path, label in TEMPLATE:
@@ -465,7 +550,7 @@ def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "",
 class ShipRegistry:
     rules: ShipRules
     components: dict
-    drives: dict
+    drives: Catalogue
     classes: dict[str, ShipClass]
     findings: list[Finding]
 
@@ -476,15 +561,12 @@ class ShipRegistry:
         with (folder / "components.toml").open("rb") as f:
             components = tomllib.load(f).get("component", {})
         findings: list[Finding] = []
-        drives = {}
-        if (folder / "drives.toml").exists():
-            with (folder / "drives.toml").open("rb") as f:
-                drives = tomllib.load(f).get("drive", {})
-        for mid, mod in drives.items():
-            for k in set(mod) - MODULE_KEYS:
-                findings.append(Finding("error", f"drive {mid}", f"unknown key {k!r}"))
-            if not mod.get("name"):
-                findings.append(Finding("error", f"drive {mid}", "needs a name"))
+        try:
+            drives = Catalogue.load(folder / "drives.toml")
+        except tomllib.TOMLDecodeError as e:
+            findings.append(Finding("error", "drives.toml", str(e)))
+            drives = Catalogue()
+        findings += drives.findings
         classes: dict[str, ShipClass] = {}
         for p in sorted((folder / "classes").glob("*.toml")):
             try:
@@ -611,4 +693,18 @@ def class_detail(reg: ShipRegistry, sc: ShipClass) -> dict:
 def rules_dict(reg: ShipRegistry) -> dict:
     r = reg.rules
     return {"rates": r.rates, "lineages": r.lineages, "crew": r.crew, "walls": r.walls, "effects": r.effects,
-            "drive": r.drive, "drives": reg.drives, "tiers": list(TIER_ORDER)}
+            "drive": r.drive, "drives": catalogue_dict(reg.drives), "tiers": list(TIER_ORDER)}
+
+
+def catalogue_dict(cat: Catalogue) -> dict:
+    """The drive catalogue as it reads, every drive with the figures it gives the simulation."""
+    drives = {}
+    for i, d in cat.drive.items():
+        try:
+            raw, built = cat.resolve(i)
+        except KeyError:
+            raw, built = {}, None
+        drives[i] = {**d, "resolved": {k: _json(quantity(raw.get(k), i, [])) for k in raw if k != "typed"},
+                     "typed": raw.get("typed", []), "pattern": built.as_dict() if built else None}
+    return {"fuel": cat.fuel, "tamper": cat.tamper, "mark": cat.mark, "mix": cat.mix, "block": cat.block,
+            "stores": cat.stores, "drive": drives, "marks": cat.marks_in_order()}

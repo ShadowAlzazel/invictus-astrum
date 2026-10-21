@@ -70,54 +70,132 @@ def test_thrust_agrees_light_and_full(reg):
 
 
 def test_blanks_are_the_authors_list(reg):
-    assert reg.classes["papilion"].blanks == ["Main battery: cycle", "drive line-pulse: pulse rate",
-                                              "drive line-pulse: hull heat fraction"]
-    assert "drive: propellant" in reg.classes["phalaena"].blanks
+    assert reg.classes["papilion"].blanks == ["Main battery: cycle"]
     assert "drive" in reg.classes["aeshna"].blanks
     assert {"sail term", "acceleration", "protection", "complement"} <= set(reg.classes["aeshna"].blanks)
     assert "rate" in reg.classes["salticidae"].blanks
     assert "Missiles: count" in reg.classes["bacillus"].blanks
 
 
+def bench_class(reg, **drive):
+    """The rig on DRIVE_TEST_AND_BENCH: 50,000 t dry, held at 4,000 km/s, sized to 0.55 g, 2 × 7 at 10 Hz."""
+    import tomllib
+    from astrum.drives import Catalogue
+    from conftest import ROOT
+    with (ROOT / "data" / "ships" / "drives.toml").open("rb") as f:
+        doc = tomllib.load(f)
+    doc["drive"]["bench"] = {"name": "Bench", "mark": "mk2-7", "mix": "std-45", "block": "bench-2x7"}
+    cat = Catalogue.from_dict(doc)
+    cls = {"class": {"id": "bench", "name": "Bench", "lineage": "garden"}, "hull": {"mass_t": 50000},
+           "drive": {"module": "bench", "dv_kms": 4000, "sized_g": 0.55, **drive},
+           "endurance": {"thermal_store_tj": 10.8, "mane_gw": 1.0}}
+    return build_class(cls, reg.rules, reg.components, drives=cat), cat
+
+
+def test_bench_report_from_the_data(reg):
+    """DRIVE_TEST_AND_BENCH, PAPILION VENATRIX: every headline figure, from drives.toml."""
+    sc, _ = bench_class(reg)
+    assert not [f for f in sc.findings if f.level == "error"], sc.findings
+    d = sc.drive
+    near = lambda got, want, rel=0.003: got == pytest.approx(want, rel=rel)
+    assert near(d["exhaust_kms"].value, 10539)
+    assert near(d["propellant_t"].value, 23078)
+    assert near(d["thrust_mn"].value, 394.2)
+    assert near(d["jet_pw"].value, 2.077) and near(d["mass_flow_kgs"].value, 37.4)
+    assert near(d["held_burn_h"].value / 24, 8.58)
+    assert near(d["jet_energy_zj"].value, 1.28, rel=0.01)
+    st = d["stores"]
+    assert near(st["fuel_t"], 10385) and near(st["tamper_t"], 12693) and near(st["split_t"]["helium-3"], 6231)
+    assert near(st["pbar_mg"], 1.737) and near(st["burns_per_bunker"], 2.14) and near(st["volume_m3"], 68198)
+    bl = d["block"]
+    assert bl["engines"] == 14 and bl["rate_hz"] == 140
+    assert near(bl["engine_thrust_mn"], 28.2) and near(bl["engine_power_tw"], 148.4)
+    assert near(bl["pellet_kg"], 0.267) and near(bl["pulse_tj"], 14.8) and near(bl["pulse_t_tnt"], 3546)
+    assert near(bl["pulses_per_engine"], 7415552)
+    h = d["heat"]
+    assert near(h["leak_gw"].value, 0.9347) and near(h["max_fraction"].value, 4.81e-7) and h["steady"]
+
+
+def test_bench_mark_ladders(reg):
+    """Ladder A (same tank) and ladder B (held at 4,000 km/s): every mark, swapped from the data."""
+    sc, _ = bench_class(reg)
+    lad = {r["name"]: r for r in sc.drive["ladder"]}
+    for name, ve, dv, held in [("Mk I", 8729, 3313, 29066), ("Mk II", 9695, 3679, 25534), ("Mk II-C", 10013, 3800, 24551),
+                               ("Mk II.7", 10539, 4000, 23080), ("Mk III", 10897, 4135, 22176),
+                               ("Mk IV", 12344, 4685, 19135), ("Ceiling ◇", 12970, 4922, 18063)]:
+        assert lad[name]["exhaust_kms"] == pytest.approx(ve, rel=0.003)
+        assert lad[name]["dv_same_tank_kms"] == pytest.approx(dv, rel=0.003)
+        assert lad[name]["propellant_held_t"] == pytest.approx(held, rel=0.005)
+    assert [r["current"] for r in sc.drive["ladder"]].count(True) == 1
+
+
+@pytest.mark.parametrize("f,n,ve", [(0.1, 0.02, 5393), (0.205, 0.02, 7564), (0.3, 0.02, 8958), (0.5, 0.02, 10934),
+                                    (0.6, 0.02, 11541), (0.75, 0.02, 11931), (0.45, 0.0, 9885), (0.45, 0.08, 12296)])
+def test_bench_mix_and_tamper(reg, f, n, ve):
+    """The mix ladder and the neutron sweep: the tamper's fitted terms hold every row within 0.3%."""
+    cat = reg.drives
+    cat.mix["probe"] = {**cat.mix["std-45"], "f": f, "n_frac": n}
+    try:
+        assert cat.build("mk2-7", "probe").exhaust_kms == pytest.approx(ve, rel=0.003)
+    finally:
+        del cat.mix["probe"]
+
+
 def test_drive_figures(reg):
-    """PAPILION on the line drive with 30,000 t: the math check, from the data."""
-    d = reg.classes["papilion"].drive
+    """PAPILION on the line drive: the canon's masses read with tanks full, held at 4,000 km/s."""
+    sc = reg.classes["papilion"]
+    d = sc.drive
     loads = {(r["load"], r["tanks"]): r for r in d["loads"]}
-    assert loads["full", "dry"]["accel_ms2"].value == pytest.approx(5.40, abs=0.01)      # the canon
-    assert loads["light", "dry"]["accel_ms2"].value == pytest.approx(6.09, abs=0.01)
-    assert loads["full", "full"]["mass_t"].value == 100340
-    assert loads["full", "full"]["accel_g"].value == pytest.approx(0.386, abs=0.001)
-    assert loads["full", "full"]["dv_kms"].value == pytest.approx(3179, abs=1)
-    assert loads["light", "full"]["dv_kms"].value == pytest.approx(3516, abs=1)
-    assert d["jet_pw"].value == pytest.approx(1.70, abs=0.01)
-    assert d["mass_flow_kgs"].value == pytest.approx(42.5, abs=0.1)
-    assert d["full_burn_h"].value / 24 == pytest.approx(8.2, abs=0.05)
-    c = d["cruise"]
-    assert not c["holds"] and (c["heaviest"]["load"], c["heaviest"]["tanks"]) == ("full", "full")
-    assert (round(c["thrust_needed_mn"].lo), round(c["thrust_needed_mn"].hi)) == (394, 492)
-    assert d["hot_burn_h"] is None                                   # hull heat share not yet stated
-    p = reg.classes["papilion"].performance("light", 0)
-    assert p["dv_kms"] == 0 and p["max_accel_g"] == pytest.approx(0.622, abs=0.001)
+    assert loads["full", "full"]["mass_t"].value == 70340                     # the canon's figure, tanks full
+    assert loads["full", "full"]["accel_ms2"].value == pytest.approx(5.394, abs=0.001)
+    assert loads["full", "full"]["dv_kms"].value == pytest.approx(4000)
+    assert loads["light", "full"]["accel_ms2"].value == pytest.approx(6.09, abs=0.01)     # the canon's light
+    assert d["propellant_t"].value == pytest.approx(22219, abs=1)
+    assert d["pulse_rate_hz"].value == pytest.approx(23.8)                   # 2 × 7 at 1.7 Hz
+    assert d["block"]["pellet_kg"] == pytest.approx(1.51, abs=0.01)
+    assert d["cruise"]["reaches_top"] and d["heat"]["steady"]
+    assert not [f for f in sc.findings if "acceleration" in f.message]     # sized thrust agrees with the canon
+    p = sc.performance("light", 0)
+    assert p["dv_kms"] == 0 and p["max_accel_g"] == pytest.approx(379.39 / 40121 * 1e3 / 9.80665, rel=1e-3)
 
 
-def test_drive_ranges_heat_and_rule_of_thumb(reg):
-    """Ranges carry through; "1,000 t per 100 km/s at 90,000 t" round-trips to its exhaust velocity."""
-    from astrum.ships import build_class
-    drives = {"x": {"name": "X", "thrust_mn": [350, 450], "exhaust_kms": 8950, "hull_heat_fraction": 1e-6}}
-    doc = {"class": {"id": "t", "name": "T", "lineage": "garden"},
-           "hull": {"mass_t": 60000}, "drive": {"module": "x", "propellant_t": 30000},
-           "endurance": {"thermal_store_tj": 10.8}}
-    sc = build_class(doc, reg.rules, reg.components, drives=drives)
-    assert not [f for f in sc.findings if f.level == "error"]
-    wet = next(r for r in sc.drive["loads"] if r["tanks"] == "full")
-    assert wet["per_100kms_t"].value == pytest.approx(1000, abs=1)
-    assert wet["dv_kms"].value == pytest.approx(3629, abs=1)
-    assert (round(wet["accel_g"].lo, 3), round(wet["accel_g"].hi, 3)) == (0.397, 0.51)
-    assert sc.drive["cruise"]["holds"] is False                     # the low end of the range misses 0.4 g
-    assert sc.drive["hot_burn_h"].lo == pytest.approx(10.8e12 / (0.5 * 450e6 * 8.95e6 * 1e-6) / 3600)
-    bad = build_class({**doc, "drive": {"module": "nope", "fuel": 1}}, reg.rules, reg.components, drives=drives)
-    msgs = " | ".join(f.message for f in bad.findings)
-    assert "unknown key 'fuel'" in msgs and "unknown module 'nope'" in msgs
+def test_drive_typed_and_direct(reg):
+    """A figure typed on a drive wins over its pattern; a drive can skip the pattern altogether."""
+    sc, cat = bench_class(reg)
+    cat.drive["bench"]["exhaust_kms"] = 9000
+    cat.drive["salvage"] = {"name": "Salvage", "thrust_mn": [350, 450], "exhaust_kms": 8950,
+                            "hull_heat_fraction": 1e-6}
+    try:
+        doc = {"class": {"id": "t", "name": "T", "lineage": "garden"}, "hull": {"mass_t": 60000},
+               "drive": {"module": "bench", "propellant_t": 30000}}
+        typed = build_class(doc, reg.rules, reg.components, drives=cat).drive
+        assert typed["exhaust_kms"].value == 9000 and typed["typed"] == ["exhaust_kms"]
+        assert typed["pattern"]["exhaust_kms"] == pytest.approx(10537, abs=1)
+        doc["drive"]["module"] = "salvage"
+        doc["endurance"] = {"thermal_store_tj": 10.8}
+        sal = build_class(doc, reg.rules, reg.components, drives=cat)
+        assert not [f for f in sal.findings if f.level == "error"]
+        wet = next(r for r in sal.drive["loads"] if r["tanks"] == "full")
+        assert wet["per_100kms_t"].value == pytest.approx(1000, abs=1)
+        assert (round(wet["accel_g"].lo, 3), round(wet["accel_g"].hi, 3)) == (0.397, 0.51)
+        assert sal.drive["pattern"] is None and sal.drive["heat"]["fills_h"].lo > 0
+    finally:
+        del cat.drive["salvage"], cat.drive["bench"]["exhaust_kms"]
+
+
+def test_drive_errors(reg):
+    from astrum.drives import Catalogue
+    cat = Catalogue.from_dict({"mark": {"m": {"name": "M", "phi": 1.4, "eta": 0.8, "colour": 1}},
+                               "drive": {"d": {"name": "D", "mark": "nope", "mix": "x"}, "e": {"name": "E"}},
+                               "engines": {}})
+    msgs = " | ".join(f.message for f in cat.findings)
+    for expect in ("phi must be a number from 0.001 to 1", "unknown key 'colour'", "unknown mark 'nope'",
+                   "unknown mix 'x'", "needs a mark and a mix, or exhaust_kms", "unknown table [engines]"):
+        assert expect in msgs
+    sc, _ = bench_class(reg, propellant_t=1, hull_mass="soggy", fuel=2)
+    msgs = " | ".join(f.message for f in sc.findings)
+    for expect in ("unknown key 'fuel'", "propellant_t or dv_kms, not both", "hull_mass is"):
+        assert expect in msgs
 
 
 @pytest.mark.parametrize("v,expect", [
@@ -157,3 +235,17 @@ def test_api_and_scenario_classes():
     assert c.get("/api/ships/nope").status_code == 404
     units = {u["id"]: u for u in c.get("/api/meta").json()["scenarios"][0]["contacts"]}
     assert units["kiki-1"]["class_name"] == "PAPILION VENATRIX" and units["kiki-1"]["unit_type"] == "PAP"
+
+
+def test_drive_bench_tool(capsys):
+    """tools/drive_bench.py prints the rig, and a refit preview, from the data."""
+    import importlib.util
+    from conftest import ROOT
+    spec = importlib.util.spec_from_file_location("drive_bench", ROOT / "tools" / "drive_bench.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    assert tool.main(["--rig"]) == 0
+    out = capsys.readouterr().out
+    assert "DRIVE BLOCK" in out and "394.2 MN" in out and "> Mk II.7" in out
+    assert tool.main(["papilion", "--mark", "mk3"]) == 0
+    assert "> Mk III" in capsys.readouterr().out

@@ -9,6 +9,12 @@ Baseline unless stated: **PAPILION VENATRIX**, line drive, **380 MN**, exhaust *
 **30,000 t** propellant. The canon hull masses (62,340 t light, 70,340 t full) are read as **tanks
 dry**. The canon accelerations only agree with 380 MN that way.
 
+> **Superseded baseline.** These sheets were worked at 380 MN and 8,950 km/s with tanks-dry masses.
+> The drive now comes from the bench (`docs/DRIVE_TEST_AND_BENCH.md`): Mk II.7 on standard stores
+> gives ~10,540 km/s, and PAPILION reads her canon masses with tanks full, held at 4,000 km/s and
+> sized to 0.55 g. The formulas and the scale arguments below still hold; the numbers are the old
+> baseline's. §10 describes the data as it is now.
+
 ---
 
 ## 1. Formulas
@@ -216,56 +222,70 @@ system. A burning ship is a lighthouse; a cold ship is coasting.
 
 ## 10. Editing the data
 
-The engine is a module of its own. Classes connect to it and carry their own propellant.
+Drives are built from technical patterns in `data/ships/drives.toml`; classes connect to a drive and
+say how their own hull carries it. `python tools/drive_bench.py <class>` prints the bench report for
+any class straight from the data (`--rig` for the rig on DRIVE_TEST_AND_BENCH).
 
-`data/ships/drives.toml`:
+### The pattern: what the simulation's figures come from
 
-```toml
-[drive.line-pulse]
-name = "Line fusion pulse drive"   # a placeholder until the canon names it
-kind = "fusion-pulse"
-thrust_mn = 380                    # at the pulse ceiling; throttles down, never up
-exhaust_kms = 8950                 # 1,000 t per 100 km/s at 90,000 t
-pulse_rate_hz = "—"
-hull_heat_fraction = "—"           # e.g. 1e-6
-notes = "..."
+| Table | Holds | Gives |
+|---|---|---|
+| `[fuel.*]` | `ceiling_kms`, `split` by mass, `density_tm3`, `pbar_mg_per_t` | the ceiling; fuel make-up, antiprotons, volume |
+| `[tamper.*]` | `density_tm3`, `mean_z`, `confinement`, `capture` | the mix's yield; tamper volume |
+| `[mark.*]` | `phi`, `eta`, `hull_heat_fraction` | k = φη; hull leak |
+| `[mix.*]` | `f`, `fuel`, `tamper`, `n_frac` | the mix's yield X; the propellant split |
+| `[block.*]` | `banks`, `per_bank`, `hz` | pulse rate; pellet, energy per pulse, per-engine figures |
+| `[stores]` | `bunker_mg` | burns per bunker |
+| `[drive.*]` | `mark`, `mix`, `block` and optionally `thrust_mn` | what a class connects to |
+
+The translation, in `astrum/drives.py`:
+
+```
+k     = phi × eta
+X     = f × (1 − confinement × f²) × (1 + capture × n_frac × (1 − f))
+v_e   = ceiling × √(k × X)
+rate  = banks × per_bank × hz
 ```
 
-In a class file, after `[hull]`:
+v_e² ∝ k is exact on the bench's mark ladder. `confinement` and `capture` are fitted to the bench's
+mix ladder and neutron sweep: every exhaust velocity there comes back within 0.3%. A figure typed on
+a `[drive.*]` (`thrust_mn`, `exhaust_kms`, `pulse_rate_hz`, `hull_heat_fraction`) wins over the
+pattern's, and a drive with no mark or mix is simply those figures typed.
+
+Swapping is one line: `mark = "mk3"` on `[drive.line]` refits every class on the line drive; a new
+`[block.*]` changes how many engines share the work without touching exhaust or Δv.
+
+### The class: how her hull carries it
 
 ```toml
 [drive]
-module = "line-pulse"
-propellant_t = 30000               # tanks full
-# count = 2                        # two modules: thrust doubles
-# cruise_g = [0.4, 0.5]            # overrides rules.toml [drive] for this class
+module = "line"
+hull_mass = "wet"      # what hull.mass_t means: "dry" (tanks empty) or "wet" (tanks full)
+dv_kms = 4000          # the propellant that holds this Δv at the heaviest load ...
+# propellant_t = 22000 # ... or the propellant itself
+sized_g = 0.55         # thrust sized to this g at the heaviest load (else the drive's thrust_mn)
+# count = 2            # modules
+# cruise_g = [0.4, 0.5]
 ```
 
-`data/ships/rules.toml`:
-
-```toml
-[drive]
-cruise_g = [0.4, 0.5]              # doctrine: the band a fleet holds
-```
-
-Any figure takes the registry's forms: `380`, `[360, 400]` for a range,
-`{ value = 8950, est = true }`, or `"—"` for not yet decided. A range carries through every derived
-figure, so `thrust_mn = [380, 450]` shows the acceleration band you would get across that choice.
+`[endurance] mane_gw` is what her manes reject while she burns; with `thermal_store_tj` it decides
+whether a flat-out burn is steady or fills the store.
 
 ### What the simulation reads per hull
 
 | Stat | Where it comes from |
 |---|---|
-| Hull mass, per ammunition load | `[hull] mass_t` (tanks dry) |
-| Propellant, tanks full | `[drive] propellant_t` |
-| Most thrust | the module's `thrust_mn` × `count` |
-| Exhaust velocity | the module's `exhaust_kms` |
+| Hull mass, per ammunition load | `[hull] mass_t`, read as `hull_mass` says |
+| Propellant, tanks full | `[drive] propellant_t`, or solved from `dv_kms` |
+| Most thrust | `sized_g` × the heaviest mass, or the drive's `thrust_mn` × `count` |
+| Exhaust velocity | the pattern, or typed on the drive |
+| Pulse rate | the block, or typed on the drive |
+| Hull heat share | the mark, or typed on the drive |
 | Most acceleration now | thrust ÷ (hull + propellant now) |
 | Δv left | vₑ · ln((hull + propellant now) / hull) |
 | Plume power | ½ · thrust used · vₑ |
-| Hull heat while burning | plume power × `hull_heat_fraction`, against `[endurance] thermal_store_tj` |
 | Cruise band | `cruise_g` (rules, or the class) |
 
 In code, `ShipClass.performance(ammo, propellant_t)` gives mass, most acceleration, Δv left, jet
-power and mass flow for any load and tank level. The ship viewer shows every load, the cruise
-check and the thrust the band would take.
+power and mass flow for any load and tank level. The registry's Drive tab shows every figure with a
+`?` that writes out how it was worked, every load, the cruise check, and the mark ladder for the hull.

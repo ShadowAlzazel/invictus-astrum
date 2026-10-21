@@ -19,8 +19,9 @@ mass_t = { value = 16000, approx = true }
 acceleration_ms2 = { value = 5.2, approx = true }
 
 [drive]
-module = "cutter-pulse"
-propellant_t = "—"
+module = "cutter"
+hull_mass = "wet"
+dv_kms = 4000
 
 [[battery]]
 id = "main"

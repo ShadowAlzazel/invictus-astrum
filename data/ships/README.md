@@ -9,7 +9,7 @@ figure.
 |---|---|
 | `rules.toml` | rates, lineages (the Garden, the Old Forest), crew tiers, the aim walls, beam effects |
 | `components.toml` | the parts batteries are built from: channels, guns and their rounds, panels, domes, strips, cells |
-| `drives.toml` | drive modules: thrust at the pulse ceiling, exhaust velocity, pulse rate, hull heat share |
+| `drives.toml` | drives built from patterns: fuel, tamper, marks, mixes, engine blocks (see docs/DRIVE_AND_PROPELLANT.md §10) |
 | `classes/<id>.toml` | one class |
 
 ## Figures
@@ -47,9 +47,11 @@ in_classis = [58, 72]
 [hull]                                # length_m, wingspan_m, mass_t, acceleration_ms2, material,
                                       # protection_kgm2, complement, and anything else with a unit suffix
 
-[drive]                               # connects a module in drives.toml
-module = "line-pulse"
-propellant_t = 30000                  # tanks full; hull.mass_t is read as tanks dry
+[drive]                               # connects a drive in drives.toml
+module = "line"
+hull_mass = "wet"                     # hull.mass_t is with tanks full ("dry": tanks empty)
+dv_kms = 4000                         # propellant to hold this Δv (or propellant_t)
+sized_g = 0.55                        # thrust sized to this g fully loaded (or the drive's thrust_mn)
 # optional: count (modules), cruise_g = [lo, hi] (else rules.toml [drive]), notes
 
 [aim]
@@ -85,12 +87,14 @@ crew = "aim"                          # the beam carries it past every wall: the
 - **A round's energy**, ½mv² from the component's round mass and velocity; a broadside; rounds
   per second.
 - **Thrust**, mass × acceleration, checked to agree between light and full loading.
-- **The drive**, from its module: for every load (light, full) with tanks dry and full, the mass,
+- **The drive**, from its pattern (mark × mix × block, see drives.toml): for every load (light, full) with tanks dry and full, the mass,
   the most acceleration, the Δv in the tanks (vₑ ln(wet/dry)) and the propellant the next
   100 km/s costs; the jet power (½Fvₑ), mass flow, how long the tanks last flat out; whether she
   holds the cruise band at her heaviest and the thrust that would take; with a hull heat share,
-  how long a flat-out burn takes to fill the thermal store. The canon's accelerations are checked
-  against the module's thrust. Ranges carry through. Working figures: `docs/DRIVE_AND_PROPELLANT.md`.
+  whether the manes keep up or how long a flat-out burn takes to fill the thermal store; the propellant
+  split, antiprotons, tank volume, pellet and energy per pulse; and every mark on the same hull. The
+  canon's accelerations are checked against the thrust. Ranges carry through. Working figures:
+  `docs/DRIVE_AND_PROPELLANT.md`; the bench: `docs/DRIVE_TEST_AND_BENCH.md`, `tools/drive_bench.py`.
 - **The author's list**: template fields not yet stated (rate, sail term, length, mass,
   acceleration, protection, complement, drive, numbers in a Classis), every explicit "—", and the
   drive module's own blanks.
