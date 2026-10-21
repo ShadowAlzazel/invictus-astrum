@@ -7,7 +7,7 @@ genus = { word = "AESHNA", meaning = "hawker dragonfly" }
 epithet = { word = "ARQUITRIX", meaning = "archeress (read from arquites, archers; sense not yet set)" }
 designation = "AVC"
 rate = "line"
-terms = { modern = "air-defence cruiser", arcvs = "ARQUITRIX" }
+terms = { sail = "ship of the line", modern = "air-defence cruiser", arcvs = "ARQUITRIX" }
 body = "four wings in an X"
 summary = "The point-defence cruiser. She stands over what cannot dodge, and is the fleet's answer to missile saturation."
 symbol = "AES"
@@ -17,7 +17,16 @@ in_classis = { range = [10, 15], note = "midpoint ~12.5" }
 length_m = 350
 wingspan_m = { spread = 180 }
 mass_t = { value = 55000, est = true }
+acceleration_ms2 = { full = 5.40, light = 6.09 }
 material = "MAJOR-6 woven silk"
+protection_kgm2 = { citadel = 446, joints = 592, bumper = 18 }
+complement = { value = 450, approx = true }
+
+[drive]
+module = "line"
+hull_mass = "wet"          # the canon's masses are with tanks full: 5.40 m/s² at 70,340 t is the full-load figure
+dv_kms = 4000              # the bench's budget; the propellant follows from the mark and the mix
+sized_g = 0.55 
 
 [aim]
 rated_urad = 6.0
