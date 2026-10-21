@@ -235,7 +235,7 @@ formation = "tf2-lf1"
 
 [[contact]]
 id = "tf2-lf1-pa-1"
-callsign = "L1 Picket A 1"
+callsign = "Jinzhou"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-pa"
@@ -244,7 +244,7 @@ position = { bullseye = "wedge", aer = [0.296, 1.58, 290114] }
 
 [[contact]]
 id = "tf2-lf1-pa-2"
-callsign = "L1 Picket A 2"
+callsign = "Ragunna"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-pa"
@@ -260,7 +260,7 @@ formation = "tf2-lf1"
 
 [[contact]]
 id = "tf2-lf1-pb-1"
-callsign = "L1 Picket B 1"
+callsign = "Honami City"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-pb"
@@ -269,7 +269,7 @@ position = { bullseye = "wedge", aer = [332.499, -2.39, 191823] }
 
 [[contact]]
 id = "tf2-lf1-pb-2"
-callsign = "L1 Picket B 2"
+callsign = "Septimont"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-pb"
@@ -394,7 +394,7 @@ formation = "tf2-lf2"
 
 [[contact]]
 id = "tf2-lf2-pb-1"
-callsign = "L2 Picket B 1"
+callsign = "Nova Pasadena"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf2-pb"
@@ -403,7 +403,7 @@ position = { bullseye = "wedge", aer = [254.501, -1.531, 299493] }
 
 [[contact]]
 id = "tf2-lf2-pb-2"
-callsign = "L2 Picket B 2"
+callsign = "San Insidro"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf2-pb"
@@ -426,7 +426,7 @@ formation = "tf2-lf3"
 
 [[contact]]
 id = "tf2-lf3-bs-1"
-callsign = "L3 Battle 1"
+callsign = "Sean Big"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-bs"
@@ -435,7 +435,7 @@ position = { bullseye = "wedge", aer = [116.059, 0.0, 227641] }
 
 [[contact]]
 id = "tf2-lf3-bs-2"
-callsign = "L3 Battle 2"
+callsign = "Gen Trinidad"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-bs"
@@ -444,7 +444,7 @@ position = { bullseye = "wedge", aer = [116.394, 0.229, 224951] }
 
 [[contact]]
 id = "tf2-lf3-bs-3"
-callsign = "L3 Battle 3"
+callsign = "Narumi Balaoro"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-bs"
@@ -453,7 +453,7 @@ position = { bullseye = "wedge", aer = [116.738, 0.0, 222266] }
 
 [[contact]]
 id = "tf2-lf3-bs-4"
-callsign = "L3 Battle 4"
+callsign = "Selena Gomez"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-bs"
@@ -469,7 +469,7 @@ formation = "tf2-lf3"
 
 [[contact]]
 id = "tf2-lf3-ls-1"
-callsign = "L3 Line 1"
+callsign = "Culver City"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-ls"
@@ -478,7 +478,7 @@ position = { bullseye = "wedge", aer = [118.887, 0.0, 231847] }
 
 [[contact]]
 id = "tf2-lf3-ls-2"
-callsign = "L3 Line 2"
+callsign = "San Jose"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-ls"
@@ -487,7 +487,7 @@ position = { bullseye = "wedge", aer = [119.249, 0.225, 229227] }
 
 [[contact]]
 id = "tf2-lf3-ls-3"
-callsign = "L3 Line 3"
+callsign = "Pampanga"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-ls"
@@ -503,7 +503,7 @@ formation = "tf2-lf3"
 
 [[contact]]
 id = "tf2-lf3-pa-1"
-callsign = "L3 Picket A 1"
+callsign = "New Bohol"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-pa"
@@ -512,7 +512,7 @@ position = { bullseye = "wedge", aer = [78.772, 2.23, 205588] }
 
 [[contact]]
 id = "tf2-lf3-pa-2"
-callsign = "L3 Picket A 2"
+callsign = "Nova Tepeapulco"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-pa"
@@ -528,7 +528,7 @@ formation = "tf2-lf3"
 
 [[contact]]
 id = "tf2-lf3-pb-1"
-callsign = "L3 Picket B 1"
+callsign = "Wuling City"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-pb"
@@ -537,7 +537,7 @@ position = { bullseye = "wedge", aer = [105.347, -1.516, 302384] }
 
 [[contact]]
 id = "tf2-lf3-pb-2"
-callsign = "L3 Picket B 2"
+callsign = "Kjersch"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf3-pb"
@@ -553,7 +553,7 @@ formation = "tf-2"
 
 [[contact]]
 id = "tf2-es-1"
-callsign = "Escort 1"
+callsign = "Lily of the Witch"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-es"
@@ -562,7 +562,7 @@ position = { bullseye = "wedge", aer = [284.241, 0.0, 101623] }
 
 [[contact]]
 id = "tf2-es-2"
-callsign = "Escort 2"
+callsign = "Golden Poppy"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-es"
@@ -578,7 +578,7 @@ formation = "tf-2"
 
 [[contact]]
 id = "tf2-vs-1"
-callsign = "Vanguard 1"
+callsign = "Carlotta Montelli"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-vs"
@@ -587,7 +587,7 @@ position = { bullseye = "wedge", aer = [76.357, 0.0, 105991] }
 
 [[contact]]
 id = "tf2-vs-2"
-callsign = "Vanguard 2"
+callsign = "Cantarella Fisalia"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-vs"
@@ -596,7 +596,7 @@ position = { bullseye = "wedge", aer = [75.964, 0.5, 103082] }
 
 [[contact]]
 id = "tf2-vs-3"
-callsign = "Vanguard 3"
+callsign = "Ciaccona Toccata"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-vs"

@@ -56,13 +56,16 @@ opacity = 0.75
 # Echelon marks drawn above a frame, smallest to largest.
 [echelon]
 ship       = ""
-flight     = "•"
-group      = "••"
+
+flight     = "||"
 squadron   = "||"
-flotilla   = "|||"
-task-force = "X"
-classis    = "XX"
-armada     = "XXX"
+
+group      = "|||"
+
+flotilla   = "X"
+task-force = "XX"
+classis    = "XXX"
+armada     = "XXXX"
 
 # Bodies are drawn large by tactical role (size in px at display scale 1). 0 hides the display.
 [roles.star]
