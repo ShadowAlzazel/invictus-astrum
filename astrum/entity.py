@@ -44,6 +44,8 @@ class ShipSpec:
     exhaust_ms: float | None
     pulse_rate_hz: float | None = None
     cruise_g: tuple[float, float] | None = None
+    weapon_km: float | None = None     # the range her main weapon fights at: the focus battery's, else her longest
+    weapon_label: str = ""
 
     @property
     def has_drive(self) -> bool:
@@ -70,6 +72,8 @@ class ShipSpec:
         if not hull_kg:
             raise SpecError(f"{sc.id}: no mass stated; a ship needs [hull] mass_t")
         cruise = d["cruise"]["band_g"] if d and d.get("cruise") else None
+        ranged = [b for b in getattr(sc, "batteries", []) if b.get("engage") and b["engage"]["q"].lo is not None]
+        main = next((b for b in ranged if b.get("focus")), None) or max(ranged, key=lambda b: b["engage"]["q"].value, default=None)
         return ShipSpec(
             class_id=sc.id, name=sc.name, symbol=c.get("symbol", ""),
             length_m=float(length) if isinstance(length, (int, float)) else None,
@@ -78,13 +82,16 @@ class ShipSpec:
             thrust_n=val(d["thrust_mn"]) * 1e6 if d and d["thrust_mn"] else None,
             exhaust_ms=val(d["exhaust_kms"]) * 1e3 if d and d["exhaust_kms"] else None,
             pulse_rate_hz=val(d["pulse_rate_hz"]) if d else None,
-            cruise_g=(cruise.lo, cruise.hi) if cruise else None)
+            cruise_g=(cruise.lo, cruise.hi) if cruise else None,
+            weapon_km=main["engage"]["q"].value if main else None,
+            weapon_label=(main["raw"].get("label") or main["raw"].get("id") or "") if main else "")
 
     def as_dict(self) -> dict:
         return {"class_id": self.class_id, "name": self.name, "length_m": self.length_m,
                 "hull_t": {k: v / 1e3 for k, v in self.hull_kg.items()}, "propellant_t": self.propellant_kg / 1e3,
                 "thrust_mn": self.thrust_n and self.thrust_n / 1e6, "exhaust_kms": self.exhaust_ms and self.exhaust_ms / 1e3,
-                "pulse_rate_hz": self.pulse_rate_hz, "cruise_g": self.cruise_g, "has_drive": self.has_drive}
+                "pulse_rate_hz": self.pulse_rate_hz, "cruise_g": self.cruise_g, "has_drive": self.has_drive,
+                "weapon_km": self.weapon_km, "weapon_label": self.weapon_label}
 
 
 @dataclass

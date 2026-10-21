@@ -113,6 +113,7 @@ class Contact:
     faction: str | None = None            # a faction id in data/factions.toml; taken from the formation above if not stated
     hull_number: str = ""                 # her pennant, as written: "BBC-382"
     own_faction: bool = False             # the faction is stated on this unit, not taken from above
+    role: str = ""                        # formation: its role (style.toml [formation_role]); else read from its callsign
 
 
 def load_factions(path: str | Path) -> dict[str, dict]:
@@ -163,7 +164,7 @@ def load_scenario(path: str | Path) -> Scenario:
                                 formation=c.get("formation"), position=c.get("position", {}), notes=c.get("notes", ""),
                                 ship_class=c.get("class", ""), load=c.get("load"), propellant=c.get("propellant"),
                                 mode=c.get("mode"), faction=c.get("faction"), hull_number=str(c.get("hull_number", "")),
-                                own_faction="faction" in c)
+                                own_faction="faction" in c, role=c.get("role", ""))
         if c.get("mode") not in (None, "station", "free"):
             problems.append(f"{cid}: mode is \"station\" or \"free\"")
         pr = c.get("propellant")

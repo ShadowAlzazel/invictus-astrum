@@ -10,6 +10,8 @@
 #   hull_number = "BBC-382"  her pennant, shown beside her name
 # Any unit takes its affiliation and its faction (data/factions.toml) from the formation above it,
 # unless it states its own.
+# A formation may say  role = "battle"  (style.toml [formation_role]: vanguard, battle, line,
+# escort, picket, strike); if it does not, a word of its callsign gives it ("Line Flotilla 1").
 # Holding station is not free: she follows her place in the bullseye's frame and her tanks pay
 # for every bit of it that is not an orbit. Orders ([[order]], at the end) make her fly.
 

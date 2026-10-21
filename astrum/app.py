@@ -124,6 +124,8 @@ class World:
             own = {"system"} | {b.id for b in players.get(sc_.player, None).bullseyes.values()
                                 if b.system == sc_.system} if sc_.player in players else {"system"}
             for c in sc_.contacts.values():
+                if c.role and c.role not in (style or {}).get("formation_role", {}):
+                    errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown role {c.role!r}; roles are in style.toml [formation_role]"
                 if c.own_faction and c.faction not in factions:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown faction {c.faction!r}; factions are in data/factions.toml"
                 if c.ship_class and ships and c.ship_class not in ships.classes:
@@ -294,6 +296,12 @@ def body_dict(s, b, zones) -> dict:
     }
 
 
+def formation_role(style: dict | None, callsign: str) -> str:
+    roles = (style or {}).get("formation_role", {})
+    by_word = {w.lower(): r for r, spec in roles.items() for w in spec.get("words", [])}
+    return next((by_word[w] for w in callsign.lower().split() if w in by_word), "")
+
+
 def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
     """A unit for the map; its type label comes from its ship class when it names one, and its
     place in the formation tree comes with it (parent, children, ancestors, depth)."""
@@ -304,6 +312,8 @@ def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
     d["faction"] = fac
     # a ship's name reads with her faction's prefix: AVC Antwerp
     d["name"] = f"{fac['prefix']} {c.callsign}" if fac and fac.get("prefix") and c.echelon == "ship" else c.callsign
+    if c.echelon != "ship":                    # a formation's role: as stated, else the first word of its callsign that names one
+        d["role"] = c.role or formation_role(world.style, c.callsign)
     sc = world.ships.classes.get(c.ship_class) if world.ships and c.ship_class else None
     if sc:
         d["class_name"] = sc.name

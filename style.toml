@@ -67,6 +67,41 @@ task-force = "XX"
 classis    = "XXX"
 armada     = "XXXX"
 
+# A formation's role, drawn inside its frame as the APP-6 marks it borrows (ships keep their
+# class's type). marks: oval (armour), cross (infantry), slash (reconnaissance: one diagonal,
+# lower left to upper right), chevron (anti-armour: an inverted V). A scenario names a
+# formation's role (role = "battle"); if it does not, the first word of its callsign that one of
+# these lists under words gives it ("Battle Squadron 1": battle).
+[formation_role.vanguard]
+label = "Vanguard: armoured cavalry"
+marks = ["oval", "slash"]
+words = ["Vanguard"]
+
+[formation_role.battle]
+label = "Battle: armour"
+marks = ["oval"]
+words = ["Battle"]
+
+[formation_role.line]
+label = "Line: infantry"
+marks = ["cross"]
+words = ["Line"]
+
+[formation_role.escort]
+label = "Escort: anti-armour, air defence"
+marks = ["chevron"]
+words = ["Escort"]
+
+[formation_role.picket]
+label = "Picket: reconnaissance"
+marks = ["slash"]
+words = ["Picket"]
+
+[formation_role.strike]
+label = "Strike: mechanised"
+marks = ["oval", "cross"]
+words = ["Strike"]
+
 # Bodies are drawn large by tactical role (size in px at display scale 1). 0 hides the display.
 [roles.star]
 size_px = 48

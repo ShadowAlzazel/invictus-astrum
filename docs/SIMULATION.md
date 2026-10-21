@@ -7,7 +7,7 @@ The server owns the truth: it flies the ships, and the map draws what it is sent
 | | What it is | Where |
 |---|---|---|
 | Ship class | the constructor: everything the canon says about a design, lore included | `data/ships/classes/*.toml`, `astrum/ships.py` |
-| ShipSpec | what the simulation takes from a class, once: length, hull mass per ammunition load (tanks dry), tank capacity, thrust at the pulse ceiling, exhaust velocity, pulse rate, cruise band | `astrum/entity.py` |
+| ShipSpec | what the simulation takes from a class, once: length, hull mass per ammunition load (tanks dry), tank capacity, thrust at the pulse ceiling, exhaust velocity, pulse rate, cruise band, and the range her main weapon fights at (the focus battery's engagement range, else her longest) | `astrum/entity.py` |
 | Ship | one hull: a spec, a load, and a state | `astrum/entity.py` |
 | ShipState | what changes: time, position and velocity (system frame, SI), propellant, mode, thrust and its direction, the burn order, Δv spent | `astrum/entity.py` |
 | Fleet | a scenario's ships, flown forward in time, with checkpoints | `astrum/sim.py` |
@@ -110,6 +110,11 @@ where it goes, the unit it was given to, its ships, when the first and the last 
 telegraph, in the light blue of the order vectors on the map. Moving one retunes that order, all of
 its ships (those outside the selected formation too), and no other; **W** / **S** do the same when
 the formation flies one order. Stop cuts the drive.
+
+**Weapon ranges.** Hold **G** on the map: every armed ship shows a dotted ring of her main weapon's
+range (her class's focus battery: 1,550 km for a Phalaena's spinal battery, 3,600 km for a
+Papilion's), where the ring is at least 14 px across on screen; zoomed out, the rings would only be
+clutter and are left off. The selected ship's ring, and the first of each range, carry the figure.
 
 Every order given to several ships shares an id (`order_id`, with `by`, the unit it was given to).
 

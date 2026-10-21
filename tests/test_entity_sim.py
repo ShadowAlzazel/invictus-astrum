@@ -463,3 +463,35 @@ def test_orders_given_in_the_same_second_are_told_apart():
     second = c.post("/api/order", json=body).json()["ships"]["kiki-1"]["goal"]["order_id"]
     assert first != second
     assert f.at(t + 600)["kiki-1"].state.goal["g"] == 0.4
+
+
+# ---- formation roles and weapon ranges -----------------------------------------------------------
+
+def test_formation_roles_from_the_callsign_or_stated():
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app, formation_role
+    app = create_app()
+    style = app.state.world.style
+    assert formation_role(style, "Line Flotilla 1") == "line"
+    assert formation_role(style, "TF Picket 2") == "picket"
+    assert formation_role(style, "Task Force 2") == ""
+    assert style["formation_role"]["vanguard"]["marks"] == ["oval", "slash"]
+    meta = TestClient(app).get("/api/meta").json()
+    byid = {c["id"]: c for s in meta["scenarios"] if s["id"] == "sol-demo" for c in s["contacts"]}
+    assert byid["tf2-lf1"]["role"] == "line" and byid["tf2-lf1-bs"]["role"] == "battle"
+    assert not byid["tf2-lf1-bs-1"]["role"]                       # ships keep their class's type
+
+
+def test_a_role_must_be_known(tmp_path):
+    from astrum.config import ConfigError, load_style
+    from astrum.config import ROOT as R
+    text = (R / "style.toml").read_text() + '\n[formation_role.odd]\nmarks = ["star"]\n'
+    (tmp_path / "style.toml").write_text(text)
+    with pytest.raises(ConfigError, match="formation_role.odd"):
+        load_style(tmp_path / "style.toml")
+
+
+def test_a_ship_knows_her_main_weapon_range(reg):
+    spec = ShipSpec.from_class(reg.classes["phalaena"])
+    assert spec.weapon_km == 1550.0 and spec.weapon_label == "Spinal battery"      # her focus battery
+    assert ShipSpec.from_class(reg.classes["papilion"]).as_dict()["weapon_km"] == 3600.0

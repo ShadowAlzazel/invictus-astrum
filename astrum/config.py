@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 SHAPES = ("rect", "diamond", "quatrefoil", "square", "circle")
 AFFILIATIONS = ("friend", "hostile", "unknown", "neutral")
+ROLE_MARKS = ("oval", "cross", "slash", "chevron")     # what a formation's role is drawn with, inside its frame
 
 CONFIG_SCHEMA = {
     "paths": {"systems": str, "scenarios": str, "players": str, "style": str, "ships": str,
@@ -74,10 +75,10 @@ def load_config(path: str | Path = ROOT / "config.toml") -> dict:
 def load_style(path: str | Path) -> dict:
     path = Path(path)
     doc, problems = _read(path), []
-    allowed = {"palette", "affiliation", "status", "echelon", "roles"}
+    allowed = {"palette", "affiliation", "status", "echelon", "roles", "formation_role"}
     for sec in set(doc) - allowed:
         problems.append(f"unknown section [{sec}]")
-    for sec in allowed - set(doc):
+    for sec in allowed - set(doc) - {"formation_role"}:
         problems.append(f"missing section [{sec}]")
     if problems:
         raise ConfigError(path.name, problems)
@@ -111,6 +112,14 @@ def load_style(path: str | Path) -> dict:
             problems.append(f"[roles.{r}] unknown key {key!r}")
         if not isinstance(spec.get("size_px"), (int, float)) or spec["size_px"] < 0:
             problems.append(f"[roles.{r}] size_px must be a number ≥ 0")
+    for r, spec in doc.get("formation_role", {}).items():
+        for key in set(spec) - {"label", "marks", "words"}:
+            problems.append(f"[formation_role.{r}] unknown key {key!r}")
+        marks = spec.get("marks")
+        if not isinstance(marks, list) or not marks or any(m not in ROLE_MARKS for m in marks):
+            problems.append(f"[formation_role.{r}] marks is a list of {ROLE_MARKS}")
+        if not isinstance(spec.get("words", []), list) or not all(isinstance(w, str) for w in spec.get("words", [])):
+            problems.append(f"[formation_role.{r}] words is a list of callsign words")
     if problems:
         raise ConfigError(path.name, problems)
     return doc

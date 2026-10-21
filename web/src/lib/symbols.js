@@ -46,6 +46,23 @@ export function frameExtent(shape, h) {
   return [h / 2, h / 2];
 }
 
+// A formation's role, as the APP-6 marks it borrows, inside its frame: oval (armour), cross
+// (infantry, corner to corner), slash (reconnaissance, lower left to upper right), chevron
+// (anti-armour, an inverted V). A frame that is not a box takes them in the box inside it.
+function roleMarks(ctx, marks, x, y, shape, ew, eh, color) {
+  const box = shape === 'rect' || shape === 'square' ? 1 : 0.62;
+  const w = ew * box, h = eh * box;
+  ctx.strokeStyle = color; ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (const m of marks) {
+    if (m === 'oval') { ctx.moveTo(x + w * 0.55, y); ctx.ellipse(x, y, w * 0.55, h * 0.5, 0, 0, Math.PI * 2); }
+    else if (m === 'cross') { ctx.moveTo(x - w, y - h); ctx.lineTo(x + w, y + h); ctx.moveTo(x + w, y - h); ctx.lineTo(x - w, y + h); }
+    else if (m === 'slash') { ctx.moveTo(x - w, y + h); ctx.lineTo(x + w, y - h); }
+    else if (m === 'chevron') { ctx.moveTo(x - w, y + h); ctx.lineTo(x, y - h); ctx.lineTo(x + w, y + h); }
+  }
+  ctx.stroke();
+}
+
 // one unit or formation symbol. c = contact (affiliation, echelon, unit_type, status, callsign, pry, brevity)
 // opts: h frame height; hot (hover/selected); label; alpha (dimming); ring (highlight colour);
 // hq (draw the headquarters staff); labelPx, tagPx (text sizes)
@@ -84,7 +101,9 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
   }
   const ech = style.echelon[c.echelon] ?? '';
   if (ech) text(ctx, ech, x, y - eh - 3, rgba(col, alpha), 10, FONT_MONO, 'center');
-  if (c.unit_type) text(ctx, c.unit_type.slice(0, 3), x, y + 3.5, rgba(col, 0.9 * alpha), 9, FONT_MONO, 'center');
+  const role = c.echelon !== 'ship' && c.role ? style.formation_role?.[c.role] : null;
+  if (role) roleMarks(ctx, role.marks, x, y, aff.shape, ew, eh, rgba(col, 0.9 * alpha));
+  else if (c.unit_type) text(ctx, c.unit_type.slice(0, 3), x, y + 3.5, rgba(col, 0.9 * alpha), 9, FONT_MONO, 'center');
   else if (c.echelon !== 'ship') {                               // a formation: a small fill of its own
     ctx.fillStyle = rgba(col, 0.8 * alpha); ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
   }

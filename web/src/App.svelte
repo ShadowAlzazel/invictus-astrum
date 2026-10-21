@@ -204,8 +204,13 @@
     map.focusOn(s, d);
   }
 
+  // G held: weapon ranges on the map
+  let ranges = false;
+  function keyUp(e) { if (e.key === 'g' || e.key === 'G') ranges = false; }
+
   function key(e) {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'range') return;
+    if ((e.key === 'g' || e.key === 'G') && mode === 'map') { ranges = true; return; }
     if (e.key === ' ') { e.preventDefault(); paused = !paused; }
     if (e.key === ']') warp = Math.min(warp + 1, WARPS.length - 1);
     if (e.key === '[') warp = Math.max(warp - 1, 0);
@@ -310,10 +315,10 @@
   onDestroy(() => { cancelAnimationFrame(raf); clearInterval(poll); map?.dispose(); });
 </script>
 
-<svelte:window on:keydown={key} on:pointermove={trackUI} />
+<svelte:window on:keydown={key} on:keyup={keyUp} on:blur={() => (ranges = false)} on:pointermove={trackUI} />
 
 <canvas class="map" bind:this={canvas}></canvas>
-<Overlay {map} {style} {settings} {drules} {contacts} />
+<Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} />
 <HudCursor {map} {style} {settings} {overUI} />
 {#if mode === 'map'}
   <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />
