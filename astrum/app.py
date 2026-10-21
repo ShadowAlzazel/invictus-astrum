@@ -5,6 +5,8 @@
     GET  /api/system/{id}                bodies, derived zones, findings
     GET  /api/system/{id}/orbits?t=      orbit paths, each relative to its parent, km
     GET  /api/system/{id}/probe?x&y&z&t  what is at a point: zone, gravity, magnetism, AER
+    POST /api/order                      an order for one ship, from the map: go to a point, a unit or a
+                                         body at an acceleration; or cut her drive
     WS   /ws                             send {system, t, player, scenario}; receive the state at t,
                                          with the scenario's ships flown to t (astrum/sim.py)
 
@@ -229,7 +231,8 @@ class World:
         t0 = sc.epoch if sc.epoch is not None else self.start_time(s)
         orders = [Order(o["unit"], t0 + float(o["at_s"]), "burn" if "burn" in o else "coast", o.get("burn") or {})
                   for o in sc.orders]
-        f = self.fleets[sc.id] = Fleet(sc, s, eph, self.ships, place, t0, orders)
+        f = self.fleets[sc.id] = Fleet(sc, s, eph, self.ships, place, t0, orders,
+                                       bullseyes=lambda player, pos: self.resolved(sc.system, player, pos))
         return f
 
     def start_time(self, s) -> float:
@@ -452,6 +455,50 @@ def create_app(config: dict | None = None) -> FastAPI:
             raise HTTPException(409, str(e))
         world.reload()
         return {"saved": path.name, "id": doc["system"]["id"], "version": world.version}
+
+    @app.post("/api/order")
+    def order(req: dict = Body(...)):
+        """One ship's order, at the map's clock. target: {bullseye, aer: [deg, deg, km]} (the
+        ordering player's bullseye, so the point moves with its frame), {unit}, or {body}.
+        g is the acceleration she holds, capped at her most; 0 cuts her drive."""
+        world.check()
+        sc = world.scenarios.get(req.get("scenario") or "")
+        if sc is None:
+            raise HTTPException(404, f"no scenario {req.get('scenario')!r}")
+        fleet = world.fleet(sc)
+        unit = req.get("unit")
+        if fleet is None or unit not in fleet.ships:
+            raise HTTPException(400, f"{unit!r} is not a ship in {sc.id}")
+        g, t = req.get("g"), req.get("t")
+        if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
+            raise HTTPException(400, "an order needs t, and g of 0 or more")
+        s, _ = world.system(sc.system)
+        tg, player = req.get("target") or {}, req.get("player") or sc.player
+        if g == 0:
+            fleet.command(Order(unit, float(t), "coast", source="map"))
+        else:
+            if "bullseye" in tg:
+                if tg["bullseye"] not in world.bullseyes(sc.system, player):
+                    raise HTTPException(400, f"no bullseye {tg['bullseye']!r} for {player!r}")
+                brg, el, rng = (float(x) for x in tg["aer"])
+                bname = world.bullseyes(sc.system, player)[tg["bullseye"]].name
+                tilt = "level" if abs(el) < 0.5 else f"{'Eve' if el > 0 else 'Haid'} {abs(el):.0f}°"
+                target = {"bullseye": tg["bullseye"], "player": player, "aer": [brg, el, rng * 1e3],
+                          "label": tg.get("label") or f"{round(brg) % 360:03d}° {tilt}, {rng:,.0f} km from {bname}"}
+            elif "unit" in tg:
+                c = sc.contacts.get(tg["unit"])
+                if c is None or tg["unit"] == unit:
+                    raise HTTPException(400, f"{tg['unit']!r} is not another unit in {sc.id}")
+                target = {"unit": c.id, "label": c.callsign}
+            elif "body" in tg:
+                b = next((b for b in s if b.id == tg["body"]), None)
+                if b is None:
+                    raise HTTPException(400, f"no body {tg['body']!r} in {s.name}")
+                target = {"body": b.id, "label": b.name}
+            else:
+                raise HTTPException(400, "target is {bullseye, aer}, {unit} or {body}")
+            fleet.command(Order(unit, float(t), "goto", target=target, g=float(g), source="map"))
+        return {"ok": True, "ship": fleet.at(float(t))[unit].as_dict()}
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):

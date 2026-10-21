@@ -1,6 +1,7 @@
 <script>
   // What is selected: a body, a unit, or a point in space (probed on the server).
   import { km, kmFull, n, bearing, elev, lightTime, duration } from './format.js';
+  import { hms } from './orders.js';
 
   export let map = null;
   export let sel = null;            // { kind: 'body'|'contact'|'point', id?, p? }
@@ -26,7 +27,9 @@
   // a ship in the simulation: what she is now (the server flies her), and what her class gives her
   $: ship = contact ? state?.ships?.[contact.id] ?? null : null;
   $: spec = contact?.ship ?? null;
-  $: doing = !ship ? '' : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
+  $: arrives = ship?.goal?.eta_s != null && state?.utc && isFinite(ship.goal.eta_s)
+    ? new Date(Date.parse(state.utc) + ship.goal.eta_s * 1000).toISOString().slice(11, 16) + ' UTC' : null;
+  $: doing = !ship ? '' : ship.goal ? (ship.burning ? `on her order, ${ship.accel_g.toFixed(2)} g` : 'on her order, coasting') : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
     : ship.mode === 'station' ? 'holding station' : 'coasting';
   // every ship under a formation, counted by class: what the formation is made of
   $: makeup = contact && members.length ? tally(contact.id) : [];
@@ -116,6 +119,15 @@
       <section class="ship">
         <h2>Ship <span class="dim">{doing}</span></h2>
         <div class="tank" title="propellant"><i style="width:{Math.max(0, Math.min(1, ship.propellant_share)) * 100}%"></i></div>
+        {#if ship.goal}
+          <div class="order">
+            <p><b>To {ship.goal.label}</b> <span>at {ship.goal.g} g</span></p>
+            <p class="eta">{hms(ship.goal.eta_s)}{#if arrives} <span>· arrives {arrives}</span>{/if}</p>
+            <p class="dim">{km(ship.goal.range_km)} to go · closing {n(ship.goal.closing_kms, 2)} km/s</p>
+          </div>
+        {:else if ship.station_at}
+          <p class="dim held">Holding at {ship.station_at}</p>
+        {/if}
         <dl class="tight">
           <dt>Mass</dt><dd>{n(ship.mass_t)} t</dd>
           <dt class="sub">dry{ship.load !== 'hull' ? `, ${ship.load} load` : ''}</dt><dd class="sub">{n(ship.dry_t)} t</dd>
@@ -130,6 +142,7 @@
           {#if spec?.length_m}<dt>Length</dt><dd>{n(spec.length_m)} m</dd>{/if}
           {#if spec?.cruise_g}<dt>Cruise band</dt><dd>{spec.cruise_g[0]}–{spec.cruise_g[1]} g</dd>{/if}
         </dl>
+        {#if spec?.has_drive}<p class="dim hint"><kbd>A</kbd> order her: aim, set the telegraph, click</p>{/if}
       </section>
     {:else if spec && !spec.has_drive}
       <section><h2>Ship</h2><p class="dim">No drive stated for her class; she holds station.</p></section>
@@ -191,6 +204,14 @@
   dl.tight { margin: 0; padding-top: 0; border-top: 0; }
   dt.sub, dd.sub { font-size: 10px; margin-top: -3px; }
   dd.hot { color: var(--fuchsia); }
+  .order { margin: 2px 0 10px; padding: 6px 8px; border-left: 2px solid var(--cyan, #9ff0ff); background: rgba(159, 240, 255, 0.05); }
+  .order p { margin: 0 0 2px; }
+  .order b { font-family: var(--display); font-weight: 600; }
+  .order .eta { font-family: var(--display); font-size: 18px; color: var(--cyan, #9ff0ff); }
+  .order .eta span { font-size: 11px; color: var(--dim); }
+  .held { margin: 0 0 8px; }
+  .hint { margin-top: 8px; font-size: 10px; }
+  kbd { border: 1px solid var(--rule); padding: 0 3px; font-family: var(--mono); font-size: 9px; }
   .finding { margin: 8px 0 0; color: #ffd27a; font-size: 11px; }
   .note { margin: 8px 0 0; color: var(--dim); font-size: 11px; }
 </style>

@@ -53,7 +53,35 @@ burn = { g = 0.45, bullseye = "wedge", bearing = 0, elevation = 0, duration_s = 
 ```
 
 A burn points the drive along a bearing and elevation in one of the scenario player's bullseyes,
-fixed in space for the burn, and holds g or throttle for its duration. After it she coasts.
+fixed in space for the burn, and holds g or throttle for its duration. After it she coasts. A new
+order rewinds the fleet to the last checkpoint before it and flies on from there.
+
+## Orders from the map
+
+Select a ship and press **A**. A vector runs from her to the cursor:
+
+- over a unit or a body, it takes theirs: she will rendezvous, stopping 50 km short of a unit, or
+  three radii (at least 1,000 km) short of a body, and hold station there;
+- anywhere else, it reads a point on the plane through her parallel to the active bullseye's;
+  **E** / **Q** tilt it toward Eve or Haid in 5° steps. The point is kept as an AER from that
+  bullseye, so it moves with the bullseye's frame.
+
+The telegraph sets the acceleration she will hold, from her most down to stop: **W** / **S** step
+through Full, Cruise (the doctrine band), Cruise floor, Half, Slow, Dead slow and Stop; **Shift**
+steps by 0.01 g; the scale can be dragged. Above her most, she gives her most. Stop cuts her drive.
+The vector shows the distance, time to target and Δv from rest (2√(d/a), 2√(a·d)). A click gives
+the order at the map's clock; **Esc**, **A** or a right click cancels.
+
+A go-to is closed-loop flip-and-burn: every step she steers her velocity relative to the target
+toward √(2·0.9·a·d) along the line to it, within the acceleration ordered, so gravity and a moving
+target are corrected as she goes. Inside 2 km and moving with it to 10 m/s, she has arrived and
+holds station there. Her panel shows the order, the time to target, when she arrives, the range
+and the closing speed; the map shows every ship's order as a vector, the selected one with its
+time to target.
+
+`POST /api/order {scenario, unit, t, g, player, target}`: target `{bullseye, aer: [deg, deg, km]}`,
+`{unit}` or `{body}`; `g = 0` cuts her drive. Orders from the map live in the running fleet; a
+data reload rebuilds the fleet from the scenario file.
 
 ## Time
 

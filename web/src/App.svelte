@@ -3,6 +3,7 @@
   import { SystemMap } from './lib/SystemMap.js';
   import { api, StateStream } from './lib/api.js';
   import HudCursor from './lib/HudCursor.svelte';
+  import Orders from './lib/Orders.svelte';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
   import LevelSelect from './lib/LevelSelect.svelte';
@@ -22,6 +23,8 @@
   let drules = {}, settings = null, showSettings = false, settingsStatus = '', saveTimer, pendingSave = false;
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
   let showFindings = false, down = null, poll;
+  let ordering = null, orderTool, orderMsg = '', msgTimer;   // an order being aimed: { unit, g, tilt }
+  $: if (ordering && (mode !== 'map' || (state && !state.ships?.[ordering.unit]))) ordering = null;
   let mode = 'menu';                    // 'menu' | 'levels' | 'map' | 'workshop' | 'ships'
   let purpose = 'play';                 // what the level list is for: 'play' or 'build'
   let registry, shipCount = 0;
@@ -127,6 +130,10 @@
   function pointerMove(e) { const m = markAt(e.clientX, e.clientY); map.hover = m ? { kind: m.kind, id: m.id } : null; }
   function pointerDown(e) { down = { x: e.clientX, y: e.clientY, b: e.button }; }
   async function pointerUp(e) {
+    if (ordering && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) {
+      if (down.b === 2) { ordering = null; return; }             // right click: cancel
+      if (down.b === 0) return giveOrder();
+    }
     if (!down || down.b !== 0 || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return;
     const m = markAt(e.clientX, e.clientY);
     if (m) { select({ kind: m.kind, id: m.id }); return; }
@@ -140,6 +147,31 @@
     if (m) focusOn({ kind: m.kind, id: m.id });
   }
   function select(s) { sel = s; probe = null; map.selected = s; }
+
+  // ---- orders: A on a selected ship aims one; a click gives it -----------------------------------
+  function say(m) { orderMsg = m; clearTimeout(msgTimer); msgTimer = setTimeout(() => (orderMsg = ''), 3500); }
+  function startOrder() {
+    const s = sel?.kind === 'contact' ? state?.ships?.[sel.id] : null;
+    if (!s) return say('Select a ship to order: A');
+    const spec = contacts.find((c) => c.id === sel.id)?.ship;
+    if (!spec?.has_drive) return say('Her class has no drive stated; she cannot be ordered to move.');
+    const g = s.goal?.g ?? Math.min(spec.cruise_g?.[1] ?? s.max_accel_g, s.max_accel_g);
+    ordering = { unit: sel.id, g, tilt: 0 };
+  }
+  async function giveOrder() {
+    const aim = orderTool?.aim();
+    if (!aim || !scenario) return say('Nothing to aim at there.');
+    const o = ordering;
+    try {
+      const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId,
+                                  target: aim.target });
+      const goal = r.ship.goal;
+      say(o.g > 0 ? `${map.contactName(o.unit)}: to ${goal?.label ?? aim.label} at ${o.g.toFixed(2)} g` : `${map.contactName(o.unit)}: drive cut`);
+      ordering = null;
+    } catch (err) {
+      say(String(err.message ?? err));
+    }
+  }
 
   // centre on something, and pull the camera in to a sensible distance for it
   function focusOn(s) {
@@ -161,6 +193,10 @@
     if (e.key === ',') { showSettings = !showSettings; return; }
     if (e.key === 'Escape' && showSettings) { showSettings = false; return; }
     if (!inMap) return;                                  // menus have their own keys
+    if (ordering) {                                      // aiming an order: its own keys first
+      if (e.key === 'Escape' || e.key === 'a' || e.key === 'A') { ordering = null; return; }
+      if (orderTool?.key(e)) { e.preventDefault(); return; }
+    } else if ((e.key === 'a' || e.key === 'A') && mode === 'map') { startOrder(); return; }
     if (e.key === 'Escape') select(null);
     if (e.key === 'f' || e.key === 'F') focusOn(sel);
     if (e.key === 'h' || e.key === 'H') map.frameAll();
@@ -249,6 +285,9 @@
 <canvas class="map" bind:this={canvas}></canvas>
 <Overlay {map} {style} {settings} {drules} {contacts} />
 <HudCursor {map} {style} {settings} {overUI} />
+{#if mode === 'map'}
+  <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />
+{/if}
 
 {#if mode === 'menu'}
   <MainMenu onchoose={choose} counts={{ systems: meta?.systems.length ?? 0, ships: meta?.ship_classes ?? 0 }} />

@@ -229,14 +229,15 @@ export class SystemMap {
   }
 
   // point on the bullseye plane under the cursor, system frame km
-  planeAt(px, py) {
+  // the point under the cursor on the bullseye's plane, or on the plane parallel to it through `through` (km)
+  planeAt(px, py, through = null) {
     const b = this.bullseye();
     if (!b) return null;
     const ndc = new THREE.Vector2(px / this.canvas.clientWidth * 2 - 1, -(py / this.canvas.clientHeight) * 2 + 1);
     const ray = new THREE.Raycaster();
     ray.setFromCamera(ndc, this.camera);
     const n = toThree(b.axes[2]);
-    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, toThree(sub(b.origin, this.focus)));
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, toThree(sub(through ?? b.origin, this.focus)));
     const hit = ray.ray.intersectPlane(plane, new THREE.Vector3());
     if (!hit) return null;
     const p = fromThree(hit);

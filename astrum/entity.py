@@ -17,6 +17,7 @@ Units are SI throughout: kg, m, s, N. The rocket equation is exact over a step:
 """
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass, field, replace
 
@@ -95,13 +96,16 @@ class ShipState:
     mode: str = "station"                      # station: holds her place, paying for it; free: flies
     thrust_n: float = 0.0                      # what the drive is putting out now
     direction: np.ndarray | None = None        # unit vector of thrust, system frame
-    burn: dict | None = None                   # the order she is burning to, if any
+    burn: dict | None = None                   # the thrust she is holding this step, if any
     dv_spent_ms: float = 0.0
+    goal: dict | None = None                   # a go-to order she is flying: target, g, and how it goes
+    station_at: dict | None = None             # where she holds station, if not her scenario place
 
     def copy(self) -> "ShipState":
         return replace(self, r=self.r.copy(), v=self.v.copy(),
                        direction=None if self.direction is None else self.direction.copy(),
-                       burn=None if self.burn is None else dict(self.burn))
+                       burn=copy.deepcopy(self.burn), goal=copy.deepcopy(self.goal),
+                       station_at=copy.deepcopy(self.station_at))
 
 
 @dataclass
@@ -193,4 +197,16 @@ class Ship:
                 "dv_left_kms": self.dv_left_ms / 1e3, "dv_spent_kms": s.dv_spent_ms / 1e3,
                 "max_accel_g": self.max_accel_ms2 / G0, "accel_g": self.accel_ms2 / G0,
                 "thrust_mn": s.thrust_n / 1e6, "jet_pw": self.jet_power_w / 1e15,
-                "burning": s.thrust_n > 0, "burn": s.burn, "velocity_kms": (s.v / 1e3).tolist()}
+                "burning": s.thrust_n > 0, "velocity_kms": (s.v / 1e3).tolist(),
+                "burn": None if s.burn is None or s.burn.get("guided") else {k: v for k, v in s.burn.items() if k != "until"},
+                "goal": _goal_dict(s.goal), "station_at": (s.station_at or {}).get("label")}
+
+
+def _goal_dict(g: dict | None) -> dict | None:
+    if not g:
+        return None
+    aim = g.get("aim")
+    return {"label": g.get("label"), "g": g.get("g"), "target": g.get("target"), "eta_s": g.get("eta_s"),
+            "range_km": g["range_m"] / 1e3 if g.get("range_m") is not None else None,
+            "closing_kms": g["closing_ms"] / 1e3 if g.get("closing_ms") is not None else None,
+            "aim_km": (np.asarray(aim) / 1e3).tolist() if aim is not None else None, "issued": g.get("issued")}

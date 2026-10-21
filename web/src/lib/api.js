@@ -16,6 +16,7 @@ export const api = {
   saveSettings: (values) => post('/display/settings', values),
   ships: () => get('/ships'),
   ship: (id) => get(`/ships/${id}`),
+  order: (o) => post('/order', o),
   workshop: {
     schema: () => get('/workshop/schema'),
     source: (id) => get(`/workshop/source/${id}`),

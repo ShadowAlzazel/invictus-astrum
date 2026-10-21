@@ -175,3 +175,96 @@ def test_sol_demo_fleet(reg):
     k = st["ships"]["kiki-1"]
     assert k["mode"] == "station" and k["dv_left_kms"] < 4000 and k["mass_t"] < 70340
     assert st["contacts"]["kiki-1"] and st["contacts"]["kiki"]                  # ship and her flight
+
+
+# ---- go-to orders: closed-loop flip-and-burn ----------------------------------------------------
+from astrum.sim import eta_s
+
+
+def two_ship_fleet(reg, orders=(), v_target=(0.0, 0.0, 0.0)):
+    """Two ships far from anything; the second may coast at a fixed velocity."""
+    far = np.array([1e15, 0.0, 0.0])
+    cs = {i: Contact(id=i, callsign=i, affiliation="friend", echelon="ship", ship_class="phalaena",
+                     position={"aer": [0, 0, 1]}, mode=m) for i, m in (("s1", "station"), ("s2", "free"))}
+    sc = Scenario("toy", "Toy", "toy", 0.0, "p", cs)
+    bulls = {"system": Resolved("system", np.zeros(3), np.eye(3))}
+    place = lambda t: ({"earth": np.zeros(3)}, {"s1": far.copy(), "s2": far + [2e8, 0, 0]}, bulls)
+    f = Fleet(sc, ToySystem(1.0), ToyEph(), reg, place, 0.0, list(orders))
+    f.ships["s2"].state.v = np.asarray(v_target, dtype=float)
+    f._checkpoints[0] = (0.0, f._snapshot(), 0, 0.0)
+    return f
+
+
+def test_eta_from_rest_is_the_brachistochrone():
+    a, d = 0.45 * G0, 1e8
+    assert eta_s(d, 0, 0, a) == pytest.approx(2 * math.sqrt(d / a))
+    assert eta_s(d, 1000, 0, a) < eta_s(d, 0, 0, a) < eta_s(d, -1000, 0, a)
+
+
+def test_goto_a_point_arrives_and_holds(reg):
+    far, d, a = np.array([1e15, 0.0, 0.0]), 1e8, 0.45 * G0
+    o = Order("s1", 600.0, "goto", target={"bullseye": "system", "aer": [0, 0, 1e15 + d], "label": "pt"}, g=0.45)
+    f = toy_fleet(reg, lambda t: far.copy(), [o], gm=1.0)
+    ideal = 2 * math.sqrt(d / a)
+    s = f.at(600 + 1.05 * ideal)["s1"]
+    assert s.state.mode == "station" and s.state.station_at["label"] == "pt"
+    assert np.linalg.norm(s.state.r - (far + [d, 0, 0])) < 2000
+    assert 1.8 * math.sqrt(a * d) < s.state.dv_spent_ms < 2.1 * math.sqrt(a * d)
+
+
+def test_goto_is_capped_at_her_most(reg):
+    far = np.array([1e15, 0.0, 0.0])
+    o = Order("s1", 0.0, "goto", target={"bullseye": "system", "aer": [0, 0, 1e15 + 1e9]}, g=5.0)
+    f = toy_fleet(reg, lambda t: far.copy(), [o], gm=1.0)
+    s = f.at(120)["s1"]
+    assert s.state.thrust_n == pytest.approx(s.spec.thrust_n, rel=1e-4)
+
+
+def test_rendezvous_with_a_moving_unit(reg):
+    """She closes on a ship coasting away at 2 km/s, stops 50 km short, and keeps station on her."""
+    o = Order("s1", 0.0, "goto", target={"unit": "s2", "label": "Two"}, g=0.45)
+    f = two_ship_fleet(reg, [o], v_target=(2000.0, 0.0, 0.0))
+    for T in range(600, 40000, 600):
+        one, two = f.at(T)["s1"], f.ships["s2"]
+        if one.state.mode == "station":
+            break
+    assert one.state.mode == "station" and one.state.station_at["unit"] == "s2"
+    gap = float(np.linalg.norm(two.state.r - one.state.r))
+    assert gap == pytest.approx(50e3, abs=3e3)
+    later = f.at(T + 3600)
+    assert float(np.linalg.norm(later["s2"].state.r - later["s1"].state.r)) == pytest.approx(gap, rel=1e-3)
+
+
+def test_an_order_from_the_map_rewinds(reg):
+    f = two_ship_fleet(reg)
+    f.at(20000)
+    f.command(Order("s1", 5000.0, "goto", target={"bullseye": "system", "aer": [0, 0, 1e15 + 1e8]}, g=0.3, source="map"))
+    s = f.at(20000)["s1"]
+    assert s.state.dv_spent_ms > 0 and (s.state.goal or s.state.station_at)
+    fresh = two_ship_fleet(reg, [Order("s1", 5000.0, "goto", target={"bullseye": "system", "aer": [0, 0, 1e15 + 1e8]}, g=0.3)])
+    assert np.allclose(fresh.at(20000)["s1"].state.r, s.state.r)
+
+
+def test_orders_from_the_map_api():
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-1", "t": t, "g": 0.45, "player": "arcvs",
+                                   "target": {"bullseye": "burn", "aer": [90, 5, 20000]}})
+    g = r.json()["ship"]["goal"]
+    assert r.status_code == 200 and g["label"] == "090° Eve 5°, 20,000 km from Burn Bullseye" and g["eta_s"] > 0
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-2", "t": t, "g": 9, "target": {"body": "moon"}})
+    assert r.json()["ship"]["goal"]["label"] == "Moon"
+    later = f.at(t + 3 * 3600)
+    assert later["kiki-1"].state.mode == "station" and later["kiki-1"].state.station_at["bullseye"] == "burn"
+    assert later["kiki-2"].max_accel_ms2 == pytest.approx(later["kiki-2"].accel_ms2, rel=1e-3)   # 9 g asked: her most
+    cut = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-2", "t": t + 3 * 3600, "g": 0})
+    assert cut.json()["ship"]["goal"] is None and cut.json()["ship"]["mode"] == "free"
+    for bad in ({"unit": "nope", "g": 1, "target": {"body": "moon"}},
+                {"unit": "kiki-1", "g": 1, "target": {"unit": "kiki-1"}},
+                {"unit": "kiki-1", "g": -1, "target": {"body": "moon"}},
+                {"unit": "kiki-1", "g": 1, "target": {"bullseye": "nowhere", "aer": [0, 0, 1]}}):
+        assert c.post("/api/order", json={"scenario": "sol-demo", "t": t, **bad}).status_code == 400
