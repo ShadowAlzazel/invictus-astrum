@@ -154,7 +154,7 @@ formation = "tf2-lf1"
 
 [[contact]]
 id = "tf2-lf1-bs-1"
-callsign = "AVC Katarina"
+callsign = "AVC Maru"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-bs"
@@ -163,7 +163,7 @@ position = { bullseye = "wedge", aer = [1.718, 0.0, 150067] }
 
 [[contact]]
 id = "tf2-lf1-bs-2"
-callsign = "L1 Battle 2"
+callsign = "AVC Beyond the Dawn"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-bs"
@@ -172,7 +172,7 @@ position = { bullseye = "wedge", aer = [0.573, 0.344, 150010] }
 
 [[contact]]
 id = "tf2-lf1-bs-3"
-callsign = "L1 Battle 3"
+callsign = "AVC Mischief"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-bs"
@@ -181,7 +181,7 @@ position = { bullseye = "wedge", aer = [359.427, 0.0, 150007] }
 
 [[contact]]
 id = "tf2-lf1-bs-4"
-callsign = "L1 Battle 4"
+callsign = "AVC Zelda"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-bs"
