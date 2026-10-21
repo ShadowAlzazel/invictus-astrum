@@ -1005,20 +1005,28 @@ class Fleet:
         R0, V0 = got
         moving = "unit" in goal["target"]
         d = float(np.linalg.norm(R0 - r))
-        horizon = min(PREDICT_HORIZON_S, 3 * eta_s(d, 0.0, float(np.linalg.norm(v - V0)), a) + 3600.0)
+        est = eta_s(d, 0.0, float(np.linalg.norm(v - V0)), a)
+        horizon = min(PREDICT_HORIZON_S, 3 * est + 3600.0)
         hold = np.asarray(goal.get("hold_m") or (0.0, 0.0, 0.0), dtype=float)
-        knots = [R0]
-        for k in range(1, 1 if moving else int(horizon / PREDICT_KNOT_S) + 3):     # where the target is, no velocity probe
-            p = self._point(goal["target"], t0 + k * PREDICT_KNOT_S)
-            knots.append(p + hold if p is not None else knots[-1])
-        if len(knots) < 2:
-            knots.append(R0)
+        # where the target is, on a grid from the scenario's start: every ship flying to it, and every
+        # time it is flown ahead again, reads the same moments (Fleet._point keeps them)
+        g0 = t0 if moving else self.t0 + math.floor((t0 - self.t0) / PREDICT_KNOT_S) * PREDICT_KNOT_S
         node_t0, node_h, NP, NV = self._nodes(t0, t0 + horizon + PREDICT_KNOT_S)
-        return kernels.predict(np.asarray(r, float), np.asarray(v, float), float(a), float(t0), R0, V0, moving,
-                               np.array(knots), PREDICT_KNOT_S,
-                               0.0 if goal.get("hold_m") is not None else float(goal.get("standoff_m", 0.0)),
-                               node_t0, node_h, NP, NV, self._gms, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS,
-                               PREDICT_STEP_SHARE, PREDICT_STEP_S[0], PREDICT_STEP_S[1], horizon, PREDICT_MAX_STEPS)
+        knots = [R0, R0] if moving else []
+        # most get there well inside the horizon: the target's track that far first, all of it only if
+        # she runs past that (the same flight either way: it reads only the track up to her arrival)
+        for span in sorted({min(horizon, 1.5 * est + 1800.0), horizon}):
+            while not moving and len(knots) < int((t0 - g0 + span) / PREDICT_KNOT_S) + 3:
+                p = self._point(goal["target"], g0 + len(knots) * PREDICT_KNOT_S)
+                knots.append(p + hold if p is not None else knots[-1] if knots else R0)
+            at = kernels.predict(np.asarray(r, float), np.asarray(v, float), float(a), float(t0), R0, V0, moving,
+                                 np.array(knots), float(g0), PREDICT_KNOT_S,
+                                 0.0 if goal.get("hold_m") is not None else float(goal.get("standoff_m", 0.0)),
+                                 node_t0, node_h, NP, NV, self._gms, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS,
+                                 PREDICT_STEP_SHARE, PREDICT_STEP_S[0], PREDICT_STEP_S[1], horizon, PREDICT_MAX_STEPS)
+            if math.isfinite(at) or moving:
+                return at
+        return at
 
     # ---- orders ---------------------------------------------------------------------------------
     def _arrive(self, i: int, t: float, aim: np.ndarray) -> None:

@@ -85,12 +85,12 @@ def eta_1d(d, closing, lateral, a):
 
 
 @jit
-def predict(r, v, a, t0, R0, V0, moving, knots, knot_dt, standoff, node_t0, node_h, NP, NV, gm,
+def predict(r, v, a, t0, R0, V0, moving, knots, knot_t0, knot_dt, standoff, node_t0, node_h, NP, NV, gm,
             brake, arrive_m, arrive_ms, step_share, step_min, step_max, horizon, max_steps):
     """sim.Fleet._predict, compiled: her guidance flown forward as a point under gravity (point
     masses), semi-implicit Euler, to the moment she arrives; infinity past the horizon, or past
     the bodies or the target given. The target is R0 + V0·t if moving, else drawn straight between
-    knots (knot_dt apart from t0); the bodies are read off table nodes (node_h apart from node_t0,
+    knots (knot_dt apart from knot_t0, at or before t0); the bodies are read off table nodes (node_h apart from node_t0,
     NP/NV: positions and velocities, n×M×3) by cubic Hermite."""
     rx, ry, rz = r[0], r[1], r[2]
     vx, vy, vz = v[0], v[1], v[2]
@@ -103,7 +103,7 @@ def predict(r, v, a, t0, R0, V0, moving, knots, knot_dt, standoff, node_t0, node
             Rx, Ry, Rz = R0[0] + V0[0] * el, R0[1] + V0[1] * el, R0[2] + V0[2] * el
             Vx, Vy, Vz = V0[0], V0[1], V0[2]
         else:
-            x = el / knot_dt
+            x = (t - knot_t0) / knot_dt
             k = int(x)
             if k + 1 >= knots.shape[0]:
                 return math.inf
@@ -496,6 +496,6 @@ def warm_up() -> None:
         return
     z3, one = np.zeros((1, 3)), np.ones(1)
     gravity(z3 + 1.0, z3, one, np.zeros(0, dtype=np.int64), np.zeros(0), np.zeros((0, 3, 3)), True)
-    predict(np.zeros(3), np.zeros(3), 1.0, 0.0, np.ones(3) * 1e3, np.zeros(3), True, np.zeros((2, 3)), 600.0, 0.0,
+    predict(np.zeros(3), np.zeros(3), 1.0, 0.0, np.ones(3) * 1e3, np.zeros(3), True, np.zeros((2, 3)), 0.0, 600.0, 0.0,
             0.0, 600.0, np.zeros((3, 1, 3)), np.zeros((3, 1, 3)), np.zeros(1),
             0.9, 2000.0, 10.0, 0.02, 1.0, 120.0, 1200.0, 10)

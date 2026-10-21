@@ -216,8 +216,11 @@ got (the fleet is behind a fast clock) waits for the fleet to get there; nothing
 The order shows at the moment it is given, paused or not.
 
 Where a go-to's target is (a point off a bullseye, a body) is the same for every ship that flies
-to it, so each moment's is worked out once and kept: time to target, flown ahead every half hour
-over a day or more of the target's track, costs a few milliseconds after the first time.
+to it, so each moment's is worked out once and kept, on a ten-minute grid from the scenario's
+start: time to target, flown ahead every half hour over the target's track, reads the same moments
+whoever flies it and whenever, and costs a few milliseconds after the first time. The track is
+gathered only as far as she is likely to need it (half as far again as the rough estimate, and
+half an hour), and the rest only if she runs past that: the same answer, from half the track.
 
 ## Where the time goes
 
@@ -269,6 +272,7 @@ Measured on the Sol demo (51 ships), 18 of them flying four orders, two of them 
 | a map frame at 1 min/s / 1 h/s / 1 d/s (fleet) | 2.5 / 3.9 / 46 ms | 3.2 / 3.5 / 26 ms | 2.3 / 2.5 / 14 ms | about 2 ms at any warp, off the timeline (4 ms through the server) |
 | an order 0.5 h / 2 h / 6 h back | | | 11 / 36 / 129 ms (all of the fleet) | 7 / 21 / 73 ms (only what it touches); now a few ms to its moment, the rest after |
 | the map held up by an order, 1 h/s / 6 h/s / 1 d/s (a ship, a formation, the task force of 45) | | | | before: up to 0.2 / 0.46 / 0.46 s; now under 0.05 / 0.06 / 0.19 s |
+| tactical pace, 1 s/s – 30 min/s: twelve orders 1.5 s apart, pictures 60 a second | | | | pictures median 4 ms, 99% under 14 ms; worst 0.1 s (the task force of 45 re-formed on a new target) below 5 min/s, under 0.04 s from 5 min/s |
 | placing the scenario's contacts | 0.93 ms | 0.93 ms | 0.05 ms | 0.05 ms |
 | a picture for the map (first / after) | 39 KB | 13 KB | 13 KB | 32 / 14 KB |
 | the web server while the fleet is behind | waits | waits | waits | 3 ms |
