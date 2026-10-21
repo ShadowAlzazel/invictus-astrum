@@ -66,7 +66,8 @@ order rewinds the fleet to the last checkpoint before it and flies on from there
 Select a ship and press **A**. A vector runs from her to the cursor:
 
 - over a unit or a body, it takes theirs: she will rendezvous, stopping 50 km short of a unit, or
-  three radii (at least 1,000 km) short of a body, and hold station there;
+  three radii (at least 1,000 km) short of a body, and further out where its pull would be more
+  than half what she holds (Jupiter at 0.05 g: 719,000 km), and hold station there;
 - anywhere else, it reads a point on the plane through her parallel to the active bullseye's;
   **E** / **Q** tilt it toward Eve or Haid in 5° steps, as seen from her. The switch under the
   bullseye list (**B** while aiming) measures Eve and Haid from the chosen bullseye instead: level
@@ -82,16 +83,25 @@ The vector shows the distance, time to target and Δv from rest (2√(d/a), 2√
 the order at the map's clock; **Esc**, **A** or a right click cancels.
 
 A go-to is closed-loop flip-and-burn: every step she steers her velocity relative to the target
-toward √(2·0.9·a·d) along the line to it, within the acceleration ordered, so gravity and a moving
-target are corrected as she goes. Inside 2 km and moving with it to 10 m/s, she has arrived and
-holds station there. Her panel shows the order, the time to target, when she arrives, the range
+toward √(2·(0.9·a − pull)·d) along the line to it, within the acceleration ordered: the pull is
+the gravity at the stop point relative to the target (what braking there must also hold off), and
+the gravity she feels relative to the target (the target's own fall taken off) is cancelled as
+she goes. So a ship stops at a planet's standoff instead of falling into it: before, braking
+planned on 0.9·a alone, and a ship from Mars at 0.2 g reached Earth's standoff at 4.5 km/s and
+fell through the planet. Inside 2 km and moving with it to 10 m/s, she has arrived and holds
+station there. No ship passes a body's surface: one that would is put back on it, her velocity
+into it (relative to the body) taken away, as cheap as a distance check per body. Her panel shows the order, the time to target, when she arrives, the range
 and the closing speed; the map shows every ship's order as a vector, the selected one with its
 time to target.
 
-**Time to target is flown ahead.** When an order is given or retuned, the fleet flies her guidance
-forward as a point under gravity (every body's point mass) to the moment she arrives, and reads the
-time to target off that flight; again every half hour, or every tenth of the time left if that is
-longer. Steps are a fiftieth of the time left (1 s – 2 min); the target is read every ten minutes
+**Time to target is flown ahead, after.** The order is given and flown at once on the rough
+estimate (below); when it is given or retuned, the fleet asks for her guidance to be flown forward
+as a point under gravity (every body's point mass) to the moment she arrives, and a thread of its
+own answers (`Fleet.arrivals`, in the SimHost, run-ahead or not), holding the fleet's lock only to
+take the question and give the answer: a few to a few tens of milliseconds after the order, the
+time to target is read off that flight, from the moment it was asked. Asked again every half hour,
+or every tenth of the time left if that is longer; an answer for a ship that has since been set
+back, or given another order, is dropped. Steps are a fiftieth of the time left (1 s – 2 min); the target is read every ten minutes
 and drawn straight between, and a unit she chases is taken to keep its present velocity. Against
 the flight itself it is within about 1% (Moon runs, a far point, a short hop; tests hold it to
 3%). Where the flight has nothing to say (past 60 days, or she is late on it) the one-dimensional
@@ -171,7 +181,10 @@ the time left (1 s at least) as an order arrives, shrinking as it closes. So a s
 target in 1 s steps does not hold a coasting fleet to them. Units do not pull on each other, so
 their steps need not line up inside a block; units that want the same number of steps are stepped
 together, in one call of the compiled step. Station ships are brought up to date every 5 minutes; a
-checkpoint is kept every 30 minutes, so the clock can run fast or be scrubbed back.
+checkpoint is kept every block (a copy of the arrays: 30 µs and some 40 KiB for a hundred ships),
+so an order flies again from at most 10 minutes before it, and the clock can be scrubbed back.
+They are kept a day and a half behind the fleet (a day behind the clock, and the run-ahead's
+most), with the scenario's start: further back, the fleet flies again from the start.
 
 **The step is one compiled call.** `kernels.fly` takes the Classis's arrays and the rows of the
 units it flies, and runs the whole block itself: gravity at every row (point masses and J2, bodies
@@ -179,12 +192,14 @@ off the table's nodes), flip-and-burn for the leads and the ships on their own, 
 for the rest, the rocket equation, kick-drift-kick, the steps shrinking as an order closes in,
 arrivals marked. Python is called once per group of units per block; it settles what happened
 (arrivals take station, a formation whose lead arrived flies its last leg ship by ship, times to
-target are flown ahead) and goes on.
+target are asked for) and goes on.
 
 **Targets are tracks.** Before a block, every target the units fly to is made into a track the
 compiled step can read: a ship that flies is read live off her row (where she is, carried on at
 her velocity); anything else (a point off a bullseye, a body, a unit on station, a formation) is
-worked out every minute across the block and drawn straight between.
+worked out every minute across the block, from a minute before it, and drawn straight between; how
+it falls (for the guidance) is the second difference about the minute at or before the moment, so
+it does not depend on where a block happens to end.
 
 **Placement is one array operation.** A scenario's contacts are placed by a plan made once
 (`astrum/placement.py`): the contacts placed directly (an AER is a fixed vector in its bullseye's
@@ -328,7 +343,7 @@ after in chunks. Times vary by about half from run to run on this machine.
 | a flotilla (11) to a point / its telegraph | 7 / 8–9 ms · rest 5–7 ms | 8–9 / 8–12 ms · rest 5–10 ms |
 | a task force (45) to a point / a squadron out of it | 17–18 / 19–23 ms · rest 9–10 ms | 16–28 / 19–30 ms · rest 9–16 ms |
 | cut a ship's drive (her flight of 3 and its chaser) | 11–25 ms (before the fixes below: 95 ms) | 10–18 ms |
-| Task Force 3 (44) from Mars toward the Sun: 8 days, time to target flown ahead | | 85–160 ms · rest 10 ms |
+| Task Force 3 (44) from Mars toward the Sun: 8 days | | 10 ms · rest 12 ms (time to target 45 ms after, off the order: it was 85–280 ms in the order) |
 | the strike squadron (5) to Jupiter | | 11–13 ms · rest 5–6 ms |
 | an order 0.5 h / 2 h / 6 h behind the fleet: reply · the rest | 3 ms · 4 / 16 / 50 ms | 2 ms · 4 / 15 / 49 ms |
 
@@ -339,6 +354,13 @@ place in the list, so after orders given in the past a rewind could give one twi
 off); they count the orders given into their past now. Time to target reads the bodies only as
 far as it reads the target (half as far again as the rough estimate), and keeps each table
 block's pulling bodies, so a long flight's first prediction costs what it reads.
+
+Since: the time to target is flown after the order, in a thread of its own, so no order waits on
+it (Task Force 3's reply: 284 ms before, 10 ms after); a body target's track reads only that
+body off the table (it read all of them); checkpoints are kept every block for a day and a half
+(they were every half hour, thinned), so the replies to orders in the past are some 1–2 ms
+shorter and the rest a few ms longer (more checkpoints to mend); and braking counts gravity, so a
+ship from Mars stops at Earth (it used to fall through it, and its time to target said nothing).
 
 ## On the wire
 

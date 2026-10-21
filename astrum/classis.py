@@ -49,7 +49,7 @@ COLUMNS = {
     "burn_ev": ((), np.int64, -1),             # the burn she holds
     "place": ((), np.int64, -1),               # where she holds station, if not her scenario place
     "arrive_at": ((), float, math.nan),        # her flight ahead to the target: when it gets there (may be inf) ...
-    "predicted": ((), float, math.nan),        # ... and when it was flown (nan: not yet)
+    "predicted": ((), float, math.nan),        # ... and when it was asked for (from her state then; nan: not yet)
     "nmem": ((), np.int64, 0),                 # a lead: the ships it was made from (its point is their mean)
 }
 

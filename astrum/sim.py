@@ -16,15 +16,21 @@ Orders change her mode:
     goto      flies her to a target and stops her there: a point (an AER from a bullseye, so it moves
               with that frame), a unit, or a body. She holds the ordered acceleration, capped at her
               most, steering her relative velocity toward what she can still brake from in the
-              distance left, √(2·0.9·a·d): flip-and-burn, closed loop, so gravity and a moving target
-              are corrected as she goes. Arrived, she holds station there (short of a unit or a body)
+              distance left, √(2·(0.9·a − pull)·d), the pull being the gravity at the stop point
+              relative to the target: flip-and-burn, closed loop, the gravity she feels relative to
+              the target cancelled as she goes. Arrived, she holds station there (short of a unit, or
+              of a body: three radii out, and out where its pull is at most half what she holds)
     coast     cuts the drive
+
+No ship passes a body's surface: one that would is put back on it, her velocity into it taken away.
 
 An order given to a formation is flown together: a Lead (a point) flies it to the target by the
 same flip-and-burn, at what the slowest ship can hold less a margin, and every ship keeps her
 place on it, her offset when the order was given. When the lead arrives, each ship takes her own
 place at the target and holds station there. Time to target is flown ahead under gravity
-(_predict), not guessed along a line.
+(_predict), not guessed along a line, and not while anyone waits: the flight shows the
+one-dimensional estimate at once and leaves the question (_eta); Fleet.arrivals answers it after,
+outside the lock (the SimHost runs it in a thread of its own).
 
 Orders come from the scenario file or from the map while it runs (Fleet.command), and go into the
 fleet's order book (astrum/orders.py): each order as given once, an event for each ship it goes to,
@@ -33,7 +39,9 @@ only the rows it touches (_refly); one from the map can be taken back (Fleet.wit
 had never been given.
 
 The fleet keeps checkpoints, so the map's clock can run forward cheaply and be scrubbed back. A
-checkpoint is a copy of the Classis's arrays; what it has given is every event before its moment.
+checkpoint is a copy of the Classis's arrays (some 40 KiB for a hundred ships); what it has given
+is every event before its moment. One is taken every block and kept for a day and a half behind
+the fleet, and the scenario's start always: further back, the fleet flies again from the start.
 Time before the scenario starts shows every ship on station with full tanks.
 
 The fleet is a Classis (astrum/classis.py): every hull and every formation lead is a row of
@@ -77,9 +85,10 @@ BRAKE_MARGIN = 0.9             # a go-to plans to brake on this share of the ord
 ARRIVE_M = 2000.0              # arrived: inside this of the aim point ...
 ARRIVE_MS = 10.0               # ... and moving with it to within this
 STANDOFF_UNIT_M = 50e3         # how far short of a unit a go-to stops
-STANDOFF_BODY_R = 3.0          # ... and of a body, in its radii (at least 1,000 km)
-CHECKPOINT_S = 1800.0
-MAX_CHECKPOINTS = 4000
+STANDOFF_BODY_R = 3.0          # ... and of a body, in its radii (at least 1,000 km) ...
+STANDOFF_PULL = 0.5            # ... and where its pull is at most this share of what she holds
+CHECKPOINT_S = 600.0           # a checkpoint every block: an order flies again from at most this far before it
+CHECKPOINT_KEEP_S = 36 * 3600.0  # kept this far behind the fleet (a day behind the clock, and the run-ahead's most)
 CHUNK_S = 0.03                 # wall seconds the fleet runs before letting go of its lock
 LEAD_MARGIN = 0.95             # a formation's lead holds this share of its slowest ship's most: the rest keeps places
 FORM_T_MIN_S = 120.0           # a ship in formation closes her error on her place over at least this ...
@@ -128,6 +137,12 @@ def gravity_many(system, eph, positions: dict, X: np.ndarray, j2: bool = True) -
         local = -f[:, None] * np.stack([loc[:, 0] * (1 - q), loc[:, 1] * (1 - q), loc[:, 2] * (3 - q)], axis=1)
         acc += local @ E.T
     return acc
+
+
+def _room(cache: dict, most: int) -> None:
+    """Make room in a small cache, the oldest out first; safe while another thread adds to it."""
+    while len(cache) > most:
+        cache.pop(next(iter(list(cache))), None)
 
 
 @dataclass
@@ -233,12 +248,15 @@ class Fleet:
         self._plans: dict[tuple, tuple] = {}    # how station ships are placed, by the versions they are on
         self._pulls = [b for b in system.massive() if b.gm > 0]
         self._gms = np.array([b.gm for b in self._pulls])
+        self._rad = np.array([getattr(b, "radius_eq", 0.0) or getattr(b, "radius", 0.0) or 0.0 for b in self._pulls])   # surfaces no ship passes
         self._oblate = _pulls(system, eph)[4]
         self.timeline: Timeline | None = None      # kept when a run-ahead worker flies the fleet (keep_timeline)
         self.versions = Versions()                 # every change to what a row was given, from when (astrum/timeline.py)
         self.mending: Mend | None = None           # an order's rows flying again, partway (command)
         self._spare: list[int] = []                # leads' rows an order set back for good: the next leads take them
         self._now = t0                             # the moment what is being changed changes
+        self.asked: dict[int, tuple] = {}         # row -> her time to target, to be flown ahead (arrivals): the newest
+        self._setback: dict[int, int] = {}         # row -> how often she has been set back (-1: the whole fleet)
         for i in range(cl.n):
             self._touch(i)
         self._enter(orders or [])
@@ -317,6 +335,10 @@ class Fleet:
         self.t, self._station_t = t, station_t
         self._qi = self.book.before(t)                 # a checkpoint at t has given every order before t
         self.mending, self._spare = None, []
+        self.asked.clear()
+        self._setback[-1] = self._setback.get(-1, 0) + 1
+        unanswered = np.isnan(self.c.arrive_at[: self.c.n])    # asked before the checkpoint, answered after: ask again
+        self.c.predicted[: self.c.n][unanswered] = math.nan
         self._place_cache.clear()
         if self.timeline is not None:
             self.timeline.cut(t)
@@ -449,9 +471,13 @@ class Fleet:
         cols, leads = snap
         c, nk = self.c, snap[0]["n"]
         for i in rows:
+            self.asked.pop(i, None)
+            self._setback[i] = self._setback.get(i, 0) + 1
             if i < nk:
                 for name in COLUMNS:
                     getattr(c, name)[i] = cols[name][i]
+                if math.isnan(c.arrive_at[i]):
+                    c.predicted[i] = math.nan
             else:                                       # made since: gone, and its row free for the next lead
                 c.mode[i], c.goal[i], c.mver[i] = DEAD, False, 0
                 self._spare.append(i)
@@ -635,10 +661,11 @@ class Fleet:
             self.t = t1
             self._stations_to(t1)
             self._record(slots, np.arange(c.n), flown)
-            if self.t - self._checkpoints[-1][0] >= CHECKPOINT_S:
-                self._checkpoints.append((self.t, self._snapshot(), self._station_t))
-                if len(self._checkpoints) > MAX_CHECKPOINTS:
-                    del self._checkpoints[1:len(self._checkpoints) // 2:2]      # thin the old half
+            cps = self._checkpoints
+            if self.t - cps[-1][0] >= CHECKPOINT_S - 1e-6:
+                cps.append((self.t, self._snapshot(), self._station_t))
+                while len(cps) > 2 and cps[1][0] < self.t - CHECKPOINT_KEEP_S:
+                    del cps[1]                          # the scenario's start stays: further back flies from there
 
     def _grid_next(self, t: float) -> float:
         """The next block boundary after t: blocks lie on a grid from the scenario's start, so
@@ -727,7 +754,7 @@ class Fleet:
                         c.r, c.v, c.t, c.kind, c.mode, c.prop, c.dry, c.fmax, c.ve, c.dvs, c.thrust, c.dir, c.acc,
                         c.burn, c.bval, c.buntil, c.goal, c.gg, c.track, c.off, c.stand, c.hold, c.hashold,
                         c.lead, c.solo, c.amax, c.aim, c.rng, c.clos, c.eta1, c.arr_t, *tracks,
-                        node_t0, node_h, NP, NV, self._gms, *self._oblate,
+                        node_t0, node_h, NP, NV, self._gms, *self._oblate, self._rad,
                         G0, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS, FORM_T_STEPS, FORM_T_MIN_S, CLOSE_SHARE, CLOSE_MIN_S, *smp)
         self._settle(T1 if not steer_only else T0, scope)
         return slots, np.concatenate(units)
@@ -773,13 +800,14 @@ class Fleet:
     def _tracks(self, rows: np.ndarray, T0: float, T1: float):
         """Every target the given rows fly to, as a track for the block: a flying ship is read
         live off her row; anything else (a point off a bullseye, a body, a unit on station, a
-        formation) is worked out every TRACK_DT and drawn straight between. Rows whose target
-        cannot be found have lost it."""
+        formation) is worked out every TRACK_DT from a step before T0 (how it falls at T0 is read
+        about the knot there) and drawn straight between. Rows whose target cannot be found have
+        lost it."""
         c, B = self.c, self.book
         keys: dict[str, int] = {}
         of_given: dict[int, int] = {}                     # an order as given -> its track (its ships share it)
         kinds, trow, knots, hold = [], [], [], []
-        K = max(2, math.ceil((T1 - T0) / TRACK_DT) + 2)
+        K, k0 = max(2, math.ceil((T1 - T0) / TRACK_DT) + 2) + 1, T0 - TRACK_DT
         for i in rows:
             if not c.goal[i]:
                 continue
@@ -797,7 +825,7 @@ class Fleet:
                 if j is not None and c.mode[j] == FREE:
                     kinds.append(1); trow.append(j); knots.append(np.zeros((K, 3)))
                 else:
-                    pts = self._points(spec, [T0 + k * TRACK_DT for k in range(K)])
+                    pts = self._points(spec, [k0 + k * TRACK_DT for k in range(K)])
                     if any(p is None for p in pts):
                         keys[key] = -1
                         continue
@@ -812,7 +840,7 @@ class Fleet:
         if not kinds:
             kinds, trow, knots, hold = [0], [-1], [np.zeros((K, 3))], [False]
         return (np.array(kinds, dtype=np.int64), np.array(trow, dtype=np.int64), np.array(knots),
-                np.full(len(kinds), K, dtype=np.int64), float(T0), TRACK_DT, np.array(hold, dtype=np.bool_))
+                np.full(len(kinds), K, dtype=np.int64), float(k0), TRACK_DT, np.array(hold, dtype=np.bool_))
 
     def _lost(self, i: int) -> None:
         c = self.c
@@ -854,8 +882,7 @@ class Fleet:
         c = self._body_cache
         if t in c:
             return c[t]
-        if len(c) > 4:
-            c.pop(next(iter(c)))
+        _room(c, 4)
         c[t] = self.eph.positions(t)
         return c[t]
 
@@ -863,8 +890,7 @@ class Fleet:
     def _placed(self, t: float) -> tuple:
         got = self._place_cache.get(t)
         if got is None:
-            if len(self._place_cache) > 4:
-                self._place_cache.pop(next(iter(self._place_cache)))
+            _room(self._place_cache, 4)
             got = self._place_cache[t] = self.place(t)
         return got
 
@@ -988,8 +1014,7 @@ class Fleet:
         key = (player or self.scenario.player, bid, t)
         c = self._bull_cache
         if key not in c:
-            if len(c) > 64:
-                c.pop(next(iter(c)))
+            _room(c, 64)
             if self.bullseyes is not None:
                 c[key] = self.bullseyes(key[0], self._bodies(t), bid).get(bid)
             else:
@@ -1039,7 +1064,7 @@ class Fleet:
         miss = [t for t in ts if key + (t,) not in cache]
         if len(miss) > 1 and hasattr(self.eph, "positions_many"):
             if "body" in spec:
-                P = self.eph.positions_many(miss)[:, self.eph.ids.index(spec["body"])]
+                P = self.eph.positions_many(miss, np.array([self.eph.ids.index(spec["body"])]))[:, 0]
             elif self.bullseyes_many is not None:
                 got = self.bullseyes_many(spec.get("player") or self.scenario.player, spec["bullseye"], miss)
                 brg, el, rng = spec["aer"]
@@ -1076,35 +1101,62 @@ class Fleet:
 
     # ---- when it gets there: flown ahead, gravity and all ---------------------------------------
     def _eta(self, i: int, t: float, a: float) -> float:
-        """Time to target. Flown ahead under gravity by the same guidance (kernels.predict) when the
-        order is given or changed, and again every half hour, or every tenth of what is left if
-        that is longer; read off that flight in between. The one-dimensional estimate stands in
-        where the flight has nothing to say (it ran past its horizon, or she is late on it), and
-        closer than ten minutes, where it is as good."""
+        """Time to target: read off her flight ahead under gravity (kernels.predict), or until that
+        is flown, the one-dimensional estimate. The flight ahead is asked for here and flown after
+        (arrivals): when the order is given or changed, and again every half hour, or every tenth
+        of what is left if that is longer. The estimate also stands in where the flight has nothing
+        to say (it ran past its horizon, or she is late on it), and closer than ten minutes, where
+        it is as good."""
         c = self.c
-        eta1, at, when = float(c.eta1[i]), float(c.arrive_at[i]), float(c.predicted[i])
+        eta1, at, asked = float(c.eta1[i]), float(c.arrive_at[i]), float(c.predicted[i])
         if eta1 < PREDICT_MIN_S and math.isnan(at):
             return eta1
-        if math.isnan(at) or math.isnan(when) or at <= t or t - when >= max(PREDICT_EVERY_S, PREDICT_SHARE * (at - t)) or t < when:
+        if (math.isnan(asked) or t < asked or (math.isfinite(at) and at <= t)
+                or t - asked >= max(PREDICT_EVERY_S, PREDICT_SHARE * (at - t) if math.isfinite(at) else 0.0)):
             goal = {"target": c.target_of(i), "standoff_m": float(c.stand[i]),
                     "hold_m": c.hold[i].copy() if c.hashold[i] else None}
-            at = self._predict(goal, t, c.r[i].copy(), c.v[i].copy(), a)
-            c.arrive_at[i], c.predicted[i] = at, t
+            got = self._raw_target(goal, t)
+            if got is not None:
+                self.asked[i] = (int(c.order[i]), self._setbacks(i), goal, t, c.r[i].copy(), c.v[i].copy(), a, *got)
+            c.predicted[i] = t
         return at - t if math.isfinite(at) and at > t else eta1
 
-    def _predict(self, goal: dict, t0: float, r: np.ndarray, v: np.ndarray, a: float) -> float:
-        """When she (or a formation's lead) gets there: her guidance flown forward as a point under
-        gravity (point masses), semi-implicit Euler, steps a fiftieth of the time left (1 s – 2 min),
-        in kernels.predict. What it reads is gathered here first, out to a horizon of three times
-        the one-dimensional estimate and an hour (60 days at most): the target every ten minutes
-        (a unit she chases is taken to keep its present velocity), the bodies at the table's nodes.
-        Returns the arrival time, or infinity past the horizon."""
+    def _setbacks(self, i: int) -> tuple[int, int]:
+        return self._setback.get(-1, 0), self._setback.get(i, 0)
+
+    def arrivals(self) -> int:
+        """Fly ahead what _eta asked, newest first, each outside the lock (only taking the question
+        and the answer hold it), so neither pictures nor the flight wait on it. An answer is taken
+        only if she still flies that order and has not been set back since; it goes to her row and
+        to the timeline from the moment it was asked. Returns how many were taken."""
+        taken = 0
+        while True:
+            with self.lock:
+                if not self.asked:
+                    return taken
+                i, (e, setbacks, goal, t, r, v, a, R0, V0) = self.asked.popitem()
+            at = self._predict(goal, t, r, v, a, R0, V0)
+            with self.lock:
+                c, tl = self.c, self.timeline
+                if self._setbacks(i) != setbacks or c.order[i] != e or not c.goal[i]:
+                    continue
+                c.arrive_at[i], c.arrive[i] = at, at if math.isfinite(at) else math.nan
+                c.eta[i] = at - self.t if math.isfinite(at) and at > self.t else c.eta1[i]
+                if tl is not None and tl.lo is not None:
+                    k0 = max(math.ceil(tl.k_of(t) - 1e-9), tl.lo)
+                    tl.arrive[[tl.slot(k) for k in range(k0, tl.hi + 1)], i] = c.arrive[i]
+                taken += 1
+
+    def _predict(self, goal: dict, t0: float, r: np.ndarray, v: np.ndarray, a: float, R0: np.ndarray, V0: np.ndarray) -> float:
+        """When she (or a formation's lead) gets there, from where she and her target (R0, V0) are
+        at t0: her guidance flown forward as a point under gravity (point masses), semi-implicit
+        Euler, steps a fiftieth of the time left (1 s – 2 min), in kernels.predict. What it reads is
+        gathered here first, out to a horizon of three times the one-dimensional estimate and an
+        hour (60 days at most): the target every ten minutes (a unit she chases is taken to keep
+        its present velocity), the bodies at the table's nodes. Returns the arrival time, or
+        infinity past the horizon. It reads nothing of the fleet's rows: it runs outside the lock."""
         if a <= 0:
             return math.inf
-        got = self._raw_target(goal, t0)
-        if got is None:
-            return math.inf
-        R0, V0 = got
         moving = "unit" in goal["target"]
         d = float(np.linalg.norm(R0 - r))
         est = eta_s(d, 0.0, float(np.linalg.norm(v - V0)), a)
@@ -1126,7 +1178,7 @@ class Fleet:
             at = kernels.predict(np.asarray(r, float), np.asarray(v, float), float(a), float(t0), R0, V0, moving,
                                  np.array(knots), float(g0), PREDICT_KNOT_S,
                                  0.0 if goal.get("hold_m") is not None else float(goal.get("standoff_m", 0.0)),
-                                 node_t0, node_h, NP, NV, self._gms, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS,
+                                 node_t0, node_h, NP, NV, self._gms, self._rad, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS,
                                  PREDICT_STEP_SHARE, PREDICT_STEP_S[0], PREDICT_STEP_S[1], horizon, PREDICT_MAX_STEPS)
             if math.isfinite(at) or moving:
                 return at
@@ -1182,7 +1234,9 @@ class Fleet:
                 stand = STANDOFF_UNIT_M
             elif "body" in tg:
                 b = next((b for b in self.system.massive() if b.id == tg["body"]), None)
-                stand = max(STANDOFF_BODY_R * (getattr(b, "radius_eq", 0.0) or 0.0), 1e6)
+                a = min(g.g * G0, c.max_accel(i))
+                stand = max(STANDOFF_BODY_R * (getattr(b, "radius_eq", 0.0) or 0.0), 1e6,
+                            math.sqrt(b.gm / (STANDOFF_PULL * a)) if b is not None and a > 0 else 0.0)
             c.mode[i], c.burn[i], c.thrust[i], c.t[i] = FREE, BURN_NONE, 0.0, at
             c.place[i], c.burn_ev[i], c.order[i] = -1, -1, e
             c.goal[i], c.gg[i], c.stand[i] = True, g.g, stand

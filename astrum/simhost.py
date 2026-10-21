@@ -12,7 +12,9 @@ answers from it:
 
 A run-ahead worker keeps every fleet someone watches ahead of their clock: by how fast the clock
 runs (three seconds of it, from ten minutes to twelve hours), so the timeline is there before it
-is asked for.
+is asked for. Another thread answers when each order gets there (Fleet.arrivals): an order is
+given, and flown, on the one-dimensional estimate, and its time to target flown ahead under gravity
+a few milliseconds after, run-ahead or not.
 
 It runs in a process of its own (ProcessSim: the server's other process, over a pipe), or in the
 server's (InlineSim, for tests and tools): the same SimHost either way.
@@ -25,6 +27,7 @@ import json
 import math
 import threading
 import time
+import traceback
 
 import numpy as np
 
@@ -41,6 +44,7 @@ ORDER_BUDGET_S = 0.05         # ... and an order: past it, the order waits for t
 LOOKAHEAD_WALL_S = 3.0        # the run-ahead keeps this much of the clock's wall time ahead ...
 LOOKAHEAD_S = (600.0, 12 * 3600.0)   # ... within these (sim seconds); the timeline holds a day and a half
 IDLE_S = 60.0                 # a fleet nobody has asked about for this long is left alone
+ARRIVALS_POLL_S = 0.005       # how often the arrivals thread looks for questions
 _order_n = itertools.count(1)   # order ids stay unique however many are given in one second
 
 
@@ -158,6 +162,7 @@ class SimHost:
         self.world = world
         self._encoders: dict = {}                       # connection -> what it has been sent
         self.ahead = RunAhead(world) if run_ahead else None
+        self.arrivals = Arrivals(world)
 
     def handle(self, kind: str, payload):
         if kind == "frame":
@@ -193,6 +198,7 @@ class SimHost:
         raise ValueError(f"no such request {kind!r}")
 
     def stop(self) -> None:
+        self.arrivals.stop()
         if self.ahead is not None:
             self.ahead.stop()
 
@@ -307,6 +313,29 @@ class RunAhead:
             else:
                 self._wake.wait(0.1)
                 self._wake.clear()
+
+
+class Arrivals:
+    """Flies ahead every time to target the fleets' flight asked for (Fleet.arrivals), in a thread
+    of its own: the fleet's lock is held only to take a question and to give its answer."""
+
+    def __init__(self, world):
+        self.world = world
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, name="arrivals", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _loop(self) -> None:
+        while not self._stop.wait(ARRIVALS_POLL_S):
+            for f in list(self.world.fleets.values()):
+                if f.asked:
+                    try:
+                        f.arrivals()
+                    except Exception:                     # one bad question: told, and the rest still answered
+                        traceback.print_exc()
 
 
 # ---- the two ways to run it ------------------------------------------------------------------------

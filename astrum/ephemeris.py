@@ -226,9 +226,11 @@ class Tabled:
         got = self._picks.get(key)
         if got is None:
             P, V = self._block(b)
-            if len(self._picks) >= self.MAX_BLOCKS:
-                self._picks.pop(next(iter(self._picks)))
-            got = self._picks[key] = (np.ascontiguousarray(P[:, cols]), np.ascontiguousarray(V[:, cols]))
+            got = (np.ascontiguousarray(P[:, cols]), np.ascontiguousarray(V[:, cols]))
+            with self._lock:
+                if len(self._picks) >= self.MAX_BLOCKS:
+                    self._picks.pop(next(iter(self._picks)))
+                self._picks[key] = got
         return got
 
     def _at(self, t: float, velocity: bool):
@@ -252,13 +254,15 @@ class Tabled:
         P, _ = self._at(t, False)
         return dict(zip(self.ids, P))
 
-    def positions_many(self, ts) -> np.ndarray:
-        """Every body at many moments at once: T × M × 3, bodies in self.ids order."""
+    def positions_many(self, ts, cols: np.ndarray | None = None) -> np.ndarray:
+        """Every body at many moments at once: T × M × 3, bodies in self.ids order (or only those
+        at cols)."""
         ts = np.asarray(ts, dtype=float)
-        node_t0, NP, NV = self.nodes(float(ts.min()), float(ts.max()))
-        x = (ts - node_t0) / self.h
-        k = np.minimum(np.floor(x).astype(np.int64), len(NP) - 2)
+        node_t0, NP, NV = self.nodes(float(ts.min()), float(ts.max()), cols)
+        x = ts / self.h                              # as _at reads one moment: the same bits whatever else is asked
+        k = np.floor(x)
         u = (x - k)[:, None, None]
+        k = np.minimum(k.astype(np.int64) - round(node_t0 / self.h), len(NP) - 2)
         u2, u3, h = u * u, u * u * u, self.h
         return ((2 * u3 - 3 * u2 + 1) * NP[k] + (u3 - 2 * u2 + u) * h * NV[k]
                 + (3 * u2 - 2 * u3) * NP[k + 1] + (u3 - u2) * h * NV[k + 1])

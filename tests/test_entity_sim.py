@@ -1,6 +1,7 @@
 """The ship entity and the fleet: the rocket's arithmetic, and flight checked against cases with
 answers on paper (a held burn, a circular orbit, station held against a known pull)."""
 import math
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -434,7 +435,8 @@ def test_a_formation_keeps_its_places_on_the_way():
 
 
 def test_time_to_target_is_flown_ahead():
-    """The ETA given with the order is within a couple of percent of when she actually gets there."""
+    """The order is given at once, on the one-dimensional estimate; its time to target, flown ahead
+    under gravity after (Fleet.arrivals), is within a couple of percent of when she gets there."""
     from fastapi.testclient import TestClient
     from astrum.app import create_app
     app = create_app()
@@ -443,8 +445,12 @@ def test_time_to_target_is_flown_ahead():
     t = f.t0 + 600
     r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-1", "t": t, "g": 0.4, "player": "arcvs",
                                    "target": {"bullseye": "burn", "aer": [90, 0, 30000]}}).json()
-    eta = r["ship"]["goal"]["eta_s"]
-    assert r["ship"]["goal"]["eta_flown"]
+    assert r["ship"]["goal"]["eta_s"] > 0
+    i, until = f.c.row["kiki-1"], time.monotonic() + 10
+    while math.isnan(f.c.arrive_at[i]) and time.monotonic() < until:
+        f.arrivals()                                  # here, or in the SimHost's own thread
+        time.sleep(0.005)
+    eta = f.at(t)["kiki-1"].state.goal["arrive_at"] - t
     T = t
     while f.at(T)["kiki-1"].state.mode != "station":
         T += 30
@@ -922,3 +928,29 @@ def test_orders_are_withdrawn_from_the_map():
     assert c.delete(url).status_code == 200
     assert f.at(f.t0 + 3600)["kiki-1"].state.goal is None
     assert c.delete(url).status_code == 404
+
+
+def test_no_ship_passes_a_surface_and_bodies_are_stood_off_by_their_pull():
+    """A ship driven straight down at Earth stops on its surface (she used to fall through it and
+    come out at thousands of km/s); a go-to a body stops where its pull is at most half what she holds."""
+    from astrum.app import create_app
+    w = create_app().state.world
+    f = _demo(w)
+    t0 = f.t0 + 600
+    f.at(t0)
+    i = f.c.row["kiki-1"]
+    E = lambda t: f.eph.positions(t)["earth"]
+    f.c.r[i], f.c.v[i], f.c.mode[i] = E(t0) + np.array([20e6, 0, 0]), E(t0 + 1) - E(t0), 1
+    f.command(Order("kiki-1", t0, "burn", burn={"g": 1.0, "bullseye": "system", "bearing": 180, "elevation": 0,
+                                                 "duration_s": 3 * 3600}, source="map", order_id="down"))
+    radius = next(b for b in w.systems["sol"].massive() if b.id == "earth").radius_eq
+    for T in (t0 + 3600, t0 + 3 * 3600):
+        f.at(T)
+        assert np.linalg.norm(f.c.r[i] - E(T)) == pytest.approx(radius, rel=1e-6)
+        assert np.linalg.norm(f.c.v[i] - (E(T + 1) - E(T))) < 200
+    f.command(Order("luna-strike-1", t0 + 3 * 3600 + 600, "goto",
+                    target={"body": "jupiter"}, g=0.05, source="map", order_id="jove"))
+    j = f.c.row["luna-strike-1"]
+    f.at(t0 + 3 * 3600 + 1200)
+    jupiter = next(b for b in w.systems["sol"].massive() if b.id == "jupiter")
+    assert f.c.stand[j] == pytest.approx(math.sqrt(jupiter.gm / (0.5 * 0.05 * G0)), rel=1e-9)
