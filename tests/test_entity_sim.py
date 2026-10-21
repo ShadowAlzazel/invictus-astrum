@@ -569,3 +569,46 @@ def test_the_map_is_sent_changes_that_add_up():
         fresh = ws.receive_json()
     assert fresh["full"] and ships == fresh["ships"]
     assert small < len(json.dumps(fresh["ships"])) / 3
+
+
+# ---- the Classis, and placement as one array operation ----------------------------------------
+
+def test_placement_is_one_linear_map():
+    """A flagship's formation stands on her, a formation without a place at the mean of its members
+    (down through its sub-formations), and a ship flown stands where she is flown."""
+    from astrum.app import create_app
+    from astrum.placement import plan
+    world = create_app().state.world
+    sc = world.scenarios["sol-demo"]
+    tb = world.table("sol")
+    pos = tb.positions(world.start_time(world.systems["sol"]))
+    bulls = world.resolved("sol", sc.player, pos)
+    p = plan(sc)
+    out = p.positions(bulls, pos)
+    flagship = next(c for c in sc.contacts.values() if "unit" in c.position)
+    assert np.allclose(out[flagship.id], out[flagship.position["unit"]])
+    kids = [m.id for m in sc.contacts.values() if m.formation == "kiki"]
+    assert np.allclose(out["kiki"], np.mean([out[k] for k in kids], axis=0))
+    moved = p.positions(bulls, pos, {"kiki-1": out["kiki-1"] + [3e6, 0, 0]})
+    assert np.allclose(moved["kiki"] - out["kiki"], [1e6, 0, 0])                 # a third of it: three ships
+
+
+def test_the_fleet_is_rows_and_its_ships_are_views():
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    from astrum.classis import LEAD
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.4, "player": "arcvs",
+                               "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
+    f.at(t + 900)
+    rows = f.c
+    i = rows.row["kiki-1"]
+    assert f.ships["kiki-1"].state.r is not None and np.shares_memory(f.ships["kiki-1"].state.r, rows.r)
+    lead = next(iter(f.leads.values()))
+    assert rows.kind[lead.row] == LEAD and rows.lead[i] == lead.row             # her formation's lead is a row too
+    copy = f.at(t + 900)["kiki-1"]
+    copy.state.r[:] = 0
+    assert np.linalg.norm(rows.r[i]) > 0                                      # what at() gives is a copy

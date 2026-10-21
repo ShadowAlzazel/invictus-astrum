@@ -237,29 +237,7 @@ def contact_positions(scenario: Scenario, resolved_bullseyes: dict, positions: d
                       ships: dict[str, np.ndarray] | None = None) -> dict[str, np.ndarray]:
     """Where each contact is, system frame. A unit placed by the simulation (ships) stands where
     it is flown; others where the scenario puts them. A formation sits where it says
-    ({unit = flagship}, or its own AER/body position), else at the mean of its members."""
-    out = {}
-    for c in scenario.contacts.values():
-        p = c.position
-        if not p:
-            continue
-        if "aer" in p:
-            r = resolved_bullseyes[p.get("bullseye", "system")]
-            az, el, rng = p["aer"]
-            out[c.id] = r.point(np.radians(az), np.radians(el), rng * 1e3)
-        elif "body" in p:
-            out[c.id] = positions[p["body"]] + np.asarray(p.get("offset_km", (0, 0, 0)), dtype=float) * 1e3
-    out.update(ships or {})
-    for c in scenario.contacts.values():                 # a formation placed at its flagship
-        if c.position.get("unit") in out:
-            out[c.id] = out[c.position["unit"]]
-    for _ in range(len(scenario.contacts)):          # nested formations settle bottom-up
-        placed = len(out)
-        for c in scenario.contacts.values():
-            if c.id not in out:
-                members = [m for m in scenario.contacts.values() if m.formation == c.id]
-                if members and all(m.id in out for m in members):
-                    out[c.id] = np.mean([out[m.id] for m in members], axis=0)
-        if len(out) == placed:
-            break
-    return out
+    ({unit = flagship}, or its own AER/body position), else at the mean of its members.
+    Worked out by the scenario's placement plan (astrum/placement.py): one array operation."""
+    from .placement import plan
+    return plan(scenario).positions(resolved_bullseyes, positions, ships)

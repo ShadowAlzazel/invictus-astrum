@@ -4,8 +4,8 @@ A Fleet is built from a scenario. Every contact that names a ship class becomes 
 (astrum/entity.py). A ship is in one of two modes:
 
     station   she holds her place in the scenario (an AER from a bullseye, or a body offset), and
-              pays for it: every step her tanks are charged the Δv it takes to follow that place
-              against gravity, |Δv_place − g·dt|
+              pays for it: every 5 minutes her tanks are charged the Δv it took to follow that
+              place against gravity, |Δv_place − g·dt|
     free      she flies: gravity from every body (point masses and J2) and her own thrust,
               integrated kick-drift-kick
 
@@ -32,6 +32,12 @@ rewinds the fleet to the last checkpoint before it and flies on from there.
 The fleet keeps checkpoints, so the map's clock can run forward cheaply and be scrubbed back.
 Time before the scenario starts shows every ship on station with full tanks.
 
+The fleet is a Classis (astrum/classis.py): every hull and every formation lead is a row of
+arrays, and a block of flight is one call of the compiled step (kernels.fly) per group of units
+that want the same steps. Targets are made into tracks first (a flying ship read live off her row,
+anything else worked out every minute and drawn straight between); station ships are placed all
+at once and pay for their places on a 5 minute grid.
+
 The fleet runs in whatever thread asks for it, never the server's event loop, and in short
 chunks under its lock: an order can be taken between two chunks, and a caller with a time budget
 (the map) gets the fleet as far as it got, rather than waiting for all of it (Fleet.advance).
@@ -39,7 +45,6 @@ chunks under its lock: an order can be taken between two chunks, and a caller wi
 from __future__ import annotations
 
 import bisect
-import copy
 import math
 import threading
 import time
@@ -48,9 +53,14 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from . import kernels
-from .entity import G0, Ship, ShipSpec, ShipState, SpecError
+from .classis import BURN_G, BURN_NONE, BURN_THROTTLE, DEAD, FREE, LEAD, SHIP, STATION, Classis, LeadView, ship_view
+from .entity import G0, Ship, ShipSpec, SpecError
+from .frames import from_aer
 
-STEP_STATION_S = 600.0         # station ships are brought up to date this often
+STATION_S = 300.0              # station ships pay for their places on a grid this fine (finer changes the bill by < 0.2%)
+TRACK_DT = 60.0                # a target is worked out this often across a block, and drawn straight between
+CLOSE_SHARE, CLOSE_MIN_S = 0.02, 1.0   # an order closes in steps of this share of the time left, at least this
+SAMPLE_S = 300.0               # an ephemeris without a table is sampled this often for the step
 STEP_MIN_S, STEP_MAX_S = 10.0, 600.0
 BLOCK_S = 600.0                # the fleet moves in blocks this long at most; each unit takes its own steps inside one
 STEP_ETA = 0.005               # a flying ship's step: this share of her dynamical time, √(r³/GM), to the nearest pull
@@ -126,10 +136,6 @@ class Order:
     by: str | None = None          # the unit the order was given to: the ship, or her formation
 
 
-def _copies(ships: dict[str, Ship]) -> dict[str, Ship]:
-    return {i: Ship(s.id, s.callsign, s.spec, s.load, s.state.copy()) for i, s in ships.items()}
-
-
 def eta_s(d: float, closing: float, lateral: float, a: float) -> float:
     """Time to stop at a point d away, closing at `closing` (negative: opening), holding a:
     bang-bang in one dimension, plus the time to null any velocity across the line."""
@@ -148,54 +154,24 @@ def eta_s(d: float, closing: float, lateral: float, a: float) -> float:
     return t + lateral / a
 
 
-def eta_many(d: np.ndarray, closing: np.ndarray, lateral: np.ndarray, a: np.ndarray) -> np.ndarray:
-    """eta_s for many at once."""
-    with np.errstate(divide="ignore", invalid="ignore"):
-        a_ = np.where(a > 0, a, 1.0)
-        stop = np.maximum(closing, 0.0) ** 2 / (2 * a_)
-        t_short = (2 * np.sqrt(a_ * d + closing * closing / 2) - closing) / a_      # closing, room to stop
-        t_over = closing / a_ + 2 * np.sqrt(np.maximum(stop - d, 0.0) / a_)       # closing, too fast to stop
-        w = np.maximum(-closing, 0.0)
-        t_open = w / a_ + 2 * np.sqrt((d + w * w / (2 * a_)) / a_)                # opening
-        t = np.where(closing >= 0, np.where(stop <= d, t_short, t_over), t_open) + lateral / a_
-        coast = np.where(closing > 0, d / np.where(closing > 0, closing, 1.0), np.inf)
-        return np.where(a > 0, t, coast)
-
-
-@dataclass
-class Lead:
-    """The point a formation flies an order by. It goes to the target by the same flip-and-burn
-    as a ship, at what its slowest ship can hold less a margin, and each ship keeps her place on
-    it (her offset when the order was given); a point, it has no mass and burns nothing."""
-    order_id: str
-    r: np.ndarray
-    v: np.ndarray
-    t: float
-    goal: dict                     # as a ship's: target (no offset), label, g, standoff_m, issued, and how it goes
-    n: int = 1                     # ships that joined: it starts at their mean
-    a: np.ndarray = field(default_factory=lambda: np.zeros(3))     # acceleration it holds this step, thrust only
-
-    def copy(self) -> "Lead":
-        return Lead(self.order_id, self.r.copy(), self.v.copy(), self.t, copy.deepcopy(self.goal), self.n, self.a.copy())
-
-
 class Fleet:
-    """A scenario's ships. `place(t)` gives (body positions, contact positions, resolved
-    bullseyes) at t, as the map places them; the fleet asks it for every station and order."""
+    """A scenario's ships, as a Classis (astrum/classis.py): a row per hull and per formation lead.
+    `place(t)` gives (body positions, contact positions, resolved bullseyes) at t, as the map
+    places them; the fleet asks it where its station ships stand."""
 
     def __init__(self, scenario, system, eph, registry, place, t0: float, orders: list[Order] | None = None,
                  bullseyes=None):
         self.scenario, self.system, self.eph, self.place = scenario, system, eph, place
-        # bullseyes(player, body positions) -> {id: Resolved}; a player's own, for orders from the map
+        # bullseyes(player, body positions, only) -> {id: Resolved}; a player's own, for orders from the map
         self.bullseyes = bullseyes
         self.t0 = t0
         self.orders = sorted(orders or [], key=lambda o: o.at)
         self.lock = threading.Lock()
         self.findings: list[str] = []
-        self.ships: dict[str, Ship] = {}
-        bodies, placed, _ = place(t0)
+        _, placed, _ = place(t0)
         _, ahead, _ = place(t0 + PROBE_S)
         specs: dict[str, ShipSpec] = {}
+        rows = []
         for c in scenario.contacts.values():
             if not c.ship_class or c.id not in placed:
                 continue
@@ -211,30 +187,38 @@ class Fleet:
             if load not in spec.hull_kg:
                 self.findings.append(f"{c.id}: no load {load!r}; {sc.id} has {sorted(spec.hull_kg)}")
                 load = spec.heaviest_load
-            share = 1.0 if c.propellant is None else c.propellant
-            v = (ahead[c.id] - placed[c.id]) / PROBE_S
-            st = ShipState(t=t0, r=placed[c.id].copy(), v=v, propellant_kg=spec.propellant_kg * share, mode=c.mode or "station")
-            self.ships[c.id] = Ship(c.id, c.callsign, spec, load, st)
+            rows.append((c, spec, load))
+        self.c = cl = Classis(len(rows) + 8)
+        for c, spec, load in rows:
+            i = cl.add(c.id, SHIP, c.callsign, spec, load)
+            cl.r[i], cl.v[i], cl.t[i] = placed[c.id], (ahead[c.id] - placed[c.id]) / PROBE_S, t0
+            cl.prop[i] = spec.propellant_kg * (1.0 if c.propellant is None else c.propellant)
+            cl.mode[i] = FREE if c.mode == "free" else STATION
+        self.ships: dict[str, Ship] = {cl.ids[i]: ship_view(cl, i) for i in range(cl.n)}   # live, on their rows
+        self.leads: dict[str, LeadView] = {}            # order id -> the lead of a formation flying it
         self.t = t0
         self._order_i = 0
-        self._station_t = t0                    # station ships are brought up to date on their own cadence
+        self._station_t = t0                    # station ships have paid for their places up to here
         self._body_cache: dict[float, dict] = {}
-        self._bull_cache: dict[tuple, dict] = {}
-        self.leads: dict[str, Lead] = {}            # order id -> the lead of a formation flying it
+        self._bull_cache: dict[tuple, object] = {}
+        self._place_cache: dict[float, tuple] = {}
+        self._splan = None                      # how the station ships are placed; made again when one takes or leaves station
         self._pulls = [b for b in system.massive() if b.gm > 0]
         self._gms = np.array([b.gm for b in self._pulls])
-        self._checkpoints: list[tuple[float, dict, int, float]] = [(t0, self._snapshot(), 0, t0)]
+        self._oblate = _pulls(system, eph)[4]
+        self._checkpoints: list[tuple] = [(t0, self._snapshot(), 0, t0)]
 
     # ---- checkpoints --------------------------------------------------------------------------
-    def _snapshot(self) -> tuple[dict, dict]:
-        return {sid: s.state.copy() for sid, s in self.ships.items()}, {k: L.copy() for k, L in self.leads.items()}
+    def _snapshot(self) -> tuple:
+        return self.c.snapshot(), {oid: L.row for oid, L in self.leads.items()}
 
-    def _restore(self, t: float, snap: tuple[dict, dict], order_i: int, station_t: float) -> None:
-        ships, leads = snap
-        for sid, st in ships.items():
-            self.ships[sid].state = st.copy()
-        self.leads = {k: L.copy() for k, L in leads.items()}
+    def _restore(self, t: float, snap: tuple, order_i: int, station_t: float) -> None:
+        rows, leads = snap
+        self.c.restore(rows)
+        self.leads = {oid: LeadView(self.c, i) for oid, i in leads.items()}
         self.t, self._order_i, self._station_t = t, order_i, station_t
+        self._place_cache.clear()
+        self._splan = None
 
     # ---- orders from the map ------------------------------------------------------------------
     def command(self, order: Order) -> None:
@@ -256,9 +240,9 @@ class Fleet:
     def advance(self, t: float, budget_s: float | None = None, view=None) -> tuple[float, object]:
         """Run the fleet to t, from the nearest state at or before it, in chunks of CHUNK_S under
         the lock. With a budget (wall seconds) it stops when that is spent, short of t if need be.
-        Returns (the time it reached, view(ships)); view runs under the lock, and by default copies
-        the ships."""
-        view = view or _copies
+        Returns (the time it reached, view(ships)); view runs under the lock (ships are live views
+        on their rows), and by default copies them."""
+        view = view or (lambda ships: {i: self.c.ship(self.c.row[i]) for i in ships})
         deadline = time.monotonic() + budget_s if budget_s is not None else math.inf
         while True:
             with self.lock:
@@ -273,201 +257,340 @@ class Fleet:
                     return self.t, view(self.ships)
 
     def _show(self, t: float) -> None:
-        """Station ships stand at their place at t for the map. What holding it cost is charged
-        on their cadence (_stations), not here, so asking for a moment costs one placement."""
-        if t - self._station_t < 1e-6 or not any(s.state.mode == "station" for s in self.ships.values()):
+        """Station ships stand at their place at t for the map: one placement, all of them. What
+        holding it costs is paid on the station grid (_stations_to), not here."""
+        if t - self._station_t < 1e-6:
             return
-        _, placed, _ = self.place(t)
-        for s in self.ships.values():
-            if s.state.mode == "station":
-                p = self._station_pos(s, t, placed)
-                if p is not None:
-                    s.state.r = p
+        rows, P = self._station_positions(t)
+        if len(rows):
+            self.c.r[rows] = P
 
     def _before_start(self, t: float) -> dict[str, Ship]:
         """Before the scenario starts, everyone is on station with the tanks she starts with."""
         self._restore(*self._checkpoints[0])
-        _, placed, _ = self.place(t)
-        for sid, s in self.ships.items():
+        _, placed, _ = self._placed(t)
+        for sid, i in self.c.row.items():
             if sid in placed:
-                s.state.r = placed[sid].copy()
+                self.c.r[i] = placed[sid]
         return self.ships
 
     def _run(self, t_end: float, until: float = math.inf) -> bool:
         """Fly on toward t_end until the wall clock passes `until`. True when it got there."""
+        c = self.c
         while True:
             given = False
             while self._order_i < len(self.orders) and self.orders[self._order_i].at <= self.t:
-                self._apply(self.orders[self._order_i])
+                o = self.orders[self._order_i]
+                self._stations_to(o.at, partial=True)   # station ships pay up to the order first
+                self._apply(o)
                 self._order_i += 1
                 given = True
             if given:                                   # first thrusts, and when they get there
-                self._steer(self.t, STEP_BURN_MAX_S)
+                self._fly(self.t, self.t, steer_only=True)
             if self.t >= t_end - 1e-6:
                 return True
             if time.monotonic() > until:
                 return False
             nxt = self.orders[self._order_i].at if self._order_i < len(self.orders) else math.inf
-            ends = [s.state.burn["until"] for s in self.ships.values() if s.state.burn and not s.state.burn.get("guided")]
-            t1 = min(self.t + BLOCK_S, t_end, nxt, *(e for e in ends if e > self.t))
-            self._block(self.t, t1)
+            n = c.n
+            held = (c.burn[:n] == BURN_G) | (c.burn[:n] == BURN_THROTTLE)
+            ends = c.buntil[:n][held]
+            t1 = min(self.t + BLOCK_S, t_end, nxt, *(float(e) for e in ends if e > self.t))
+            self._fly(self.t, t1)
             self.t = t1
-            due = self._order_i < len(self.orders) and self.orders[self._order_i].at <= t1
-            if due or t1 - self._station_t >= STEP_STATION_S - 1e-6:
-                self._stations(t1)
+            self._stations_to(t1)
             if self.t - self._checkpoints[-1][0] >= CHECKPOINT_S:
-                self._stations(self.t)
                 self._checkpoints.append((self.t, self._snapshot(), self._order_i, self._station_t))
                 if len(self._checkpoints) > MAX_CHECKPOINTS:
                     del self._checkpoints[1:len(self._checkpoints) // 2:2]      # thin the old half
 
-    # ---- separate step sizes: blocks, and each unit's own steps inside them ----------------------
-    def _units(self) -> list[tuple[list[Ship], "Lead | None"]]:
+    # ---- a block: units, their steps, their targets, then kernels.fly --------------------------
+    def _units(self) -> list[np.ndarray]:
         """What steps together: a formation's lead and the ships keeping their places on it, or a
-        ship on her own."""
-        units = [(self._members(L.order_id), L) for L in self.leads.values()]
-        units += [([s], None) for s in self.ships.values() if s.state.mode == "free" and not self._in_formation(s)]
+        ship on her own. Rows."""
+        c, n = self.c, self.c.n
+        free = (c.mode[:n] == FREE)
+        lead = c.lead[:n]
+        member = free & (c.kind[:n] == SHIP) & c.goal[:n] & (lead >= 0) & ~c.solo[:n]
+        member &= np.where(lead >= 0, c.mode[np.maximum(lead, 0)] == FREE, False)
+        units = [np.concatenate([[L.row], np.flatnonzero(member & (lead == L.row))]).astype(np.int64)
+                 for L in self.leads.values() if c.mode[L.row] == FREE]
+        units += [np.array([i], dtype=np.int64) for i in np.flatnonzero(free & (c.kind[:n] == SHIP) & ~member)]
         return units
 
     def _unit_steps(self, units) -> np.ndarray:
         """The step each unit wants: 0.5% of the dynamical time to the nearest pull of any of its
-        ships (10 s – 10 min), a minute at most under thrust or on an order, and a fiftieth of the
-        time left (at least 1 s) as an order arrives."""
-        objs, owner = [], []
-        for u, (ships, L) in enumerate(units):
-            for x in ([L.r] if L is not None else []) + [s.state.r for s in ships]:
-                objs.append(x)
-                owner.append(u)
+        rows (10 s – 10 min), a minute at most under thrust or on an order, and a fiftieth of the
+        time left (at least 1 s) as an order arrives (kernels.fly shrinks it further as it closes)."""
+        c = self.c
+        allrows = np.concatenate(units)
+        owner = np.concatenate([np.full(len(u), k) for k, u in enumerate(units)])
         bodies = self._bodies(self.t)
-        X, B = np.array(objs), np.array([bodies[b.id] for b in self._pulls])
+        X, B = c.r[allrows], np.array([bodies[b.id] for b in self._pulls])
         D = X[:, None, :] - B[None]
         d2 = np.maximum(np.einsum("ijk,ijk->ij", D, D), 1.0)
         dyn = np.min(np.sqrt(d2 ** 1.5 / self._gms[None, :]), axis=1)
         want = np.full(len(units), STEP_MAX_S)
-        np.minimum.at(want, np.array(owner), np.clip(STEP_ETA * dyn, STEP_MIN_S, STEP_MAX_S))
-        for u, (ships, L) in enumerate(units):
-            goal = L.goal if L is not None else ships[0].state.goal
-            if L is not None or goal or any(s.state.thrust_n > 0 for s in ships):
-                want[u] = min(want[u], STEP_BURN_MAX_S)
-            want[u] = min(want[u], self._closing_step(units[u]))
+        np.minimum.at(want, owner, np.clip(STEP_ETA * dyn, STEP_MIN_S, STEP_MAX_S))
+        busy = c.goal[allrows] | (c.thrust[allrows] > 0) | (c.kind[allrows] == LEAD)
+        np.minimum.at(want, owner[busy], STEP_BURN_MAX_S)
+        e = c.eta1[allrows]
+        flying = c.goal[allrows] & np.isfinite(e)
+        np.minimum.at(want, owner[flying], np.maximum(CLOSE_SHARE * e[flying], CLOSE_MIN_S))
         return want
 
-    @staticmethod
-    def _closing_step(unit) -> float:
-        """A unit flying an order closes in steps of a fiftieth of the time left, 1 s at least."""
-        ships, L = unit
-        goal = L.goal if L is not None else (ships[0].state.goal if ships else None)
-        eta = (goal or {}).get("eta1_s")
-        return max(0.02 * eta, 1.0) if eta is not None and math.isfinite(eta) else math.inf
-
-    def _block(self, T0: float, T1: float) -> None:
+    def _fly(self, T0: float, T1: float, steer_only: bool = False) -> None:
         """Fly every flying unit from T0 to T1, each in as many equal steps as it wants (block time
         steps): a ship closing on her target in 1 s steps does not hold a coasting fleet to them.
         Units do not pull on each other, so their steps need not line up inside a block; units that
-        want the same number are stepped together, in one array."""
+        want the same number are flown together, in one call of kernels.fly. With steer_only: set
+        every order's first thrust and how it stands at T0, nothing flown."""
         span = T1 - T0
-        if span <= 0:
+        if span <= 0 and not steer_only:
             return
+        self._prune_leads()
         units = self._units()
         if not units:
             return
-        wants = self._unit_steps(units)
-        buckets: dict[int, list] = {}
-        for unit, want in zip(units, wants):
-            n = max(1, math.ceil(span / want - 1e-9))
-            buckets.setdefault(n, []).append((unit, want))
-        for n, rows in sorted(buckets.items()):
-            us = [u for u, _ in rows]
-            ships = [s for u in us for s in u[0]]
-            leads = [u[1] for u in us if u[1] is not None]
-            base = min(w for _, w in rows)
-            t = T0
-            while t < T1 - 1e-9:
-                # as an order closes in, its steps shrink with the time left
-                h = min(base, min(self._closing_step(u) for u in us), T1 - t)
-                if T1 - t - h < 0.25 * h:                 # no sliver of a step at the end
-                    h = T1 - t
-                self._step(t, t + h, ships, leads)
-                t += h
+        c = self.c
+        for oid, L in self.leads.items():               # a lead holds what its slowest ship can, less a margin
+            ms = np.flatnonzero((c.lead[: c.n] == L.row) & (c.mode[: c.n] == FREE) & ~c.solo[: c.n] & c.goal[: c.n])
+            if len(ms):
+                c.amax[L.row] = LEAD_MARGIN * float(np.min(c.fmax[ms] / (c.dry[ms] + c.prop[ms])))
+        tracks = self._tracks(np.concatenate(units), T0, max(T1, T0 + TRACK_DT))
+        node_t0, node_h, NP, NV = self._nodes(T0, max(T1, T0 + 1.0))
+        if steer_only:
+            groups = {1: (units, STEP_BURN_MAX_S)}
+        else:
+            groups = {}
+            for unit, want in zip(units, self._unit_steps(units)):
+                n = max(1, math.ceil(span / want - 1e-9))
+                g = groups.setdefault(n, ([], math.inf))
+                groups[n] = (g[0] + [unit], min(g[1], float(want)))
+        for n, (us, base) in sorted(groups.items()):
+            kernels.fly(np.concatenate(us), T0, T1, base, steer_only,
+                        c.r, c.v, c.t, c.kind, c.mode, c.prop, c.dry, c.fmax, c.ve, c.dvs, c.thrust, c.dir, c.acc,
+                        c.burn, c.bval, c.buntil, c.goal, c.gg, c.track, c.off, c.stand, c.hold, c.hashold,
+                        c.lead, c.solo, c.amax, c.aim, c.rng, c.clos, c.eta1, c.arr_t, *tracks,
+                        node_t0, node_h, NP, NV, self._gms, *self._oblate,
+                        G0, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS, FORM_T_STEPS, FORM_T_MIN_S, CLOSE_SHARE, CLOSE_MIN_S)
+        self._settle(T1 if not steer_only else T0)
 
-    def _step(self, t0: float, t1: float, ships: list[Ship] | None = None, leads: list | None = None) -> None:
-        """One step of the given ships and leads (all of them if not given)."""
-        dt = t1 - t0
-        if dt <= 0:
-            return
-        ships = list(self.ships.values()) if ships is None else ships
-        leads = list(self.leads.values()) if leads is None else leads
-        grav = self._steer(t0, dt, ships, leads)        # orders set every thrust for the step
-        free = [s for s in ships if s.state.mode == "free"]           # some may have arrived
-        leads = [L for L in leads if self.leads.get(L.order_id) is L]
-        if not free and not leads:
-            return
-        # kick-drift-kick under gravity; the burn's Δv, exact over the step by the rocket
-        # equation, is given half before the drift and half after. A lead is a point: its
-        # acceleration is what it was steered to, held over the step.
-        g0 = [grav[s.id] for s in free] + [grav[("lead", L.order_id)] for L in leads]
-        kicks = []
-        for s, g in zip(free, g0):
-            st = s.state
-            u = st.direction if st.direction is not None else np.zeros(3)
-            burned, dv = s.burn_for(dt)
-            kicks.append(u * dv)
-            st.v = st.v + g * dt / 2 + u * dv / 2
-            st.r = st.r + st.v * dt
-            if st.burn and st.burn.get("guided"):      # guidance sets the next step; she shows what she is doing
-                st.thrust_n = 0.0 if st.propellant_kg <= 0 else min(st.burn["g"] * G0 * s.mass_kg, s.spec.thrust_n)
-            elif st.burn and (t1 >= st.burn["until"] - 1e-6 or burned < dt - 1e-6 or st.propellant_kg <= 0):
-                st.burn, st.thrust_n, st.direction = None, 0.0, None
-            elif st.burn:
-                st.thrust_n = s.thrust_for(st.burn.get("g"), st.burn.get("throttle"))
-        for L, g in zip(leads, g0[len(free):]):
-            L.v = L.v + (g + L.a) * dt / 2
-            L.r = L.r + L.v * dt
-        g1 = gravity_many(self.system, self.eph, self._bodies(t1), np.array([s.state.r for s in free] + [L.r for L in leads]))
-        for s, g, k in zip(free, g1, kicks):
-            s.state.v = s.state.v + g * dt / 2 + k / 2
-            s.state.t = t1
-        for L, g in zip(leads, g1[len(free):]):
-            L.v = L.v + (g + L.a) * dt / 2
-            L.t = t1
+    def _prune_leads(self) -> None:
+        c = self.c
+        for oid, L in list(self.leads.items()):
+            members = (c.lead[: c.n] == L.row) & (c.mode[: c.n] == FREE) & c.goal[: c.n] & ~c.solo[: c.n]
+            if c.mode[L.row] != FREE or not members.any():   # arrived, or no ship flies it any more
+                c.mode[L.row], c.goal[L.row] = DEAD, False
+                del self.leads[oid]
+
+    def _settle(self, t: float) -> None:
+        """What happened in the block, put in words: ships that arrived take station; a formation
+        whose lead arrived flies its last leg ship by ship; every order's time to target."""
+        c = self.c
+        for i in np.flatnonzero(~np.isnan(c.arr_t[: c.n])):
+            ta = float(c.arr_t[i])
+            c.arr_t[i] = math.nan
+            if c.kind[i] == LEAD:
+                for j in np.flatnonzero((c.lead[: c.n] == i) & c.solo[: c.n] & c.hashold[: c.n] & c.goal[: c.n]):
+                    m = c.meta[j]
+                    if m is not None and not m.get("solo"):
+                        m["solo"], m["hold_m"] = True, c.hold[j].tolist()
+                c.goal[i] = False
+                self.leads.pop(c.ids[i], None)
+            else:
+                self._arrive(i, ta, c.r[i].copy())
+        for i in np.flatnonzero(c.goal[: c.n] & (c.mode[: c.n] == FREE)):
+            L = int(c.lead[i])
+            if c.kind[i] == SHIP and L >= 0 and not c.solo[i] and c.mode[L] == FREE:
+                continue                                  # in formation: the lead's time to target is hers
+            a = c.amax[i] if c.kind[i] == LEAD else min(c.gg[i] * G0, c.max_accel(i))
+            c.eta[i] = self._eta(c.meta[i], t, c.r[i].copy(), c.v[i].copy(), min(c.gg[i] * G0, a), float(c.eta1[i]))
+
+    # ---- targets as tracks -----------------------------------------------------------------------
+    def _tracks(self, rows: np.ndarray, T0: float, T1: float):
+        """Every target the given rows fly to, as a track for the block: a flying ship is read
+        live off her row; anything else (a point off a bullseye, a body, a unit on station, a
+        formation) is worked out every TRACK_DT and drawn straight between. Rows whose target
+        cannot be found have lost it."""
+        c = self.c
+        keys: dict[str, int] = {}
+        kinds, trow, knots, hold = [], [], [], []
+        K = max(2, math.ceil((T1 - T0) / TRACK_DT) + 2)
+        for i in rows:
+            if not c.goal[i]:
+                continue
+            m = c.meta[i]
+            spec = {k: v for k, v in m["target"].items() if k not in ("offset_m", "label")}
+            key = repr(sorted(spec.items()))
+            if key not in keys:
+                j = c.row.get(spec.get("unit")) if "unit" in spec else None
+                if j is not None and c.mode[j] == FREE:
+                    kinds.append(1); trow.append(j); knots.append(np.zeros((K, 3)))
+                else:
+                    pts = [self._point(spec, T0 + k * TRACK_DT) for k in range(K)]
+                    if any(p is None for p in pts):
+                        keys[key] = -1
+                        continue
+                    kinds.append(0); trow.append(-1); knots.append(np.array(pts))
+                hold.append("bullseye" not in spec)
+                keys[key] = len(kinds) - 1
+            if keys[key] < 0:
+                self._lost(int(i))
+                continue
+            c.track[i] = keys[key]
+        if not kinds:
+            kinds, trow, knots, hold = [0], [-1], [np.zeros((K, 3))], [False]
+        return (np.array(kinds, dtype=np.int64), np.array(trow, dtype=np.int64), np.array(knots),
+                np.full(len(kinds), K, dtype=np.int64), float(T0), TRACK_DT, np.array(hold, dtype=np.bool_))
+
+    def _lost(self, i: int) -> None:
+        c = self.c
+        if c.kind[i] == LEAD:
+            self.findings.append(f"{c.ids[i]}: lost the target of the order")
+            for j in np.flatnonzero(c.lead[: c.n] == i):
+                c.goal[j], c.meta[j] = False, None
+            c.mode[i], c.goal[i] = DEAD, False
+            self.leads.pop(c.ids[i], None)
+        else:
+            self.findings.append(f"{c.ids[i]}: lost the target of her order")
+            c.goal[i], c.meta[i] = False, None
+
+    def _nodes(self, t0: float, t1: float):
+        """The pulling bodies at the table's nodes over [t0, t1]: (first node's time, step,
+        positions, velocities), for kernels.fly and kernels.predict. An ephemeris without a table
+        is sampled."""
+        if hasattr(self.eph, "nodes"):
+            node_t0, NP, NV = self.eph.nodes(t0, t1)
+            cols = self._pull_cols()
+            return node_t0, self.eph.h, np.ascontiguousarray(NP[:, cols]), np.ascontiguousarray(NV[:, cols])
+        h = SAMPLE_S
+        ks = range(math.floor(t0 / h), math.ceil(t1 / h) + 2)
+        at = lambda t: np.array([self.eph.positions(t)[b.id] for b in self._pulls])
+        NP = np.array([at(k * h) for k in ks])
+        NV = np.array([(at(k * h + 1.0) - at(k * h - 1.0)) / 2.0 for k in ks])
+        return ks[0] * h, h, NP, NV
+
+    def _pull_cols(self) -> np.ndarray:
+        if getattr(self, "_cols", None) is None:
+            where = {bid: i for i, bid in enumerate(self.eph.ids)}
+            self._cols = np.array([where[b.id] for b in self._pulls], dtype=np.int64)
+        return self._cols
 
     def _bodies(self, t: float) -> dict:
-        """Body positions at t; a step's end is the next step's start, so the last two are kept."""
+        """Body positions at t; a step's end is the next step's start, so the last few are kept."""
         c = self._body_cache
         if t in c:
             return c[t]
-        if len(c) > 2:
+        if len(c) > 4:
             c.pop(next(iter(c)))
         c[t] = self.eph.positions(t)
         return c[t]
 
-    def _stations(self, t1: float) -> None:
+    # ---- station ships: placed all at once, paying for their places on a grid ---------------------
+    def _placed(self, t: float) -> tuple:
+        got = self._place_cache.get(t)
+        if got is None:
+            if len(self._place_cache) > 4:
+                self._place_cache.pop(next(iter(self._place_cache)))
+            got = self._place_cache[t] = self.place(t)
+        return got
+
+    def _station_plan(self):
+        """Which ships are on station, and how each is placed: her scenario place, or the place an
+        order left her holding (off a bullseye, its local vectors; off a body, its offsets; off a
+        unit). Made again only when a ship takes or leaves station."""
+        if self._splan is not None:
+            return self._splan
+        c, n = self.c, self.c.n
+        rows = np.flatnonzero((c.mode[:n] == STATION) & (c.kind[:n] == SHIP))
+        scen, units, held = [], [], {}
+        for k, i in enumerate(rows):
+            sa = c.station_at[i]
+            if sa is None:
+                scen.append((k, c.ids[i]))
+            elif "bullseye" in sa:
+                held.setdefault(("b", sa.get("player"), sa["bullseye"]), []).append(k)
+            elif "body" in sa:
+                held.setdefault(("o", sa["body"]), []).append(k)
+            else:
+                units.append((k, sa))
+        groups = []
+        for key, ks in held.items():
+            sas = [c.station_at[rows[k]] for k in ks]
+            off = np.array([sa.get("offset_m", (0.0, 0.0, 0.0)) for sa in sas], dtype=float)
+            L = (np.array([from_aer(math.radians(sa["aer"][0]), math.radians(sa["aer"][1]), sa["aer"][2]) for sa in sas])
+                 if key[0] == "b" else None)
+            groups.append((key, np.array(ks), L, off))
+        self._splan = (rows, scen, groups, units)
+        return self._splan
+
+    def _station_positions(self, t: float) -> tuple[np.ndarray, np.ndarray]:
+        """Where every station ship stands at t, all at once: the scenario's placement for those
+        on their scenario place, one product per bullseye and one sum per body for those holding
+        where an order left them, and a look for the few holding on a unit."""
+        rows, scen, groups, units = self._station_plan()
+        if not len(rows):
+            return rows, np.zeros((0, 3))
+        P = np.full((len(rows), 3), np.nan)
+        _, placed, _ = self._placed(t)
+        for k, cid in scen:
+            p = placed.get(cid)
+            if p is not None:
+                P[k] = p
+        for key, ks, L, off in groups:
+            if key[0] == "b":
+                b = self._bull(key[1], key[2], t)
+                if b is not None:
+                    P[ks] = b.origin + L @ b.axes.T + off
+            else:
+                P[ks] = np.asarray(self._bodies(t)[key[1]]) + off
+        for k, sa in units:
+            p = self._point(sa, t, placed)
+            if p is not None:
+                P[k] = p
+        ok = ~np.isnan(P).any(axis=1)
+        return rows[ok], P[ok]
+
+    def _stations_to(self, t_end: float, partial: bool = False) -> None:
+        """Station ships pay for their places up to t_end, on a grid STATION_S apart from the
+        scenario's start (partial: up to t_end itself, before an order)."""
+        while True:
+            nxt = self.t0 + (math.floor((self._station_t - self.t0) / STATION_S + 1e-9) + 1) * STATION_S
+            if nxt <= t_end + 1e-9:
+                self._charge(nxt)
+            else:
+                if partial and t_end > self._station_t + 1e-9:
+                    self._charge(t_end)
+                return
+
+    def _charge(self, t1: float) -> None:
         """Bring every station ship up to t1: she rides her place and pays what it cost against
-        gravity since she was last brought up to date, |Δv_place − g·Δt|."""
-        if t1 <= self._station_t + 1e-9:
-            return
+        gravity since she was last brought up to date, |Δv_place − g·Δt|, all of them at once."""
         t_prev, self._station_t = self._station_t, t1
-        station = [s for s in self.ships.values() if s.state.mode == "station"]
-        if not station:
+        c = self.c
+        rows, P1 = self._station_positions(t1)
+        if not len(rows):
             return
-        _, placed1, _ = self.place(t1)
-        _, ahead, _ = self.place(t1 + PROBE_S)
-        rows = []
-        for s in station:
-            p1, p2 = self._station_pos(s, t1, placed1), self._station_pos(s, t1 + PROBE_S, ahead)
-            if p1 is None or p2 is None:
-                continue
-            dt = t1 - max(s.state.t, t_prev) if s.state.t < t1 else 0.0       # since she was last brought up
-            rows.append((s, p1, (p2 - p1) / PROBE_S, dt))
-        if not rows:
-            return
-        mid = np.array([p1 - s.state.v * dt / 2 for s, p1, _, dt in rows])
-        gm = gravity_many(self.system, self.eph, self._bodies(0.5 * (t_prev + t1)), mid)
-        for (s, p1, v1, dt), g in zip(rows, gm):
-            st = s.state
-            if dt > 0:
-                s.spend(float(np.linalg.norm(v1 - st.v - g * dt)))
-            st.r, st.v, st.t = p1, v1, t1
+        rows2, P2 = self._station_positions(t1 + PROBE_S)
+        if len(rows2) != len(rows) or (rows2 != rows).any():
+            keep = np.isin(rows, rows2)
+            rows, P1 = rows[keep], P1[keep]
+            P2 = P2[np.isin(rows2, rows)]
+        V1 = (P2 - P1) / PROBE_S
+        dt = np.where(c.t[rows] < t1, t1 - np.maximum(c.t[rows], t_prev), 0.0)
+        mid = P1 - c.v[rows] * dt[:, None] / 2
+        g = gravity_many(self.system, self.eph, self._bodies(0.5 * (t_prev + t1)), mid)
+        dv = np.where(dt > 0, np.linalg.norm(V1 - c.v[rows] - g * dt[:, None], axis=1), 0.0)
+        ve = c.ve[rows]
+        pay = (dv > 0) & (ve > 0)
+        if pay.any():                                    # the rocket equation, every ship at once
+            r_, ve_, m0 = rows[pay], ve[pay], c.dry[rows[pay]] + c.prop[rows[pay]]
+            left = ve_ * np.log(m0 / c.dry[r_])
+            d = np.minimum(dv[pay], left)
+            c.prop[r_] = np.maximum(0.0, c.prop[r_] - m0 * (1 - np.exp(-d / ve_)))
+            c.dvs[r_] += d
+        c.r[rows], c.v[rows], c.t[rows] = P1, V1, t1
 
     # ---- where things are ---------------------------------------------------------------------
     def _bull(self, player: str | None, bid: str, t: float):
@@ -481,7 +604,7 @@ class Fleet:
             if self.bullseyes is not None:
                 c[key] = self.bullseyes(key[0], self._bodies(t), bid).get(bid)
             else:
-                c[key] = self.place(t)[2].get(bid)
+                c[key] = self._placed(t)[2].get(bid)
         return c[key]
 
     def _point(self, spec: dict, t: float, placed: dict | None = None, depth: int = 0) -> np.ndarray | None:
@@ -497,25 +620,26 @@ class Fleet:
         if "body" in spec:
             return self._bodies(t)[spec["body"]] + off
         if "unit" in spec:
-            u = spec["unit"]
-            other = self.ships.get(u)
-            if other is not None and depth < 3:
-                if other.state.mode == "free":
-                    return other.state.r + other.state.v * (t - other.state.t) + off
-                p = self._station_pos(other, t, placed, depth + 1)
+            u, c = spec["unit"], self.c
+            j = c.row.get(u)
+            if j is not None and depth < 3:
+                if c.mode[j] == FREE:
+                    return c.r[j] + c.v[j] * (t - c.t[j]) + off
+                p = self._station_pos(j, t, placed, depth + 1)
                 return None if p is None else p + off
             if placed is None or u not in placed:
-                placed = self.place(t)[1]
+                placed = self._placed(t)[1]
             return placed[u] + off if u in placed else None
         return None
 
-    def _station_pos(self, s: Ship, t: float, placed: dict | None, depth: int = 0) -> np.ndarray | None:
-        sa = s.state.station_at
+    def _station_pos(self, i: int, t: float, placed: dict | None = None, depth: int = 0) -> np.ndarray | None:
+        sa = self.c.station_at[i]
         if sa:
             return self._point(sa, t, placed, depth)
         if placed is None:
-            placed = self.place(t)[1]
-        return placed[s.id].copy() if s.id in placed else None
+            placed = self._placed(t)[1]
+        p = placed.get(self.c.ids[i])
+        return None if p is None else np.array(p, dtype=float)
 
     def _raw_target(self, goal: dict, t: float) -> tuple[np.ndarray, np.ndarray] | None:
         """Where a go-to's target is at t and how it moves (finite difference), with the place a
@@ -529,151 +653,13 @@ class Fleet:
             R0, R1 = R0 + hold, R1 + hold
         return R0, (R1 - R0) / PROBE_S
 
-    def _stand_off(self, goal: dict, R: np.ndarray, r: np.ndarray) -> np.ndarray:
-        """The aim point: short of a unit or a body along the line from her to it."""
-        stand = goal.get("standoff_m", 0.0)
-        if not stand or goal.get("hold_m") is not None:
-            return R
-        d = R - r
-        n = float(np.linalg.norm(d))
-        return R - d / n * min(stand, n) if n > 1.0 else R
-
-    def _target(self, goal: dict, t: float, r: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
-        """The aim point of a go-to at t, and its velocity."""
-        got = self._raw_target(goal, t)
-        if got is None:
-            return None
-        return self._stand_off(goal, got[0], r), got[1]
-
-    # ---- formations: a lead flies the order, her ships keep their places on it ----------------
-    def _in_formation(self, s: Ship) -> bool:
-        g = s.state.goal
-        return bool(g and g.get("formation") in self.leads and not g.get("solo"))
-
-    def _members(self, oid: str) -> list[Ship]:
-        return [s for s in self.ships.values() if s.state.mode == "free" and s.state.goal
-                and s.state.goal.get("formation") == oid and not s.state.goal.get("solo")]
-
-    def _lead_arrives(self, L: "Lead", t: float, aim: np.ndarray) -> None:
-        """The formation is there: each ship flies the last of the way to her own place in it,
-        the formation's stop point plus her offset, and holds station there."""
-        tg = L.goal["target"]
-        R = self._point(tg, t)
-        hold = (aim - R).tolist() if R is not None and "bullseye" not in tg else [0.0, 0.0, 0.0]
-        for s in self._members(L.order_id):
-            s.state.goal["solo"] = True
-            s.state.goal["hold_m"] = hold
-        del self.leads[L.order_id]
-
-    # ---- go-to: closed-loop flip-and-burn, for every ship and lead at once ---------------------
-    def _steer(self, t: float, dt: float, ships: list[Ship] | None = None, leads: list | None = None) -> dict:
-        """Set every thrust for the step from t. A ship on her own, and a formation's lead, steer
-        their velocity relative to the target toward what they can still brake from in the
-        distance left, √(2·0.9·a·d); a ship in formation steers for her place on the lead: the
-        lead's acceleration and the difference in gravity between them, and a correction that
-        closes her error over T = max(4 steps, 2 min), damped (ζ ≈ 0.7). Returns gravity at t at
-        every ship and lead, for the step to use."""
-        for oid in [oid for oid in self.leads if not self._members(oid)]:
-            del self.leads[oid]                        # no ship flies it any more
-        free = [s for s in (self.ships.values() if ships is None else ships) if s.state.mode == "free"]
-        leads = [L for L in (self.leads.values() if leads is None else leads) if self.leads.get(L.order_id) is L]
-        if not free and not leads:
-            return {}
-        G = gravity_many(self.system, self.eph, self._bodies(t), np.array([s.state.r for s in free] + [L.r for L in leads]))
-        grav = {s.id: g for s, g in zip(free, G)}
-        grav.update({("lead", L.order_id): g for L, g in zip(leads, G[len(free):])})
-
-        # 1. leads, and ships on their own
-        fly = []                                       # (ship or lead, goal, r, v, a, aim, V)
-        for L in leads:
-            ms = self._members(L.order_id)
-            a = min(L.goal["g"] * G0, LEAD_MARGIN * min(m.max_accel_ms2 for m in ms))
-            fly.append((L, L.goal, L.r, L.v, a))
-        for s in free:
-            if s.state.goal and not self._in_formation(s):
-                fly.append((s, s.state.goal, s.state.r, s.state.v, min(s.state.goal["g"] * G0, s.max_accel_ms2)))
-        rows = []
-        for who, goal, r, v, a in fly:
-            got = self._target(goal, t, r)
-            if got is None:
-                self._lost(who)
-                continue
-            rows.append((who, goal, r, v, a, *got))
-        if rows:
-            R = np.array([x[2] for x in rows]); Vs = np.array([x[3] for x in rows]); A = np.array([x[4] for x in rows])
-            AIM = np.array([x[5] for x in rows]); VT = np.array([x[6] for x in rows])
-            dr = AIM - R
-            d = np.linalg.norm(dr, axis=1)
-            u = dr / np.where(d > 0, d, 1.0)[:, None]
-            rel = Vs - VT
-            closing = np.einsum("ij,ij->i", rel, u)
-            lateral = np.linalg.norm(rel - closing[:, None] * u, axis=1)
-            eta1 = eta_many(d, closing, lateral, A)
-            arrived = (d < ARRIVE_M) & (np.linalg.norm(rel, axis=1) < ARRIVE_MS)
-            cmd = (u * np.sqrt(2 * BRAKE_MARGIN * A * d)[:, None] - rel) / max(2 * dt, 4.0)
-            n = np.linalg.norm(cmd, axis=1)
-            cmd = cmd * np.where(n > A, A / np.where(n > 0, n, 1.0), 1.0)[:, None]
-            n = np.minimum(n, A)
-            for i, (who, goal, r, v, a, aim, V) in enumerate(rows):
-                goal.update(aim=aim, range_m=float(d[i]), closing_ms=float(closing[i]), eta1_s=float(eta1[i]))
-                goal["eta_s"] = self._eta(goal, t, r, v, a, float(eta1[i]))
-                if isinstance(who, Lead):
-                    if arrived[i]:
-                        self._lead_arrives(who, t, aim)
-                    else:
-                        who.a = cmd[i]
-                elif arrived[i]:
-                    self._arrive(who, t, aim)
-                else:
-                    self._thrust(who, cmd[i], float(n[i]), t, dt)
-
-        # 2. ships in formation: their places on the lead
-        mine = {L.order_id for L in leads}
-        rows = [(s, self.leads[s.state.goal["formation"]]) for s in free if self._in_formation(s) and s.state.goal["formation"] in mine]
-        if rows:
-            T = max(FORM_T_STEPS * dt, FORM_T_MIN_S)
-            slot = np.array([s.state.goal["slot"] for s, _ in rows])
-            R = np.array([s.state.r for s, _ in rows]); Vs = np.array([s.state.v for s, _ in rows])
-            LR = np.array([L.r for _, L in rows]); LV = np.array([L.v for _, L in rows])
-            ff = np.array([L.a + grav[("lead", L.order_id)] - grav[s.id] for s, L in rows])
-            cmd = ff + 2 * (LR + slot - R) / T ** 2 + 2 * (LV - Vs) / T
-            A = np.array([s.max_accel_ms2 for s, _ in rows])
-            n = np.linalg.norm(cmd, axis=1)
-            cmd = cmd * np.where(n > A, A / np.where(n > 0, n, 1.0), 1.0)[:, None]
-            n = np.minimum(n, A)
-            for i, (s, L) in enumerate(rows):
-                goal, lg = s.state.goal, L.goal
-                aim = (lg["aim"] if lg.get("aim") is not None else L.r) + slot[i]
-                goal.update(aim=aim, range_m=float(np.linalg.norm(aim - s.state.r)), closing_ms=lg.get("closing_ms"),
-                            eta_s=lg.get("eta_s"), eta1_s=lg.get("eta1_s"), g=lg["g"])
-                self._thrust(s, cmd[i], float(n[i]), t, dt)
-        return grav
-
-    def _thrust(self, s: Ship, cmd: np.ndarray, n: float, t: float, dt: float) -> None:
-        st = s.state
-        if n <= 1e-9 or not s.spec.has_drive or st.propellant_kg <= 0:
-            st.thrust_n, st.direction, st.burn = 0.0, None, None
-            return
-        st.direction = cmd / n
-        st.burn = {"g": n / G0, "until": t + dt, "guided": True}
-        st.thrust_n = min(n * s.mass_kg, s.spec.thrust_n)
-
-    def _lost(self, who) -> None:
-        if isinstance(who, Lead):
-            self.findings.append(f"{who.order_id}: lost the target of the order")
-            for s in self._members(who.order_id):
-                s.state.goal = None
-            self.leads.pop(who.order_id, None)
-        else:
-            self.findings.append(f"{who.id}: lost the target of her order")
-            who.state.goal = None
-
     # ---- when it gets there: flown ahead, gravity and all ---------------------------------------
     def _eta(self, goal: dict, t: float, r: np.ndarray, v: np.ndarray, a: float, eta1: float) -> float:
-        """Time to target. Flown ahead under gravity by the same guidance (_predict) when the order
-        is given or changed, and again every half hour, or every tenth of what is left if that is
-        longer; read off that flight in between. The one-dimensional estimate stands in where the
-        flight has nothing to say (it ran past its horizon, or she is late on it)."""
+        """Time to target. Flown ahead under gravity by the same guidance (kernels.predict) when the
+        order is given or changed, and again every half hour, or every tenth of what is left if
+        that is longer; read off that flight in between. The one-dimensional estimate stands in
+        where the flight has nothing to say (it ran past its horizon, or she is late on it), and
+        closer than ten minutes, where it is as good."""
         if eta1 < PREDICT_MIN_S and goal.get("arrive_at") is None:
             return eta1
         at, when = goal.get("arrive_at"), goal.get("predicted")
@@ -684,9 +670,11 @@ class Fleet:
 
     def _predict(self, goal: dict, t0: float, r: np.ndarray, v: np.ndarray, a: float) -> float:
         """When she (or a formation's lead) gets there: her guidance flown forward as a point under
-        gravity (point masses), semi-implicit Euler, steps a fiftieth of the time left (1 s – 2 min). The target
-        is read at knots ten minutes apart and drawn straight between; a unit she chases is taken
-        to keep its present velocity. Returns the arrival time, or infinity past the horizon."""
+        gravity (point masses), semi-implicit Euler, steps a fiftieth of the time left (1 s – 2 min),
+        in kernels.predict. What it reads is gathered here first, out to a horizon of three times
+        the one-dimensional estimate and an hour (60 days at most): the target every ten minutes
+        (a unit she chases is taken to keep its present velocity), the bodies at the table's nodes.
+        Returns the arrival time, or infinity past the horizon."""
         if a <= 0:
             return math.inf
         got = self._raw_target(goal, t0)
@@ -694,107 +682,64 @@ class Fleet:
             return math.inf
         R0, V0 = got
         moving = "unit" in goal["target"]
-        if kernels.HAVE_NUMBA and hasattr(self.eph, "nodes"):
-            return self._predict_compiled(goal, t0, r, v, a, R0, V0, moving)
-        knots: dict[int, np.ndarray] = {}
-
-        def knot(k: int) -> np.ndarray:
-            if k not in knots:
-                g = self._raw_target(goal, t0 + k * PREDICT_KNOT_S)
-                knots[k] = g[0] if g is not None else R0
-            return knots[k]
-
-        r, v, t = r.copy(), v.copy(), t0
-        for _ in range(PREDICT_MAX_STEPS):
-            if moving:
-                R, V = R0 + V0 * (t - t0), V0
-            else:
-                x = (t - t0) / PREDICT_KNOT_S
-                k = int(x)
-                Ra, Rb = knot(k), knot(k + 1)
-                R, V = Ra + (Rb - Ra) * (x - k), (Rb - Ra) / PREDICT_KNOT_S
-            dr = self._stand_off(goal, R, r) - r
-            d = math.sqrt(float(dr @ dr))
-            rel = v - V
-            if d < ARRIVE_M and float(rel @ rel) < ARRIVE_MS ** 2:
-                return t
-            if t - t0 > PREDICT_HORIZON_S:
-                return math.inf
-            u = dr / d if d > 0 else np.zeros(3)
-            closing = float(rel @ u)
-            lateral = float(np.linalg.norm(rel - closing * u))
-            dt = min(max(PREDICT_STEP_SHARE * eta_s(d, closing, lateral, a), PREDICT_STEP_S[0]), PREDICT_STEP_S[1])
-            cmd = (u * math.sqrt(2 * BRAKE_MARGIN * a * d) - rel) / max(2 * dt, 4.0)
-            n = float(np.linalg.norm(cmd))
-            if n > a:
-                cmd = cmd * (a / n)
-            g = gravity_many(self.system, self.eph, self.eph.positions(t), r, j2=False)[0]
-            v = v + (g + cmd) * dt
-            r = r + v * dt
-            t += dt
-        return math.inf
-
-    def _predict_compiled(self, goal, t0, r, v, a, R0, V0, moving) -> float:
-        """_predict in kernels.predict: what it reads (the target at its knots, the bodies at the
-        table's nodes) gathered here first, out to a horizon of three times the one-dimensional
-        estimate and an hour (60 days at most); a flight that outruns it says nothing."""
         d = float(np.linalg.norm(R0 - r))
-        rel = v - V0
-        horizon = min(PREDICT_HORIZON_S, 3 * eta_s(d, 0.0, float(np.linalg.norm(rel)), a) + 3600.0)
-        n_knots = 2 if moving else int(horizon / PREDICT_KNOT_S) + 3
+        horizon = min(PREDICT_HORIZON_S, 3 * eta_s(d, 0.0, float(np.linalg.norm(v - V0)), a) + 3600.0)
         hold = np.asarray(goal.get("hold_m") or (0.0, 0.0, 0.0), dtype=float)
         knots = [R0]
-        for k in range(1, 1 if moving else n_knots):                     # where the target is, no velocity probe
+        for k in range(1, 1 if moving else int(horizon / PREDICT_KNOT_S) + 3):     # where the target is, no velocity probe
             p = self._point(goal["target"], t0 + k * PREDICT_KNOT_S)
             knots.append(p + hold if p is not None else knots[-1])
-        knots = np.array(knots)
-        node_t0, NP, NV = self.eph.nodes(t0, t0 + horizon + PREDICT_KNOT_S)
-        cols = self._pull_cols()
+        if len(knots) < 2:
+            knots.append(R0)
+        node_t0, node_h, NP, NV = self._nodes(t0, t0 + horizon + PREDICT_KNOT_S)
         return kernels.predict(np.asarray(r, float), np.asarray(v, float), float(a), float(t0), R0, V0, moving,
-                               knots, PREDICT_KNOT_S, 0.0 if goal.get("hold_m") is not None else float(goal.get("standoff_m", 0.0)),
-                               node_t0, self.eph.h, np.ascontiguousarray(NP[:, cols]), np.ascontiguousarray(NV[:, cols]),
-                               self._gms, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS, PREDICT_STEP_SHARE,
-                               PREDICT_STEP_S[0], PREDICT_STEP_S[1], horizon, PREDICT_MAX_STEPS)
+                               np.array(knots), PREDICT_KNOT_S,
+                               0.0 if goal.get("hold_m") is not None else float(goal.get("standoff_m", 0.0)),
+                               node_t0, node_h, NP, NV, self._gms, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS,
+                               PREDICT_STEP_SHARE, PREDICT_STEP_S[0], PREDICT_STEP_S[1], horizon, PREDICT_MAX_STEPS)
 
-    def _pull_cols(self) -> np.ndarray:
-        if getattr(self, "_cols", None) is None:
-            where = {bid: i for i, bid in enumerate(self.eph.ids)}
-            self._cols = np.array([where[b.id] for b in self._pulls], dtype=np.int64)
-        return self._cols
-
-    def _arrive(self, s: Ship, t: float, aim: np.ndarray) -> None:
-        st, goal = s.state, s.state.goal
-        tg = dict(goal["target"])
+    # ---- orders ---------------------------------------------------------------------------------
+    def _arrive(self, i: int, t: float, aim: np.ndarray) -> None:
+        c = self.c
+        m = c.meta[i]
+        tg = dict(m["target"])
         if "bullseye" not in tg:                      # stand off the unit or body where she stopped, her place in the formation kept
             R = self._point({k: v for k, v in tg.items() if k != "offset_m"}, t)
             tg["offset_m"] = (aim - R).tolist() if R is not None else [0.0, 0.0, 0.0]
-        tg["label"] = goal.get("label")
-        st.station_at = tg
-        st.mode, st.goal, st.burn, st.thrust_n, st.direction = "station", None, None, 0.0, None
-        st.r, st.t = aim.copy(), t
+        tg["label"] = m.get("label")
+        c.station_at[i] = tg
+        c.mode[i], c.goal[i], c.meta[i], c.burn[i], c.thrust[i] = STATION, False, None, BURN_NONE, 0.0
+        self._splan = None
+        c.r[i], c.t[i] = aim, t
+
+    def _coast(self, i: int) -> None:
+        c = self.c
+        c.mode[i], c.burn[i], c.thrust[i], c.goal[i], c.meta[i] = FREE, BURN_NONE, 0.0, False, None
+        c.burn_meta[i] = None
 
     def _apply(self, o: Order) -> None:
-        s = self.ships.get(o.unit)
-        if s is None:
+        c = self.c
+        i = c.row.get(o.unit)
+        if i is None:
             return
-        st = s.state
         if o.kind == "burn":
-            _, _, bulls = self.place(o.at)
-            b = bulls.get(o.burn.get("bullseye", "system"))
+            b = self._placed(o.at)[2].get(o.burn.get("bullseye", "system"))
             if b is None:
                 self.findings.append(f"order for {o.unit}: no bullseye {o.burn.get('bullseye')!r}")
                 return
             u = b.point(math.radians(o.burn.get("bearing", 0.0)), math.radians(o.burn.get("elevation", 0.0)), 1.0) - b.origin
-            st.mode = "free"
-            st.direction = u / np.linalg.norm(u)
-            st.burn = {**o.burn, "from": o.at, "until": o.at + float(o.burn.get("duration_s", 0.0))}
-            st.thrust_n = s.thrust_for(o.burn.get("g"), o.burn.get("throttle"))
+            self._leave_station(i, o.at)
+            c.mode[i], c.dir[i] = FREE, u / np.linalg.norm(u)
+            c.burn_meta[i] = {**o.burn, "from": o.at, "until": o.at + float(o.burn.get("duration_s", 0.0))}
+            g, thr = o.burn.get("g"), o.burn.get("throttle")
+            c.burn[i], c.bval[i] = (BURN_G, float(g)) if g is not None else (BURN_THROTTLE, float(1.0 if thr is None else thr))
+            c.buntil[i] = c.burn_meta[i]["until"]
+            m = c.mass(i)
+            has = c.fmax[i] > 0 and c.ve[i] > 0 and c.prop[i] > 0
+            want = g * G0 * m if g is not None else c.bval[i] * c.fmax[i]
+            c.thrust[i] = min(max(want, 0.0), c.fmax[i]) if has else 0.0
         elif o.kind == "goto":
-            if st.mode == "station":                  # leave her place at the speed it was moving
-                p1 = self._station_pos(s, o.at, None)
-                p2 = self._station_pos(s, o.at + PROBE_S, None)
-                if p1 is not None and p2 is not None:
-                    st.r, st.v = p1, (p2 - p1) / PROBE_S
+            self._leave_station(i, o.at)
             tg = o.target or {}
             stand = 0.0
             if "unit" in tg:
@@ -802,36 +747,57 @@ class Fleet:
             elif "body" in tg:
                 b = next((b for b in self.system.massive() if b.id == tg["body"]), None)
                 stand = max(STANDOFF_BODY_R * (getattr(b, "radius_eq", 0.0) or 0.0), 1e6)
-            st.mode, st.burn, st.thrust_n, st.direction, st.station_at = "free", None, 0.0, None, None
-            st.t = o.at
             oid = o.order_id or f"{o.unit}@{o.at:.0f}"
-            st.goal = {"target": tg, "label": tg.get("label"), "g": float(o.g or 0.0), "standoff_m": stand,
-                       "issued": o.at, "source": o.source, "order_id": oid, "by": o.by or o.unit}
+            c.mode[i], c.burn[i], c.thrust[i], c.t[i] = FREE, BURN_NONE, 0.0, o.at
+            c.station_at[i], c.burn_meta[i] = None, None
+            c.meta[i] = {"target": tg, "label": tg.get("label"), "g": float(o.g or 0.0), "standoff_m": stand,
+                         "issued": o.at, "source": o.source, "order_id": oid, "by": o.by or o.unit}
+            c.goal[i], c.gg[i], c.stand[i] = True, float(o.g or 0.0), stand
+            c.off[i] = tg.get("offset_m", (0.0, 0.0, 0.0))
+            c.hashold[i], c.solo[i], c.lead[i], c.eta1[i], c.eta[i] = False, False, -1, math.inf, math.nan
             if o.by and o.by != o.unit:               # given to her formation: she flies it in her place
                 slot = np.asarray(tg.get("offset_m", (0.0, 0.0, 0.0)), dtype=float)
                 L = self.leads.get(oid)
-                if L is None or L.goal["issued"] != o.at:
+                if L is None or c.meta[L.row]["issued"] != o.at:
                     base = {k: v for k, v in tg.items() if k != "offset_m"}
-                    self.leads[oid] = Lead(oid, st.r - slot, st.v.copy(), o.at,
-                                           {"target": base, "label": tg.get("label"), "g": float(o.g or 0.0),
-                                            "standoff_m": stand, "issued": o.at, "order_id": oid})
+                    j = c.add(oid, LEAD)
+                    c.mode[j], c.r[j], c.v[j], c.t[j] = FREE, c.r[i] - slot, c.v[i], o.at
+                    c.meta[j] = {"target": base, "label": tg.get("label"), "g": float(o.g or 0.0), "standoff_m": stand,
+                                 "issued": o.at, "order_id": oid, "n": 1}
+                    c.goal[j], c.gg[j], c.stand[j], c.eta1[j] = True, float(o.g or 0.0), stand, math.inf
+                    self.leads[oid] = L = LeadView(c, j)
                 else:                                 # the formation's point: the mean of its ships' less their offsets
-                    L.r = (L.r * L.n + st.r - slot) / (L.n + 1)
-                    L.v = (L.v * L.n + st.v) / (L.n + 1)
-                    L.n += 1
-                st.goal.update(formation=oid, slot=slot.tolist())
+                    j, k = L.row, c.meta[L.row]["n"]
+                    c.r[j] = (c.r[j] * k + c.r[i] - slot) / (k + 1)
+                    c.v[j] = (c.v[j] * k + c.v[i]) / (k + 1)
+                    c.meta[j]["n"] = k + 1
+                c.lead[i] = L.row
+                c.meta[i].update(formation=oid, slot=slot.tolist())
         elif o.kind == "setg":                         # the telegraph moved while she flies her order
-            if st.goal is not None and (o.order_id is None or st.goal.get("order_id") == o.order_id):
+            m = c.meta[i]
+            if m is not None and c.goal[i] and (o.order_id is None or m.get("order_id") == o.order_id):
                 if (o.g or 0.0) <= 0:
-                    st.mode, st.burn, st.thrust_n, st.direction, st.goal = "free", None, 0.0, None, None
+                    self._coast(i)
                 else:
-                    st.goal["g"] = float(o.g)
-                    st.goal.pop("arrive_at", None)    # flown ahead again at the new g
-                    L = self.leads.get(st.goal.get("formation"))
-                    if o.order_id is None and st.goal.get("formation"):
-                        st.goal["solo"] = True        # her own telegraph: she leaves the formation and flies it alone
+                    m["g"], c.gg[i] = float(o.g), float(o.g)
+                    m.pop("arrive_at", None)          # flown ahead again at the new g
+                    L = self.leads.get(m.get("formation"))
+                    if o.order_id is None and m.get("formation"):
+                        m["solo"], c.solo[i] = True, True     # her own telegraph: she leaves the formation and flies it alone
                     elif L is not None:
-                        L.goal["g"] = float(o.g)
-                        L.goal.pop("arrive_at", None)
+                        c.meta[L.row]["g"], c.gg[L.row] = float(o.g), float(o.g)
+                        c.meta[L.row].pop("arrive_at", None)
         elif o.kind == "coast":
-            st.mode, st.burn, st.thrust_n, st.direction, st.goal = "free", None, 0.0, None, None
+            self._leave_station(i, o.at)
+            self._coast(i)
+
+    def _leave_station(self, i: int, t: float) -> None:
+        """A station ship leaves her place at the speed it was moving."""
+        c = self.c
+        if c.mode[i] != STATION:
+            return
+        self._splan = None
+        p1, p2 = self._station_pos(i, t), self._station_pos(i, t + PROBE_S)
+        if p1 is not None and p2 is not None:
+            c.r[i], c.v[i] = p1, (p2 - p1) / PROBE_S
+        c.t[i] = t

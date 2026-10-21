@@ -10,7 +10,8 @@ The server owns the truth: it flies the ships, and the map draws what it is sent
 | ShipSpec | what the simulation takes from a class, once: length, hull mass per ammunition load (tanks dry), tank capacity, thrust at the pulse ceiling, exhaust velocity, pulse rate, cruise band, and where each kind of weapon she carries starts to matter (her class's ranges, below) | `astrum/entity.py` |
 | Ship | one hull: a spec, a load, and a state | `astrum/entity.py` |
 | ShipState | what changes: time, position and velocity (system frame, SI), propellant, mode, thrust and its direction, the burn order, Δv spent | `astrum/entity.py` |
-| Fleet | a scenario's ships, flown forward in time, with checkpoints | `astrum/sim.py` |
+| Classis | every entity of a scenario's fleet as columns: a row per hull and per formation lead; position, velocity, propellant, drive, the order she flies and how it stands are arrays, her name, class and order as given sit beside them | `astrum/classis.py` |
+| Fleet | the Classis flown forward in time: orders, blocks, targets, station ships, checkpoints | `astrum/sim.py` |
 
 Nothing else of the class reaches the ship. Armament, sensors and heat join the spec as the
 simulation needs them.
@@ -32,13 +33,17 @@ a held thrust F burns m₁ = m₀ − F·dt/vₑ. A held acceleration is never m
 
 | Mode | What she does | What it costs |
 |---|---|---|
-| station | follows her place in the scenario (an AER from a bullseye, or a body offset) | every 600 s her tanks pay \|Δv_place − g·Δt\|: whatever of following her place is not free fall |
+| station | follows her place in the scenario (an AER from a bullseye, or a body offset) | every 5 minutes (on a grid from the scenario's start) her tanks pay \|Δv_place − g·Δt\|: whatever of following her place is not free fall |
 | free | flies under gravity (every body, point mass and J2) and her own thrust; kick-drift-kick, the burn's Δv given half before and half after the drift | the burns she makes |
 
 Holding station in a bullseye frame that turns is not free. The wedge's frame keeps pointing at
 Earth, so it turns with the Moon's orbit; a ship held rigidly in it 290,000 km toward Earth is deep
 in Earth's well without orbiting there, and pays about 0.9 km/s a day. Ships near the burn
 bullseye pay about 28 m/s a day. A station that is itself an orbit costs nothing (tests).
+
+Every station ship is placed at once (below), so paying for it is cheap: about 0.17 s of a day's
+simulation. A finer grid changes the bill by less than 0.2% (the places move smoothly: the
+whole fleet paid 11.88 km/s a day on a 60 s grid and on a 600 s one), so 5 minutes it is.
 
 ## Orders
 
@@ -148,8 +153,29 @@ the nearest pull (10 s – 10 min), a minute at most under thrust or on an order
 the time left (1 s at least) as an order arrives, shrinking as it closes. So a ship closing on her
 target in 1 s steps does not hold a coasting fleet to them. Units do not pull on each other, so
 their steps need not line up inside a block; units that want the same number of steps are stepped
-together, in one array. Station ships are brought up to date every 10 minutes; a checkpoint is kept
-every 30 minutes, so the clock can run fast or be scrubbed back.
+together, in one call of the compiled step. Station ships are brought up to date every 5 minutes; a
+checkpoint is kept every 30 minutes, so the clock can run fast or be scrubbed back.
+
+**The step is one compiled call.** `kernels.fly` takes the Classis's arrays and the rows of the
+units it flies, and runs the whole block itself: gravity at every row (point masses and J2, bodies
+off the table's nodes), flip-and-burn for the leads and the ships on their own, formation keeping
+for the rest, the rocket equation, kick-drift-kick, the steps shrinking as an order closes in,
+arrivals marked. Python is called once per group of units per block; it settles what happened
+(arrivals take station, a formation whose lead arrived flies its last leg ship by ship, times to
+target are flown ahead) and goes on.
+
+**Targets are tracks.** Before a block, every target the units fly to is made into a track the
+compiled step can read: a ship that flies is read live off her row (where she is, carried on at
+her velocity); anything else (a point off a bullseye, a body, a unit on station, a formation) is
+worked out every minute across the block and drawn straight between.
+
+**Placement is one array operation.** A scenario's contacts are placed by a plan made once
+(`astrum/placement.py`): the contacts placed directly (an AER is a fixed vector in its bullseye's
+frame, a body offset is a fixed offset) and a matrix that makes every formation of them (at its
+flagship, or at the mean of its members, down through its sub-formations, which is linear). At any
+moment it is one product per bullseye, one sum per body and one product by that matrix: 0.05 ms
+for the demo's 81 contacts, where it was 0.93 ms. Station ships holding where an order left them
+are placed the same way, by bullseye and by body.
 
 ## Where the time goes
 
@@ -164,10 +190,11 @@ The simulation is the server's; the browser only draws. What keeps it quick:
   Sol, where one at a time cost 1.5 ms. The first `[sim] table_days` (60) of every game are filled
   when the server loads its data, in the background; after that nothing waits on JPL. A table
   read costs about 0.01 ms.
-- **Compiled hot loops.** Gravity (every point from every body, J2 for the oblate ones) and flying
-  an order ahead for its time to target are compiled with Numba (`astrum/kernels.py`), on first
-  use, cached on disk, warmed up at load: gravity 0.008 ms a call against 0.1 ms in numpy. Without
-  Numba the numpy paths stand in.
+- **Compiled hot loops.** The step (`kernels.fly`), gravity, and flying an order ahead for its time
+  to target are compiled with Numba (`astrum/kernels.py`), on first use, cached on disk, warmed up
+  at load. Without Numba the same functions run as plain Python (slow, the same answers).
+- **The fleet is arrays.** One row per entity (the Classis): the step reads and writes them in
+  place, with no Python object per ship per step.
 - **No GPU.** At tens to hundreds of ships and some twenty bodies a step is microseconds of work,
   less than a round trip to a GPU would cost. It pays at thousands of objects (projectiles,
   missiles); the kernels are where it would go.
@@ -185,12 +212,13 @@ The simulation is the server's; the browser only draws. What keeps it quick:
 
 Measured on the Sol demo (51 ships), 18 of them flying four orders, two of them formations:
 
-| | before | now |
-|---|---|---|
-| 1 h / 6 h / 12 h of flight | 0.16 / 1.46 / 0.75 s | 0.10 / 0.78 / 0.40 s |
-| a map frame at 1 min/s / 1 h/s / 1 d/s (fleet) | 2.5 / 3.9 / 46 ms | 3.2 / 3.5 / 26 ms |
-| a picture for the map | 39 KB | 13 KB |
-| the opening 60 days of Sol's bodies | as asked, 1.5 ms a moment | 0.7 s at load, in the background |
+| | objects per ship | + Numba, tables, deltas | the Classis, one compiled step |
+|---|---|---|---|
+| 1 h / 6 h / 12 h of flight | 0.16 / 1.46 / 0.75 s | 0.10 / 0.78 / 0.40 s | 0.06 / 0.35 / 0.19 s |
+| a map frame at 1 min/s / 1 h/s / 1 d/s (fleet) | 2.5 / 3.9 / 46 ms | 3.2 / 3.5 / 26 ms | 2.3 / 2.5 / 14 ms |
+| placing the scenario's contacts | 0.93 ms | 0.93 ms | 0.05 ms |
+| a picture for the map | 39 KB | 13 KB | 13 KB |
+| the opening 60 days of Sol's bodies | as asked, 1.5 ms a moment | 0.7 s at load, in the background | same |
 
 ## On the wire
 
