@@ -181,6 +181,7 @@ class Tabled:
         self.h = step or table_step(eph.system)
         self.ids = [b.id for b in eph.system]
         self._blocks: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        self._picks: dict[tuple, tuple[np.ndarray, np.ndarray]] = {}    # (block, bodies) -> those bodies' nodes
         self._lock = threading.Lock()
 
     def __getattr__(self, name):                     # equator, source, body_fixed, numerical, ...
@@ -207,17 +208,28 @@ class Tabled:
             self._block(b)
         return b1 - b0 + 1
 
-    def nodes(self, t0: float, t1: float) -> tuple[float, np.ndarray, np.ndarray]:
+    def nodes(self, t0: float, t1: float, cols: np.ndarray | None = None) -> tuple[float, np.ndarray, np.ndarray]:
         """The nodes from just before t0 to just after t1, in one piece: (time of the first,
-        positions (n, M, 3), velocities (n, M, 3)), bodies in self.ids order."""
+        positions (n, M, 3), velocities (n, M, 3)), bodies in self.ids order, or only the bodies
+        at cols (each block's own pick kept, for the next time it is asked)."""
         k0, k1 = math.floor(t0 / self.h), math.ceil(t1 / self.h) + 1
         Ps, Vs = [], []
         for b in range(k0 // self.BLOCK, k1 // self.BLOCK + 1):
-            P, V = self._block(b)
+            P, V = self._block(b) if cols is None else self._picked(b, cols)
             lo, hi = max(k0 - b * self.BLOCK, 0), min(k1 - b * self.BLOCK, self.BLOCK - 1)
             Ps.append(P[lo:hi + 1])
             Vs.append(V[lo:hi + 1])
         return k0 * self.h, np.concatenate(Ps), np.concatenate(Vs)
+
+    def _picked(self, b: int, cols: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        key = (b, cols.tobytes())
+        got = self._picks.get(key)
+        if got is None:
+            P, V = self._block(b)
+            if len(self._picks) >= self.MAX_BLOCKS:
+                self._picks.pop(next(iter(self._picks)))
+            got = self._picks[key] = (np.ascontiguousarray(P[:, cols]), np.ascontiguousarray(V[:, cols]))
+        return got
 
     def _at(self, t: float, velocity: bool):
         h = self.h

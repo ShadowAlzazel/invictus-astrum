@@ -788,9 +788,8 @@ class Fleet:
         positions, velocities), for kernels.fly and kernels.predict. An ephemeris without a table
         is sampled."""
         if hasattr(self.eph, "nodes"):
-            node_t0, NP, NV = self.eph.nodes(t0, t1)
-            cols = self._pull_cols()
-            return node_t0, self.eph.h, np.ascontiguousarray(NP[:, cols]), np.ascontiguousarray(NV[:, cols])
+            node_t0, NP, NV = self.eph.nodes(t0, t1, self._pull_cols())
+            return node_t0, self.eph.h, NP, NV
         h = SAMPLE_S
         ks = range(math.floor(t0 / h), math.ceil(t1 / h) + 2)
         at = lambda t: np.array([self.eph.positions(t)[b.id] for b in self._pulls])
@@ -1005,7 +1004,8 @@ class Fleet:
                 if len(cache) + len(miss) > 50000:
                     cache.clear()
                 cache.update(zip((key + (t,) for t in miss), P))
-        return [self._point(spec, t) for t in ts]
+        off = np.asarray(spec.get("offset_m", (0.0, 0.0, 0.0)), dtype=float)
+        return [p + off if (p := cache.get(key + (t,))) is not None else self._point(spec, t) for t in ts]
 
     def _station_pos(self, i: int, t: float, placed: dict | None = None, depth: int = 0) -> np.ndarray | None:
         sa = self.c.station_at[i]
@@ -1064,11 +1064,11 @@ class Fleet:
         # where the target is, on a grid from the scenario's start: every ship flying to it, and every
         # time it is flown ahead again, reads the same moments (Fleet._point keeps them)
         g0 = t0 if moving else self.t0 + math.floor((t0 - self.t0) / PREDICT_KNOT_S) * PREDICT_KNOT_S
-        node_t0, node_h, NP, NV = self._nodes(t0, t0 + horizon + PREDICT_KNOT_S)
         knots = [R0, R0] if moving else []
-        # most get there well inside the horizon: the target's track that far first, all of it only if
-        # she runs past that (the same flight either way: it reads only the track up to her arrival)
-        for span in sorted({min(horizon, 1.5 * est + 1800.0), horizon}):
+        # most get there well inside the horizon: the target's track and the bodies that far first, all
+        # of it only if she runs past that (the same flight either way: it reads only up to her arrival)
+        for span in [horizon] if moving else sorted({min(horizon, 1.5 * est + 1800.0), horizon}):
+            node_t0, node_h, NP, NV = self._nodes(t0, t0 + span + PREDICT_KNOT_S)
             if not moving:
                 more = self._points(goal["target"], [g0 + k * PREDICT_KNOT_S for k in
                                                      range(len(knots), int((t0 - g0 + span) / PREDICT_KNOT_S) + 3)])

@@ -283,7 +283,7 @@ The simulation is the server's; the browser only draws. What keeps it quick:
   (its label, its target) goes only when the ship's order version changes. The first picture, and
   any after the system, the scenario or the data change, has everything (`full: true`).
 
-Measured on the Sol demo (51 ships), 18 of them flying four orders, two of them formations:
+Measured on the Sol demo (51 ships, before Task Force 3 and the strike squadron), 18 of them flying four orders, two of them formations:
 
 | | objects per ship | + Numba, tables, deltas | the Classis, one compiled step | + timeline, run-ahead, two processes |
 |---|---|---|---|---|
@@ -296,6 +296,34 @@ Measured on the Sol demo (51 ships), 18 of them flying four orders, two of them 
 | a picture for the map (first / after) | 39 KB | 13 KB | 13 KB | 32 / 14 KB |
 | the web server while the fleet is behind | waits | waits | waits | 3 ms |
 | the opening 60 days of Sol's bodies | as asked, 1.5 ms a moment | 0.7 s at load, in the background | same | same |
+
+**The tactical layer at 10 min/s**, by function calls (`python tools/bench_tactical.py`): the
+demo as it was, and with Task Force 3 docked around Mars and the Luna Strike Squadron behind
+Jupiter (`tools/formation_tf3.py`). Orders are given at the clock with the fleet half an hour
+ahead, as the run-ahead keeps it at this warp: the reply, then the rest of the re-fly, which goes
+after in chunks. Times vary by about half from run to run on this machine.
+
+| | 51 ships, 81 contacts | 100 ships, 151 contacts |
+|---|---|---|
+| 1 h / 6 h / 12 h of flight (18 ships flying, timeline kept) | 0.02 / 0.15 / 0.11 s | 0.02 / 0.11 / 0.13 s |
+| a picture off the timeline / its ships' figures / the whole frame, JSON and all | 0.6 / 0.4 / 2.4 ms | 0.7 / 0.4 / 3.2 ms (99%: 5.4 ms) |
+| a picture for the map, first / after | 34 / 16 KiB | 56 / 28 KiB |
+| placing the scenario's contacts | 0.1 ms | 0.1 ms |
+| a ship to a point / to the Moon / to chase a ship | 4 / 8 / 3 ms · rest 3–4 ms | 4–5 / 8 / 4 ms · rest 3–4 ms |
+| a flotilla (11) to a point / its telegraph | 7 / 8–9 ms · rest 5–7 ms | 8–9 / 8–12 ms · rest 5–10 ms |
+| a task force (45) to a point / a squadron out of it | 17–18 / 19–23 ms · rest 9–10 ms | 16–28 / 19–30 ms · rest 9–16 ms |
+| cut a ship's drive (her flight of 3 and its chaser) | 11–25 ms (before the fixes below: 95 ms) | 10–18 ms |
+| Task Force 3 (44) from Mars toward the Sun: 8 days, time to target flown ahead | | 85–160 ms · rest 10 ms |
+| the strike squadron (5) to Jupiter | | 11–13 ms · rest 5–6 ms |
+| an order 0.5 h / 2 h / 6 h behind the fleet: reply · the rest | 3 ms · 4 / 16 / 50 ms | 2 ms · 4 / 15 / 49 ms |
+
+Found on the way: an order in the past made new rows for every formation lead it flew again, so
+the timeline (2048 samples a row) grew, and the order that made it grow took 70–90 ms; the
+replay now takes the rows of the leads it sets back. And checkpoints counted orders by their
+place in the list, so after orders given in the past a rewind could give one twice (a ship 87 km
+off); they count the orders given into their past now. Time to target reads the bodies only as
+far as it reads the target (half as far again as the rough estimate), and keeps each table
+block's pulling bodies, so a long flight's first prediction costs what it reads.
 
 ## On the wire
 
