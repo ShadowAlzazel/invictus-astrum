@@ -79,6 +79,19 @@ holds station there. Her panel shows the order, the time to target, when she arr
 and the closing speed; the map shows every ship's order as a vector, the selected one with its
 time to target.
 
+**Formations.** Select a formation (a flight, a squadron, a task force) and press **A**: the order
+goes to every ship under it. Each keeps her offset from the formation as it stands when the order is
+given, so they arrive laid out as they left, not on one point; holding a tight formation on the way
+is not attempted yet. The telegraph tops out at the slowest ship's most, and the cruise band is the
+one they all share.
+
+**The telegraph in flight.** A ship or formation flying an order shows the telegraph in its panel;
+moving it (or **W** / **S** with it selected) changes only the acceleration of the order being flown.
+Stop cuts the drive.
+
+`POST /api/order {scenario, unit, t, g, player, target}` (unit: a ship, or a formation for all the
+ships under it); `{scenario, unit, t, g, keep_target: true}` retunes the orders being flown.
+Earlier form:
 `POST /api/order {scenario, unit, t, g, player, target}`: target `{bullseye, aer: [deg, deg, km]}`,
 `{unit}` or `{body}`; `g = 0` cuts her drive. Orders from the map live in the running fleet; a
 data reload rebuilds the fleet from the scenario file.

@@ -1,7 +1,8 @@
 <script>
   // What is selected: a body, a unit, or a point in space (probed on the server).
   import { km, kmFull, n, bearing, elev, lightTime, duration } from './format.js';
-  import { hms } from './orders.js';
+  import { hms, group, shipsUnder } from './orders.js';
+  import Telegraph from './Telegraph.svelte';
 
   export let map = null;
   export let sel = null;            // { kind: 'body'|'contact'|'point', id?, p? }
@@ -13,6 +14,7 @@
   export let onclose = () => {};
   export let onfocus = () => {};
   export let onselect = () => {};   // pick another unit: a member, or the formation above
+  export let onretune = () => {};   // (g, now): the telegraph moved for orders being flown
 
   const G = 6.6743e-20;             // km³/(kg·s²)
   $: body = sel?.kind === 'body' ? map?.bodies[sel.id] : null;
@@ -29,6 +31,14 @@
   $: spec = contact?.ship ?? null;
   $: arrives = ship?.goal?.eta_s != null && state?.utc && isFinite(ship.goal.eta_s)
     ? new Date(Date.parse(state.utc) + ship.goal.eta_s * 1000).toISOString().slice(11, 16) + ' UTC' : null;
+  // the orders being flown by this ship, or by the ships under this formation: one telegraph for them
+  $: under = contact ? shipsUnder(contacts, state, contact.id) : [];
+  $: grp = under.length ? group(state, contacts, under) : null;
+  $: flying = grp?.flying ?? [];
+  let tg = null, tgFor = null, tgServer = null;
+  $: if (contact?.id !== tgFor || grp?.g !== tgServer) { tgFor = contact?.id; tgServer = grp?.g ?? null; tg = tgServer; }
+  $: soonest = flying.length ? Math.min(...flying.map((s) => s.goal.eta_s ?? Infinity)) : null;
+  $: latest = flying.length ? Math.max(...flying.map((s) => s.goal.eta_s ?? 0)) : null;
   $: doing = !ship ? '' : ship.goal ? (ship.burning ? `on her order, ${ship.accel_g.toFixed(2)} g` : 'on her order, coasting') : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
     : ship.mode === 'station' ? 'holding station' : 'coasting';
   // every ship under a formation, counted by class: what the formation is made of
@@ -106,13 +116,25 @@
   {:else if contact}
     {#if members.length}
       <section>
-        <h2>Answers to it <span class="dim">{members.length}</span></h2>
+        <h2>Under its command <span class="dim">{members.length} unit{members.length > 1 ? 's' : ''}{under.length && !ship ? ` · ${under.length} ship${under.length > 1 ? 's' : ''}` : ''}</span></h2>
         {#each members as m}
           <button class="unit" on:click={() => onselect({ kind: 'contact', id: m.id })}>
             <span>{m.callsign}</span><span class="dim">{m.children?.length ? m.echelon : m.class_name || m.unit_type || m.echelon}</span>
           </button>
         {/each}
         {#if makeup.length}<p class="dim makeup">{makeup.map(([k, n]) => `${n} × ${k}`).join(' · ')}</p>{/if}
+      </section>
+    {/if}
+    {#if !ship && flying.length}
+      <section class="orders">
+        <h2>Orders <span class="dim">{flying.length} of {under.length} ships flying</span></h2>
+        <div class="order">
+          <p><b>To {flying[0].goal.label}</b>{#if new Set(flying.map((s) => s.goal.label)).size > 1} <span class="dim">and others</span>{/if}</p>
+          <p class="eta">{hms(soonest)}{#if latest - soonest > 60} <span>to {hms(latest)}, the last ship</span>{/if}</p>
+        </div>
+        <Telegraph maxG={grp.maxG} cruise={grp.cruise} value={tg ?? 0} height={130} note="held to the slowest ship's most"
+                   onset={(g) => { tg = g; onretune(g); }} oncommit={() => onretune(tg, true)} />
+        <p class="dim hint"><kbd>W</kbd><kbd>S</kbd> telegraph · <kbd>A</kbd> a new order for all of them</p>
       </section>
     {/if}
     {#if ship}
@@ -124,6 +146,10 @@
             <p><b>To {ship.goal.label}</b> <span>at {ship.goal.g} g</span></p>
             <p class="eta">{hms(ship.goal.eta_s)}{#if arrives} <span>· arrives {arrives}</span>{/if}</p>
             <p class="dim">{km(ship.goal.range_km)} to go · closing {n(ship.goal.closing_kms, 2)} km/s</p>
+          </div>
+          <div class="tgwrap">
+            <Telegraph maxG={ship.max_accel_g} cruise={spec?.cruise_g} value={tg ?? ship.goal.g} height={130}
+                       onset={(g) => { tg = g; onretune(g); }} oncommit={() => onretune(tg, true)} />
           </div>
         {:else if ship.station_at}
           <p class="dim held">Holding at {ship.station_at}</p>
@@ -142,7 +168,7 @@
           {#if spec?.length_m}<dt>Length</dt><dd>{n(spec.length_m)} m</dd>{/if}
           {#if spec?.cruise_g}<dt>Cruise band</dt><dd>{spec.cruise_g[0]}–{spec.cruise_g[1]} g</dd>{/if}
         </dl>
-        {#if spec?.has_drive}<p class="dim hint"><kbd>A</kbd> order her: aim, set the telegraph, click</p>{/if}
+        {#if spec?.has_drive}<p class="dim hint"><kbd>A</kbd> order her{#if ship.goal} · <kbd>W</kbd><kbd>S</kbd> telegraph{/if}</p>{/if}
       </section>
     {:else if spec && !spec.has_drive}
       <section><h2>Ship</h2><p class="dim">No drive stated for her class; she holds station.</p></section>
@@ -150,9 +176,12 @@
     {#if chain.length}
       <section>
         <h2>Chain of command</h2>
-        {#each chain as a}
-          <button class="unit" on:click={() => onselect({ kind: 'contact', id: a.id })}><span>{a.callsign}</span><span class="dim">{a.echelon}</span></button>
-        {/each}
+        <ol class="ladder">
+          <li class="self"><span class="nm">{contact.callsign}</span><span class="ech">{contact.echelon}</span></li>
+          {#each chain as a}
+            <li><button on:click={() => onselect({ kind: 'contact', id: a.id })}><span class="nm">{a.callsign}</span><span class="ech">{a.echelon}</span></button></li>
+          {/each}
+        </ol>
       </section>
     {/if}
     {#if contact.status?.length}<p class="dim">Status: {contact.status.join(', ')}</p>{/if}
@@ -210,6 +239,22 @@
   .order .eta { font-family: var(--display); font-size: 18px; color: var(--cyan, #9ff0ff); }
   .order .eta span { font-size: 11px; color: var(--dim); }
   .held { margin: 0 0 8px; }
+  .tgwrap { margin: 8px 0 12px; }
+  .orders .order { margin-bottom: 12px; }
+  /* the chain of command, read upward: a ladder of rungs joined by a rail */
+  .ladder { list-style: none; margin: 4px 0 0; padding: 0; }
+  .ladder li { position: relative; padding: 0 0 14px 18px; }
+  .ladder li:last-child { padding-bottom: 0; }
+  .ladder li::before { content: ''; position: absolute; left: 3px; top: 5px; width: 7px; height: 7px; transform: rotate(45deg);
+                       border: 1px solid var(--violet); background: var(--void); }
+  .ladder li:not(:last-child)::after { content: ''; position: absolute; left: 6.5px; top: 14px; bottom: 2px; width: 1px; background: var(--violet); opacity: 0.6; }
+  .ladder li.self::before { background: var(--fuchsia); border-color: var(--fuchsia); }
+  .ladder li.self .nm { color: var(--dim); }
+  .ladder button { display: flex; justify-content: space-between; gap: 10px; width: 100%; padding: 0; text-align: left; color: var(--ink); }
+  .ladder li.self { display: flex; justify-content: space-between; gap: 10px; }
+  .ladder .nm { font-family: var(--display); font-size: 13px; }
+  .ladder .ech { color: var(--dim); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .ladder button:hover .nm { color: var(--fuchsia); }
   .hint { margin-top: 8px; font-size: 10px; }
   kbd { border: 1px solid var(--rule); padding: 0 3px; font-family: var(--mono); font-size: 9px; }
   .finding { margin: 8px 0 0; color: #ffd27a; font-size: 11px; }

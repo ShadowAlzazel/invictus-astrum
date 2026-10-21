@@ -4,6 +4,7 @@
   import { api, StateStream } from './lib/api.js';
   import HudCursor from './lib/HudCursor.svelte';
   import Orders from './lib/Orders.svelte';
+  import { group, shipsUnder, stepG } from './lib/orders.js';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
   import LevelSelect from './lib/LevelSelect.svelte';
@@ -24,7 +25,7 @@
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
   let showFindings = false, down = null, poll;
   let ordering = null, orderTool, orderMsg = '', msgTimer;   // an order being aimed: { unit, g, tilt }
-  $: if (ordering && (mode !== 'map' || (state && !state.ships?.[ordering.unit]))) ordering = null;
+  $: if (ordering && (mode !== 'map' || (state && !ordering.ships.some((id) => state.ships?.[id])))) ordering = null;
   let mode = 'menu';                    // 'menu' | 'levels' | 'map' | 'workshop' | 'ships'
   let purpose = 'play';                 // what the level list is for: 'play' or 'build'
   let registry, shipCount = 0;
@@ -150,13 +151,29 @@
 
   // ---- orders: A on a selected ship aims one; a click gives it -----------------------------------
   function say(m) { orderMsg = m; clearTimeout(msgTimer); msgTimer = setTimeout(() => (orderMsg = ''), 3500); }
+  // the ships an order from the selection goes to: the ship, or every ship under the formation
+  $: selShips = sel?.kind === 'contact' ? shipsUnder(contacts, state, sel.id) : [];
   function startOrder() {
-    const s = sel?.kind === 'contact' ? state?.ships?.[sel.id] : null;
-    if (!s) return say('Select a ship to order: A');
-    const spec = contacts.find((c) => c.id === sel.id)?.ship;
-    if (!spec?.has_drive) return say('Her class has no drive stated; she cannot be ordered to move.');
-    const g = s.goal?.g ?? Math.min(spec.cruise_g?.[1] ?? s.max_accel_g, s.max_accel_g);
-    ordering = { unit: sel.id, g, tilt: 0 };
+    if (sel?.kind !== 'contact' || !selShips.length) return say('Select a ship or a formation to order: A');
+    const able = selShips.filter((id) => contacts.find((c) => c.id === id)?.ship?.has_drive);
+    if (!able.length) return say('No ship there has a drive stated; they cannot be ordered to move.');
+    const grp = group(state, contacts, able);
+    const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
+    ordering = { unit: sel.id, ships: able, g, tilt: 0 };
+  }
+  // the telegraph moved for orders already being flown: only their g changes
+  let retuneTimer;
+  async function retune(g, now = false) {
+    if (!scenario || sel?.kind !== 'contact') return;
+    const unit = sel.id;
+    clearTimeout(retuneTimer);
+    const send = async () => {
+      try {
+        await api.order({ scenario: scenario.id, unit, t, g, keep_target: true });
+        say(`${map.contactName(unit)}: ${g > 0 ? `${g.toFixed(2)} g` : 'drive cut'}`);
+      } catch (err) { say(String(err.message ?? err)); }
+    };
+    if (now) send(); else retuneTimer = setTimeout(send, 250);
   }
   async function giveOrder() {
     const aim = orderTool?.aim();
@@ -165,8 +182,9 @@
     try {
       const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId,
                                   target: aim.target });
-      const goal = r.ship.goal;
-      say(o.g > 0 ? `${map.contactName(o.unit)}: to ${goal?.label ?? aim.label} at ${o.g.toFixed(2)} g` : `${map.contactName(o.unit)}: drive cut`);
+      const goal = Object.values(r.ships)[0]?.goal;
+      const who = `${map.contactName(o.unit)}${o.ships.length > 1 ? ` (${o.ships.length} ships)` : ''}`;
+      say(o.g > 0 ? `${who}: to ${goal?.label ?? aim.label} at ${o.g.toFixed(2)} g` : `${who}: drive cut`);
       ordering = null;
     } catch (err) {
       say(String(err.message ?? err));
@@ -197,6 +215,13 @@
       if (e.key === 'Escape' || e.key === 'a' || e.key === 'A') { ordering = null; return; }
       if (orderTool?.key(e)) { e.preventDefault(); return; }
     } else if ((e.key === 'a' || e.key === 'A') && mode === 'map') { startOrder(); return; }
+    else if ((e.key === 'w' || e.key === 'W' || e.key === 's' || e.key === 'S') && mode === 'map') {
+      const grp = group(state, contacts, selShips);         // the selection's orders, retuned
+      if (grp?.flying.length) {
+        retune(stepG(grp.g, grp.maxG, grp.cruise, e.key.toLowerCase() === 'w', e.shiftKey));
+        return;
+      }
+    }
     if (e.key === 'Escape') select(null);
     if (e.key === 'f' || e.key === 'F') focusOn(sel);
     if (e.key === 'h' || e.key === 'H') map.frameAll();
@@ -375,7 +400,7 @@
 {#if !showSettings}
 <InfoPanel {map} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
-  onclose={() => select(null)} onfocus={focusOn} onselect={select} />
+  onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} />
 {/if}
 {/if}
 

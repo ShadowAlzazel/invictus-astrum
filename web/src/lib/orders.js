@@ -10,11 +10,13 @@ const len = (a) => Math.hypot(a[0], a[1], a[2]);
 
 // What the cursor points at: a unit or a body under it (their own coordinates), else the point on
 // the plane through the ship parallel to the bullseye's, tilted toward Eve (up) or Haid (down).
-export function aimAt(map, shipId, cursor, tiltDeg) {
-  const from = map.position({ kind: 'contact', id: shipId });
+// `unit` is the ship, or the formation, the order is for; `ships` are the ships it goes to.
+export function aimAt(map, unit, ships, cursor, tiltDeg) {
+  const from = map.position({ kind: 'contact', id: unit });
   if (!from) return null;
   const h = map.hover;
-  if (h && !(h.kind === 'contact' && h.id === shipId) && (h.kind === 'contact' || h.kind === 'body')) {
+  const own = h?.kind === 'contact' && (h.id === unit || ships.includes(h.id));
+  if (h && !own && (h.kind === 'contact' || h.kind === 'body')) {
     const p = map.position(h);
     if (p) {
       const name = h.kind === 'body' ? map.bodies[h.id]?.name ?? h.id : map.contactName?.(h.id) ?? h.id;
@@ -69,4 +71,39 @@ export function detents(maxG, cruise) {
     out.push({ label, g });
   }
   return out.sort((a, b) => b.g - a.g);
+}
+
+// What an order for a ship or a formation can hold: the slowest ship's most, and the cruise band
+// all of them share. `ships` are ids; state.ships has what each can do now.
+export function group(state, contacts, ships) {
+  const now = ships.map((id) => state?.ships?.[id]).filter(Boolean);
+  if (!now.length) return null;
+  const specs = ships.map((id) => contacts.find((c) => c.id === id)?.ship).filter(Boolean);
+  const bands = specs.map((s) => s.cruise_g).filter(Boolean);
+  const maxG = Math.min(...now.map((s) => s.max_accel_g));
+  const cruise = bands.length ? [Math.min(...bands.map((b) => b[0])), Math.min(...bands.map((b) => b[1]))] : null;
+  const flying = now.filter((s) => s.goal);
+  return { maxG, cruise, ships: now, flying, g: flying.length ? Math.max(...flying.map((s) => s.goal.g)) : null };
+}
+
+// The ships under a unit, from the formation tree the map was sent (children of each contact)
+export function shipsUnder(contacts, state, unit) {
+  const byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
+  if (state?.ships?.[unit]) return [unit];
+  const out = [], todo = [...(byId[unit]?.children ?? [])];
+  while (todo.length) {
+    const c = todo.shift();
+    if (state?.ships?.[c]) out.push(c);
+    todo.push(...(byId[c]?.children ?? []));
+  }
+  return out;
+}
+
+// One step of the telegraph: to the next detent up or down, or by 0.01 g
+export function stepG(g, maxG, cruise, up, fine) {
+  const cur = Math.min(g, maxG);
+  if (fine) return Math.max(0, Math.min(maxG, Math.round((cur + (up ? 0.01 : -0.01)) * 100) / 100));
+  const list = detents(maxG, cruise).map((d) => d.g);
+  const next = up ? [...list].reverse().find((x) => x > cur + 1e-6) : list.find((x) => x < cur - 1e-6);
+  return next ?? cur;
 }

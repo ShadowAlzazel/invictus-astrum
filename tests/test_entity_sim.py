@@ -268,3 +268,27 @@ def test_orders_from_the_map_api():
                 {"unit": "kiki-1", "g": -1, "target": {"body": "moon"}},
                 {"unit": "kiki-1", "g": 1, "target": {"bullseye": "nowhere", "aer": [0, 0, 1]}}):
         assert c.post("/api/order", json={"scenario": "sol-demo", "t": t, **bad}).status_code == 400
+
+
+def test_formation_orders_and_the_telegraph():
+    """An order for a flight goes to her ships, each keeping her offset; the telegraph retunes them."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    before = {i: f.at(t)[i].state.r.copy() for i in ("kiki-1", "kiki-2", "kiki-3")}
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.4, "player": "arcvs",
+                                   "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
+    assert r.status_code == 200 and set(r.json()["ships"]) == {"kiki-1", "kiki-2", "kiki-3"}
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t + 600, "g": 0.2, "keep_target": True})
+    assert {s["goal"]["g"] for s in r.json()["ships"].values()} == {0.2}
+    after = f.at(t + 12 * 3600)
+    assert all(after[i].state.mode == "station" for i in before)
+    # laid out as they left: the gaps between them are kept
+    gap0 = np.linalg.norm(before["kiki-2"] - before["kiki-3"])
+    gap1 = np.linalg.norm(after["kiki-2"].state.r - after["kiki-3"].state.r)
+    assert gap1 == pytest.approx(gap0, rel=0.02)
+    assert c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.3,
+                                      "target": {"unit": "kiki-2"}}).status_code == 400      # not one of her own

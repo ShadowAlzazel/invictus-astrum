@@ -75,7 +75,7 @@ def gravity_many(system, eph, positions: dict, X: np.ndarray) -> np.ndarray:
 class Order:
     unit: str
     at: float                      # TDB s
-    kind: str                      # "burn", "goto" or "coast"
+    kind: str                      # "burn", "goto", "setg" (a new g for the go-to she is flying) or "coast"
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s
     target: dict | None = None     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body}, and a label
     g: float | None = None         # goto: the acceleration to hold, capped at her most
@@ -442,5 +442,12 @@ class Fleet:
             st.goal = {"target": tg, "label": tg.get("label"), "g": float(o.g or 0.0), "standoff_m": stand,
                        "issued": o.at, "source": o.source}
             self._guide(s, o.at, STEP_BURN_MAX_S)     # her first thrust, and the ETA from the start
+        elif o.kind == "setg":                         # the telegraph moved while she flies her order
+            if st.goal is not None:
+                if (o.g or 0.0) <= 0:
+                    st.mode, st.burn, st.thrust_n, st.direction, st.goal = "free", None, 0.0, None, None
+                else:
+                    st.goal["g"] = float(o.g)
+                    self._guide(s, o.at, STEP_BURN_MAX_S)
         elif o.kind == "coast":
             st.mode, st.burn, st.thrust_n, st.direction, st.goal = "free", None, 0.0, None, None

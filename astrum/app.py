@@ -313,6 +313,30 @@ def level_dict(world: "World", s) -> dict:
     }
 
 
+def order_ships(world: "World", sc, fleet, unit) -> list[str]:
+    """The ships an order goes to: the unit itself if she is a ship, else every ship under it."""
+    if fleet is None or unit not in sc.contacts:
+        return []
+    if unit in fleet.ships:
+        return [unit]
+    tree = world.trees.get(sc.id, {})
+    out, todo = [], list(tree.get(unit, {}).get("children", []))
+    while todo:
+        c = todo.pop(0)
+        if c in fleet.ships:
+            out.append(c)
+        todo += tree.get(c, {}).get("children", [])
+    return out
+
+
+def order_reply(fleet, t: float, unit: str, ships: list[str]) -> dict:
+    flown = fleet.at(t)
+    out = {"ok": True, "unit": unit, "ships": {sid: flown[sid].as_dict() for sid in ships}}
+    if len(ships) == 1:
+        out["ship"] = out["ships"][ships[0]]
+    return out
+
+
 def create_app(config: dict | None = None) -> FastAPI:
     config = config or load_config()
     world = World(config)
@@ -458,47 +482,67 @@ def create_app(config: dict | None = None) -> FastAPI:
 
     @app.post("/api/order")
     def order(req: dict = Body(...)):
-        """One ship's order, at the map's clock. target: {bullseye, aer: [deg, deg, km]} (the
-        ordering player's bullseye, so the point moves with its frame), {unit}, or {body}.
-        g is the acceleration she holds, capped at her most; 0 cuts her drive."""
+        """An order at the map's clock, for one ship or for every ship under a formation.
+        target: {bullseye, aer: [deg, deg, km]} (the ordering player's bullseye, so the point moves
+        with its frame), {unit}, or {body}. g is the acceleration held, each ship capped at her most;
+        0 cuts the drive. keep_target: only the g of the order they are flying changes.
+        A formation's ships each keep their offset from the formation as it stands now, so they
+        arrive laid out as they left, not on one point."""
         world.check()
         sc = world.scenarios.get(req.get("scenario") or "")
         if sc is None:
             raise HTTPException(404, f"no scenario {req.get('scenario')!r}")
         fleet = world.fleet(sc)
-        unit = req.get("unit")
-        if fleet is None or unit not in fleet.ships:
-            raise HTTPException(400, f"{unit!r} is not a ship in {sc.id}")
-        g, t = req.get("g"), req.get("t")
+        unit, g, t = req.get("unit"), req.get("g"), req.get("t")
         if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
             raise HTTPException(400, "an order needs t, and g of 0 or more")
-        s, _ = world.system(sc.system)
-        tg, player = req.get("target") or {}, req.get("player") or sc.player
+        t = float(t)
+        ships = order_ships(world, sc, fleet, unit)
+        if not ships:
+            raise HTTPException(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
+        if req.get("keep_target"):
+            for sid in ships:
+                fleet.command(Order(sid, t, "setg", g=float(g), source="map"))
+            return order_reply(fleet, t, unit, ships)
         if g == 0:
-            fleet.command(Order(unit, float(t), "coast", source="map"))
+            for sid in ships:
+                fleet.command(Order(sid, t, "coast", source="map"))
+            return order_reply(fleet, t, unit, ships)
+        s, eph = world.system(sc.system)
+        tg, player = req.get("target") or {}, req.get("player") or sc.player
+        if "bullseye" in tg:
+            if tg["bullseye"] not in world.bullseyes(sc.system, player):
+                raise HTTPException(400, f"no bullseye {tg['bullseye']!r} for {player!r}")
+            brg, el, rng = (float(x) for x in tg["aer"])
+            bname = world.bullseyes(sc.system, player)[tg["bullseye"]].name
+            tilt = "level" if abs(el) < 0.5 else f"{'Eve' if el > 0 else 'Haid'} {abs(el):.0f}°"
+            target = {"bullseye": tg["bullseye"], "player": player, "aer": [brg, el, rng * 1e3],
+                      "label": tg.get("label") or f"{round(brg) % 360:03d}° {tilt}, {rng:,.0f} km from {bname}"}
+        elif "unit" in tg:
+            c = sc.contacts.get(tg["unit"])
+            if c is None or tg["unit"] == unit or tg["unit"] in ships:
+                raise HTTPException(400, f"{tg['unit']!r} is not another unit in {sc.id}")
+            target = {"unit": c.id, "label": c.callsign}
+        elif "body" in tg:
+            b = next((b for b in s if b.id == tg["body"]), None)
+            if b is None:
+                raise HTTPException(400, f"no body {tg['body']!r} in {s.name}")
+            target = {"body": b.id, "label": b.name}
         else:
-            if "bullseye" in tg:
-                if tg["bullseye"] not in world.bullseyes(sc.system, player):
-                    raise HTTPException(400, f"no bullseye {tg['bullseye']!r} for {player!r}")
-                brg, el, rng = (float(x) for x in tg["aer"])
-                bname = world.bullseyes(sc.system, player)[tg["bullseye"]].name
-                tilt = "level" if abs(el) < 0.5 else f"{'Eve' if el > 0 else 'Haid'} {abs(el):.0f}°"
-                target = {"bullseye": tg["bullseye"], "player": player, "aer": [brg, el, rng * 1e3],
-                          "label": tg.get("label") or f"{round(brg) % 360:03d}° {tilt}, {rng:,.0f} km from {bname}"}
-            elif "unit" in tg:
-                c = sc.contacts.get(tg["unit"])
-                if c is None or tg["unit"] == unit:
-                    raise HTTPException(400, f"{tg['unit']!r} is not another unit in {sc.id}")
-                target = {"unit": c.id, "label": c.callsign}
-            elif "body" in tg:
-                b = next((b for b in s if b.id == tg["body"]), None)
-                if b is None:
-                    raise HTTPException(400, f"no body {tg['body']!r} in {s.name}")
-                target = {"body": b.id, "label": b.name}
-            else:
-                raise HTTPException(400, "target is {bullseye, aer}, {unit} or {body}")
-            fleet.command(Order(unit, float(t), "goto", target=target, g=float(g), source="map"))
-        return {"ok": True, "ship": fleet.at(float(t))[unit].as_dict()}
+            raise HTTPException(400, "target is {bullseye, aer}, {unit} or {body}")
+        flown = fleet.at(t)
+        offsets = {sid: np.zeros(3) for sid in ships}
+        if len(ships) > 1 or unit not in ships:          # a formation: each ship keeps her place in it
+            pos = eph.positions(t)
+            where = contact_positions(sc, world.resolved(sc.system, sc.player, pos), pos,
+                                      {i: f.state.r for i, f in flown.items()})
+            anchor = where.get(unit)
+            if anchor is not None:
+                offsets = {sid: flown[sid].state.r - anchor for sid in ships}
+        for sid in ships:
+            tgt = dict(target, offset_m=offsets[sid].tolist()) if np.any(offsets[sid]) else target
+            fleet.command(Order(sid, t, "goto", target=tgt, g=float(g), source="map"))
+        return order_reply(fleet, t, unit, ships)
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
