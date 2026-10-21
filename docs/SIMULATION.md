@@ -139,34 +139,58 @@ data reload rebuilds the fleet from the scenario file.
 ## Time
 
 A scenario starts at its own `epoch`, or when its system's clock does. Before that every ship is on
-station with the tanks she starts with. The fleet steps flying ships at 0.5% of their dynamical
-time to the nearest pull (10 s to 900 s; 60 s at most while burning), brings station ships up to
-date every 600 s, and keeps a checkpoint every 30 minutes, so the map's clock can run fast or be
-scrubbed back.
+station with the tanks she starts with. The map's clock starts at an hour a second.
+
+The fleet moves in **blocks** of up to 10 minutes (shorter where an order, the end of a burn or
+the moment asked for falls). Inside a block every **unit** (a ship on her own, or a formation's
+lead with the ships keeping their places on it) takes its own steps: 0.5% of its dynamical time to
+the nearest pull (10 s – 10 min), a minute at most under thrust or on an order, and a fiftieth of
+the time left (1 s at least) as an order arrives, shrinking as it closes. So a ship closing on her
+target in 1 s steps does not hold a coasting fleet to them. Units do not pull on each other, so
+their steps need not line up inside a block; units that want the same number of steps are stepped
+together, in one array. Station ships are brought up to date every 10 minutes; a checkpoint is kept
+every 30 minutes, so the clock can run fast or be scrubbed back.
 
 ## Where the time goes
 
 The simulation is the server's; the browser only draws. What keeps it quick:
 
-- **Bodies from a table.** The fleet reads body positions from a table (`Tabled`,
-  `astrum/ephemeris.py`): exact states (JPL or orbits) at nodes a step apart, cubic Hermite in
-  position and velocity between. The step is a 400th of the shortest turn any body makes at its
-  fastest (periapsis), within 10 s – 10 min: 293 s in Sol, wrong by at most about 2 m (Mercury).
-  A table read costs about 0.03 ms against 1.5 ms for the ephemeris. The map is sent the same
-  table, so ships and bodies agree.
-- **Bullseyes once per moment.** Every ship flying to a point asks for the same bullseye at the
-  same time; it is resolved once per step.
-- **Gravity, all bodies at once.** `gravity_many` takes every pulling body in one array (J2 for the
-  oblate ones), and every flying ship and lead in one call per half-step.
-- **Guidance in one pass.** Every ship and lead flying an order is steered in one numpy pass.
+- **Bodies from a table, worked out up front.** The fleet and the map read body positions from a
+  table per system (`Tabled`, `astrum/ephemeris.py`): exact states at nodes a step apart, cubic
+  Hermite in position and velocity between. The step is a 400th of the shortest turn any body
+  makes at its fastest (periapsis), within 10 s – 10 min: 293 s in Sol, wrong by at most about 2 m
+  (Mercury). Nodes are made 256 at a time in one vectorized pass of the ephemeris (JPL takes all
+  the times in one call; orbits solve Kepler's equation for all of them at once): 25 µs a node in
+  Sol, where one at a time cost 1.5 ms. The first `[sim] table_days` (60) of every game are filled
+  when the server loads its data, in the background; after that nothing waits on JPL. A table
+  read costs about 0.01 ms.
+- **Compiled hot loops.** Gravity (every point from every body, J2 for the oblate ones) and flying
+  an order ahead for its time to target are compiled with Numba (`astrum/kernels.py`), on first
+  use, cached on disk, warmed up at load: gravity 0.008 ms a call against 0.1 ms in numpy. Without
+  Numba the numpy paths stand in.
+- **No GPU.** At tens to hundreds of ships and some twenty bodies a step is microseconds of work,
+  less than a round trip to a GPU would cost. It pays at thousands of objects (projectiles,
+  missiles); the kernels are where it would go.
+- **Bullseyes once per moment, and only the one needed.** A bullseye whose axes are fixed
+  directions keeps them; only its origin is worked out again.
 - **Off the event loop.** The server's event loop only talks; each picture for the map is built in
   a worker thread. The fleet runs in chunks of 30 ms under its lock, so an order is taken between
   two chunks however far it has to fly, and the map's picture gets 0.2 s: if the fleet cannot
   reach the clock in that, the picture is of the moment it reached, sent with `behind_s`, and the
   clock shows "sim … behind" until it catches up.
+- **Small pictures.** Figures go rounded (six significant figures, positions to the metre), and
+  ships go as what changed since the connection's last picture, one level deep (`full: false`);
+  the map merges them. The first picture, and any after the system, the scenario or the data
+  change, has everything (`full: true`).
 
-Measured on the Sol demo (51 ships), 14 of them flying two formation orders: an hour of flight in
-0.1 s, six hours in 0.8 s (before: 0.67 s and 3.4 s). A picture for the map, about 4 ms.
+Measured on the Sol demo (51 ships), 18 of them flying four orders, two of them formations:
+
+| | before | now |
+|---|---|---|
+| 1 h / 6 h / 12 h of flight | 0.16 / 1.46 / 0.75 s | 0.10 / 0.78 / 0.40 s |
+| a map frame at 1 min/s / 1 h/s / 1 d/s (fleet) | 2.5 / 3.9 / 46 ms | 3.2 / 3.5 / 26 ms |
+| a picture for the map | 39 KB | 13 KB |
+| the opening 60 days of Sol's bodies | as asked, 1.5 ms a moment | 0.7 s at load, in the background |
 
 ## On the wire
 

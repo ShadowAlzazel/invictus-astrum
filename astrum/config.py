@@ -24,7 +24,7 @@ CONFIG_SCHEMA = {
               "display": str, "settings": str},
     "server": {"host": str, "port": int},
     "live": {"check_seconds": float},
-    "sim": {"start": str, "orbit_samples": int},
+    "sim": {"start": str, "orbit_samples": int, "table_days": float},
 }
 
 
@@ -63,6 +63,8 @@ def load_config(path: str | Path = ROOT / "config.toml") -> dict:
             problems.append("[server] port must be 1–65535")
         if doc["live"]["check_seconds"] <= 0:
             problems.append("[live] check_seconds must be positive")
+        if not 0 <= doc["sim"]["table_days"] <= 3650:
+            problems.append("[sim] table_days must be 0–3650")
         if not 32 <= doc["sim"]["orbit_samples"] <= 4096:
             problems.append("[sim] orbit_samples must be 32–4096")
     if problems:

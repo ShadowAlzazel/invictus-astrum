@@ -65,6 +65,7 @@ class World:
         self.settings: dict = {}
         self.trees: dict[str, dict] = {}         # scenario id -> formation tree
         self.fleets: dict[str, Fleet] = {}       # scenario id -> its ships, flown; rebuilt on reload
+        self.tables: dict[str, Tabled] = {}      # system id -> its body table, filled up front (see _prefill)
         self.style = {}
         self._stamp = None
         self._specs: dict[str, ShipSpec | None] = {}
@@ -165,8 +166,10 @@ class World:
             for sid, s in systems.items():
                 self.systems[sid] = s
                 self.ephemerides[sid] = Ephemeris(s)
+                self.tables[sid] = Tabled(self.ephemerides[sid])
                 if self.ephemerides[sid].numerical_error:
                     errors[f"systems/{sid} ephemeris"] = self.ephemerides[sid].numerical_error
+            self.tables = {sid: tb for sid, tb in self.tables.items() if sid in self.systems}
             self.scenarios = {**self.scenarios, **scenarios} if sc_err else scenarios
             self.players, self.style, self.errors, self.ships = players, style, errors, ships
             self.factions = factions
@@ -175,6 +178,7 @@ class World:
             self._specs = {}
             self.version += 1
             self._stamp = self._mtimes()
+        self._prefill()
 
     def check(self) -> None:
         now = time.monotonic()
@@ -183,6 +187,30 @@ class World:
         self._checked = now
         if self._mtimes() != self._stamp:
             self.reload()
+
+    def _prefill(self) -> None:
+        """Work out body positions for the opening [sim] table_days of every game now, in the
+        background, JPL and all, so nothing waits on the ephemeris once it is running."""
+        days = float(self.config["sim"]["table_days"])
+        if days <= 0:
+            return
+        jobs = []
+        for sid, tb in self.tables.items():
+            starts = {self.start_time(self.systems[sid])} | {sc.epoch for sc in self.scenarios.values()
+                                                             if sc.system == sid and sc.epoch is not None}
+            jobs += [(tb, t0) for t0 in starts]
+
+        def run():
+            from . import kernels
+            kernels.warm_up()                                # compiled once (cached on disk) before anyone orders
+            for tb, t0 in jobs:
+                tb.prefill(t0 - 3600.0, t0 + days * 86400.0)
+        threading.Thread(target=run, name="table-prefill", daemon=True).start()
+
+    def table(self, sid: str):
+        """What the simulation and the map read bodies from: the system's table (a workshop
+        draft, which has none, reads its ephemeris)."""
+        return self.tables.get(sid) if sid not in self.drafts and sid in self.tables else self.get(sid)[1]
 
     # ---- lookups ----------------------------------------------------------------------------
     def get(self, sid: str):
@@ -208,10 +236,18 @@ class World:
             out.update({b.id: b for b in self.players[player].bullseyes.values() if b.system == sid})
         return out
 
-    def resolved(self, sid: str, player: str | None, positions: dict) -> dict:
+    def resolved(self, sid: str, player: str | None, positions: dict, only: str | None = None) -> dict:
         s = self.get(sid)[0]
         bulls = self.bullseyes(sid, player)
         out = {}
+        if only is not None:                                 # just the one asked for (and what it is placed from)
+            bulls_one = {only: bulls[only]} if only in bulls else {}
+            for bid, b in bulls_one.items():
+                try:
+                    out[bid] = resolve(s, b, positions, bulls)
+                except BullseyeError:
+                    pass
+            return out
         for bid, b in bulls.items():
             try:
                 out[bid] = resolve(s, b, positions, bulls)
@@ -237,8 +273,8 @@ class World:
         got = self.get(sc.system)
         if got is None or self.ships is None:
             return None
-        s, exact = got
-        eph = Tabled(exact)                              # the simulation reads bodies from a table
+        s, _ = got
+        eph = self.table(sc.system)                      # the simulation reads bodies from the table
 
         def place(t):
             pos = eph.positions(t)
@@ -249,7 +285,7 @@ class World:
         orders = [Order(o["unit"], t0 + float(o["at_s"]), "burn" if "burn" in o else "coast", o.get("burn") or {})
                   for o in sc.orders]
         f = self.fleets[sc.id] = Fleet(sc, s, eph, self.ships, place, t0, orders,
-                                       bullseyes=lambda player, pos: self.resolved(sc.system, player, pos))
+                                       bullseyes=lambda player, pos, only=None: self.resolved(sc.system, player, pos, only))
         return f
 
     def start_time(self, s) -> float:
@@ -262,7 +298,35 @@ class World:
 
 
 def _km(v) -> list[float]:
-    return (np.asarray(v) * KM).tolist()
+    """A position in km, to the metre."""
+    return [round(x, 3) for x in (np.asarray(v) * KM).tolist()]
+
+
+def _tidy(x, key: str = ""):
+    """A ship's figures as the map shows them: six significant figures; positions (…_km
+    lists) to the metre."""
+    if isinstance(x, float):
+        return float(f"{x:.6g}") if math.isfinite(x) else x
+    if isinstance(x, dict):
+        return {k: _tidy(v, k) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [round(v, 3) if key.endswith("_km") and isinstance(v, float) else _tidy(v) for v in x]
+    return x
+
+
+def _delta(prev: dict, now: dict) -> dict:
+    """What changed from prev to now: the keys whose values differ, and inside a value that is
+    a dict in both, only its keys that differ (the map merges one level deep)."""
+    out = {}
+    for k, v in now.items():
+        p = prev.get(k, _delta)
+        if p == v:
+            continue
+        if isinstance(v, dict) and isinstance(p, dict):
+            out[k] = {kk: vv for kk, vv in v.items() if p.get(kk, _delta) != vv}
+        else:
+            out[k] = v
+    return out
 
 
 def _deg(x):
@@ -576,10 +640,13 @@ def create_app(config: dict | None = None) -> FastAPI:
             fleet.command(Order(sid, t, "goto", target=tgt, g=float(g), source="map", order_id=oid, by=unit))
         return order_reply(fleet, t, unit, ships)
 
-    def frame(req: dict) -> dict:
+    def frame(req: dict, sent: dict | None = None) -> dict:
         """One picture of the system for the map. Runs in a worker thread, never the event loop:
         the fleet may have hours to fly. It gets FRAME_BUDGET_S of wall time; if it falls short,
-        the picture is of the moment it reached (behind_s says how far behind the clock asked)."""
+        the picture is of the moment it reached (behind_s says how far behind the clock asked).
+        With `sent` (what this connection was sent before), ships carry only what changed since
+        (full: false); the first picture, and any after the system, the scenario or the data
+        changed, carries everything (full: true)."""
         world.check()
         sid = req.get("system")
         got = world.get(sid)
@@ -593,7 +660,7 @@ def create_app(config: dict | None = None) -> FastAPI:
         if fleet is not None:
             t, (flown, ships) = fleet.advance(t, FRAME_BUDGET_S, view=lambda fl: (
                 {i: f.state.r.copy() for i, f in fl.items()}, {i: f.as_dict() for i, f in fl.items()}))
-        pos = (fleet.eph if fleet is not None else eph).positions(t)   # the fleet's table: what it flew among
+        pos = world.table(sid).positions(t)              # the table: what the fleet flew among
         bulls = world.resolved(sid, req.get("player"), pos)
         contacts = {}
         if sc and sc.system == sid:
@@ -606,17 +673,34 @@ def create_app(config: dict | None = None) -> FastAPI:
             "bodies": {bid: _km(v) for bid, v in pos.items()},
             "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
             "contacts": contacts,
-            "ships": ships,
-            "magnetopause_km": {b.id: m * KM for b in s if (m := magnetopause(s, pos, b))},
+            "ships": ships if sent is None else _ship_deltas(sent, (sid, req.get("scenario"), world.version), ships),
+            "full": sent is None or sent.get("fresh", False),
+            "magnetopause_km": {b.id: round(m * KM, 1) for b in s if (m := magnetopause(s, pos, b))},
         }
+
+    def _ship_deltas(sent: dict, key, ships: dict) -> dict:
+        ships = {i: _tidy(d) for i, d in ships.items()}
+        if sent.get("key") != key:
+            sent.clear()
+            sent.update(key=key, ships=ships, fresh=True)
+            return ships
+        sent["fresh"] = False
+        prev, out = sent["ships"], {}
+        for i, d in ships.items():
+            delta = _delta(prev.get(i, {}), d)
+            if delta:
+                out[i] = delta
+        sent["ships"] = ships
+        return out
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
         await sock.accept()
+        sent: dict = {}                                  # what this connection has been sent: ships go as changes
         try:
             while True:
                 req = await sock.receive_json()
-                await sock.send_json(await asyncio.to_thread(frame, req))
+                await sock.send_json(await asyncio.to_thread(frame, req, sent))
         except WebSocketDisconnect:
             return
 

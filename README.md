@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010
-python -m pytest -q tests             # 105 tests
+python -m pytest -q tests             # 152 tests
 ```
 
 Frontend work: `python serve.py` in one terminal, `cd web && npm run dev` in another (live

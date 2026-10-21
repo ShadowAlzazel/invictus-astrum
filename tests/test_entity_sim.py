@@ -174,7 +174,8 @@ def test_sol_demo_fleet(reg):
         ws.send_json({"system": "sol", "t": f.t0 + 3600, "scenario": "sol-demo", "player": "arcvs"})
         st = ws.receive_json()
     k = st["ships"]["kiki-1"]
-    assert k["mode"] == "station" and k["dv_left_kms"] < 4000 and k["mass_t"] < 70340
+    assert k["mode"] == "station" and k["dv_spent_kms"] > 0                      # holding station cost her something
+    assert f.ships["kiki-1"].dv_left_ms < 4e6 and f.ships["kiki-1"].mass_kg < 70340e3
     assert st["contacts"]["kiki-1"] and st["contacts"]["kiki"]                  # ship and her flight
 
 
@@ -508,3 +509,63 @@ def test_the_ranges_settings_are_player_settings():
     d = load_rules(R / "display.toml")
     assert d["ranges"]["settings"]["selected_only"]["default"] is False
     assert d["ranges"]["settings"]["min_px"]["default"] == 14
+
+
+def test_the_table_is_filled_up_front_by_prefill():
+    """The opening days of a game are worked out once, up front, a block of nodes per ephemeris call."""
+    import time as _t
+    from astrum.app import create_app
+    world = create_app().state.world
+    tb = world.tables["sol"]
+    deadline = _t.monotonic() + 30
+    want = math.ceil(world.config["sim"]["table_days"] * 86400 / tb.h / tb.BLOCK)
+    while len(tb._blocks) < want and _t.monotonic() < deadline:
+        _t.sleep(0.05)
+    assert len(tb._blocks) >= want
+    calls = []
+    real = tb.eph.states_many
+    tb.eph.states_many = lambda ts: calls.append(1) or real(ts)
+    t0 = world.start_time(world.systems["sol"])
+    for t in np.linspace(t0, t0 + 50 * 86400, 500):
+        tb.positions(t)
+    assert not calls                                                       # nothing left to work out
+
+
+def test_the_map_is_sent_changes_that_add_up():
+    """Ships go to the map as changes since the last picture; merged, they are the full picture
+    a fresh connection gets at the same moment, and a quiet moment sends next to nothing."""
+    import json
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+
+    def merge(prev, now):
+        out = {k: dict(v) for k, v in prev.items()}
+        for i, d in now.items():
+            m = out.setdefault(i, {})
+            for k, v in d.items():
+                m[k] = {**m[k], **v} if isinstance(v, dict) and isinstance(m.get(k), dict) else v
+        return out
+
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.4, "player": "arcvs",
+                               "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
+    req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo"}
+    with c.websocket_connect("/ws") as ws:
+        ws.send_json({**req, "t": t + 60})
+        first = ws.receive_json()
+        ships = first["ships"]
+        assert first["full"] and len(ships) == 51
+        for k in range(1, 6):
+            ws.send_json({**req, "t": t + 60 + 30 * k})
+            m = ws.receive_json()
+            assert not m["full"]
+            ships = merge(ships, m["ships"])
+        small = len(json.dumps(m["ships"]))
+    with c.websocket_connect("/ws") as ws:
+        ws.send_json({**req, "t": t + 60 + 150})
+        fresh = ws.receive_json()
+    assert fresh["full"] and ships == fresh["ships"]
+    assert small < len(json.dumps(fresh["ships"])) / 3

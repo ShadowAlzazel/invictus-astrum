@@ -124,12 +124,24 @@ def resolve(system: StellarSystem, b: Bullseye, positions: dict[str, np.ndarray]
     else:
         raise BullseyeError(f"bullseye {b.id!r}: origin needs body, xyz_km or aer")
 
-    up = _direction(system, b.up, positions, origin, "up")
-    ref = _direction(system, b.ref, positions, origin, "ref")
-    if abs(float(np.dot(unit(ref), up))) > 0.999:
-        raise BullseyeError(f"bullseye {b.id!r}: 000 is parallel to Eve; choose another reference")
-    axes = basis(ref, up) @ rot_z(-math.radians(b.roll_deg))     # clockwise seen from Eve
+    # axes from fixed directions (not toward a body) are the same at every moment: worked out once
+    fixed = not any(isinstance(x, str) and x.startswith("toward:") for x in (b.up, b.ref))
+    key = (id(system), b.id, str(b.up), str(b.ref), b.roll_deg)
+    axes = _FIXED_AXES.get(key) if fixed else None
+    if axes is None:
+        up = _direction(system, b.up, positions, origin, "up")
+        ref = _direction(system, b.ref, positions, origin, "ref")
+        if abs(float(np.dot(unit(ref), up))) > 0.999:
+            raise BullseyeError(f"bullseye {b.id!r}: 000 is parallel to Eve; choose another reference")
+        axes = basis(ref, up) @ rot_z(-math.radians(b.roll_deg))     # clockwise seen from Eve
+        if fixed:
+            if len(_FIXED_AXES) > 1024:
+                _FIXED_AXES.clear()
+            _FIXED_AXES[key] = axes
     return Resolved(b.id, origin, axes)
+
+
+_FIXED_AXES: dict[tuple, np.ndarray] = {}
 
 
 def from_dict(d: dict, owner: str = "") -> Bullseye:

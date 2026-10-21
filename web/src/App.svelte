@@ -19,7 +19,7 @@
 
   let canvas, map = null, stream, meta = null, style = null, def = null, state = null;
   let systemId = null, playerId = 'arcvs', bullseyeId = 'system', scenarioOn = true;
-  let t = 0, warp = WARPS.findIndex(([s]) => s === 86400), paused = false, last = 0, raf;
+  let t = 0, warp = WARPS.findIndex(([s]) => s === 3600), paused = false, last = 0, raf;
   let orbitsT = null, orbitsBusy = false;
   let drules = {}, settings = null, showSettings = false, settingsStatus = '', saveTimer, pendingSave = false;
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
@@ -105,9 +105,22 @@
     try { const at = t; map.setOrbits(await api.orbits(systemId, at)); orbitsT = at; } finally { orbitsBusy = false; }
   }
 
+  // ships come as changes since the last picture (full: everything); merged one level deep
+  function mergeShips(prev, now, full) {
+    if (full || !prev) return now;
+    const out = { ...prev };
+    for (const [id, d] of Object.entries(now)) {
+      const p = out[id] ?? {}, m = { ...p };
+      for (const [k, v] of Object.entries(d)) m[k] = v && typeof v === 'object' && !Array.isArray(v) && p[k] && typeof p[k] === 'object' ? { ...p[k], ...v } : v;
+      out[id] = m;
+    }
+    return out;
+  }
+
   function onstate(s) {
     if (s.error) { error = s.error; return; }
     if (s.system !== systemId) return;
+    s.ships = mergeShips(state?.system === s.system ? state.ships : null, s.ships ?? {}, s.full);
     state = s;
     map.setState(s);
     if (orbitsT == null || Math.abs(s.t - orbitsT) > 2 * 86400) refreshOrbits();   // orbits precess: redraw now and then

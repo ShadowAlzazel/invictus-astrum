@@ -71,6 +71,24 @@ class Orbit:
         R = self.orientation(t)
         return R @ r_pf, R @ v_pf
 
+    def states(self, ts: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """state() at many times at once: positions and velocities, (n, 3) each."""
+        ts = np.asarray(ts, dtype=float)
+        dt = ts - self.epoch
+        a, e, i = self.a + self.da * dt, self.e + self.de * dt, self.i + self.di * dt
+        node, peri = self.node + self.dnode * dt, self.peri + self.dperi * dt
+        E = solve_kepler_many((self.m0 + self.n * dt) % TAU, e)
+        cE, sE = np.cos(E), np.sin(E)
+        b = a * np.sqrt(1 - e * e)
+        edot = self.n / (1 - e * cE)
+        r_pf = np.stack([a * (cE - e), b * sE], axis=1)
+        v_pf = np.stack([-a * sE * edot, b * cE * edot], axis=1)
+        # perifocal P and Q axes, rotated by node, inclination and periapsis, then into the plane
+        cn, sn, ci, si, cp, sp = np.cos(node), np.sin(node), np.cos(i), np.sin(i), np.cos(peri), np.sin(peri)
+        P = np.stack([cn * cp - sn * ci * sp, sn * cp + cn * ci * sp, si * sp], axis=1) @ self.plane.T
+        Q = np.stack([-cn * sp - sn * ci * cp, -sn * sp + cn * ci * cp, si * cp], axis=1) @ self.plane.T
+        return r_pf[:, :1] * P + r_pf[:, 1:] * Q, v_pf[:, :1] * P + v_pf[:, 1:] * Q
+
     def path(self, t: float, samples: int = 256) -> np.ndarray:
         """The osculating ellipse at t, relative to the parent: (samples+1, 3), closed.
         Sampled evenly in eccentric anomaly, which crowds points where curvature is highest."""
@@ -124,6 +142,19 @@ def solve_kepler(m: float, e: float) -> float:
         d = f / (1 - e * math.cos(E))
         E -= d
         if abs(d) < 1e-15:
+            break
+    return E
+
+
+def solve_kepler_many(m: np.ndarray, e) -> np.ndarray:
+    """solve_kepler for many mean anomalies at once (e a number or an array)."""
+    m = (np.asarray(m, dtype=float) + math.pi) % TAU - math.pi
+    e = np.broadcast_to(np.asarray(e, dtype=float), m.shape)
+    E = np.where(e < 0.8, m + e * np.sin(m), np.where(m > 0, math.pi, -math.pi))
+    for _ in range(50):
+        d = (E - e * np.sin(E) - m) / (1 - e * np.cos(E))
+        E = E - d
+        if np.all(np.abs(d) < 1e-15):
             break
     return E
 

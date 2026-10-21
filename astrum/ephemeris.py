@@ -42,6 +42,15 @@ class JplDe:
         jd = J2000_JD + t / 86_400.0
         return self.span[0] <= jd <= self.span[1]
 
+    def states_many(self, ts: np.ndarray) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+        """states() at many times in one call: {id: (positions (n, 3), velocities (n, 3))}."""
+        T = self.ts.tdb_jd(J2000_JD + np.asarray(ts, dtype=float) / 86_400.0)
+        out = {}
+        for bid, tgt in self.targets.items():
+            p = tgt.at(T)
+            out[bid] = ((self.rot @ (p.position.km * 1e3)).T, (self.rot @ (p.velocity.km_per_s * 1e3)).T)
+        return out
+
     def states(self, t: float) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """{id: (position, velocity)} relative to the solar-system barycentre, system axes, SI."""
         T = self.ts.tdb_jd(J2000_JD + t / 86_400.0)
@@ -94,6 +103,31 @@ class Ephemeris:
     def positions(self, t: float) -> dict[str, np.ndarray]:
         return {k: s[0] for k, s in self.states(t).items()}
 
+    def states_many(self, ts: np.ndarray) -> tuple[list[str], np.ndarray, np.ndarray]:
+        """Every body at many times in one pass: (ids, positions (n, M, 3), velocities (n, M, 3)).
+        JPL where it covers the times (one call for all of them), orbits elsewhere."""
+        ts = np.asarray(ts, dtype=float)
+        ids = [b.id for b in self.system]
+        P, V = np.zeros((len(ts), len(ids), 3)), np.zeros((len(ts), len(ids), 3))
+        num, cov = {}, np.zeros(len(ts), dtype=bool)
+        if self.numerical:
+            jd = J2000_JD + ts / 86_400.0
+            cov = (jd >= self.numerical.span[0]) & (jd <= self.numerical.span[1])
+            if cov.any():
+                num = self.numerical.states_many(ts[cov])
+        col = {bid: j for j, bid in enumerate(ids)}
+        for j, b in enumerate(self.system):          # parents come first
+            if b.parent is None:
+                continue
+            q = col[b.parent]
+            r, v = b.orbit.states(ts) if b.orbit is not None else (np.zeros((len(ts), 3)), np.zeros((len(ts), 3)))
+            if b.id in num:                          # validated: the parent then has a target too
+                (br, bv), (qr, qv) = num[b.id], num[b.parent]
+                r, v = r.copy(), v.copy()
+                r[cov], v[cov] = br - qr, bv - qv
+            P[:, j], V[:, j] = P[:, q] + r, V[:, q] + v
+        return ids, P, V
+
     def equator(self, body_id: str) -> np.ndarray:
         """The body's equatorial frame (z = rotation pole) in the system frame."""
         return self._equator[body_id]
@@ -129,47 +163,78 @@ def table_step(system: StellarSystem) -> float:
 
 
 class Tabled:
-    """An ephemeris read through a table: body states are worked out exactly at nodes a step
-    apart (Ephemeris.states, JPL or orbits) and between them by cubic Hermite interpolation of
-    position and velocity. The simulation asks for bodies at every step of every ship; this way
-    most of those asks cost a few multiplications. Everything else is the ephemeris's own."""
+    """An ephemeris read through a table: body states worked out exactly at nodes a step apart
+    and between them by cubic Hermite interpolation of position and velocity. Nodes are made a
+    block at a time (BLOCK steps, every body, one vectorized pass of the ephemeris: JPL in one
+    call), and the span a game starts in is filled once, up front (prefill); after that the
+    simulation and the map read bodies at a few multiplications a time. Blocks outside that span
+    are made when first asked for; the least recently used go past MAX_BLOCKS. Everything else is
+    the ephemeris's own."""
 
-    MAX_NODES = 512
+    BLOCK = 256
+    MAX_BLOCKS = 160
 
     def __init__(self, eph: Ephemeris, step: float | None = None):
+        import threading
         self.eph = eph
         self.system = eph.system
         self.h = step or table_step(eph.system)
         self.ids = [b.id for b in eph.system]
-        self._nodes: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        self._blocks: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        self._lock = threading.Lock()
 
     def __getattr__(self, name):                     # equator, source, body_fixed, numerical, ...
         return getattr(self.eph, name)
 
-    def _node(self, k: int) -> tuple[np.ndarray, np.ndarray]:
-        n = self._nodes.get(k)
-        if n is None:
-            st = self.eph.states(k * self.h)
-            n = (np.array([st[i][0] for i in self.ids]), np.array([st[i][1] for i in self.ids]))
-            if len(self._nodes) >= self.MAX_NODES:
-                self._nodes.pop(next(iter(self._nodes)))
-            self._nodes[k] = n
-        return n
+    def _block(self, b: int) -> tuple[np.ndarray, np.ndarray]:
+        """Nodes b·BLOCK … (b+1)·BLOCK inclusive: positions and velocities, (BLOCK+1, M, 3)."""
+        got = self._blocks.get(b)
+        if got is not None:
+            return got
+        ts = (b * self.BLOCK + np.arange(self.BLOCK + 1)) * self.h
+        _, P, V = self.eph.states_many(ts)
+        with self._lock:
+            if b not in self._blocks:
+                if len(self._blocks) >= self.MAX_BLOCKS:
+                    self._blocks.pop(next(iter(self._blocks)))
+                self._blocks[b] = (P, V)
+            return self._blocks[b]
+
+    def prefill(self, t0: float, t1: float) -> int:
+        """Make every block from t0 to t1 now. Returns how many there are."""
+        b0, b1 = math.floor(t0 / self.h / self.BLOCK), math.floor(t1 / self.h / self.BLOCK)
+        for b in range(b0, b1 + 1):
+            self._block(b)
+        return b1 - b0 + 1
+
+    def nodes(self, t0: float, t1: float) -> tuple[float, np.ndarray, np.ndarray]:
+        """The nodes from just before t0 to just after t1, in one piece: (time of the first,
+        positions (n, M, 3), velocities (n, M, 3)), bodies in self.ids order."""
+        k0, k1 = math.floor(t0 / self.h), math.ceil(t1 / self.h) + 1
+        Ps, Vs = [], []
+        for b in range(k0 // self.BLOCK, k1 // self.BLOCK + 1):
+            P, V = self._block(b)
+            lo, hi = max(k0 - b * self.BLOCK, 0), min(k1 - b * self.BLOCK, self.BLOCK - 1)
+            Ps.append(P[lo:hi + 1])
+            Vs.append(V[lo:hi + 1])
+        return k0 * self.h, np.concatenate(Ps), np.concatenate(Vs)
 
     def _at(self, t: float, velocity: bool):
         h = self.h
-        k = math.floor(t / h)
-        u = t / h - k
-        P0, V0 = self._node(k)
+        x = t / h
+        k = math.floor(x)
+        u = x - k
+        b, i = divmod(k, self.BLOCK)
+        P, V = self._block(b)
         if u < 1e-12:
-            return P0, V0
-        P1, V1 = self._node(k + 1)
+            return P[i], V[i]
+        P0, P1, V0, V1 = P[i], P[i + 1], V[i], V[i + 1]
         u2, u3 = u * u, u * u * u
-        P = (2 * u3 - 3 * u2 + 1) * P0 + (u3 - 2 * u2 + u) * h * V0 + (3 * u2 - 2 * u3) * P1 + (u3 - u2) * h * V1
+        Pt = (2 * u3 - 3 * u2 + 1) * P0 + (u3 - 2 * u2 + u) * h * V0 + (3 * u2 - 2 * u3) * P1 + (u3 - u2) * h * V1
         if not velocity:
-            return P, None
-        V = ((6 * u2 - 6 * u) * P0 + (6 * u - 6 * u2) * P1) / h + (3 * u2 - 4 * u + 1) * V0 + (3 * u2 - 2 * u) * V1
-        return P, V
+            return Pt, None
+        Vt = ((6 * u2 - 6 * u) * P0 + (6 * u - 6 * u2) * P1) / h + (3 * u2 - 4 * u + 1) * V0 + (3 * u2 - 2 * u) * V1
+        return Pt, Vt
 
     def positions(self, t: float) -> dict[str, np.ndarray]:
         P, _ = self._at(t, False)
