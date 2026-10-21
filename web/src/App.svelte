@@ -226,6 +226,7 @@
   onMount(async () => {
     map = new SystemMap(canvas);
     window.astrum = map;                 // for the console and for screenshot scripts
+    window.astrumClock = { get: () => t, set: (v) => (t = v), start: () => def?.start, pause: (v = true) => (paused = v) };
     canvas.addEventListener('pointermove', pointerMove);
     canvas.addEventListener('pointerdown', pointerDown, true);
     canvas.addEventListener('pointerup', pointerUp, true);

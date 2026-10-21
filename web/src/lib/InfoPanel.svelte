@@ -23,6 +23,11 @@
   $: byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
   $: members = contact ? (contact.children ?? []).map((id) => byId[id]).filter(Boolean) : [];
   $: chain = contact ? (contact.ancestors ?? []).map((id) => byId[id]).filter(Boolean) : [];
+  // a ship in the simulation: what she is now (the server flies her), and what her class gives her
+  $: ship = contact ? state?.ships?.[contact.id] ?? null : null;
+  $: spec = contact?.ship ?? null;
+  $: doing = !ship ? '' : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
+    : ship.mode === 'station' ? 'holding station' : 'coasting';
   // every ship under a formation, counted by class: what the formation is made of
   $: makeup = contact && members.length ? tally(contact.id) : [];
   function tally(id) {
@@ -107,6 +112,28 @@
         {#if makeup.length}<p class="dim makeup">{makeup.map(([k, n]) => `${n} × ${k}`).join(' · ')}</p>{/if}
       </section>
     {/if}
+    {#if ship}
+      <section class="ship">
+        <h2>Ship <span class="dim">{doing}</span></h2>
+        <div class="tank" title="propellant"><i style="width:{Math.max(0, Math.min(1, ship.propellant_share)) * 100}%"></i></div>
+        <dl class="tight">
+          <dt>Mass</dt><dd>{n(ship.mass_t)} t</dd>
+          <dt class="sub">dry{ship.load !== 'hull' ? `, ${ship.load} load` : ''}</dt><dd class="sub">{n(ship.dry_t)} t</dd>
+          <dt>Propellant</dt><dd>{n(ship.propellant_t)} t · {n(ship.propellant_share * 100, 1)}%</dd>
+          <dt>Δv left</dt><dd>{n(ship.dv_left_kms, 1)} km/s</dd>
+          <dt>Most acceleration</dt><dd>{ship.max_accel_g.toFixed(3)} g</dd>
+          {#if ship.burning}
+            <dt>Burning</dt><dd class="hot">{ship.accel_g.toFixed(3)} g · {n(ship.thrust_mn, 1)} MN</dd>
+            <dt class="sub">plume</dt><dd class="sub">{n(ship.jet_pw, 2)} PW</dd>
+          {/if}
+          <dt>Δv spent</dt><dd>{ship.dv_spent_kms < 1 ? `${n(ship.dv_spent_kms * 1000, 1)} m/s` : `${n(ship.dv_spent_kms, 2)} km/s`}</dd>
+          {#if spec?.length_m}<dt>Length</dt><dd>{n(spec.length_m)} m</dd>{/if}
+          {#if spec?.cruise_g}<dt>Cruise band</dt><dd>{spec.cruise_g[0]}–{spec.cruise_g[1]} g</dd>{/if}
+        </dl>
+      </section>
+    {:else if spec && !spec.has_drive}
+      <section><h2>Ship</h2><p class="dim">No drive stated for her class; she holds station.</p></section>
+    {/if}
     {#if chain.length}
       <section>
         <h2>Chain of command</h2>
@@ -159,6 +186,11 @@
   .unit { display: flex; justify-content: space-between; gap: 10px; width: 100%; padding: 2px 0; color: var(--ink); text-align: left; }
   .unit:hover span:first-child { color: var(--fuchsia); }
   .makeup { margin-top: 6px; font-size: 11px; }
+  .tank { height: 3px; background: var(--rule); margin: 2px 0 8px; }
+  .tank i { display: block; height: 100%; background: var(--cyan, #9ff0ff); }
+  dl.tight { margin: 0; padding-top: 0; border-top: 0; }
+  dt.sub, dd.sub { font-size: 10px; margin-top: -3px; }
+  dd.hot { color: var(--fuchsia); }
   .finding { margin: 8px 0 0; color: #ffd27a; font-size: 11px; }
   .note { margin: 8px 0 0; color: var(--dim); font-size: 11px; }
 </style>

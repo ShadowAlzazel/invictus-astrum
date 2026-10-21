@@ -1,0 +1,177 @@
+"""The ship entity and the fleet: the rocket's arithmetic, and flight checked against cases with
+answers on paper (a held burn, a circular orbit, station held against a known pull)."""
+import math
+from dataclasses import dataclass
+
+import numpy as np
+import pytest
+
+from astrum.bullseye import Resolved
+from astrum.entity import G0, Ship, ShipSpec, ShipState
+from astrum.loader import Contact, Scenario
+from astrum.ships import ShipRegistry
+from astrum.sim import Fleet, Order
+
+from conftest import ROOT
+
+
+@pytest.fixture(scope="module")
+def reg():
+    return ShipRegistry.load(ROOT / "data" / "ships")
+
+
+def ship(reg, cid="papilion", load=None, share=1.0):
+    spec = ShipSpec.from_class(reg.classes[cid])
+    st = ShipState(t=0.0, r=np.zeros(3), v=np.zeros(3), propellant_kg=spec.propellant_kg * share, mode="free")
+    return Ship("s", "S", spec, load or spec.heaviest_load, st)
+
+
+def test_spec_keeps_only_what_flies(reg):
+    spec = ShipSpec.from_class(reg.classes["papilion"])
+    assert spec.length_m == 390 and spec.has_drive
+    assert set(spec.hull_kg) == {"light", "full"}
+    assert spec.hull_kg["full"] / 1e3 == pytest.approx(48121, abs=1)          # 70,340 t less her tanks
+    assert spec.propellant_kg / 1e3 == pytest.approx(22219, abs=1)
+    assert spec.thrust_n / 1e6 == pytest.approx(379.4, abs=0.1)
+    assert not hasattr(spec, "summary") and "genus" not in spec.as_dict()     # no lore
+    s = ship(reg)
+    assert s.mass_kg / 1e3 == pytest.approx(70340, abs=1)
+    assert s.dv_left_ms / 1e3 == pytest.approx(4000, abs=0.5)
+    assert s.max_accel_ms2 / G0 == pytest.approx(0.55, abs=1e-4)
+    noddy = ShipSpec.from_class(reg.classes["coccinella"])                     # no drive: she still exists
+    assert not noddy.has_drive and noddy.hull_kg
+
+
+def test_rocket_equation_held_thrust(reg):
+    s = ship(reg)
+    s.state.thrust_n = s.spec.thrust_n
+    m0 = s.mass_kg
+    t, dv = s.burn_for(1e9)                                                     # until the tanks are dry
+    assert t == pytest.approx(s.spec.propellant_kg * s.spec.exhaust_ms / s.spec.thrust_n)
+    assert dv == pytest.approx(s.spec.exhaust_ms * math.log(m0 / s.dry_kg))
+    assert s.state.propellant_kg == 0 and s.dv_left_ms == 0
+
+
+def test_rocket_equation_held_g(reg):
+    s = ship(reg)
+    s.state.burn = {"g": 0.45}
+    s.state.thrust_n = s.thrust_for(g=0.45)
+    t, dv = s.burn_for(600)
+    assert t == 600 and dv == pytest.approx(0.45 * G0 * 600)
+    assert s.dv_left_ms == pytest.approx(4000e3 - dv, rel=1e-9)               # Δv is conserved exactly
+    s2 = ship(reg)
+    s2.spend(0.45 * G0 * 600)
+    assert s2.state.propellant_kg == pytest.approx(s.state.propellant_kg)
+
+
+# ---- a toy world: one point mass at the origin, a bullseye on it ----------------------------------
+@dataclass
+class Body:
+    id: str
+    gm: float
+    j2: float = 0.0
+    radius_eq: float = 0.0
+
+
+class ToySystem:
+    def __init__(self, gm):
+        self.b = Body("earth", gm)
+
+    def massive(self):
+        return [self.b]
+
+
+class ToyEph:
+    def positions(self, t):
+        return {"earth": np.zeros(3)}
+
+    def equator(self, _):
+        return np.eye(3)
+
+
+def toy_fleet(reg, place_of, orders=(), gm=3.986004418e14, mode="station"):
+    c = Contact(id="s1", callsign="Test", affiliation="friend", echelon="ship", ship_class="papilion",
+                position={"aer": [0, 0, 1]}, mode=mode)
+    sc = Scenario("toy", "Toy", "toy", 0.0, "p", {"s1": c})
+    bulls = {"system": Resolved("system", np.zeros(3), np.eye(3))}
+    place = lambda t: ({"earth": np.zeros(3)}, {"s1": place_of(t)}, bulls)
+    return Fleet(sc, ToySystem(gm), ToyEph(), reg, place, 0.0, list(orders))
+
+
+def test_station_pays_for_gravity(reg):
+    """Held still at 100,000 km from the Earth, she pays g every second she holds there."""
+    r = 1e8
+    f = toy_fleet(reg, lambda t: np.array([r, 0.0, 0.0]))
+    s = f.at(6 * 3600)["s1"]
+    g = 3.986004418e14 / r ** 2
+    assert s.state.dv_spent_ms == pytest.approx(g * 6 * 3600, rel=1e-6)
+    assert s.state.mode == "station" and np.allclose(s.state.r, [r, 0, 0])
+
+
+def test_station_on_an_orbit_is_free(reg):
+    """A station that is itself a circular orbit costs (almost) nothing to hold."""
+    gm, r = 3.986004418e14, 1e8
+    w = math.sqrt(gm / r ** 3)
+    f = toy_fleet(reg, lambda t: r * np.array([math.cos(w * t), math.sin(w * t), 0.0]))
+    s = f.at(6 * 3600)["s1"]
+    assert s.state.dv_spent_ms < 1e-3 * gm / r ** 2 * 6 * 3600                   # holding still would cost g·T
+
+
+def test_free_flight_keeps_a_circular_orbit(reg):
+    gm, r = 3.986004418e14, 4.2164e7
+    w = math.sqrt(gm / r ** 3)
+    f = toy_fleet(reg, lambda t: r * np.array([math.cos(w * t), math.sin(w * t), 0.0]), mode="free")
+    period = 2 * math.pi / w
+    s = f.at(period)["s1"]
+    assert np.linalg.norm(s.state.r) == pytest.approx(r, rel=1e-4)
+    assert np.linalg.norm(s.state.r - [r, 0, 0]) < 1e-3 * r                    # back where she started
+    assert s.state.dv_spent_ms == 0
+
+
+def test_burn_order_in_deep_space(reg):
+    """Far from anything: a 0.45 g burn for 20 minutes, then a coast, by the numbers."""
+    far = np.array([1e15, 0.0, 0.0])
+    orders = [Order("s1", 600.0, "burn", {"g": 0.45, "bullseye": "system", "bearing": 0, "elevation": 0, "duration_s": 1200})]
+    f = toy_fleet(reg, lambda t: far.copy(), orders, gm=1.0)
+    s = f.at(600 + 1200 + 600)["s1"]
+    a, T = 0.45 * G0, 1200
+    assert s.state.mode == "free" and s.state.thrust_n == 0 and s.state.burn is None
+    assert s.state.dv_spent_ms == pytest.approx(a * T, rel=1e-6)
+    assert np.linalg.norm(s.state.v) == pytest.approx(a * T, rel=1e-6)
+    travelled = np.linalg.norm(s.state.r - far)
+    assert travelled == pytest.approx(0.5 * a * T ** 2 + a * T * 600, rel=1e-3)
+    assert s.dv_left_ms == pytest.approx(4000e3 - a * T, rel=1e-6)
+    # the burn is along bearing 000 of the bullseye: its first axis
+    assert s.state.v[0] / np.linalg.norm(s.state.v) == pytest.approx(1.0)
+
+
+def test_scrubbing_back_gives_the_same_answer(reg):
+    far = np.array([1e15, 0.0, 0.0])
+    orders = [Order("s1", 600.0, "burn", {"throttle": 1.0, "bullseye": "system", "bearing": 90, "elevation": 10, "duration_s": 5000})]
+    f = toy_fleet(reg, lambda t: far.copy(), orders, gm=1.0)
+    late = f.at(20000)["s1"].state.copy()
+    mid = f.at(4000)["s1"].state.copy()
+    again = f.at(20000)["s1"].state
+    fresh = toy_fleet(reg, lambda t: far.copy(), orders, gm=1.0).at(4000)["s1"].state
+    assert np.allclose(mid.r, fresh.r) and mid.propellant_kg == pytest.approx(fresh.propellant_kg)
+    assert np.allclose(late.r, again.r) and late.dv_spent_ms == pytest.approx(again.dv_spent_ms)
+
+
+def test_sol_demo_fleet(reg):
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    world = app.state.world
+    sc = world.scenarios["sol-demo"]
+    f = world.fleet(sc)
+    assert len(f.ships) == 51 and not f.findings
+    c = TestClient(app)
+    meta = c.get("/api/meta").json()
+    kiki = next(u for u in meta["scenarios"][0]["contacts"] if u["id"] == "kiki-1")
+    assert kiki["ship"]["length_m"] == 390 and kiki["ship"]["has_drive"]
+    with c.websocket_connect("/ws") as ws:
+        ws.send_json({"system": "sol", "t": f.t0 + 3600, "scenario": "sol-demo", "player": "arcvs"})
+        st = ws.receive_json()
+    k = st["ships"]["kiki-1"]
+    assert k["mode"] == "station" and k["dv_left_kms"] < 4000 and k["mass_t"] < 70340
+    assert st["contacts"]["kiki-1"] and st["contacts"]["kiki"]                  # ship and her flight

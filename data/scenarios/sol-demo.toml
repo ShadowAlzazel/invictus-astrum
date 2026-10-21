@@ -1,6 +1,14 @@
-# A static picture for the map: symbols only, no engagement is simulated yet.
+# A picture for the map, and the ships in it flown by the simulation (astrum/sim.py).
 # Positions are AER from a bullseye, or carried with a body. `class` names a ship class in
-# data/ships/classes; the unit's symbol takes its type from there.
+# data/ships/classes; the unit becomes a ship: her symbol takes its type from the class, and the
+# simulation reads her length, masses and drive from it.
+#
+# A ship may also say:
+#   load = "light"         her ammunition load, one of her class's hull masses (else the heaviest)
+#   propellant = 0.8       the share of her tanks she starts with (else full)
+#   mode = "free"          fly from the start instead of holding station
+# Holding station is not free: she follows her place in the bullseye's frame and her tanks pay
+# for every bit of it that is not an orbit. Orders ([[order]], at the end) make her fly.
 
 [scenario]
 id = "sol-demo"
@@ -696,3 +704,12 @@ echelon = "ship"
 brevity = "crab"
 status = ["crab"]
 position = { bullseye = "burn", aer = [170, -35, 380000] }
+
+# ---- orders: what ships do once the clock runs -------------------------------------------------------
+# Every ship holds station unless ordered: she follows her place and pays the Δv it costs.
+# A drive trial: L1 Picket A 1 runs out ahead of the wedge half an hour in, at 0.45 g for twenty
+# minutes, then coasts. Remove it freely.
+[[order]]
+unit = "tf2-lf1-pa-1"
+at_s = 1800                 # seconds after the scenario starts
+burn = { g = 0.45, bullseye = "wedge", bearing = 0, elevation = 0, duration_s = 1200 }

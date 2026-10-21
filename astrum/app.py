@@ -5,7 +5,8 @@
     GET  /api/system/{id}                bodies, derived zones, findings
     GET  /api/system/{id}/orbits?t=      orbit paths, each relative to its parent, km
     GET  /api/system/{id}/probe?x&y&z&t  what is at a point: zone, gravity, magnetism, AER
-    WS   /ws                             send {system, t, player, scenario}; receive the state at t
+    WS   /ws                             send {system, t, player, scenario}; receive the state at t,
+                                         with the scenario's ships flown to t (astrum/sim.py)
 
 Positions on the wire are kilometres in the system frame, as float64 JSON numbers.
 """
@@ -34,6 +35,8 @@ from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify, magnetopause
 from . import workshop
 from .ships import ShipRegistry, class_detail, class_summary, rules_dict
+from .entity import ShipSpec, SpecError
+from .sim import Fleet, Order
 from . import display
 
 KM = 1e-3
@@ -54,8 +57,10 @@ class World:
         self.display_rules: dict = {}
         self.settings: dict = {}
         self.trees: dict[str, dict] = {}         # scenario id -> formation tree
+        self.fleets: dict[str, Fleet] = {}       # scenario id -> its ships, flown; rebuilt on reload
         self.style = {}
         self._stamp = None
+        self._specs: dict[str, ShipSpec | None] = {}
         self._checked = 0.0
         self.reload()
 
@@ -111,6 +116,17 @@ class World:
                 b = c.position.get("bullseye", "system") if "aer" in c.position else None
                 if b and b not in own:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"bullseye {b!r} is not one of player {sc_.player!r}'s in {sc_.system}"
+                if c.load and ships and c.ship_class in ships.classes:
+                    try:
+                        loads = ShipSpec.from_class(ships.classes[c.ship_class]).hull_kg
+                        if c.load not in loads:
+                            errors[f"scenarios/{sc_.id}/{c.id}"] = f"load {c.load!r} is not one of {sorted(loads)}"
+                    except SpecError as e:
+                        errors[f"scenarios/{sc_.id}/{c.id}"] = str(e)
+            for i, o in enumerate(sc_.orders):
+                b = (o.get("burn") or {}).get("bullseye", "system")
+                if "burn" in o and b not in own:
+                    errors[f"scenarios/{sc_.id}/order {i + 1}"] = f"bullseye {b!r} is not one of player {sc_.player!r}'s"
             trees[sc_.id], problems = display.tree([c.__dict__ for c in sc_.contacts.values()], list(style.get("echelon", {})))
             for msg in problems:
                 errors[f"scenarios/{sc_.id}/{msg.split(':')[0]}"] = msg.split(": ", 1)[1]
@@ -137,6 +153,8 @@ class World:
             self.scenarios = {**self.scenarios, **scenarios} if sc_err else scenarios
             self.players, self.style, self.errors, self.ships = players, style, errors, ships
             self.display_rules, self.settings, self.trees = rules, settings, trees
+            self.fleets = {}
+            self._specs = {}
             self.version += 1
             self._stamp = self._mtimes()
 
@@ -182,6 +200,37 @@ class World:
             except BullseyeError:
                 pass                                         # reported at load time
         return out
+
+    def spec(self, class_id: str) -> ShipSpec | None:
+        """What the simulation reads from a class, once per load of the data."""
+        if class_id not in self._specs:
+            sc = self.ships.classes.get(class_id) if self.ships else None
+            try:
+                self._specs[class_id] = ShipSpec.from_class(sc) if sc else None
+            except SpecError:
+                self._specs[class_id] = None
+        return self._specs[class_id]
+
+    def fleet(self, sc) -> Fleet | None:
+        """A scenario's ships, built the first time they are asked for and kept until the data
+        reloads. Placed by the scenario's own player's bullseyes, as the map places them."""
+        if sc.id in self.fleets:
+            return self.fleets[sc.id]
+        got = self.get(sc.system)
+        if got is None or self.ships is None:
+            return None
+        s, eph = got
+
+        def place(t):
+            pos = eph.positions(t)
+            bulls = self.resolved(sc.system, sc.player, pos)
+            return pos, contact_positions(sc, bulls, pos), bulls
+
+        t0 = sc.epoch if sc.epoch is not None else self.start_time(s)
+        orders = [Order(o["unit"], t0 + float(o["at_s"]), "burn" if "burn" in o else "coast", o.get("burn") or {})
+                  for o in sc.orders]
+        f = self.fleets[sc.id] = Fleet(sc, s, eph, self.ships, place, t0, orders)
+        return f
 
     def start_time(self, s) -> float:
         start = self.config["sim"]["start"]
@@ -238,6 +287,8 @@ def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
         d["class_name"] = sc.name
         if not c.unit_type:
             d["unit_type"] = sc.doc.get("class", {}).get("symbol", "")
+        spec = world.spec(sc.id)
+        d["ship"] = spec.as_dict() if spec else None
     return d
 
 
@@ -418,17 +469,23 @@ def create_app(config: dict | None = None) -> FastAPI:
                 t = float(req.get("t", world.start_time(s)))
                 pos = eph.positions(t)
                 bulls = world.resolved(sid, req.get("player"), pos)
-                contacts = {}
+                contacts, ships = {}, {}
                 sc = world.scenarios.get(req.get("scenario") or "")
                 if sc and sc.system == sid:
-                    # units are placed from their scenario's own bullseyes, whoever is watching
+                    # units are placed from their scenario's own bullseyes, whoever is watching;
+                    # ships stand where the simulation has flown them, formations follow
                     placed = world.resolved(sid, sc.player, pos)
-                    contacts = {cid: _km(v) for cid, v in contact_positions(sc, placed, pos).items()}
+                    fleet = world.fleet(sc)
+                    flown = fleet.at(t) if fleet else {}
+                    contacts = {cid: _km(v) for cid, v in
+                                contact_positions(sc, placed, pos, {i: f.state.r for i, f in flown.items()}).items()}
+                    ships = {i: f.as_dict() for i, f in flown.items()}
                 await sock.send_json({
                     "t": t, "utc": iso(t), "system": sid, "version": world.version, "source": eph.source(t),
                     "bodies": {bid: _km(v) for bid, v in pos.items()},
                     "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
                     "contacts": contacts,
+                    "ships": ships,
                     "magnetopause_km": {b.id: m * KM for b in s if (m := magnetopause(s, pos, b))},
                 })
         except WebSocketDisconnect:

@@ -2,7 +2,7 @@
 
     data/systems/<id>.toml      one stellar system (see data/systems/README.md)
     data/players.toml           players and their bullseyes
-    data/scenarios/<id>.toml    contacts placed in a system, for the map
+    data/scenarios/<id>.toml    contacts placed in a system, and the orders its ships fly
 
 Every file goes through a builder or a checker that lists all of its problems at once.
 """
@@ -106,6 +106,9 @@ class Contact:
     ship_class: str = ""                  # a class id in data/ships/classes; gives the symbol its type
     position: dict = field(default_factory=dict)
     notes: str = ""
+    load: str | None = None               # ship: ammunition load in her class's hull masses (else the heaviest)
+    propellant: float | None = None       # ship: share of her tanks, 0–1 (else full)
+    mode: str | None = None               # ship: "station" (holds her place) or "free" (flies)
 
 
 @dataclass(frozen=True)
@@ -113,9 +116,10 @@ class Scenario:
     id: str
     name: str
     system: str
-    epoch: float
+    epoch: float | None                   # None: the scenario starts when its system's clock does
     player: str
     contacts: dict[str, Contact]
+    orders: list = field(default_factory=list)
 
 
 def load_scenario(path: str | Path) -> Scenario:
@@ -134,16 +138,47 @@ def load_scenario(path: str | Path) -> Scenario:
                                 echelon=c.get("echelon", "ship"), unit_type=c.get("unit_type", ""),
                                 brevity=c.get("brevity", ""), pry=c.get("pry"), status=tuple(c.get("status", ())),
                                 formation=c.get("formation"), position=c.get("position", {}), notes=c.get("notes", ""),
-                                ship_class=c.get("class", ""))
+                                ship_class=c.get("class", ""), load=c.get("load"), propellant=c.get("propellant"),
+                                mode=c.get("mode"))
+        if c.get("mode") not in (None, "station", "free"):
+            problems.append(f"{cid}: mode is \"station\" or \"free\"")
+        pr = c.get("propellant")
+        if pr is not None and not (isinstance(pr, (int, float)) and not isinstance(pr, bool) and 0 <= pr <= 1):
+            problems.append(f"{cid}: propellant is a share of her tanks, 0 to 1")
+        for k in ("load", "propellant", "mode"):
+            if k in c and not c.get("class"):
+                problems.append(f"{cid}: {k} is for a ship: name her class")
     for c in contacts.values():
         if c.formation and c.formation not in contacts:
             problems.append(f"{c.id}: formation {c.formation!r} is not a contact")
         flag = c.position.get("unit")
         if flag is not None and (flag not in contacts or not contacts[flag].position or "unit" in contacts[flag].position):
             problems.append(f"{c.id}: position unit {flag!r} must be a contact with a position of its own")
+    orders = []
+    for i, o in enumerate(doc.get("order", [])):
+        where = f"order {i + 1} ({o.get('unit', '?')})"
+        u = contacts.get(o.get("unit"))
+        if u is None or not u.ship_class:
+            problems.append(f"{where}: unit must be a contact with a ship class")
+        if not isinstance(o.get("at_s"), (int, float)) or o["at_s"] < 0:
+            problems.append(f"{where}: at_s is seconds after the scenario starts, 0 or more")
+        kinds = [k for k in ("burn", "coast") if k in o]
+        if len(kinds) != 1:
+            problems.append(f"{where}: an order is a burn or a coast")
+            continue
+        if "burn" in o:
+            b = o["burn"]
+            for k in set(b) - {"g", "throttle", "bullseye", "bearing", "elevation", "duration_s"}:
+                problems.append(f"{where}: burn has no key {k!r}")
+            if ("g" in b) == ("throttle" in b):
+                problems.append(f"{where}: a burn holds g or throttle, one of them")
+            if not isinstance(b.get("duration_s"), (int, float)) or b["duration_s"] <= 0:
+                problems.append(f"{where}: burn needs duration_s above zero")
+        orders.append(dict(o))
     if problems:
         raise ValueError(f"{path.name}:\n  " + "\n  ".join(problems))
-    return Scenario(s["id"], s.get("name", s["id"]), s["system"], epoch_of(s.get("epoch")), s.get("player", ""), contacts)
+    epoch = epoch_of(s["epoch"]) if "epoch" in s else None
+    return Scenario(s["id"], s.get("name", s["id"]), s["system"], epoch, s.get("player", ""), contacts, orders)
 
 
 def load_scenarios(folder: str | Path) -> tuple[dict[str, Scenario], dict[str, str]]:
@@ -157,9 +192,11 @@ def load_scenarios(folder: str | Path) -> tuple[dict[str, Scenario], dict[str, s
     return out, errors
 
 
-def contact_positions(scenario: Scenario, resolved_bullseyes: dict, positions: dict[str, np.ndarray]) -> dict[str, np.ndarray]:
-    """Where each contact is, system frame. A formation sits where it says ({unit = flagship}, or
-    its own AER/body position), else at the mean of its members."""
+def contact_positions(scenario: Scenario, resolved_bullseyes: dict, positions: dict[str, np.ndarray],
+                      ships: dict[str, np.ndarray] | None = None) -> dict[str, np.ndarray]:
+    """Where each contact is, system frame. A unit placed by the simulation (ships) stands where
+    it is flown; others where the scenario puts them. A formation sits where it says
+    ({unit = flagship}, or its own AER/body position), else at the mean of its members."""
     out = {}
     for c in scenario.contacts.values():
         p = c.position
@@ -171,6 +208,7 @@ def contact_positions(scenario: Scenario, resolved_bullseyes: dict, positions: d
             out[c.id] = r.point(np.radians(az), np.radians(el), rng * 1e3)
         elif "body" in p:
             out[c.id] = positions[p["body"]] + np.asarray(p.get("offset_km", (0, 0, 0)), dtype=float) * 1e3
+    out.update(ships or {})
     for c in scenario.contacts.values():                 # a formation placed at its flagship
         if c.position.get("unit") in out:
             out[c.id] = out[c.position["unit"]]
