@@ -639,7 +639,7 @@ def test_the_timeline_is_what_the_fleet_flew():
         fb = _demo(create_app().state.world)               # the same flight, flown straight to t itself
         fb.command(order())
         ref = fb.at(t)["kiki-1"].state
-        pic = tl.at(t, fa.c.n)
+        pic = fa.picture(t)
         worst = max(worst, float(np.linalg.norm(pic["r"][i] - ref.r)))
         assert pic["prop"][i] == pytest.approx(ref.propellant_kg, rel=1e-4)
     assert worst < 200.0
@@ -662,8 +662,7 @@ def test_an_order_in_the_past_flies_again_only_what_it_touches():
     ref = fb.at(t0 + 6 * 3600)["kiki-1"].state
     i = fa.c.row["kiki-1"]
     assert np.allclose(fa.c.r[i], ref.r, rtol=1e-7, atol=10.0) and fa.c.prop[i] == pytest.approx(ref.propellant_kg, rel=1e-7)
-    tl = fa.timeline                                        # and what the map reads of her changed from the order on
-    assert np.linalg.norm(tl.at(t0 + 5 * 3600, fa.c.n)["r"][i] - fb.at(t0 + 5 * 3600)["kiki-1"].state.r) < 3e3
+    assert np.linalg.norm(fa.picture(t0 + 5 * 3600)["r"][i] - fb.at(t0 + 5 * 3600)["kiki-1"].state.r) < 3e3
 
 
 def test_a_formation_ordered_in_the_past_flies_as_one():
@@ -740,19 +739,43 @@ def test_where_everyone_was_comes_off_the_timeline():
     assert set(then) == set(f.ships) and f.t == pytest.approx(f.t0 + 3 * 3600)
 
 
-def test_an_order_shows_at_the_moment_it_is_given():
-    """With the fleet already flown past it, an order given at the paused clock (on a sample time,
-    or between two) shows in the picture at that very moment."""
+@pytest.mark.parametrize("ahead", [False, True])
+def test_an_order_shows_at_the_moment_it_is_given(ahead):
+    """An order given at the paused clock (on a sample time, or between two; to a ship or a
+    formation; the fleet already flown past it, or not) shows in the picture at that very moment,
+    aimed at its target."""
     from fastapi.testclient import TestClient
     from astrum.app import create_app
     app = create_app()
     c, world = TestClient(app), app.state.world
     f = _demo(world)
-    f.at(f.t0 + 2 * 3600)
+    if ahead:
+        f.at(f.t0 + 2 * 3600)
     req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo"}
-    for unit, t in (("kiki-1", f.t0 + 600), ("kiki-2", f.t0 + 630)):
+    for unit, t in (("kiki-1", f.t0 + 600), ("kiki-2", f.t0 + 630), ("tf2-lf1", f.t0 + 645)):
         c.post("/api/order", json={**req, "unit": unit, "t": t, "g": 0.4, "target": {"body": "moon"}})
         with c.websocket_connect("/ws") as ws:
             ws.send_json({**req, "t": t})
             m = ws.receive_json()
-        assert m["ships"][unit]["goal"]["label"] == "Moon" and m["ships"][unit]["mode"] == "free"
+        moon = np.array(m["bodies"]["moon"])
+        for sid in [unit] if unit in f.ships else [s for s in f.ships if s.startswith("tf2-lf1-")]:
+            d = m["ships"][sid]
+            assert d["goal"]["label"] == "Moon" and d["mode"] == "free"
+            assert np.linalg.norm(np.array(d["goal"]["aim_km"]) - moon) < 1e6     # at the Moon (her place in the formation), not the Sun
+
+
+def test_a_ship_leaving_station_is_where_she_flies():
+    """The first minutes of an order given in the past, read off the timeline, are where the
+    fleet flies her: from where she stood at that moment, not from the sample before."""
+    from astrum.app import create_app
+    from astrum.sim import Order
+    fa = _demo(create_app().state.world)
+    to = fa.t0 + 630
+    order = lambda: Order("kiki-2", to, "goto", target={"body": "moon", "label": "Moon"}, g=0.4)
+    fa.at(fa.t0 + 2 * 3600)
+    fa.command(order())
+    i = fa.c.row["kiki-2"]
+    for dt in (-1, 1, 15, 45, 61, 300):
+        fb = _demo(create_app().state.world)
+        fb.command(order())
+        assert np.linalg.norm(fa.picture(to + dt)["r"][i] - fb.at(to + dt)["kiki-2"].state.r) < 1.0

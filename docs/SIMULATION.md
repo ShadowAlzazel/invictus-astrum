@@ -179,16 +179,24 @@ are placed the same way, by bullseye and by body.
 
 **The fleet flies ahead of the clock.** As the compiled step flies, it writes every flying row's
 state at every whole minute into the fleet's **timeline** (`astrum/timeline.py`): position,
-velocity, aim, tanks, Δv, thrust, how the order stands, and which order she is on (a version
-number; what an order says as given is kept once per version). Blocks sit on a 10-minute grid from
+velocity, tanks, Δv, thrust, aim and how the order stands. Blocks sit on a 10-minute grid from
 the scenario's start, so the samples and the checkpoints fall at the same moments whoever drives
 the fleet. A worker thread (the **run-ahead**) keeps every fleet the map is watching flown ahead
 of its clock: three seconds of wall clock at the warp the map is running (10 min – 12 h), in short
-chunks under the fleet's lock, idle a minute after the map stops asking. A picture for the map is
-then read off the timeline, not flown: positions and velocities by cubic Hermite between the two
-samples around the moment (exact for a held acceleration; within 24 m of flying straight there),
-the rest drawn straight between or taken from the sample before. The timeline keeps 2048 samples
-(a day and a half); a moment off its ends is flown as before.
+chunks under the fleet's lock, idle a minute after the map stops asking. The timeline keeps 2048
+samples (a day and a half); a moment off its ends is flown as before.
+
+**What each ship was given, from the moment it was given.** Orders, arrivals and places change
+at moments of their own, between samples. Each change to what a row was given is a **version**
+(`Versions`): numbered across the fleet, kept with the moment it began, where she was then, and
+what it says (the order's label and target, her station). A picture for the map at any moment is
+read off the two, not flown (`Fleet.picture`): what each ship was given is the version she was on
+at that very moment; her position and velocity come by cubic Hermite between the nearest known
+states around it, the samples or where she was as a version began (exact for a held
+acceleration: an order's first minute is read from where she stood when it was given, to the
+metre); how her order stands is drawn straight between samples of the same order, else taken
+from the side that flew it. Ships on station stand at their places at the moment itself, by the
+version they were on. At the fleet's own moment the picture is its rows as they stand.
 
 **An order flies again only what it touches.** An order given at a moment the fleet has already
 flown past sets back only the rows it touches (the unit ordered, its formation's lead and members,
@@ -243,8 +251,8 @@ Measured on the Sol demo (51 ships), 18 of them flying four orders, two of them 
 | | objects per ship | + Numba, tables, deltas | the Classis, one compiled step | + timeline, run-ahead, two processes |
 |---|---|---|---|---|
 | 1 h / 6 h / 12 h of flight | 0.16 / 1.46 / 0.75 s | 0.10 / 0.78 / 0.40 s | 0.06 / 0.35 / 0.19 s | 12 h with the timeline kept: 0.44 s, ahead of the clock |
-| a map frame at 1 min/s / 1 h/s / 1 d/s (fleet) | 2.5 / 3.9 / 46 ms | 3.2 / 3.5 / 26 ms | 2.3 / 2.5 / 14 ms | about 2 ms at any warp, off the timeline |
-| an order 0.5 h / 2 h / 6 h back | | | 11 / 36 / 129 ms (all of the fleet) | 10 / 29 / 77 ms (only what it touches) |
+| a map frame at 1 min/s / 1 h/s / 1 d/s (fleet) | 2.5 / 3.9 / 46 ms | 3.2 / 3.5 / 26 ms | 2.3 / 2.5 / 14 ms | about 2 ms at any warp, off the timeline (4 ms through the server) |
+| an order 0.5 h / 2 h / 6 h back | | | 11 / 36 / 129 ms (all of the fleet) | 7 / 21 / 73 ms (only what it touches) |
 | placing the scenario's contacts | 0.93 ms | 0.93 ms | 0.05 ms | 0.05 ms |
 | a picture for the map (first / after) | 39 KB | 13 KB | 13 KB | 32 / 14 KB |
 | the web server while the fleet is behind | waits | waits | waits | 3 ms |
@@ -253,7 +261,11 @@ Measured on the Sol demo (51 ships), 18 of them flying four orders, two of them 
 ## On the wire
 
 `/api/meta` gives each ship class's spec once (`specs`, by class id); a unit names its class and
-the map links it to that one spec. The state stream gives `t` (the moment
+the map links it to that one spec. The map asks the state stream for a moment a round trip or two
+ahead of its clock (a quarter of a second at most), keeps the last few pictures, and draws its
+clock's own moment, every position drawn straight between the two pictures around it (or carried
+on from the last two if the next is late): motion is smooth however the pictures arrive. Paused,
+it asks for the clock itself. The state stream gives `t` (the moment
 pictured), `behind_s` (how far that is behind the clock asked for), and every ship, at t,
 her position (with the units) and `ships[id]`: mode, load, mass, dry mass, propellant and its
 share, Δv left and spent, most acceleration, acceleration and thrust now, jet power, the burn,

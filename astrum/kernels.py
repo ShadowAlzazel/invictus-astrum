@@ -361,7 +361,7 @@ def fly(rows, T0, T1, base, steer_only,
         trk_kind, trk_row, trk_knots, trk_n, trk_t0, trk_dt, trk_hold,
         node_t0, node_h, NP, NV, gm, oblate, oblate_k, oblate_E,
         G0, brake, arrive_m, arrive_ms, form_t_steps, form_t_min, close_share, close_min,
-        smp_dt, smp_first, smp_slots, tl_r, tl_v, tl_prop, tl_dvs, tl_thrust, tl_mode, tl_aim, tl_rng, tl_clos, tl_eta1):
+        smp_dt, smp_first, smp_slots, tl_r, tl_v, tl_prop, tl_dvs, tl_thrust, tl_aim, tl_rng, tl_clos, tl_eta1):
     """Fly the given rows (whole units: a formation's lead with its ships, or ships on their own)
     from T0 to T1, in steps of `base` that shrink to a fiftieth of the time left as an order
     closes in. Each step: gravity at every row (point masses and J2, bodies off the table);
@@ -483,7 +483,6 @@ def fly(rows, T0, T1, base, steer_only,
                 tl_prop[slot, i] = prop[i]
                 tl_dvs[slot, i] = dvs[i]
                 tl_thrust[slot, i] = thrust[i]
-                tl_mode[slot, i] = mode[i]
                 tl_rng[slot, i] = rng[i]
                 tl_clos[slot, i] = clos[i]
                 tl_eta1[slot, i] = eta1[i]

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .classis import FREE, LEAD, STATION
+from .classis import FREE, STATION
 from .entity import G0
 
 SCALARS = ("mass_t", "dry_t", "propellant_t", "propellant_share", "dv_left_kms", "dv_spent_kms",
@@ -66,7 +66,7 @@ def ship_columns(fleet, pic: dict, t: float, n: int) -> dict:
     cols["mode"] = pic["mode"][:n]
     # how each order stands: a ship in formation reads her lead's, aiming at its aim plus her offset
     lead = pic["lead"][:n]
-    alive = (lead >= 0) & (pic["mode"][np.maximum(lead, 0)] == FREE) & (c.kind[np.maximum(lead, 0)] == LEAD)
+    alive = (lead >= 0) & (pic["mode"][np.maximum(lead, 0)] == FREE)
     src = np.where(alive, lead, np.arange(n))
     aim = np.where(alive[:, None], pic["aim"][src] + pic["off"][:n], pic["aim"][:n])
     arrive = pic["arrive"][src]
@@ -106,7 +106,7 @@ class ShipEncoder:
             {k: ~_same(np.asarray(cols[k]), np.asarray(prev[k])) for k in cols}
         static_new = changed["mver"]
         out = {}
-        statics = fleet.statics
+        said = fleet.versions.said
         rows = np.flatnonzero(np.logical_or.reduce([changed[k] for k in cols]))
         if not len(rows):
             return out, full
@@ -122,7 +122,7 @@ class ShipEncoder:
                 d["velocity_kms"] = val["velocity_kms"][i]
             if changed["mode"][i]:
                 d["mode"] = "station" if cols["mode"][i] == STATION else "free"
-            st = statics.get(int(cols["mver"][i]), {})
+            st = said[int(cols["mver"][i])] or {}
             if static_new[i] or changed["goal_on"][i]:
                 d["load"] = st.get("load")
                 d["burn"] = st.get("burn") if cols["burning"][i] else None

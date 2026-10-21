@@ -28,7 +28,6 @@ import time
 
 import numpy as np
 
-from .classis import STATION
 from .encode import ShipEncoder, ship_columns
 from .loader import contact_positions
 from .placement import plan
@@ -227,42 +226,23 @@ class SimHost:
 
     def _ships_at(self, fleet, t: float):
         """The ships at t (or as near as the fleet could be got): (the moment, ids, their figures,
-        {id: position}). Read off the timeline; station ships placed at the moment itself."""
+        {id: position}). Read off the timeline; the fleet is flown there first if need be."""
         tl = fleet.keep_timeline()
         with fleet.lock:
             if t <= fleet.t0:
                 fleet.advance(t, view=lambda _: None)    # before it starts: everyone on station
-                pic, tp = fleet.picture_now(), t
-            else:
-                if not tl.covers(t):
-                    if tl.lo is not None and t < tl.time(tl.lo):          # older than the timeline: fly it again
-                        fleet.advance(fleet.t0 + math.floor((t - fleet.t0) / BLOCK_S) * BLOCK_S, view=lambda _: None)
-                    goal = fleet.t0 + math.ceil((t - fleet.t0) / TIMELINE_S - 1e-9) * TIMELINE_S
-                    if goal > fleet.t:
-                        fleet.advance(goal, FRAME_BUDGET_S, view=lambda _: None)
-                if tl.covers(t):
-                    tp = t
-                elif tl.lo is not None and t > tl.time(tl.hi):
-                    tp = tl.time(tl.hi)                  # as far as it got
-                elif tl.lo is not None:
-                    tp = tl.time(tl.lo)
-                else:
-                    tp = fleet.t
-                pic = tl.at(tp, fleet.c.n) if tl.covers(tp) else fleet.picture_now()
-            if "next_mver" in pic:                      # an order given since the sample before, and by now: it shows
-                st = fleet.statics
-                newer = np.array([m != p and st.get(int(m), {}).get("from", math.inf) <= tp + 1e-6
-                                  for m, p in zip(pic["next_mver"], pic["mver"])], dtype=bool)
-                for name in ("mver", "goal", "gg", "lead", "off", "mode"):
-                    pic[name][newer] = pic["next_" + name][newer]
+            elif not tl.covers(t):
+                if tl.lo is not None and t < tl.time(tl.lo):          # older than the timeline: fly it again
+                    fleet.advance(fleet.t0 + math.floor((t - fleet.t0) / BLOCK_S) * BLOCK_S, view=lambda _: None)
+                k = math.ceil((t - fleet.t0) / TIMELINE_S - 1e-9)
+                fleet.advance(fleet.t0 + k * TIMELINE_S, FRAME_BUDGET_S, view=lambda _: None)
+                t = min(t, fleet.t)                      # as far as it got
+            pic = fleet.picture(t)
             n = len(fleet.c.row)
-            rows, P = fleet._station_positions(tp)        # station ships stand at their places at the moment
-            at = pic["mode"][rows] == STATION
-            pic["r"][rows[at]] = P[at]
             ids = fleet.c.ids[:n]
-            cols = ship_columns(fleet, pic, tp, n)
+            cols = ship_columns(fleet, pic, t, n)
             flown = {ids[i]: pic["r"][i] for i in range(n) if np.isfinite(pic["r"][i]).all()}
-        return tp, ids, cols, flown
+        return t, ids, cols, flown
 
 
 class RunAhead:

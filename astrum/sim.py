@@ -57,7 +57,7 @@ from . import kernels
 from .classis import COLUMNS, BURN_G, BURN_NONE, BURN_THROTTLE, DEAD, FREE, LEAD, SHIP, STATION, Classis, LeadView, ship_view
 from .entity import G0, Ship, ShipSpec, SpecError
 from .frames import from_aer
-from .timeline import Timeline
+from .timeline import FIELDS, Timeline, Versions
 
 STATION_S = 300.0              # station ships pay for their places on a grid this fine (finer changes the bill by < 0.2%)
 TRACK_DT = 60.0                # a target is worked out this often across a block, and drawn straight between
@@ -158,7 +158,7 @@ def eta_s(d: float, closing: float, lateral: float, a: float) -> float:
 
 
 _NO_SAMPLES = (0.0, 0.0, np.zeros(0, dtype=np.int64), np.zeros((1, 1, 3)), np.zeros((1, 1, 3)), np.zeros((1, 1)),
-               np.zeros((1, 1)), np.zeros((1, 1)), np.zeros((1, 1), dtype=np.int8), np.zeros((1, 1, 3)),
+               np.zeros((1, 1)), np.zeros((1, 1)), np.zeros((1, 1, 3)),
                np.zeros((1, 1)), np.zeros((1, 1)), np.zeros((1, 1)))
 
 
@@ -210,13 +210,12 @@ class Fleet:
         self._body_cache: dict[float, dict] = {}
         self._bull_cache: dict[tuple, object] = {}
         self._place_cache: dict[float, tuple] = {}
-        self._splan = None                      # how the station ships are placed; made again when one takes or leaves station
+        self._plans: dict[tuple, tuple] = {}    # how station ships are placed, by the versions they are on
         self._pulls = [b for b in system.massive() if b.gm > 0]
         self._gms = np.array([b.gm for b in self._pulls])
         self._oblate = _pulls(system, eph)[4]
         self.timeline: Timeline | None = None      # kept when a run-ahead worker flies the fleet (keep_timeline)
-        self.statics: dict[int, dict] = {}         # every order or place as given, by version (mver), and from when
-        self._mv = 0
+        self.versions = Versions()                 # every change to what a row was given, from when (astrum/timeline.py)
         self._now = t0                             # the moment what is being changed changes
         for i in range(cl.n):
             self._touch(i)
@@ -233,20 +232,26 @@ class Fleet:
                     self._record(self.timeline.open(k, k), np.arange(self.c.n), flown=np.zeros(0, dtype=np.int64), whole=True)
             return self.timeline
 
-    def picture_now(self) -> dict:
-        """The rows as they stand, in the shape Timeline.at gives (for moments the timeline does not
-        hold: before the scenario starts, or ahead of it)."""
-        c, n = self.c, self.c.n
-        out = {name: getattr(c, name)[:n].copy() for name in ("r", "v", "aim", "off", "prop", "dvs", "thrust", "rng",
-                                                             "clos", "eta1", "arrive", "gg", "mode", "goal", "lead", "mver")}
-        out["t"] = self.t
-        return out
+    def picture(self, t: float) -> dict:
+        """Every row at t, for the map: off the timeline (Timeline.at), or as the rows stand at the
+        fleet's own moment (or one the timeline does not hold: before the scenario starts). What
+        each row was given is the version she was on at t; station ships stand at their places then."""
+        c, n, tl, V = self.c, self.c.n, self.timeline, self.versions
+        if tl is not None and tl.covers(t) and abs(t - self.t) > 1e-6:
+            pic, ver = tl.at(t, n, V)
+        else:
+            pic, ver = {name: getattr(c, name)[:n].copy() for name in FIELDS}, c.mver[:n].copy()
+        for name in ("gg", "goal", "lead", "off", "mode"):
+            pic[name] = getattr(V, name)[ver]
+        pic["mver"], pic["t"] = ver, t
+        rows, P = self._station_positions(t, ver=ver[: len(c.row)])
+        pic["r"][rows] = P
+        return pic
 
     def _touch(self, i: int) -> None:
-        """Her order, her place or her burn as given changed: a new version, and what it says."""
+        """What she was given (her order, her place, her burn) changed at _now: a new version, with
+        where she is (as of her row's own time) and what it says."""
         c = self.c
-        self._mv += 1
-        c.mver[i] = self._mv
         m = c.meta[i]
         goal = None
         if c.goal[i] and m is not None:
@@ -256,32 +261,24 @@ class Fleet:
         burn = None
         if c.burn[i] in (BURN_G, BURN_THROTTLE):
             burn = {k: v for k, v in (c.burn_meta[i] or {}).items() if k != "until"}
-        self.statics[self._mv] = {"load": c.load[i], "burn": burn, "station_at": (c.station_at[i] or {}).get("label"),
-                                  "goal": goal, "from": self._now}
-
-    def _record_now(self, t: float, rows: np.ndarray) -> None:
-        """Orders given on a sample time: that sample is as they leave it."""
-        tl = self.timeline
-        if tl is None:
-            return
-        k = round(tl.k_of(t))
-        if abs(tl.time(k) - t) < 1e-6 and tl.lo is not None and tl.lo <= k <= tl.hi:
-            self._record(np.array([tl.slot(k)], dtype=np.int64), rows, np.zeros(0, dtype=np.int64), whole=True)
+        said = {"load": c.load[i], "burn": burn, "station_at": (c.station_at[i] or {}).get("label"), "goal": goal,
+                "place": copy.deepcopy(c.station_at[i])}
+        c.mver[i] = self.versions.new(i, self._now, said, ts=c.t[i], r=c.r[i], v=c.v[i], prop=c.prop[i], dvs=c.dvs[i],
+                                      gg=c.gg[i], goal=c.goal[i], lead=c.lead[i] if not c.solo[i] else -1,
+                                      off=c.off[i], mode=c.mode[i])
 
     def _record(self, slots: np.ndarray, scope: np.ndarray, flown: np.ndarray, whole: bool = False) -> None:
         """What the compiled step does not write at the block's sample times: for the rows in
-        scope, which order they are on and how far it has got; for those not flown in the block
-        (station ships, gone leads), their state as it stands (whole: every column, from the rows)."""
+        scope, when their orders get them there; for those not flown in the block (station ships,
+        gone leads), their state as it stands (whole: every row's, from the rows)."""
         tl, c = self.timeline, self.c
         if tl is None or not len(slots) or not len(scope):
             return
         tl.grow(c.cap)
-        tl.put(slots, scope, gg=c.gg[scope], goal=c.goal[scope], lead=c.lead[scope], mver=c.mver[scope],
-               arrive=c.arrive[scope], off=c.off[scope])
+        tl.put(slots, scope, arrive=c.arrive[scope])
         still = scope if whole else np.setdiff1d(scope, flown)
         if len(still):
-            tl.put(slots, still, mode=c.mode[still], prop=c.prop[still], dvs=c.dvs[still], thrust=c.thrust[still],
-                   r=c.r[still], v=c.v[still], aim=c.aim[still], rng=c.rng[still], clos=c.clos[still], eta1=c.eta1[still])
+            tl.put(slots, still, **{name: getattr(c, name)[still] for name in FIELDS if name != "arrive"})
 
     # ---- checkpoints --------------------------------------------------------------------------
     def _snapshot(self) -> tuple:
@@ -290,10 +287,12 @@ class Fleet:
     def _restore(self, t: float, snap: tuple, order_i: int, station_t: float) -> None:
         rows, leads = snap
         self.c.restore(rows)
+        self.versions.cut_all(self.c.mver[: self.c.n])
         self.leads = {oid: LeadView(self.c, i) for oid, i in leads.items()}
         self.t, self._order_i, self._station_t = t, order_i, station_t
         self._place_cache.clear()
-        self._splan = None
+        if self.timeline is not None:
+            self.timeline.cut(t)
 
     # ---- orders from the map: only what they touch is flown again -----------------------------
     def command(self, *orders: Order) -> dict[str, Ship] | None:
@@ -356,14 +355,14 @@ class Fleet:
                 for k in ("meta", "burn_meta", "station_at"):
                     getattr(c, k)[i] = copy.deepcopy(cols[k][i])
             else:
-                c.mode[i], c.goal[i] = DEAD, False
+                c.mode[i], c.goal[i], c.mver[i] = DEAD, False, 0
+            self.versions.cut(i, int(c.mver[i]))
         for oid, L in list(self.leads.items()):
             if L.row in rows:
                 del self.leads[oid]
         for oid, j in leads.items():
             if j in rows:
                 self.leads[oid] = LeadView(c, j)
-        self._splan = None
 
     def _catch_up(self, rows: set[int], t_k: float, st_t: float, F: float, given: set[int]) -> dict[str, Ship] | None:
         """Fly the given rows from the checkpoint at t_k to the fleet's time F, replaying their
@@ -385,7 +384,6 @@ class Fleet:
                 if c.n > n_before:                    # a lead the orders made is flown with them
                     scope = np.union1d(scope, np.arange(n_before, c.n)).astype(np.int64)
                 self._fly(t, t, steer_only=True, scope=scope)
-                self._record_now(t, scope)
                 if any(id(o) in given for o in applied):
                     ordered = {o.unit for o in applied if id(o) in given}
                     reply = {u: c.ship(c.row[u]) for u in ordered}
@@ -433,18 +431,12 @@ class Fleet:
                 leads[oid] = L.row
 
     def positions_at(self, t: float) -> dict[str, np.ndarray]:
-        """Where every ship is at t: off the timeline if it covers t (nothing flown, nothing set
-        back), else flown to it."""
+        """Where every ship is at t: off the timeline if it covers t, else flown to it."""
         with self.lock:
-            tl = self.timeline
-            if t < self.t - 1e-6 and tl is not None and tl.covers(t):
-                pic = tl.at(t, self.c.n)
-                out = {self.c.ids[i]: pic["r"][i].copy() for i in self.c.row.values() if np.isfinite(pic["r"][i]).all()}
-                rows, P = self._station_positions(t)       # on station then and now: placed at the moment itself
-                out.update({self.c.ids[i]: p for i, p in zip(rows, P) if pic["mode"][i] == STATION})
-                return out
-            _, ships = self.advance(t, view=lambda fl: {k: f.state.r.copy() for k, f in fl.items()})
-            return ships
+            if self.timeline is None or not self.timeline.covers(t):
+                self.advance(t, view=lambda _: None)
+            pic = self.picture(t)
+            return {sid: pic["r"][i].copy() for sid, i in self.c.row.items() if np.isfinite(pic["r"][i]).all()}
 
     # ---- the clock ----------------------------------------------------------------------------
     def at(self, t: float) -> dict[str, Ship]:
@@ -465,8 +457,6 @@ class Fleet:
                 if t < self.t:
                     i = bisect.bisect_right([c[0] for c in self._checkpoints], t) - 1
                     self._restore(*self._checkpoints[max(i, 0)])
-                    if self.timeline is not None:
-                        self.timeline.cut(self.t)
                 done = self._run(t, time.monotonic() + CHUNK_S)
                 if done or time.monotonic() >= deadline:
                     self._show(self.t)
@@ -503,7 +493,6 @@ class Fleet:
                 given = True
             if given:                                   # first thrusts, and when they get there
                 self._fly(self.t, self.t, steer_only=True)
-                self._record_now(self.t, np.arange(c.n))
             if self.t >= t_end - 1e-6:
                 return True
             if time.monotonic() > until:
@@ -603,7 +592,7 @@ class Fleet:
                 g = groups.setdefault(n, ([], math.inf))
                 groups[n] = (g[0] + [unit], min(g[1], float(want)))
         smp = (tl.dt, tl.time(math.floor(tl.k_of(T0) + 1e-9) + 1), slots, tl.r, tl.v, tl.prop, tl.dvs, tl.thrust,
-               tl.mode, tl.aim, tl.rng, tl.clos, tl.eta1) if len(slots) else _NO_SAMPLES
+               tl.aim, tl.rng, tl.clos, tl.eta1) if len(slots) else _NO_SAMPLES
         for n, (us, base) in sorted(groups.items()):
             kernels.fly(np.concatenate(us), T0, T1, base, steer_only,
                         c.r, c.v, c.t, c.kind, c.mode, c.prop, c.dry, c.fmax, c.ve, c.dvs, c.thrust, c.dir, c.acc,
@@ -620,6 +609,7 @@ class Fleet:
             members = (c.lead[: c.n] == L.row) & (c.mode[: c.n] == FREE) & c.goal[: c.n] & ~c.solo[: c.n]
             if c.mode[L.row] != FREE or not members.any():   # arrived, or no ship flies it any more
                 c.mode[L.row], c.goal[L.row] = DEAD, False
+                self._touch(L.row)
                 del self.leads[oid]
 
     def _settle(self, t: float, scope: np.ndarray | None = None) -> None:
@@ -637,6 +627,7 @@ class Fleet:
                         m["solo"], m["hold_m"] = True, c.hold[j].tolist()
                         self._touch(j)
                 c.goal[i] = False
+                self._touch(int(i))
                 self.leads.pop(c.ids[i], None)
             else:
                 self._arrive(i, ta, c.r[i].copy())
@@ -697,6 +688,7 @@ class Fleet:
                 c.goal[j], c.meta[j] = False, None
                 self._touch(int(j))
             c.mode[i], c.goal[i] = DEAD, False
+            self._touch(i)
             self.leads.pop(c.ids[i], None)
         else:
             self.findings.append(f"{c.ids[i]}: lost the target of her order")
@@ -743,19 +735,21 @@ class Fleet:
             got = self._place_cache[t] = self.place(t)
         return got
 
-    def _station_plan(self):
-        """Which ships are on station, and how each is placed: her scenario place, or the place an
-        order left her holding (off a bullseye, its local vectors; off a body, its offsets; off a
-        unit). Made again only when a ship takes or leaves station."""
-        if self._splan is not None:
-            return self._splan
-        c, n = self.c, self.c.n
-        rows = np.flatnonzero((c.mode[:n] == STATION) & (c.kind[:n] == SHIP))
+    def _station_plan(self, ver: np.ndarray) -> tuple:
+        """How ships on station are placed, by the versions they are on: her scenario place, or the
+        place an order left her holding (off a bullseye, its local vectors; off a body, its offsets;
+        off a unit). Made once for each set of versions."""
+        key = tuple(ver.tolist())
+        plan = self._plans.get(key)
+        if plan is not None:
+            return plan
+        if len(self._plans) > 16:
+            self._plans.clear()
+        places = [self.versions.said[v]["place"] for v in ver]
         scen, units, held = [], [], {}
-        for k, i in enumerate(rows):
-            sa = c.station_at[i]
+        for k, sa in enumerate(places):
             if sa is None:
-                scen.append((k, c.ids[i]))
+                scen.append(k)
             elif "bullseye" in sa:
                 held.setdefault(("b", sa.get("player"), sa["bullseye"]), []).append(k)
             elif "body" in sa:
@@ -763,38 +757,32 @@ class Fleet:
             else:
                 units.append((k, sa))
         groups = []
-        for key, ks in held.items():
-            sas = [c.station_at[rows[k]] for k in ks]
-            off = np.array([sa.get("offset_m", (0.0, 0.0, 0.0)) for sa in sas], dtype=float)
-            L = (np.array([from_aer(math.radians(sa["aer"][0]), math.radians(sa["aer"][1]), sa["aer"][2]) for sa in sas])
-                 if key[0] == "b" else None)
-            groups.append((key, np.array(ks), L, off))
-        self._splan = (rows, scen, groups, units)
-        return self._splan
+        for how, ks in held.items():
+            off = np.array([places[k].get("offset_m", (0.0, 0.0, 0.0)) for k in ks], dtype=float)
+            aer = [places[k].get("aer") for k in ks]
+            L = np.array([from_aer(math.radians(a[0]), math.radians(a[1]), a[2]) for a in aer]) if how[0] == "b" else None
+            groups.append((how, np.array(ks), L, off))
+        plan = self._plans[key] = (scen, groups, units)
+        return plan
 
-    def _station_positions(self, t: float, only: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
-        """Where every station ship (among `only`, if given) stands at t, all at once: the
-        scenario's placement for those on their scenario place, one product per bullseye and one
-        sum per body for those holding where an order left them, and a look for the few holding
-        on a unit."""
-        rows, scen, groups, units = self._station_plan()
+    def _station_positions(self, t: float, only: np.ndarray | None = None, ver: np.ndarray | None = None) -> tuple:
+        """Where the ships on station (among `only`, if given; by the version each is on, now if not
+        given) stand at t, all at once: the scenario's placement for those on their scenario place,
+        one product per bullseye and one sum per body for those holding where an order left them,
+        and a look for the few holding on a unit."""
+        c = self.c
+        ver = c.mver[: len(c.row)] if ver is None else ver
+        rows = np.flatnonzero(self.versions.mode[ver] == STATION)
         if only is not None:
-            mine = np.isin(rows, only)
-            if not mine.any():
-                return rows[:0], np.zeros((0, 3))
-            keep = set(np.flatnonzero(mine).tolist())
-            scen = [(k, cid) for k, cid in scen if k in keep]
-            groups = [(key, ks[np.isin(ks, list(keep))], L[np.isin(ks, list(keep))] if L is not None else None,
-                       off[np.isin(ks, list(keep))]) for key, ks, L, off in groups]
-            groups = [g for g in groups if len(g[1])]
-            units = [(k, sa) for k, sa in units if k in keep]
+            rows = rows[np.isin(rows, only)]
         if not len(rows):
             return rows, np.zeros((0, 3))
+        scen, groups, units = self._station_plan(ver[rows])
         P = np.full((len(rows), 3), np.nan)
         if scen:
             _, placed, _ = self._placed(t)
-            for k, cid in scen:
-                p = placed.get(cid)
+            for k in scen:
+                p = placed.get(c.ids[rows[k]])
                 if p is not None:
                     P[k] = p
         for key, ks, L, off in groups:
@@ -978,9 +966,8 @@ class Fleet:
         tg["label"] = m.get("label")
         c.station_at[i] = tg
         c.mode[i], c.goal[i], c.meta[i], c.burn[i], c.thrust[i] = STATION, False, None, BURN_NONE, 0.0
-        self._splan = None
-        self._touch(i)
         c.r[i], c.t[i] = aim, t
+        self._touch(i)
 
     def _coast(self, i: int) -> None:
         c = self.c
@@ -1039,6 +1026,7 @@ class Fleet:
                                  "issued": o.at, "order_id": oid, "n": 1}
                     c.goal[j], c.gg[j], c.stand[j], c.eta1[j] = True, float(o.g or 0.0), stand, math.inf
                     self.leads[oid] = L = LeadView(c, j)
+                    self._touch(j)
                 else:                                 # the formation's point: the mean of its ships' less their offsets
                     j, k = L.row, c.meta[L.row]["n"]
                     c.r[j] = (c.r[j] * k + c.r[i] - slot) / (k + 1)
@@ -1061,6 +1049,7 @@ class Fleet:
                     elif L is not None:
                         c.meta[L.row]["g"], c.gg[L.row] = float(o.g), float(o.g)
                         c.meta[L.row].pop("arrive_at", None)
+                        self._touch(L.row)
                     self._touch(i)
         elif o.kind == "coast":
             self._leave_station(i, o.at)
@@ -1071,7 +1060,6 @@ class Fleet:
         c = self.c
         if c.mode[i] != STATION:
             return
-        self._splan = None
         p1, p2 = self._station_pos(i, t), self._station_pos(i, t + PROBE_S)
         if p1 is not None and p2 is not None:
             c.r[i], c.v[i] = p1, (p2 - p1) / PROBE_S

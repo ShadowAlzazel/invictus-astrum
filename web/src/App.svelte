@@ -131,7 +131,10 @@
     const dt = last ? Math.min((now - last) / 1000, 0.25) : 0;
     last = now;
     if (!paused) t += dt * WARPS[warp][0];
-    if (systemId) stream.request({ system: systemId, t, player: playerId, scenario: scenarioOn ? scenario?.id : null });
+    map.setClock(t);
+    // running, ask for a moment a round trip or two ahead, so the picture after the clock is there
+    const ahead = paused ? 0 : WARPS[warp][0] * Math.min(0.25, 1.5 * stream.rtt + 1 / 60);
+    if (systemId) stream.request({ system: systemId, t: t + ahead, player: playerId, scenario: scenarioOn ? scenario?.id : null });
   }
 
   // ---- pointer ----------------------------------------------------------------------------------

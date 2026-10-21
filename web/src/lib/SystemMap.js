@@ -65,7 +65,8 @@ export class SystemMap {
     this.marks = [];                // screen-space marks for the overlay and picking, rebuilt each frame
     this._v = new THREE.Vector3();
     this._fly = null;
-    this._pending = null;
+    this._frames = [];              // the last few pictures from the server, oldest first
+    this._clock = null;             // the moment drawn (the app's clock)
     this._hooks = new Set();
 
     this.bodyGroup = this._group();
@@ -160,9 +161,16 @@ export class SystemMap {
     }
   }
 
-  // a new state is taken at the start of the next frame, so the scene, the overlay and the
-  // cursor always draw the same instant
-  setState(state) { this._pending = state; }
+  // Pictures are asked for a little ahead of the clock; each frame draws the clock's own moment,
+  // every position drawn straight between the two pictures around it (or carried on from the last
+  // two, if the next is late), so motion is smooth however the pictures arrive. A picture replaces
+  // any asked for at or after its moment (an order changed what they showed). The state is made
+  // once at the start of a frame, so the scene, the overlay and the cursor all draw the same instant.
+  setState(state) {
+    const keep = this._frames.filter((f) => f.system === state.system && f.t < state.t - 1e-6);
+    this._frames = [...keep, state].slice(-3);
+  }
+  setClock(t) { this._clock = t; }
   onFrame(fn) { this._hooks.add(fn); return () => this._hooks.delete(fn); }
   setLayer(name, on) { this.layers[name] = on; }
 
@@ -365,7 +373,7 @@ export class SystemMap {
 
   _loop(now) {
     this._raf = requestAnimationFrame(this._loop);
-    if (this._pending) { this.state = this._pending; this._pending = null; }
+    this.state = this._at(this._clock);
     if (this._fly) {
       const f = this._fly, u = f.ms ? Math.min((now - f.t0) / f.ms, 1) : 1, e = 1 - (1 - u) ** 3;
       const to = this.position(f.sel) ?? f.from;
@@ -391,6 +399,23 @@ export class SystemMap {
     this._place();
     this.renderer.render(this.scene, this.camera);
     for (const fn of this._hooks) fn(now);
+  }
+
+  _at(T) {
+    const fs = this._frames, n = fs.length;
+    if (!n) return null;
+    let i = fs.findIndex((f) => f.t >= T);
+    if (i < 0) i = n - 1;                                // past the last picture: carry on from the last two
+    if (T == null || i === 0 || Math.abs(fs[i].t - T) < 1e-6) return fs[i];
+    const a = fs[i - 1], b = fs[i], u = Math.min((T - a.t) / (b.t - a.t), 2);
+    const mix = (A, B) => {
+      const out = {};
+      for (const k in B) { const p = A?.[k], q = B[k]; out[k] = p && q ? [p[0] + (q[0] - p[0]) * u, p[1] + (q[1] - p[1]) * u, p[2] + (q[2] - p[2]) * u] : q; }
+      return out;
+    };
+    const bulls = {};
+    for (const k in b.bullseyes) bulls[k] = { ...b.bullseyes[k], origin: mix({ o: a.bullseyes[k]?.origin }, { o: b.bullseyes[k].origin }).o };
+    return { ...b, t: T, bodies: mix(a.bodies, b.bodies), contacts: mix(a.contacts, b.contacts), bullseyes: bulls };
   }
 
   _place() {

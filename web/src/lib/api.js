@@ -40,19 +40,25 @@ export class StateStream {
     this.onstate = onstate;
     this.want = null;
     this.busy = false;
+    this.rtt = 0;                    // a picture's round trip, seconds (smoothed)
     this._open();
   }
   _open() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     this.ws = new WebSocket(`${proto}://${location.host}/ws`);
     this.ws.onopen = () => this._send();
-    this.ws.onmessage = (e) => { this.busy = false; this.onstate(JSON.parse(e.data)); this._send(); };
+    this.ws.onmessage = (e) => {
+      const dt = (performance.now() - this._sent) / 1000;
+      this.rtt = this.rtt ? 0.8 * this.rtt + 0.2 * dt : dt;
+      this.busy = false; this.onstate(JSON.parse(e.data)); this._send();
+    };
     this.ws.onclose = () => { this.busy = false; setTimeout(() => this._open(), 1000); };
   }
   request(req) { this.want = req; this._send(); }
   _send() {
     if (this.busy || !this.want || this.ws.readyState !== 1) return;
     this.busy = true;
+    this._sent = performance.now();
     this.ws.send(JSON.stringify(this.want));
     this.want = null;
   }
