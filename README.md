@@ -77,6 +77,7 @@ player and one of their bullseyes at the bottom left.
 | `data/presets.toml` | the workshop's starting bodies; add your own |
 | `data/ships/` | ship classes, their components, and the rules they are read against |
 | `data/players.toml` | players and their bullseyes |
+| `data/factions.toml` | factions: a name, and the prefix a ship's name reads with; units take theirs from the formation above |
 | `data/scenarios/*.toml` | units placed in a system (symbols only; no engagement is simulated yet) |
 | `style.toml` | colours, affiliation frames, echelon marks, body display sizes by role |
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |

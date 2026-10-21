@@ -86,6 +86,28 @@ export function group(state, contacts, ships) {
   return { maxG, cruise, ships: now, flying, g: flying.length ? Math.max(...flying.map((s) => s.goal.g)) : null };
 }
 
+// The orders being flown by these ships, one entry per order: its label, the unit it was given
+// to, all of its ships (those outside these too: an order is retuned whole), their telegraph held
+// to the slowest ship's most, and when the first and the last of them arrive
+export function orderGroups(state, contacts, ships) {
+  const out = new Map();
+  for (const id of ships) {
+    const s = state?.ships?.[id];
+    if (!s?.goal) continue;
+    const key = s.goal.order_id ?? id;
+    if (!out.has(key)) out.set(key, { id: key, label: s.goal.label, by: s.goal.by ?? id, ships: [], here: 0 });
+    out.get(key).here += 1;
+  }
+  for (const [id, s] of Object.entries(state?.ships ?? {})) {
+    const o = s.goal && out.get(s.goal.order_id ?? id);
+    if (o) o.ships.push(id);
+  }
+  return [...out.values()].map((o) => {
+    const grp = group(state, contacts, o.ships), etas = grp.flying.map((s) => s.goal.eta_s ?? Infinity);
+    return { ...o, maxG: grp.maxG, cruise: grp.cruise, g: grp.g, soonest: Math.min(...etas), latest: Math.max(...etas) };
+  });
+}
+
 // The ships under a unit, from the formation tree the map was sent (children of each contact)
 export function shipsUnder(contacts, state, unit) {
   const byId = Object.fromEntries(contacts.map((c) => [c.id, c]));

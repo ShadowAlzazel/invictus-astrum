@@ -1,0 +1,15 @@
+# Factions: who a unit belongs to. A scenario names one on a formation (faction = "avc") and every
+# unit under it takes it, down to the ships; any unit may name its own instead. A ship's name reads
+# with her faction's prefix: AVC Antwerp.
+#
+#   name      the faction, as the unit panel shows it
+#   prefix    before a ship's name (leave it out for none)
+
+[faction.avc]
+name = "ARCVS Void Command"
+prefix = "AVC"
+
+# Another faction is another table:
+# [faction.xyz]
+# name = "..."
+# prefix = "XYZ"

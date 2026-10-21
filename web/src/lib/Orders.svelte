@@ -22,7 +22,7 @@
 
   $: grp = ordering ? group(state, contacts, ordering.ships) : null;
   $: shown = ordering ? Math.min(ordering.g, grp?.maxG ?? ordering.g) : 0;
-  $: name = ordering ? contacts.find((c) => c.id === ordering.unit)?.callsign ?? ordering.unit : '';
+  $: name = ordering ? map?.contactName?.(ordering.unit) ?? ordering.unit : '';
   $: selShips = sel?.kind === 'contact' ? new Set(shipsUnder(contacts, state, sel.id)) : new Set();
 
   // what the cursor points at now; App asks for it when the order is given

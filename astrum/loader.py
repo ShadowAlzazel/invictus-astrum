@@ -2,6 +2,7 @@
 
     data/systems/<id>.toml      one stellar system (see data/systems/README.md)
     data/players.toml           players and their bullseyes
+    data/factions.toml          factions: a name, and the prefix a ship's name reads with
     data/scenarios/<id>.toml    contacts placed in a system, and the orders its ships fly
 
 Every file goes through a builder or a checker that lists all of its problems at once.
@@ -109,6 +110,28 @@ class Contact:
     load: str | None = None               # ship: ammunition load in her class's hull masses (else the heaviest)
     propellant: float | None = None       # ship: share of her tanks, 0–1 (else full)
     mode: str | None = None               # ship: "station" (holds her place) or "free" (flies)
+    faction: str | None = None            # a faction id in data/factions.toml; taken from the formation above if not stated
+    hull_number: str = ""                 # her pennant, as written: "BBC-382"
+    own_faction: bool = False             # the faction is stated on this unit, not taken from above
+
+
+def load_factions(path: str | Path) -> dict[str, dict]:
+    """{id: {name, prefix}} from data/factions.toml; none if the file is not there."""
+    path = Path(path)
+    if not path.exists():
+        return {}
+    with path.open("rb") as f:
+        doc = tomllib.load(f)
+    out, problems = {}, []
+    for fid, spec in (doc.get("faction") or {}).items():
+        for k in set(spec) - {"name", "prefix", "notes"}:
+            problems.append(f"faction {fid}: unknown key {k!r}")
+        if not spec.get("name"):
+            problems.append(f"faction {fid}: needs a name")
+        out[fid] = {"id": fid, "name": spec.get("name", fid), "prefix": spec.get("prefix", "")}
+    if problems:
+        raise ValueError(f"{path.name}:\n  " + "\n  ".join(problems))
+    return out
 
 
 @dataclass(frozen=True)
@@ -130,16 +153,17 @@ def load_scenario(path: str | Path) -> Scenario:
     contacts, problems = {}, []
     for c in doc.get("contact", []):
         cid = c.get("id", "?")
-        if c.get("affiliation") not in AFFILIATIONS:
+        if c.get("affiliation") is not None and c["affiliation"] not in AFFILIATIONS:
             problems.append(f"{cid}: affiliation must be one of {AFFILIATIONS}")
         if "position" not in c and not any(o.get("formation") == cid for o in doc.get("contact", [])):
             problems.append(f"{cid}: needs a position, or members that name it as their formation")
-        contacts[cid] = Contact(id=cid, callsign=c.get("callsign", cid), affiliation=c.get("affiliation", "unknown"),
+        contacts[cid] = Contact(id=cid, callsign=c.get("callsign", cid), affiliation=c.get("affiliation"),
                                 echelon=c.get("echelon", "ship"), unit_type=c.get("unit_type", ""),
                                 brevity=c.get("brevity", ""), pry=c.get("pry"), status=tuple(c.get("status", ())),
                                 formation=c.get("formation"), position=c.get("position", {}), notes=c.get("notes", ""),
                                 ship_class=c.get("class", ""), load=c.get("load"), propellant=c.get("propellant"),
-                                mode=c.get("mode"))
+                                mode=c.get("mode"), faction=c.get("faction"), hull_number=str(c.get("hull_number", "")),
+                                own_faction="faction" in c)
         if c.get("mode") not in (None, "station", "free"):
             problems.append(f"{cid}: mode is \"station\" or \"free\"")
         pr = c.get("propellant")
@@ -154,6 +178,22 @@ def load_scenario(path: str | Path) -> Scenario:
         flag = c.position.get("unit")
         if flag is not None and (flag not in contacts or not contacts[flag].position or "unit" in contacts[flag].position):
             problems.append(f"{c.id}: position unit {flag!r} must be a contact with a position of its own")
+    # affiliation and faction come down the chain of command: a unit takes its formation's
+    # unless it states its own
+    def above(cid: str, key: str, seen=()):
+        c = contacts.get(cid)
+        if c is None or cid in seen:
+            return None
+        v = getattr(c, key)
+        return v if v is not None else (above(c.formation, key, seen + (cid,)) if c.formation else None)
+    resolved = {}
+    for cid, c in contacts.items():
+        aff, fac = above(cid, "affiliation"), above(cid, "faction")
+        if aff is None:
+            problems.append(f"{cid}: needs an affiliation, on itself or on a formation above it")
+            aff = "unknown"
+        resolved[cid] = replace(c, affiliation=aff, faction=fac)
+    contacts = resolved
     orders = []
     for i, o in enumerate(doc.get("order", [])):
         where = f"order {i + 1} ({o.get('unit', '?')})"

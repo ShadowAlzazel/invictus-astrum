@@ -32,7 +32,7 @@ from .config import ROOT, ConfigError, load_config, load_style
 from .ephemeris import Ephemeris
 from .fields import gravity, magnetic, potential
 from .frames import to_spherical
-from .loader import contact_positions, load_players, load_scenarios, load_systems
+from .loader import contact_positions, load_factions, load_players, load_scenarios, load_systems
 from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify, magnetopause
 from . import workshop
@@ -70,7 +70,8 @@ class World:
         p = self.config["paths"]
         files = list(Path(p["systems"]).glob("*.toml")) + list(Path(p["scenarios"]).glob("*.toml"))
         files += list(Path(p["ships"]).glob("*.toml")) + list((Path(p["ships"]) / "classes").glob("*.toml"))
-        return files + [Path(p["players"]), Path(p["style"]), Path(p["display"]), Path(p["settings"])]
+        return files + [Path(p["players"]), Path(p["players"]).parent / "factions.toml", Path(p["style"]),
+                        Path(p["display"]), Path(p["settings"])]
 
     def _mtimes(self):
         return tuple(sorted((str(f), f.stat().st_mtime) for f in self._files() if f.exists()))
@@ -87,6 +88,11 @@ class World:
             players = load_players(p["players"])
         except (BullseyeError, KeyError, ValueError) as e:
             errors["players.toml"] = str(e)
+        factions = getattr(self, "factions", {})
+        try:
+            factions = load_factions(Path(p["players"]).parent / "factions.toml")
+        except (ValueError, tomllib.TOMLDecodeError) as e:
+            errors["factions.toml"] = str(e)
         style = self.style
         try:
             style = load_style(p["style"])
@@ -113,6 +119,8 @@ class World:
             own = {"system"} | {b.id for b in players.get(sc_.player, None).bullseyes.values()
                                 if b.system == sc_.system} if sc_.player in players else {"system"}
             for c in sc_.contacts.values():
+                if c.own_faction and c.faction not in factions:
+                    errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown faction {c.faction!r}; factions are in data/factions.toml"
                 if c.ship_class and ships and c.ship_class not in ships.classes:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown ship class {c.ship_class!r}"
                 b = c.position.get("bullseye", "system") if "aer" in c.position else None
@@ -154,6 +162,7 @@ class World:
                     errors[f"systems/{sid} ephemeris"] = self.ephemerides[sid].numerical_error
             self.scenarios = {**self.scenarios, **scenarios} if sc_err else scenarios
             self.players, self.style, self.errors, self.ships = players, style, errors, ships
+            self.factions = factions
             self.display_rules, self.settings, self.trees = rules, settings, trees
             self.fleets = {}
             self._specs = {}
@@ -285,6 +294,10 @@ def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
     d = dict(c.__dict__)
     d.update((tree or {}).get(c.id, {}))
     d["has_position"] = bool(c.position)
+    fac = world.factions.get(c.faction) if c.faction else None
+    d["faction"] = fac
+    # a ship's name reads with her faction's prefix: AVC Antwerp
+    d["name"] = f"{fac['prefix']} {c.callsign}" if fac and fac.get("prefix") and c.echelon == "ship" else c.callsign
     sc = world.ships.classes.get(c.ship_class) if world.ships and c.ship_class else None
     if sc:
         d["class_name"] = sc.name
@@ -500,9 +513,9 @@ def create_app(config: dict | None = None) -> FastAPI:
         ships = order_ships(world, sc, fleet, unit)
         if not ships:
             raise HTTPException(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
-        if req.get("keep_target"):
+        if req.get("keep_target"):                      # the telegraph: one order's g, or every order under the unit
             for sid in ships:
-                fleet.command(Order(sid, t, "setg", g=float(g), source="map"))
+                fleet.command(Order(sid, t, "setg", g=float(g), source="map", order_id=req.get("order_id")))
             return order_reply(fleet, t, unit, ships)
         if g == 0:
             for sid in ships:
@@ -539,9 +552,10 @@ def create_app(config: dict | None = None) -> FastAPI:
             anchor = where.get(unit)
             if anchor is not None:
                 offsets = {sid: flown[sid].state.r - anchor for sid in ships}
+        oid = f"{unit}@{t:.0f}"
         for sid in ships:
             tgt = dict(target, offset_m=offsets[sid].tolist()) if np.any(offsets[sid]) else target
-            fleet.command(Order(sid, t, "goto", target=tgt, g=float(g), source="map"))
+            fleet.command(Order(sid, t, "goto", target=tgt, g=float(g), source="map", order_id=oid, by=unit))
         return order_reply(fleet, t, unit, ships)
 
     @app.websocket("/ws")

@@ -80,6 +80,8 @@ class Order:
     target: dict | None = None     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body}, and a label
     g: float | None = None         # goto: the acceleration to hold, capped at her most
     source: str = "scenario"       # or "map"
+    order_id: str | None = None    # one order given to several ships shares an id; setg may name one
+    by: str | None = None          # the unit the order was given to: the ship, or her formation
 
 
 def eta_s(d: float, closing: float, lateral: float, a: float) -> float:
@@ -440,10 +442,11 @@ class Fleet:
             st.mode, st.burn, st.thrust_n, st.direction, st.station_at = "free", None, 0.0, None, None
             st.t = o.at
             st.goal = {"target": tg, "label": tg.get("label"), "g": float(o.g or 0.0), "standoff_m": stand,
-                       "issued": o.at, "source": o.source}
+                       "issued": o.at, "source": o.source, "order_id": o.order_id or f"{o.unit}@{o.at:.0f}",
+                       "by": o.by or o.unit}
             self._guide(s, o.at, STEP_BURN_MAX_S)     # her first thrust, and the ETA from the start
         elif o.kind == "setg":                         # the telegraph moved while she flies her order
-            if st.goal is not None:
+            if st.goal is not None and (o.order_id is None or st.goal.get("order_id") == o.order_id):
                 if (o.g or 0.0) <= 0:
                     st.mode, st.burn, st.thrust_n, st.direction, st.goal = "free", None, 0.0, None, None
                 else:

@@ -1,10 +1,12 @@
 <script>
   // What is selected: a body, a unit, or a point in space (probed on the server).
   import { km, kmFull, n, bearing, elev, lightTime, duration } from './format.js';
-  import { hms, group, shipsUnder } from './orders.js';
+  import { hms, group, shipsUnder, orderGroups } from './orders.js';
+  import { unitSymbol } from './symbols.js';
   import Telegraph from './Telegraph.svelte';
 
   export let map = null;
+  export let style = null;
   export let sel = null;            // { kind: 'body'|'contact'|'point', id?, p? }
   export let state = null;          // latest state: re-renders the live readout
   export let contacts = [];
@@ -14,7 +16,7 @@
   export let onclose = () => {};
   export let onfocus = () => {};
   export let onselect = () => {};   // pick another unit: a member, or the formation above
-  export let onretune = () => {};   // (g, now): the telegraph moved for orders being flown
+  export let onretune = () => {};   // (g, now, order): a telegraph moved; order {id, by} for one order, else the selection
 
   const G = 6.6743e-20;             // km³/(kg·s²)
   $: body = sel?.kind === 'body' ? map?.bodies[sel.id] : null;
@@ -31,14 +33,31 @@
   $: spec = contact?.ship ?? null;
   $: arrives = ship?.goal?.eta_s != null && state?.utc && isFinite(ship.goal.eta_s)
     ? new Date(Date.parse(state.utc) + ship.goal.eta_s * 1000).toISOString().slice(11, 16) + ' UTC' : null;
-  // the orders being flown by this ship, or by the ships under this formation: one telegraph for them
+  // the ships under this formation, and the orders they fly: each order its own telegraph
   $: under = contact ? shipsUnder(contacts, state, contact.id) : [];
   $: grp = under.length ? group(state, contacts, under) : null;
   $: flying = grp?.flying ?? [];
-  let tg = null, tgFor = null, tgServer = null;
-  $: if (contact?.id !== tgFor || grp?.g !== tgServer) { tgFor = contact?.id; tgServer = grp?.g ?? null; tg = tgServer; }
-  $: soonest = flying.length ? Math.min(...flying.map((s) => s.goal.eta_s ?? Infinity)) : null;
-  $: latest = flying.length ? Math.max(...flying.map((s) => s.goal.eta_s ?? 0)) : null;
+  $: orders = !ship && flying.length ? orderGroups(state, contacts, under) : [];
+  // a telegraph shows where it was set until the server's g moves (the order took it, or another did)
+  let tg = null, tgFor = null, tgServer = null, tgs = {}, seen = {};
+  $: if (contact?.id !== tgFor) { tgFor = contact?.id; tgs = {}; seen = {}; tgServer = undefined; }
+  $: if (ship?.goal?.g !== tgServer) { tgServer = ship?.goal?.g; tg = tgServer ?? null; }
+  $: for (const o of orders) if (seen[o.id] !== o.g) { seen[o.id] = o.g; delete tgs[o.id]; tgs = tgs; }
+  const nameOf = (id) => byId[id]?.name ?? byId[id]?.callsign ?? id;
+  // the unit's own symbol, drawn by the map's code
+  function symbol(canvas, c) {
+    const draw = (c) => {
+      if (!style || !c) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2), w = 58, h = 46;
+      canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.width = `${w}px`; canvas.style.height = `${h}px`;
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      unitSymbol(ctx, style, c, w / 2, h / 2 + 5, { h: 26, label: false });
+    };
+    draw(c);
+    return { update: draw };
+  }
+  $: affColor = contact && style ? (style.affiliation[contact.affiliation] ?? style.affiliation.unknown).color : null;
   $: doing = !ship ? '' : ship.goal ? (ship.burning ? `on her order, ${ship.accel_g.toFixed(2)} g` : 'on her order, coasting') : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
     : ship.mode === 'station' ? 'holding station' : 'coasting';
   // every ship under a formation, counted by class: what the formation is made of
@@ -62,13 +81,15 @@
         <h1>{body.name}</h1>
         <p class="kind">{KIND[body.kind] ?? body.kind}{#if parentName} · of {parentName}{/if}{#if body.inhabited} · inhabited{/if}</p>
       {:else if contact}
-        <h1>{contact.callsign}</h1>
-        <p class="kind">{contact.class_name || contact.unit_type || contact.echelon} · {contact.affiliation}{#if contact.brevity} · {contact.brevity}{/if}{#if contact.pry} · Pry-{contact.pry}{/if}</p>
+        <h1>{contact.name ?? contact.callsign}{#if contact.hull_number}<span class="hull">{contact.hull_number}</span>{/if}</h1>
+        <p class="kind">{contact.class_name || contact.unit_type || contact.echelon}{#if contact.brevity} · {contact.brevity}{/if}{#if contact.pry} · Pry-{contact.pry}{/if}</p>
+        <p class="aff" style="--aff:{affColor ?? 'var(--dim)'}">{contact.faction?.name ?? contact.affiliation}{#if contact.faction}<span>{contact.affiliation}</span>{/if}</p>
       {:else}
         <h1>Point</h1>
         <p class="kind">{probe ? `${REGION[probe.zone.region]} of ${map.bodies[probe.zone.dominant]?.name}` : 'probing…'}</p>
       {/if}
     </div>
+    {#if contact && style}<canvas class="sym" use:symbol={{ ...contact, status: [] }} aria-hidden="true"></canvas>{/if}
     <button class="close" on:click={onclose} title="Esc">✕</button>
   </header>
 
@@ -119,22 +140,26 @@
         <h2>Under its command <span class="dim">{members.length} unit{members.length > 1 ? 's' : ''}{under.length && !ship ? ` · ${under.length} ship${under.length > 1 ? 's' : ''}` : ''}</span></h2>
         {#each members as m}
           <button class="unit" on:click={() => onselect({ kind: 'contact', id: m.id })}>
-            <span>{m.callsign}</span><span class="dim">{m.children?.length ? m.echelon : m.class_name || m.unit_type || m.echelon}</span>
+            <span>{m.name ?? m.callsign}</span><span class="dim">{m.children?.length ? m.echelon : m.class_name || m.unit_type || m.echelon}</span>
           </button>
         {/each}
         {#if makeup.length}<p class="dim makeup">{makeup.map(([k, n]) => `${n} × ${k}`).join(' · ')}</p>{/if}
       </section>
     {/if}
-    {#if !ship && flying.length}
+    {#if orders.length}
       <section class="orders">
-        <h2>Orders <span class="dim">{flying.length} of {under.length} ships flying</span></h2>
-        <div class="order">
-          <p><b>To {flying[0].goal.label}</b>{#if new Set(flying.map((s) => s.goal.label)).size > 1} <span class="dim">and others</span>{/if}</p>
-          <p class="eta">{hms(soonest)}{#if latest - soonest > 60} <span>to {hms(latest)}, the last ship</span>{/if}</p>
-        </div>
-        <Telegraph maxG={grp.maxG} cruise={grp.cruise} value={tg ?? 0} height={130} note="held to the slowest ship's most"
-                   onset={(g) => { tg = g; onretune(g); }} oncommit={() => onretune(tg, true)} />
-        <p class="dim hint"><kbd>W</kbd><kbd>S</kbd> telegraph · <kbd>A</kbd> a new order for all of them</p>
+        <h2>Orders <span class="dim">{orders.length} order{orders.length > 1 ? 's' : ''} · {flying.length} of {under.length} ships flying</span></h2>
+        {#each orders as o (o.id)}
+          <div class="order">
+            <p><b>To {o.label}</b> <span>at {o.g.toFixed(2)} g</span></p>
+            <p class="by dim">given to {nameOf(o.by)} · {o.ships.length} ship{o.ships.length > 1 ? 's' : ''}{o.here < o.ships.length ? `, ${o.here} of them here` : ''}</p>
+            <p class="eta">{hms(o.soonest)}{#if o.latest - o.soonest > 60} <span>to {hms(o.latest)}, the last ship</span>{/if}</p>
+            <Telegraph maxG={o.maxG} cruise={o.cruise} value={tgs[o.id] ?? o.g ?? 0} height={130} color="var(--cyan, #9ff0ff)"
+                       note={o.ships.length > 1 ? "held to the slowest ship's most" : ''}
+                       onset={(g) => { tgs[o.id] = g; onretune(g, false, o); }} oncommit={() => onretune(tgs[o.id] ?? o.g, true, o)} />
+          </div>
+        {/each}
+        <p class="dim hint">{#if orders.length === 1}<kbd>W</kbd><kbd>S</kbd> telegraph · {/if}<kbd>A</kbd> a new order for all of them</p>
       </section>
     {/if}
     {#if ship}
@@ -143,7 +168,7 @@
         <div class="tank" title="propellant"><i style="width:{Math.max(0, Math.min(1, ship.propellant_share)) * 100}%"></i></div>
         {#if ship.goal}
           <div class="order">
-            <p><b>To {ship.goal.label}</b> <span>at {ship.goal.g} g</span></p>
+            <p><b>To {ship.goal.label}</b> <span>at {ship.goal.g.toFixed(2)} g</span></p>
             <p class="eta">{hms(ship.goal.eta_s)}{#if arrives} <span>· arrives {arrives}</span>{/if}</p>
             <p class="dim">{km(ship.goal.range_km)} to go · closing {n(ship.goal.closing_kms, 2)} km/s</p>
           </div>
@@ -177,9 +202,9 @@
       <section>
         <h2>Chain of command</h2>
         <ol class="ladder">
-          <li class="self"><span class="nm">{contact.callsign}</span><span class="ech">{contact.echelon}</span></li>
+          <li class="self"><span class="nm">{contact.name ?? contact.callsign}</span><span class="ech">{contact.echelon}</span></li>
           {#each chain as a}
-            <li><button on:click={() => onselect({ kind: 'contact', id: a.id })}><span class="nm">{a.callsign}</span><span class="ech">{a.echelon}</span></button></li>
+            <li><button on:click={() => onselect({ kind: 'contact', id: a.id })}><span class="nm">{a.name ?? a.callsign}</span><span class="ech">{a.echelon}</span></button></li>
           {/each}
         </ol>
       </section>
@@ -212,6 +237,14 @@
   header > div { flex: 1; min-width: 0; }
   h1 { font-family: var(--display); font-weight: 600; font-size: 22px; line-height: 1.1; margin: 0; letter-spacing: 0.01em; }
   .kind { margin: 8px 0 0; color: var(--dim); font-family: var(--display); font-size: 13px; }
+  .hull { margin-left: 10px; font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--cyan, #9ff0ff);
+          border: 1px solid rgba(159, 240, 255, 0.4); padding: 1px 5px; vertical-align: 3px; letter-spacing: 0.06em; }
+  /* the faction it serves, in its affiliation's colour */
+  .aff { display: inline-flex; gap: 8px; align-items: baseline; margin: 7px 0 0; padding: 2px 8px 2px 7px;
+         border-left: 2px solid var(--aff); background: color-mix(in srgb, var(--aff) 12%, transparent);
+         font-family: var(--display); font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+  .aff span { color: var(--dim); font-size: 10px; }
+  .sym { flex: none; margin-top: -4px; }
   button { background: none; border: 0; padding: 2px 0; color: var(--dim); }
   button:hover { color: var(--ink); }
   .close:hover { color: var(--fuchsia); }
@@ -237,10 +270,11 @@
   .order p { margin: 0 0 2px; }
   .order b { font-family: var(--display); font-weight: 600; }
   .order .eta { font-family: var(--display); font-size: 18px; color: var(--cyan, #9ff0ff); }
-  .order .eta span { font-size: 11px; color: var(--dim); }
+  .order .eta span { font-size: 11px; color: var(--dim); margin-left: 6px; }
   .held { margin: 0 0 8px; }
   .tgwrap { margin: 8px 0 12px; }
-  .orders .order { margin-bottom: 12px; }
+  .orders .order { margin-bottom: 12px; padding-bottom: 0; }
+  .order .by { font-size: 11px; }
   /* the chain of command, read upward: a ladder of rungs joined by a rail */
   .ladder { list-style: none; margin: 4px 0 0; padding: 0; }
   .ladder li { position: relative; padding: 0 0 14px 18px; }

@@ -4,7 +4,7 @@
   import { api, StateStream } from './lib/api.js';
   import HudCursor from './lib/HudCursor.svelte';
   import Orders from './lib/Orders.svelte';
-  import { group, shipsUnder, stepG } from './lib/orders.js';
+  import { group, orderGroups, shipsUnder, stepG } from './lib/orders.js';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
   import LevelSelect from './lib/LevelSelect.svelte';
@@ -37,7 +37,7 @@
   $: scenario = meta?.scenarios.find((s) => s.system === systemId);
   $: contacts = scenarioOn && scenario ? scenario.contacts : [];
   $: warnings = def?.findings.filter((f) => f.level === 'warning') ?? [];
-  $: if (map) { map.bullseyeId = bullseyeId; map.contactName = (id) => contacts.find((c) => c.id === id)?.callsign ?? id; }
+  $: if (map) { map.bullseyeId = bullseyeId; map.contactName = (id) => { const c = contacts.find((c) => c.id === id); return c?.name ?? c?.callsign ?? id; }; }
 
   // ---- settings: display.toml defaults, the player's settings.toml on top -----------------------
   function applySettings() {
@@ -161,16 +161,17 @@
     const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
     ordering = { unit: sel.id, ships: able, g, tilt: 0 };
   }
-  // the telegraph moved for orders already being flown: only their g changes
+  // a telegraph moved for orders already being flown: only their g changes. With an order
+  // ({id, by}) only that order's ships, all of them; without, the selected ship
   let retuneTimer;
-  async function retune(g, now = false) {
+  async function retune(g, now = false, order = null) {
     if (!scenario || sel?.kind !== 'contact') return;
-    const unit = sel.id;
+    const unit = order?.by ?? sel.id, orderId = order?.id ?? null;
     clearTimeout(retuneTimer);
     const send = async () => {
       try {
-        await api.order({ scenario: scenario.id, unit, t, g, keep_target: true });
-        say(`${map.contactName(unit)}: ${g > 0 ? `${g.toFixed(2)} g` : 'drive cut'}`);
+        await api.order({ scenario: scenario.id, unit, t, g, keep_target: true, order_id: orderId });
+        say(`${map.contactName(unit)}${order ? `, to ${order.label}` : ''}: ${g > 0 ? `${g.toFixed(2)} g` : 'drive cut'}`);
       } catch (err) { say(String(err.message ?? err)); }
     };
     if (now) send(); else retuneTimer = setTimeout(send, 250);
@@ -216,11 +217,15 @@
       if (orderTool?.key(e)) { e.preventDefault(); return; }
     } else if ((e.key === 'a' || e.key === 'A') && mode === 'map') { startOrder(); return; }
     else if ((e.key === 'w' || e.key === 'W' || e.key === 's' || e.key === 'S') && mode === 'map') {
-      const grp = group(state, contacts, selShips);         // the selection's orders, retuned
-      if (grp?.flying.length) {
-        retune(stepG(grp.g, grp.maxG, grp.cruise, e.key.toLowerCase() === 'w', e.shiftKey));
+      const up = e.key.toLowerCase() === 'w', ship = state?.ships?.[sel?.id];
+      if (ship?.goal) {                                     // a ship: her own telegraph
+        const grp = group(state, contacts, [sel.id]);
+        retune(stepG(ship.goal.g, grp.maxG, grp.cruise, up, e.shiftKey));
         return;
       }
+      const orders = orderGroups(state, contacts, selShips);   // a formation: its order, if it flies one
+      if (orders.length === 1) { const o = orders[0]; retune(stepG(o.g, o.maxG, o.cruise, up, e.shiftKey), false, o); return; }
+      if (orders.length > 1) { say(`${orders.length} orders under ${map.contactName(sel.id)}: use each order's telegraph in the panel`); return; }
     }
     if (e.key === 'Escape') select(null);
     if (e.key === 'f' || e.key === 'F') focusOn(sel);
@@ -361,6 +366,16 @@
 {/if}
 
 {#if mode === 'map'}
+<div class="leftcol">
+<!-- the bullseyes, one to a row: bearings and ranges everywhere read from the one chosen -->
+<div class="panel bulls" data-ui>
+  <h3>Bullseye <span>{bullseyes.length}</span></h3>
+  <ol>
+    {#each bullseyes as b}
+      <li><button class:on={b.id === bullseyeId} on:click={() => (bullseyeId = b.id)}><i></i><span>{b.name}</span></button></li>
+    {/each}
+  </ol>
+</div>
 <div class="panel left" data-ui>
   <div class="row">
     <span class="lbl">Player</span>
@@ -368,16 +383,11 @@
       {#each meta?.players ?? [] as p}<option value={p.id}>{p.name}</option>{/each}
     </select>
   </div>
-  <div class="list">
-    <span class="lbl">Bullseye</span>
-    {#each bullseyes as b}
-      <button class:on={b.id === bullseyeId} on:click={() => (bullseyeId = b.id)}>{b.name}</button>
-    {/each}
-  </div>
   {#if scenario}
     <button class="toggle" class:on={scenarioOn} on:click={() => (scenarioOn = !scenarioOn)}><i></i>{scenario.name}</button>
   {/if}
   <p class="frame">{def?.frame.description ?? ''}{def && !def.frame.tied ? ' · untied' : ''}</p>
+</div>
 </div>
 {/if}
 
@@ -398,7 +408,7 @@
 </div>
 
 {#if !showSettings}
-<InfoPanel {map} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
+<InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} />
 {/if}
@@ -429,14 +439,24 @@
   .src { color: var(--dim); font-size: 10px; }
 
   .panel { position: fixed; bottom: 20px; z-index: 20; background: var(--panel); border-left: 1px solid var(--violet); padding: 10px 14px; }
-  .left { left: 20px; width: 300px; display: grid; gap: 6px; }
+  .leftcol { position: fixed; left: 20px; bottom: 20px; z-index: 20; width: 300px; display: flex; flex-direction: column; gap: 8px; }
+  .leftcol .panel { position: static; }
+  .left { display: grid; gap: 6px; }
   .right { right: 20px; display: grid; gap: 2px; min-width: 200px; }
   .row { display: flex; gap: 10px; align-items: center; }
   .lbl { color: var(--dim); }
   select { background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: inherit; padding: 2px 4px; flex: 1; }
-  .list { display: flex; flex-wrap: wrap; gap: 2px 12px; align-items: baseline; }
-  .list button { background: none; border: 0; padding: 2px 0; color: var(--dim); font-family: var(--display); font-size: 13px; }
-  .list button.on { color: var(--ink); box-shadow: inset 0 -1px 0 var(--fuchsia); }
+  .bulls { padding: 10px 14px 6px; max-height: 40vh; overflow: auto; }
+  .bulls h3 { margin: 0 0 6px; font-family: var(--display); font-weight: 400; font-size: 11px; letter-spacing: 0.14em;
+              text-transform: uppercase; color: var(--dim); display: flex; justify-content: space-between; }
+  .bulls ol { list-style: none; margin: 0; padding: 0; }
+  .bulls li + li { border-top: 1px solid var(--rule); }
+  .bulls button { display: flex; align-items: center; gap: 10px; width: 100%; background: none; border: 0; padding: 6px 0;
+                  color: var(--dim); font-family: var(--display); font-size: 14px; text-align: left; }
+  .bulls button i { flex: none; width: 7px; height: 7px; transform: rotate(45deg); border: 1px solid var(--violet); }
+  .bulls button:hover { color: var(--ink); }
+  .bulls button.on { color: var(--ink); }
+  .bulls button.on i { background: var(--fuchsia); border-color: var(--fuchsia); }
   .frame { margin: 2px 0 0; color: var(--dim); font-size: 10px; }
 
   .toggle { background: none; border: 0; padding: 3px 0; display: flex; align-items: center; gap: 8px; color: var(--dim); text-align: left; }

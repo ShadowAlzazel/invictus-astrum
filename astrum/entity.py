@@ -209,4 +209,5 @@ def _goal_dict(g: dict | None) -> dict | None:
     return {"label": g.get("label"), "g": g.get("g"), "target": g.get("target"), "eta_s": g.get("eta_s"),
             "range_km": g["range_m"] / 1e3 if g.get("range_m") is not None else None,
             "closing_kms": g["closing_ms"] / 1e3 if g.get("closing_ms") is not None else None,
-            "aim_km": (np.asarray(aim) / 1e3).tolist() if aim is not None else None, "issued": g.get("issued")}
+            "aim_km": (np.asarray(aim) / 1e3).tolist() if aim is not None else None, "issued": g.get("issued"),
+            "order_id": g.get("order_id"), "by": g.get("by")}

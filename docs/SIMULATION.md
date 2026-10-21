@@ -85,15 +85,20 @@ given, so they arrive laid out as they left, not on one point; holding a tight f
 is not attempted yet. The telegraph tops out at the slowest ship's most, and the cruise band is the
 one they all share.
 
-**The telegraph in flight.** A ship or formation flying an order shows the telegraph in its panel;
-moving it (or **W** / **S** with it selected) changes only the acceleration of the order being flown.
-Stop cuts the drive.
+**The telegraph in flight.** A ship flying an order shows her own telegraph in her panel, in
+fuchsia like the telegraph of an order being aimed; moving it (or **W** / **S** with her selected)
+changes only her acceleration. A formation lays out every order its ships are flying, one block each:
+where it goes, the unit it was given to, its ships, when the first and the last arrive, and its own
+telegraph, in the light blue of the order vectors on the map. Moving one retunes that order, all of
+its ships (those outside the selected formation too), and no other; **W** / **S** do the same when
+the formation flies one order. Stop cuts the drive.
 
-`POST /api/order {scenario, unit, t, g, player, target}` (unit: a ship, or a formation for all the
-ships under it); `{scenario, unit, t, g, keep_target: true}` retunes the orders being flown.
-Earlier form:
-`POST /api/order {scenario, unit, t, g, player, target}`: target `{bullseye, aer: [deg, deg, km]}`,
-`{unit}` or `{body}`; `g = 0` cuts her drive. Orders from the map live in the running fleet; a
+Every order given to several ships shares an id (`order_id`, with `by`, the unit it was given to).
+
+`POST /api/order {scenario, unit, t, g, player, target}`: unit a ship, or a formation for all the
+ships under it; target `{bullseye, aer: [deg, deg, km]}`, `{unit}` or `{body}`; `g = 0` cuts the
+drive. `{scenario, unit, t, g, keep_target: true, order_id?}` retunes the orders being flown by the
+ships under the unit, or only the one named. Orders from the map live in the running fleet; a
 data reload rebuilds the fleet from the scenario file.
 
 ## Time

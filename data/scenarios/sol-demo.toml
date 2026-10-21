@@ -7,6 +7,9 @@
 #   load = "light"         her ammunition load, one of her class's hull masses (else the heaviest)
 #   propellant = 0.8       the share of her tanks she starts with (else full)
 #   mode = "free"          fly from the start instead of holding station
+#   hull_number = "BBC-382"  her pennant, shown beside her name
+# Any unit takes its affiliation and its faction (data/factions.toml) from the formation above it,
+# unless it states its own.
 # Holding station is not free: she follows her place in the bullseye's frame and her tanks pay
 # for every bit of it that is not an orbit. Orders ([[order]], at the end) make her fly.
 
@@ -21,6 +24,7 @@ player = "arcvs"
 id = "luna-classis-1"
 callsign = "Luna Classis I"
 affiliation = "friend"
+faction = "avc"             # every formation and ship under her takes it, unless it names its own
 echelon = "classis"
 position = { bullseye = "burn", aer = [0, 0, 1000000] }
 
@@ -154,7 +158,7 @@ formation = "tf2-lf1"
 
 [[contact]]
 id = "tf2-lf1-bs-1"
-callsign = "AVC Maru"
+callsign = "Maru"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-bs"
@@ -163,7 +167,7 @@ position = { bullseye = "wedge", aer = [1.718, 0.0, 150067] }
 
 [[contact]]
 id = "tf2-lf1-bs-2"
-callsign = "AVC Beyond the Dawn"
+callsign = "Beyond the Dawn"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-bs"
@@ -172,7 +176,7 @@ position = { bullseye = "wedge", aer = [0.573, 0.344, 150010] }
 
 [[contact]]
 id = "tf2-lf1-bs-3"
-callsign = "AVC Mischief"
+callsign = "Mischief"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-bs"
@@ -181,7 +185,7 @@ position = { bullseye = "wedge", aer = [359.427, 0.0, 150007] }
 
 [[contact]]
 id = "tf2-lf1-bs-4"
-callsign = "AVC Zelda"
+callsign = "Zelda"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf1-bs"
@@ -642,7 +646,8 @@ formation = "tf-2"
 
 [[contact]]
 id = "tf2-lp2-1"
-callsign = "AVC Antwerp"
+callsign = "Antwerp"
+hull_number = "BBC-382"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lp2"
@@ -651,7 +656,7 @@ position = { bullseye = "wedge", aer = [23.719, -4.906, 1754055] }
 
 [[contact]]
 id = "tf2-lp2-2"
-callsign = "AVC Diadem City"
+callsign = "Diadem City"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lp2"
@@ -660,7 +665,7 @@ position = { bullseye = "wedge", aer = [23.629, -4.88, 1752778] }
 
 [[contact]]
 id = "tf2-lp2-3"
-callsign = "AVC Murkwood"
+callsign = "Murkwood"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lp2"

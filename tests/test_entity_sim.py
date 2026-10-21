@@ -292,3 +292,70 @@ def test_formation_orders_and_the_telegraph():
     assert gap1 == pytest.approx(gap0, rel=0.02)
     assert c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.3,
                                       "target": {"unit": "kiki-2"}}).status_code == 400      # not one of her own
+
+
+def test_each_order_keeps_its_own_telegraph():
+    """Two orders under one formation: retuning one by its id leaves the other's g alone."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    a = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-1", "t": t, "g": 0.3,
+                                   "target": {"bullseye": "burn", "aer": [90, 0, 30000]}}).json()
+    b = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-2", "t": t, "g": 0.3,
+                                   "target": {"body": "moon"}}).json()
+    oa, ob = a["ship"]["goal"]["order_id"], b["ship"]["goal"]["order_id"]
+    assert oa != ob and a["ship"]["goal"]["by"] == "kiki-1"
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t + 300, "g": 0.1,
+                                   "keep_target": True, "order_id": ob}).json()
+    assert r["ships"]["kiki-2"]["goal"]["g"] == 0.1 and r["ships"]["kiki-1"]["goal"]["g"] == 0.3
+
+
+def test_faction_comes_down_the_chain(tmp_path):
+    from astrum.loader import load_factions, load_scenario
+    (tmp_path / "s.toml").write_text('''
+[scenario]
+id = "s"
+system = "sol"
+[[contact]]
+id = "fleet"
+affiliation = "friend"
+faction = "avc"
+position = { body = "earth" }
+[[contact]]
+id = "flight"
+formation = "fleet"
+[[contact]]
+id = "ship-a"
+callsign = "Antwerp"
+hull_number = "BBC-382"
+formation = "flight"
+position = { body = "earth" }
+[[contact]]
+id = "ship-b"
+faction = "other"
+formation = "flight"
+position = { body = "earth" }
+''')
+    sc = load_scenario(tmp_path / "s.toml")
+    k = sc.contacts
+    assert (k["flight"].faction, k["flight"].affiliation) == ("avc", "friend")
+    assert (k["ship-a"].faction, k["ship-a"].hull_number, k["ship-a"].own_faction) == ("avc", "BBC-382", False)
+    assert k["ship-b"].faction == "other" and k["ship-b"].own_faction
+    assert load_factions(ROOT / "data" / "factions.toml")["avc"]["prefix"] == "AVC"
+    (tmp_path / "bad.toml").write_text('[scenario]\nid = "b"\nsystem = "sol"\n[[contact]]\nid = "x"\nposition = { body = "earth" }\n')
+    with pytest.raises(ValueError, match="needs an affiliation"):
+        load_scenario(tmp_path / "bad.toml")
+
+
+def test_a_ship_reads_with_her_faction():
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    meta = TestClient(create_app()).get("/api/meta").json()
+    sc = next(s for s in meta["scenarios"] if s["id"] == "sol-demo")
+    byid = {c["id"]: c for c in sc["contacts"]}
+    assert byid["tf2-lp2-1"]["name"] == "AVC Antwerp" and byid["tf2-lp2-1"]["hull_number"] == "BBC-382"
+    assert byid["tf2-lp2-1"]["faction"]["name"] == "ARCVS Void Command"
+    assert byid["tf-2"]["name"] == "Task Force 2"            # formations read as they are named
