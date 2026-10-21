@@ -31,13 +31,13 @@ import numpy as np
 from .encode import ShipEncoder, ship_columns
 from .loader import contact_positions
 from .placement import plan
-from .sim import BLOCK_S, TIMELINE_S, Order
+from .sim import BLOCK_S, Order
 from .timescale import iso
 from .zones import magnetopause
 
 KM = 1e-3
-FRAME_BUDGET_S = 0.2          # wall time a picture may spend flying the fleet; past it, the picture lags
-ORDER_BUDGET_S = 0.5          # ... and an order: if the fleet is far behind, offsets are read where it got to
+FRAME_BUDGET_S = 0.05         # wall time a picture may spend getting the fleet there; past it, the picture lags
+ORDER_BUDGET_S = 0.05         # ... and an order: past it, the order waits for the fleet to get there (queued)
 LOOKAHEAD_WALL_S = 3.0        # the run-ahead keeps this much of the clock's wall time ahead ...
 LOOKAHEAD_S = (600.0, 12 * 3600.0)   # ... within these (sim seconds); the timeline holds a day and a half
 IDLE_S = 60.0                 # a fleet nobody has asked about for this long is left alone
@@ -79,12 +79,12 @@ def order_ships(world, sc, fleet, unit) -> list[str]:
 
 def order_reply(fleet, t: float, unit: str, ships: list[str], orders: list) -> dict:
     """Give the orders (all at once: one formation, one lead, one flight again) and say how the
-    ships stand once they are given."""
+    ships stand once they are given. If the fleet has not got to them yet, they wait for it
+    (queued), and nothing waits for them."""
     flown = fleet.command(*orders)
-    if flown is None:                                   # the fleet has not got there yet: it flies there now
-        _, flown = fleet.advance(t, ORDER_BUDGET_S)
-    out = {"ok": True, "unit": unit, "ships": {sid: flown[sid].as_dict() for sid in ships if sid in flown}}
-    if len(ships) == 1:
+    out = {"ok": True, "unit": unit, "queued": flown is None,
+           "ships": {sid: flown[sid].as_dict() for sid in ships if sid in flown} if flown else {}}
+    if len(ships) == 1 and ships[0] in out["ships"]:
         out["ship"] = out["ships"][ships[0]]
     return out
 
@@ -105,6 +105,8 @@ def give_order(world, req: dict) -> dict:
     if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
         raise OrderRefused(400, "an order needs t, and g of 0 or more")
     t = float(t)
+    with fleet.lock:                                 # the fleet flies on toward the order a moment, no more
+        tp = fleet.reach(t, ORDER_BUDGET_S)
     ships = order_ships(world, sc, fleet, unit)
     if not ships:
         raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
@@ -136,9 +138,9 @@ def give_order(world, req: dict) -> dict:
     else:
         raise OrderRefused(400, "target is {bullseye, aer}, {unit} or {body}")
     offsets = {sid: np.zeros(3) for sid in ships}
-    if len(ships) > 1 or unit not in ships:          # a formation: each ship keeps her place in it
-        flown = fleet.positions_at(t)
-        pos = world.table(sc.system).positions(t)
+    if len(ships) > 1 or unit not in ships:          # a formation: each ship keeps her place in it, as it stands
+        flown = fleet.positions_at(tp)               # (where the fleet has got, if it is behind the clock)
+        pos = world.table(sc.system).positions(tp)
         where = contact_positions(sc, world.resolved(sc.system, sc.player, pos), pos, flown)
         anchor = where.get(unit)
         if anchor is not None:
@@ -226,17 +228,9 @@ class SimHost:
 
     def _ships_at(self, fleet, t: float):
         """The ships at t (or as near as the fleet could be got): (the moment, ids, their figures,
-        {id: position}). Read off the timeline; the fleet is flown there first if need be."""
-        tl = fleet.keep_timeline()
+        {id: position}). Read off the timeline, the fleet got ready for it first (Fleet.reach)."""
         with fleet.lock:
-            if t <= fleet.t0:
-                fleet.advance(t, view=lambda _: None)    # before it starts: everyone on station
-            elif not tl.covers(t):
-                if tl.lo is not None and t < tl.time(tl.lo):          # older than the timeline: fly it again
-                    fleet.advance(fleet.t0 + math.floor((t - fleet.t0) / BLOCK_S) * BLOCK_S, view=lambda _: None)
-                k = math.ceil((t - fleet.t0) / TIMELINE_S - 1e-9)
-                fleet.advance(fleet.t0 + k * TIMELINE_S, FRAME_BUDGET_S, view=lambda _: None)
-                t = min(t, fleet.t)                      # as far as it got
+            t = fleet.reach(t, FRAME_BUDGET_S)
             pic = fleet.picture(t)
             n = len(fleet.c.row)
             ids = fleet.c.ids[:n]
@@ -292,11 +286,13 @@ class RunAhead:
                 f = w["fleet"]
                 ahead = min(max(w["warp"] * LOOKAHEAD_WALL_S, LOOKAHEAD_S[0]), LOOKAHEAD_S[1])
                 target = f.t0 + math.ceil((w["t"] + ahead - f.t0) / BLOCK_S - 1e-9) * BLOCK_S
-                if f.t < target - 1e-6:
+                if f.t < target - 1e-6 or f.mending is not None:    # behind, or an order's rows still on their way
                     f.keep_timeline()
-                    f.advance(target, budget_s=0.02, view=lambda _: None)
+                    f.advance(max(target, f.t), budget_s=0.02, view=lambda _: None)
                     busy = True
-            if not busy:
+            if busy:
+                time.sleep(0.001)                         # let a picture or an order waiting on the fleet in first
+            else:
                 self._wake.wait(0.1)
                 self._wake.clear()
 

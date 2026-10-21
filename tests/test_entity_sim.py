@@ -657,12 +657,38 @@ def test_an_order_in_the_past_flies_again_only_what_it_touches():
     others = [i for sid, i in fa.c.row.items() if sid != "kiki-1"]
     reply = fa.command(goto())
     assert set(reply) == {"kiki-1"} and reply["kiki-1"].state.goal["label"] == "Moon"
+    assert reply["kiki-1"].state.t == pytest.approx(t0 + 4000) and fa.mending is not None   # the rest of her way: after
+    fa.at(fa.t)                                             # carried on to where the fleet is
+    assert fa.mending is None and fa.t == pytest.approx(t0 + 6 * 3600)
     assert np.array_equal(fa.c.r[others], before[0][others]) and np.array_equal(fa.c.prop[others], before[1][others])
     fb.command(goto())                                      # the same order given before anything flew
     ref = fb.at(t0 + 6 * 3600)["kiki-1"].state
     i = fa.c.row["kiki-1"]
     assert np.allclose(fa.c.r[i], ref.r, rtol=1e-7, atol=10.0) and fa.c.prop[i] == pytest.approx(ref.propellant_kg, rel=1e-7)
     assert np.linalg.norm(fa.picture(t0 + 5 * 3600)["r"][i] - fb.at(t0 + 5 * 3600)["kiki-1"].state.r) < 3e3
+
+
+def test_orders_given_while_others_are_still_on_their_way():
+    """A second order comes while the first's rows are still being flown again: both sets go on
+    together, and the fleet ends as if both had been given before anything flew."""
+    from astrum.app import create_app
+    from astrum.sim import Order
+    fa, fb = _demo(create_app().state.world), _demo(create_app().state.world, timeline=False)
+    t0 = fa.t0
+    orders = lambda: [Order("kiki-1", t0 + 4000, "goto", target={"body": "moon", "label": "Moon"}, g=0.3),
+                      Order("kiki-2", t0 + 2000, "goto", target={"bullseye": "burn", "player": "arcvs", "aer": [90, 0, 3e7], "label": "pt"}, g=0.2)]
+    fa.at(t0 + 8 * 3600)
+    first, second = orders()
+    fa.command(first)
+    assert fa.mending is not None and fa.mending.t < t0 + 8 * 3600
+    fa.command(second)                                     # earlier than where the first's rows have got
+    fa.at(fa.t)
+    for o in orders():
+        fb.command(o)
+    fb.at(t0 + 8 * 3600)
+    for sid in ("kiki-1", "kiki-2", "kiki-3"):
+        i = fa.c.row[sid]
+        assert np.allclose(fa.c.r[i], fb.c.r[i], rtol=1e-7, atol=10.0)
 
 
 def test_a_formation_ordered_in_the_past_flies_as_one():

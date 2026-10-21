@@ -139,6 +139,20 @@ class Order:
     by: str | None = None          # the unit the order was given to: the ship, or her formation
 
 
+@dataclass
+class Mend:
+    """Rows flying again after an order given in the past (Fleet.command), partway there."""
+    rows: set[int]
+    scope: np.ndarray
+    t: float                       # how far they have got
+    st_t: float                    # their station ships have paid up to here
+    F: float                       # where the rest of the fleet is: done there
+    replay: list                   # their orders on the way
+    given: set[int]                # the orders just given (ids): the reply is theirs
+    q: int = 0
+    reply: dict | None = None
+
+
 def eta_s(d: float, closing: float, lateral: float, a: float) -> float:
     """Time to stop at a point d away, closing at `closing` (negative: opening), holding a:
     bang-bang in one dimension, plus the time to null any velocity across the line."""
@@ -209,6 +223,7 @@ class Fleet:
         self._station_t = t0                    # station ships have paid for their places up to here
         self._body_cache: dict[float, dict] = {}
         self._bull_cache: dict[tuple, object] = {}
+        self._point_cache: dict[tuple, np.ndarray] = {}   # where bullseye and body points are, by moment
         self._place_cache: dict[float, tuple] = {}
         self._plans: dict[tuple, tuple] = {}    # how station ships are placed, by the versions they are on
         self._pulls = [b for b in system.massive() if b.gm > 0]
@@ -216,6 +231,7 @@ class Fleet:
         self._oblate = _pulls(system, eph)[4]
         self.timeline: Timeline | None = None      # kept when a run-ahead worker flies the fleet (keep_timeline)
         self.versions = Versions()                 # every change to what a row was given, from when (astrum/timeline.py)
+        self.mending: Mend | None = None           # an order's rows flying again, partway (command)
         self._now = t0                             # the moment what is being changed changes
         for i in range(cl.n):
             self._touch(i)
@@ -236,6 +252,8 @@ class Fleet:
         """Every row at t, for the map: off the timeline (Timeline.at), or as the rows stand at the
         fleet's own moment (or one the timeline does not hold: before the scenario starts). What
         each row was given is the version she was on at t; station ships stand at their places then."""
+        if self.mending is not None:                     # an order's rows flying again: up to the sample after t
+            self._mend(self.t0 + (math.floor((t - self.t0) / TIMELINE_S + 1e-9) + 1) * TIMELINE_S)
         c, n, tl, V = self.c, self.c.n, self.timeline, self.versions
         if tl is not None and tl.covers(t) and abs(t - self.t) > 1e-6:
             pic, ver = tl.at(t, n, V)
@@ -290,6 +308,7 @@ class Fleet:
         self.versions.cut_all(self.c.mver[: self.c.n])
         self.leads = {oid: LeadView(self.c, i) for oid, i in leads.items()}
         self.t, self._order_i, self._station_t = t, order_i, station_t
+        self.mending = None
         self._place_cache.clear()
         if self.timeline is not None:
             self.timeline.cut(t)
@@ -298,29 +317,43 @@ class Fleet:
     def command(self, *orders: Order) -> dict[str, Ship] | None:
         """Take orders while the clock runs. If the fleet has already flown past them, only the rows
         they touch are flown again (_affected: the ships ordered, their formations and leads, and
-        whoever chases them or holds on them): set back to the last checkpoint before the orders,
-        flown to where the fleet is, their own orders replayed on the way, the checkpoints and the
-        timeline mended as they go. Every other ship keeps her flight. Returns the ordered ships as
-        they stand once the orders are given (copies), or None if the fleet has not got there yet
-        (they are given as it does)."""
+        whoever chases them or holds on them): set back to the last checkpoint before the orders and
+        flown on, their own orders replayed on the way, the checkpoints and the timeline mended as
+        they go (_mend). Every other ship keeps her flight. They are flown at once only up to the
+        orders; the rest of the way to where the fleet had got goes a chunk at a time after (the
+        run-ahead worker carries it on, and a picture takes it as far as its own moment), so neither
+        the order nor the map waits on all of it. Returns the ordered ships as they stand once the
+        orders are given (copies), or None if the fleet has not got there yet (they are given as it
+        does, and nothing waits for that)."""
         with self.lock:
             for o in orders:
                 o.at = max(o.at, self.t0)
                 bisect.insort(self.orders, o, key=lambda o: o.at)
             t_o = min(o.at for o in orders)
-            if self.t <= t_o:
+            if self.t < t_o - 1e-9:
                 return None
+            if t_o >= self.t - 1e-9 and self.mending is None:   # at the fleet's own moment: given now
+                self._run(self.t)
+                return {o.unit: self.c.ship(self.c.row[o.unit]) for o in orders}
             self._order_i += sum(1 for o in orders if o.at < self.t)
+            rows = self._affected({o.unit for o in orders}, set())
+            if self.mending is not None:                  # an earlier order's rows still on their way: with these
+                rows |= self.mending.rows
+                t_o = min(t_o, self.mending.t)
             k = max(bisect.bisect_right([c[0] for c in self._checkpoints], t_o) - 1, 0)
             t_k, snap, _, st_t = self._checkpoints[k]
-            rows = self._affected({o.unit for o in orders}, set())
             while True:                                   # the rows they touch, then and now
                 self._restore_rows(snap, rows)
                 more = self._affected(set(), rows)
                 if more <= rows:
                     break
                 rows |= more
-            return self._catch_up(rows, t_k, st_t, self.t, set(map(id, orders)))
+            names = {self.c.ids[i] for i in rows}
+            m = self.mending = Mend(rows, np.array(sorted(rows), dtype=np.int64), t_k, st_t, self.t,
+                                    [o for o in self.orders if t_k - 1e-9 <= o.at < self.t and o.unit in names],
+                                    set(map(id, orders)))
+            self._mend(max(o.at for o in orders))
+            return m.reply
 
     def _affected(self, ids: set[str], rows: set[int]) -> set[int]:
         """The rows the given ships' (and rows') flight bears on: their formation (its lead, its
@@ -364,44 +397,42 @@ class Fleet:
             if j in rows:
                 self.leads[oid] = LeadView(c, j)
 
-    def _catch_up(self, rows: set[int], t_k: float, st_t: float, F: float, given: set[int]) -> dict[str, Ship] | None:
-        """Fly the given rows from the checkpoint at t_k to the fleet's time F, replaying their
-        orders; the rest of the fleet stays where it is."""
-        c = self.c
-        scope = np.array(sorted(rows), dtype=np.int64)
-        names = {c.ids[i] for i in rows}
-        replay = [o for o in self.orders if t_k - 1e-9 <= o.at < F and o.unit in names]
-        reply, t, q = None, t_k, 0
-        while True:
+    def _mend(self, t_end: float, until: float = math.inf) -> None:
+        """Fly an order's rows on (command), up to t_end (its orders given) or until the wall clock
+        passes `until`; done when they reach the rest of the fleet."""
+        c, m = self.c, self.mending
+        while m is not None:
             applied, n_before = [], c.n
-            while q < len(replay) and replay[q].at <= t + 1e-9:
-                o = replay[q]
-                st_t = self._station_grid(st_t, o.at, scope, partial=True)
+            while m.q < len(m.replay) and m.replay[m.q].at <= m.t + 1e-9:
+                o = m.replay[m.q]
+                m.st_t = self._station_grid(m.st_t, o.at, m.scope, partial=True)
                 self._apply(o)
                 applied.append(o)
-                q += 1
+                m.q += 1
             if applied:
                 if c.n > n_before:                    # a lead the orders made is flown with them
-                    scope = np.union1d(scope, np.arange(n_before, c.n)).astype(np.int64)
-                self._fly(t, t, steer_only=True, scope=scope)
-                if any(id(o) in given for o in applied):
-                    ordered = {o.unit for o in applied if id(o) in given}
-                    reply = {u: c.ship(c.row[u]) for u in ordered}
-            if t >= F - 1e-6:
-                return reply
-            nxt = replay[q].at if q < len(replay) else math.inf
-            held = (c.burn[scope] == BURN_G) | (c.burn[scope] == BURN_THROTTLE)
-            ends = [float(e) for e in c.buntil[scope][held] if e > t]
-            T1 = min(self._grid_next(t), F, nxt, *ends)
-            slots, flown = self._fly(t, T1, scope=scope)
-            st_t = self._station_grid(st_t, T1, scope)
-            self._record(slots, scope, flown)
-            for cp in [cp for cp in self._checkpoints if t + 1e-9 < cp[0] <= T1 + 1e-9]:
+                    m.scope = np.union1d(m.scope, np.arange(n_before, c.n)).astype(np.int64)
+                self._fly(m.t, m.t, steer_only=True, scope=m.scope)
+                if any(id(o) in m.given for o in applied):
+                    m.reply = {o.unit: c.ship(c.row[o.unit]) for o in applied if id(o) in m.given}
+            if m.t >= m.F - 1e-6:
+                self.mending = None
+                return
+            if m.t >= t_end - 1e-9 or time.monotonic() > until:
+                return
+            nxt = m.replay[m.q].at if m.q < len(m.replay) else math.inf
+            held = (c.burn[m.scope] == BURN_G) | (c.burn[m.scope] == BURN_THROTTLE)
+            ends = [float(e) for e in c.buntil[m.scope][held] if e > m.t]
+            T1 = min(self._grid_next(m.t), m.F, nxt, *ends)
+            slots, flown = self._fly(m.t, T1, scope=m.scope)
+            m.st_t = self._station_grid(m.st_t, T1, m.scope)
+            self._record(slots, m.scope, flown)
+            for cp in [cp for cp in self._checkpoints if m.t + 1e-9 < cp[0] <= T1 + 1e-9]:
                 if abs(cp[0] - T1) < 1e-6:
-                    self._patch(cp[1], scope)
+                    self._patch(cp[1], m.scope)
                 else:
                     self._checkpoints.remove(cp)        # off the grid: it cannot be mended, so it goes
-            t = T1
+            m.t = T1
 
     def _patch(self, snap: tuple, scope: np.ndarray) -> None:
         """Mend a checkpoint: the given rows as they are now (the checkpoint's own moment)."""
@@ -431,12 +462,35 @@ class Fleet:
                 leads[oid] = L.row
 
     def positions_at(self, t: float) -> dict[str, np.ndarray]:
-        """Where every ship is at t: off the timeline if it covers t, else flown to it."""
+        """Where every ship is at t."""
         with self.lock:
-            if self.timeline is None or not self.timeline.covers(t):
-                self.advance(t, view=lambda _: None)
-            pic = self.picture(t)
+            pic = self.picture(self.reach(t))
             return {sid: pic["r"][i].copy() for sid, i in self.c.row.items() if np.isfinite(pic["r"][i]).all()}
+
+    def reach(self, t: float, budget_s: float | None = None) -> float:
+        """Get the fleet ready to be pictured at t (Fleet.picture), within a budget of wall seconds:
+        flown up to t if it is not there yet (to the next whole minute, so the timeline holds t),
+        flown again if t is older than the timeline, an order's rows still on their way brought as
+        far as t. Returns t, or the moment it got ready for instead (as far as it got)."""
+        deadline = time.monotonic() + budget_s if budget_s is not None else math.inf
+        with self.lock:
+            tl = self.keep_timeline()
+            if t <= self.t0:
+                self.advance(t, view=lambda _: None)        # before it starts: everyone on station
+                return t
+            if tl.lo is not None and t < tl.time(tl.lo):    # older than the timeline: fly it again
+                self.advance(self.t0 + math.floor((t - self.t0) / BLOCK_S) * BLOCK_S, view=lambda _: None)
+            sample = lambda k: self.t0 + k * TIMELINE_S
+            k = (t - self.t0) / TIMELINE_S
+            if self.mending is not None:                    # the sample after t is theirs again
+                self._mend(sample(math.floor(k + 1e-9) + 1), deadline)
+                m = self.mending
+                if m is not None and m.t < sample(math.floor(k + 1e-9) + 1) - 1e-6:
+                    return min(t, sample(math.floor((m.t - self.t0) / TIMELINE_S + 1e-9) - 1))
+            goal = sample(math.ceil(k - 1e-9))
+            if goal > self.t + 1e-6:
+                self.advance(goal, max(deadline - time.monotonic(), 0.0), view=lambda _: None)
+            return min(t, self.t)
 
     # ---- the clock ----------------------------------------------------------------------------
     def at(self, t: float) -> dict[str, Ship]:
@@ -457,7 +511,11 @@ class Fleet:
                 if t < self.t:
                     i = bisect.bisect_right([c[0] for c in self._checkpoints], t) - 1
                     self._restore(*self._checkpoints[max(i, 0)])
-                done = self._run(t, time.monotonic() + CHUNK_S)
+                if self.mending is not None:              # an order's rows reach the rest of the fleet first
+                    self._mend(math.inf, time.monotonic() + CHUNK_S)
+                    done = False
+                else:
+                    done = self._run(t, time.monotonic() + CHUNK_S)
                 if done or time.monotonic() >= deadline:
                     self._show(self.t)
                     return self.t, view(self.ships)
@@ -867,14 +925,22 @@ class Fleet:
         """Where a target or a station is at t (system frame, m): an AER from a bullseye, a unit,
         or a body, each with an optional fixed offset."""
         off = np.asarray(spec.get("offset_m", (0.0, 0.0, 0.0)), dtype=float)
-        if "bullseye" in spec:
-            b = self._bull(spec.get("player"), spec["bullseye"], t)
-            if b is None:
-                return None
-            brg, el, rng = spec["aer"]
-            return b.point(math.radians(brg), math.radians(el), rng) + off
-        if "body" in spec:
-            return self._bodies(t)[spec["body"]] + off
+        if "bullseye" in spec or "body" in spec:      # the same for every ship that asks: worked out once a moment
+            key = (spec.get("player"), spec.get("bullseye"), tuple(spec.get("aer") or ()), spec.get("body"), t)
+            p = self._point_cache.get(key)
+            if p is None:
+                if "body" in spec:
+                    p = self._bodies(t)[spec["body"]]
+                else:
+                    b = self._bull(spec.get("player"), spec["bullseye"], t)
+                    if b is None:
+                        return None
+                    brg, el, rng = spec["aer"]
+                    p = b.point(math.radians(brg), math.radians(el), rng)
+                if len(self._point_cache) > 50000:
+                    self._point_cache.clear()
+                self._point_cache[key] = p
+            return p + off
         if "unit" in spec:
             u, c = spec["unit"], self.c
             j = c.row.get(u)

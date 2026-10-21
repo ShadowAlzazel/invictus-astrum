@@ -201,12 +201,23 @@ metre); how her order stands is drawn straight between samples of the same order
 from the side that flew it. Ships on station stand at their places at the moment itself, by the
 version they were on. At the fleet's own moment the picture is its rows as they stand.
 
-**An order flies again only what it touches.** An order given at a moment the fleet has already
-flown past sets back only the rows it touches (the unit ordered, its formation's lead and members,
-anyone chasing them, anyone holding on them) to the checkpoint before it, flies them up to where
-the fleet had reached, giving them their orders on the way, and writes their part of the timeline
-and of the later checkpoints again. Every other ship stays exactly as flown. Station ships are
-charged only for the rows taken back. The order shows at the moment it is given, paused or not.
+**An order flies again only what it touches, and only as fast as it is needed.** An order given
+at a moment the fleet has already flown past sets back only the rows it touches (the unit ordered,
+its formation's lead and members, anyone chasing them, anyone holding on them) to the checkpoint
+before it, and flies them on, giving them their orders on the way and writing their part of the
+timeline and of the later checkpoints again (`Mend`). Every other ship stays exactly as flown;
+station ships are charged only for the rows taken back. The order itself waits only for them to
+reach its own moment (a few blocks: milliseconds), and the reply has them as they stand once it
+is given. The rest of their way to where the fleet had got (the run-ahead's lead, hours at a fast
+clock) goes a chunk at a time after: the run-ahead worker carries it on, and a picture takes it
+only as far as its own moment, so the map never waits for all of it. An order that comes while an
+earlier one's rows are still on their way takes them along. An order ahead of where the fleet has
+got (the fleet is behind a fast clock) waits for the fleet to get there; nothing waits for it.
+The order shows at the moment it is given, paused or not.
+
+Where a go-to's target is (a point off a bullseye, a body) is the same for every ship that flies
+to it, so each moment's is worked out once and kept: time to target, flown ahead every half hour
+over a day or more of the target's track, costs a few milliseconds after the first time.
 
 ## Where the time goes
 
@@ -237,9 +248,10 @@ The simulation is the server's; the browser only draws. What keeps it quick:
   So the server answers (the menu, the registry, the workshop) in a few milliseconds however far
   behind the fleet is. Inside the simulation process a picture is built in a worker thread while
   the run-ahead flies; the compiled step releases the GIL. The fleet runs in chunks under its
-  lock, so an order is taken between two chunks, and the map's picture gets 0.2 s: if the fleet
-  cannot reach the clock in that, the picture is of the moment it reached, sent with `behind_s`,
-  and the clock shows "sim … behind" until it catches up. Tests run the same host in the server's
+  lock, and the run-ahead worker steps aside between its chunks for a picture or an order waiting on
+  it. A picture gets 50 ms to get the fleet to its moment, and an order as long to fly toward its
+  own: if the fleet cannot get there in that, the picture is of the moment it reached, sent with
+  `behind_s` (the clock shows "sim … behind" until it catches up), and the order waits for it. Tests run the same host in the server's
   own process (`InlineSim`).
 - **Pictures from the arrays.** Every figure the map shows of a ship (mass, tanks, Δv,
   acceleration, thrust, how her order stands) is worked out for every ship at once, column by
@@ -255,7 +267,8 @@ Measured on the Sol demo (51 ships), 18 of them flying four orders, two of them 
 |---|---|---|---|---|
 | 1 h / 6 h / 12 h of flight | 0.16 / 1.46 / 0.75 s | 0.10 / 0.78 / 0.40 s | 0.06 / 0.35 / 0.19 s | 12 h with the timeline kept: 0.44 s, ahead of the clock |
 | a map frame at 1 min/s / 1 h/s / 1 d/s (fleet) | 2.5 / 3.9 / 46 ms | 3.2 / 3.5 / 26 ms | 2.3 / 2.5 / 14 ms | about 2 ms at any warp, off the timeline (4 ms through the server) |
-| an order 0.5 h / 2 h / 6 h back | | | 11 / 36 / 129 ms (all of the fleet) | 7 / 21 / 73 ms (only what it touches) |
+| an order 0.5 h / 2 h / 6 h back | | | 11 / 36 / 129 ms (all of the fleet) | 7 / 21 / 73 ms (only what it touches); now a few ms to its moment, the rest after |
+| the map held up by an order, 1 h/s / 6 h/s / 1 d/s (a ship, a formation, the task force of 45) | | | | before: up to 0.2 / 0.46 / 0.46 s; now under 0.05 / 0.06 / 0.19 s |
 | placing the scenario's contacts | 0.93 ms | 0.93 ms | 0.05 ms | 0.05 ms |
 | a picture for the map (first / after) | 39 KB | 13 KB | 13 KB | 32 / 14 KB |
 | the web server while the fleet is behind | waits | waits | waits | 3 ms |
