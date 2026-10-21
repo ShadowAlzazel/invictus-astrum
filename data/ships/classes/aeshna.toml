@@ -27,44 +27,32 @@ tiers = { green = [7.0, 7.5], rated = 6.0, veteran = 5.5 }
 [[battery]]
 id = "domes"
 label = "Domes"
-component = "dome-xxxvii"
-focus = true                # the ship's main weapon: the battery her tactics are built around
+dome = "xxxvii"
 count = 5
-facets = 185
-power_mw = 35.5
+sides = { ventral = 3, dorsal = 2 }
+focus = true                # the ship's main weapon: the battery her tactics are built around
 notes = "Every bearing is seen by at least two domes."
 
 [[battery]]
 id = "strips"
 label = "Strips"
-component = "picket-strip"
-count = 4
-facets = 24
-power_mw = 9.22
+strip = "picket"
+pairs = 2
 notes = "Dazzles every open sensor in a formation."
 
 [[battery]]
 id = "spinal"
 label = "Spinal battery"
-component = "filvm-mk2"
-count = 36
-stacks = 6
-cycle_s = 10
+stack = "picket"
+count = 6
+firing = "together"
 fire = "six patterns every 10 s"
 
 [[battery]]
 id = "missiles"
 label = "Missiles"
-component = "missile-cell"
+cell = "missile"
 count = 90
-
-[reach]
-open-woven = 1550
-open-titanium = 1900
-mast = { value = 5450, note = "six at once" }
-radiator = 7370
-crew = "aim"
-dazzle = 40000
 
 [[point_defence]]
 bearing = "nadir, three domes"

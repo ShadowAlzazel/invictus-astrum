@@ -155,7 +155,7 @@ def main(argv=None) -> int:
     if cat.findings:
         print("\n".join(str(f) for f in cat.findings))
         return 1
-    sc = build_class(doc, reg.rules, reg.components, drives=cat)
+    sc = build_class(doc, reg.rules, reg.armoury, drives=cat)
     print(report(sc, cat))
     return 0
 

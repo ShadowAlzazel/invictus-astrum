@@ -4,12 +4,14 @@
 # ---- rate: who commands her, and how many hands --------------------------------------------------
 [rate.line]
 label = "Line rate"
+half_beam_m = 45                     # TELVM §1.1: sets the hull's capacitance, so the charge a salvo leaves
 commanded_by = "a Commander"
 hands = "about five hundred, in ten serving cohorts and an eleventh at depot"
 covers = "ships of the line, battlecruisers and cruisers"
 
 [rate.frigate]
 label = "Frigate"
+half_beam_m = 25                     # picket rate
 commanded_by = "a Captain"
 hands = "fewer"
 covers = "the frigates; the most independent posting below flag rank"
@@ -93,14 +95,24 @@ label = "Ruins a mane"
 wall = "silhouette"
 order = 6
 
-[effect.crew]
-label = "Kills crew and electronics, line citadel"
+[effect.electronics]
+label = "Ruins electronics, ~100 Gy"
 wall = "citadel"
 order = 7
 
+[effect.crew]
+label = "Incapacitates crew, ~50 Gy"
+wall = "citadel"
+order = 8
+
+[effect.crew-kill]
+label = "Kills crew, ~5 Gy"
+wall = "citadel"
+order = 9
+
 [effect.dazzle]
 label = "Dazzles an open sensor"
-order = 8
+order = 10
 
 # ---- drive: what every class's [drive] is read against ----------------------------------------------
 # cruise_g is doctrine: the band a fleet holds whatever its load. A drive that cannot reach the floor

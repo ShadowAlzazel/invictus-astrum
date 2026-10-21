@@ -6,6 +6,7 @@
   import { api } from './api.js';
   import { unitSymbol } from './symbols.js';
   import { q, row } from './quantity.js';
+  import ArcsDiagram from './ArcsDiagram.svelte';
 
   export let style;
   export let onback = () => {};
@@ -122,6 +123,12 @@
     for (const p of pd) if (p.at_km != null && p.kills_per_s) best[p.at_km] = Math.max(best[p.at_km] ?? 0, v(p.kills_per_s));
     return Object.entries(best).sort((a, b) => a[0] - b[0]).map(([km, k]) => `${num(k, k < 10 ? 1 : 0)}/s at ${num(+km)} km`).join(' · ');
   };
+  // no stated point defence: what the optical batteries give, summed at each range
+  const pdDerived = (c) => {
+    const sum = {};
+    for (const b of c.batteries) for (const [km, k] of Object.entries(b.pd ?? {})) sum[km] = (sum[km] ?? 0) + k;
+    return Object.entries(sum).sort((a, b) => a[0] - b[0]).map(([km, k]) => `${num(k, k < 10 ? 1 : 0)}/s at ${num(+km)} km`).join(' · ');
+  };
   const simValue = (x, unit, digits) => (x && x.lo != null ? (digits != null ? `${num(v(x), digits)} ${unit}` : q(x, unit)) : '—');
   $: simPrime = cls ? [
     { icon: 'thrust', label: 'Thrust', value: d ? simValue(d.thrust_mn, 'MN', 1) : '—' },
@@ -141,18 +148,19 @@
                ['Hull leak, flat out', d.heat ? `${num(v(d.heat.leak_gw) * 1e3, 0)} MW` : '—']] : []),
       ['Manes reject', d?.heat?.mane_gw ? q(d.heat.mane_gw, 'GW') : '—', d?.heat && d.heat.steady === false],
       ['Thermal store', (() => { const r = cls.endurance.find((x) => x.key === 'thermal_store_tj'); return r ? row(r) : '—'; })()],
+      ['Armament heat, every battery firing', cls.armament_heat_mw ? `${num(cls.armament_heat_mw, 1)} MW` : '—'],
     ] },
     { title: 'Combat', rows: [
       ['Aim, rated crew', cls.aim.tiers.rated ? q(cls.aim.tiers.rated, 'µrad') : '—'],
       ['Walls, rated: citadel / silhouette', cls.walls.rated ? `${num(v(cls.walls.rated.citadel))} / ${num(v(cls.walls.rated.silhouette))} km` : '—'],
-      ['Point defence', cls.point_defence.length ? pdSummary(cls.point_defence) || '—' : '—'],
+      ['Point defence', cls.point_defence.length ? pdSummary(cls.point_defence) || '—' : pdDerived(cls) || '—'],
       ['Protection', hullRow('protection_kgm2') ? row(hullRow('protection_kgm2')) : '—'],
     ] },
   ] : [];
   // the armament: engagement range first, then how many
   const engage = (b) => (b.engage?.q ? `${num(v(b.engage.q))}` : '—');
-  const KIND_MARK = { 'spinal-channel': 'SPN', gun: 'GUN', panel: 'OPT', dome: 'DOM', strip: 'STR', 'missile-cell': 'MSL', tube: 'TUB', telescope: 'TEL', sensor: 'SNS' };
   $: focusBat = cls?.batteries.find((b) => b.focus) ?? null;
+  $: spreadOf = cls?.batteries.filter((b) => b.spread).sort((a, b) => b.focus - a.focus)[0] ?? null;
 
   // the Drive tab: each figure the simulation reads, and how the technical values give it
   $: primary = d ? [
@@ -305,13 +313,17 @@
               <div class="arms">
                 {#each cls.batteries as b}
                   <button class="arm" class:focus={b.focus} on:click={() => (tab = 'armament')} title={b.engage ? `engages at ${engage(b)} km: ${b.engage.how}` : 'engagement range not yet stated'}>
-                    <span class="hex"><span>{KIND_MARK[b.component?.kind] ?? 'BAT'}</span></span>
+                    <span class="hex"><span>{b.mark}</span></span>
                     <span class="rng"><b class:blank={!b.engage}>{engage(b)}</b>{#if b.engage}<small>km</small>{/if}</span>
                     <span class="ct">{b.count != null ? `× ${b.count}` : '× —'}</span>
                     <span class="lb">{b.label}</span>
                   </button>
                 {/each}
               </div>
+            {/if}
+            {#if cls.layout}
+              <div class="bar"><span>Layout and arcs</span><button on:click={() => (tab = 'armament')} title="Armament">•••</button></div>
+              <ArcsDiagram {cls} />
             {/if}
             {#if d}
               <div class="bar"><span>Drive</span><button on:click={() => (tab = 'drive')} title="Drive">•••</button></div>
@@ -455,6 +467,7 @@
               {/each}
             </tbody>
           </table>
+          {#if cls.reach_from && cls.reach_from !== 'class'}<p class="note">Beam reaches as rated for the {cls.reach_from}, at 5 nT transverse (assemblies.toml).</p>{/if}
           {#if cls.walls[tier]}
             <p class="note">Walls at {tierLabel(tier).toLowerCase()} aim: citadel {q(cls.walls[tier].citadel, 'km')}, silhouette {q(cls.walls[tier].silhouette, 'km')}. Past a wall, salvos land less often, not never.</p>
           {/if}
@@ -463,25 +476,31 @@
           <dl class="rows">{#each cls.reach as r}<dt>{r.label}</dt><dd>{q(r.beam, 'km')}</dd>{/each}</dl>
         {/if}
 
+        {#if spreadOf}
+          <h2 class="caps">Concentrate or spread <span class="sub">one {spreadOf.assembly}: reach per spot, km, before the wall</span></h2>
+          <table>
+            <thead><tr><th>Effect</th>{#each spreadOf.spread.spots as n}<th class="r">{n} spot{n > 1 ? 's' : ''} of {spreadOf.spread.channels / n}</th>{/each}</tr></thead>
+            <tbody>
+              {#each spreadOf.spread.rows as r, i}
+                <tr class:band={i % 2}><td>{r.label}</td>{#each r.km as km, j}<td class="r" class:strong={j === r.km.length - 1}>{km >= 100000 ? '>100,000' : num(km)}</td>{/each}</tr>
+              {/each}
+            </tbody>
+          </table>
+          <p class="note">Groups of a few land about a spot apart and gain little against hulls; the whole stack on one spot concentrates. Against crews one channel already reaches past the wall.</p>
+        {/if}
+
         {#if cls.batteries.length}
-          <h2 class="caps">Batteries <span class="sub">engagement range first; the focus is the battery her tactics are built around</span></h2>
+          <h2 class="caps">Batteries <span class="sub">engagement range first; every figure from parts.toml and assemblies.toml</span></h2>
           <div class="bats">
             {#each [...cls.batteries].sort((a, b) => b.focus - a.focus) as b}
               <div class="bat" class:focus={b.focus}>
                 <header>
-                  <span class="hex"><span>{KIND_MARK[b.component?.kind] ?? 'BAT'}</span></span>
-                  <div><p class="tag">{b.focus ? 'Focus' : 'Battery'}</p><h3>{b.label}</h3><span>{b.component?.name ?? b.component_id}</span></div>
+                  <span class="hex"><span>{b.mark}</span></span>
+                  <div><p class="tag">{b.focus ? 'Focus' : 'Battery'}</p><h3>{b.label}</h3><span>{b.assembly ?? ''}</span></div>
                   <div class="eng"><b class:blank={!b.engage}>{engage(b)}</b>{#if b.engage}<small>km</small>{/if}<i>{b.engage?.how ?? 'engagement range not yet stated'}</i></div>
                 </header>
                 <dl class="rows small">
-                  {#each b.figures as r}<dt>{r.label}</dt><dd class:blank={r.blank}>{row(r)}</dd>{/each}
-                  {#if b.component?.round}<dt>Round</dt><dd>{b.component.round}, {b.component.round_kg} kg at {b.component.velocity_kms} km/s</dd>{/if}
-                  {#if b.component?.energy_gev}<dt>Channel</dt><dd>{b.component.energy_gev} GeV</dd>{/if}
-                  {#if b.derived.round_mj}<dt>A round</dt><dd>{num(b.derived.round_mj, 1)} MJ</dd>{/if}
-                  {#if b.derived.broadside_gj}<dt>Full broadside</dt><dd>{num(b.derived.broadside_gj, 2)} GJ</dd>{/if}
-                  {#if b.derived.channels_per_stack}<dt>Channels per stack</dt><dd>{b.derived.channels_per_stack}</dd>{/if}
-                  {#if b.derived.rounds_per_s}<dt>Rate of fire</dt><dd>{b.derived.rounds_per_s} rounds/s</dd>{/if}
-                  {#if b.magazine}<dt>Magazine</dt><dd>{Object.entries(b.magazine).map(([k, x]) => `${num(x)} ${k}`).join(' · ')}</dd>{/if}
+                  {#each b.figures as r}<dt>{r.label}</dt><dd class:blank={r.text === '—'}>{row(r)}</dd>{/each}
                   {#each Object.entries(b.reach_km ?? {}) as [what, km]}<dt>{what}</dt><dd>{num(km)} km</dd>{/each}
                 </dl>
                 {#if b.fire}<p class="note">{b.fire}</p>{/if}

@@ -1,0 +1,251 @@
+# Parts: what TORMENTA catalogues. Each part states what it is; what it does in an assembly is
+# worked out from these (astrum/armoury.py) and never typed in twice.
+#
+#   [driver.*]   helical guns: the barrel, its velocity and cycle, its mass
+#   [round.*]    the natures a driver fires: mass, package (round and armature), shape
+#   [channel.*]  UREB channels by type and mark: current, linear mass, aperture, trim fittings
+#   [panel.*]    optical panels: aperture and emitters; output, heat and mass follow
+#   [cell.*]     missile cells and tubes, rated by count only
+#   [sensor.*]   fitted sensors
+#   [constants]  what every part shares
+#
+# Figures take the registry's forms: 5.0, { value = 13, est = true }, or "—" when not yet stated.
+
+[constants]
+gun_efficiency = 0.60          # muzzle energy of the package ÷ draw
+gun_heat_share = 0.38          # of the draw, into the hull
+beam_efficiency = 0.60         # beam energy ÷ draw; the rest is heat
+pulse_us = 0.8                 # UREB pulse width
+emitter_kw = 12                # one emitter per 0.61 m² of aperture
+wall_plug = 0.45               # optical output ÷ electrical draw
+panel_t_per_m2 = 0.357         # panel mass per m² of aperture
+wavelength_um = 1.03
+missile_kill_mjm2 = 30         # missile tankage, 3 mm: the working kill fluence
+gamma_per_gev = 1957           # electron γ per GeV
+
+# ---- drivers -----------------------------------------------------------------------------------------
+[driver.cvrsvs-i-15]
+name = "CVRSVS I/15"
+bore_mm = 15
+velocity_kms = 10
+cycle_s = 5
+mass_t = "—"
+natures = ["licvs"]
+notes = "Velocity is scalable: a few hundred kJ a round at the low end of its band."
+
+[driver.cvrsvs-ii-31]
+name = "CVRSVS II/31"
+bore_mm = 31
+barrel_m = 18
+velocity_kms = 10
+cycle_s = 5
+mass_t = 8
+natures = ["spicvlvm", "spicvlvm-commvne"]
+notes = "The picket driver. Vacuum darts only."
+
+[driver.cvrsvs-ii-44]
+name = "CVRSVS II/44"
+bore_mm = 44
+barrel_m = 18
+velocity_kms = 10
+cycle_s = 10
+mass_t = 22
+natures = ["pilvm", "commvnis", "clavvs", "terebra", "vespa", "cvnevs"]
+notes = "The driver the line fires. Common pattern: the gun does not vary between hulls, the round does."
+
+# ---- rounds ------------------------------------------------------------------------------------------
+# package_kg is the round with its armature; it sets the draw and the recoil.
+[round.pilvm]
+name = "PILVM"
+role = "capital vacuum standard"
+mass_kg = 5.0
+package_kg = 6.40
+alloy = "Os·Ir·W·Re"
+density_gcc = 21.29
+length_mm = 645
+diameter_mm = 21.5
+
+[round.commvnis]
+name = "COMMVNIS"
+role = "bulk vacuum, no platinum-group metals"
+mass_kg = 5.0
+package_kg = 6.40
+alloy = "90W·7Ni·3Fe"
+density_gcc = 17.00
+length_mm = 696
+diameter_mm = 23.2
+
+[round.clavvs]
+name = "CLAVVS"
+role = "compact, high-β"
+mass_kg = 5.0
+package_kg = 6.40
+alloy = "Os·Ir·Re"
+density_gcc = 22.30
+length_mm = 636
+diameter_mm = 21.2
+
+[round.terebra]
+name = "TEREBRA"
+role = "entry and bore"
+mass_kg = 5.0
+package_kg = 6.40
+alloy = "Os·Ir·W·Re·Mo"
+density_gcc = 18.99
+length_mm = 671
+diameter_mm = 22.4
+on_target_mj = 180
+
+[round.vespa]
+name = "VESPA"
+role = "sweep: 100 × 50 g sub-rods"
+mass_kg = 5.0
+package_kg = 6.40
+
+[round.cvnevs]
+name = "CVNEVS"
+role = "submerged"
+mass_kg = 5.0
+package_kg = 6.40
+alloy = "W·Ni·Fe, cavitator nose"
+density_gcc = 17.00
+length_mm = 340
+diameter_mm = 34
+on_target_mj = 2.0
+
+[round.spicvlvm]
+name = "SPICVLVM"
+role = "frigate vacuum standard"
+mass_kg = 1.7
+package_kg = 2.30
+alloy = "Os·Ir·W·Re"
+density_gcc = 21.29
+length_mm = 451
+diameter_mm = 15.0
+
+[round.spicvlvm-commvne]
+name = "SPICVLVM COMMVNE"
+role = "frigate bulk vacuum, no platinum-group metals"
+mass_kg = 1.7
+package_kg = 2.30
+alloy = "90W·7Ni·3Fe"
+density_gcc = 17.00
+length_mm = 486
+diameter_mm = 16.2
+
+[round.licvs]
+name = "LICVS"
+role = "needle"
+mass_kg = 0.182
+package_kg = 0.234
+
+# ---- UREB channels -----------------------------------------------------------------------------------
+# One pulse carries current × pulse width of charge; at E GeV that is charge × E of energy.
+[channel.filvm-mk1]
+name = "FILVM Mk.1"
+type = "FILVM, the thread"
+current_ka = 1.1
+spread_pct = 1.0
+t_per_m = 0.30
+aperture_mm = 90
+trim_t = { value = 7.8, est = true }
+
+[channel.filvm-mk2]
+name = "FILVM Mk.2"
+type = "FILVM, the thread"
+current_ka = 1.1
+spread_pct = 0.5
+t_per_m = 0.30
+aperture_mm = 90
+trim_t = { value = 7.8, est = true }
+
+[channel.nervvs-mk1]
+name = "NERVVS Mk.1"
+type = "NERVVS, the sinew"
+current_ka = 6.0
+spread_pct = 1.0
+t_per_m = 0.52
+aperture_mm = 130
+trim_t = 32                      # the capital stack's 640 t over 20 channels
+
+[channel.nervvs-mk2]
+name = "NERVVS Mk.2"
+type = "NERVVS, the sinew"
+current_ka = 6.0
+spread_pct = 0.5
+t_per_m = 0.52
+aperture_mm = 130
+trim_t = { value = 22.9, est = true }
+
+[channel.fvnis-mk1]
+name = "FVNIS Mk.1"
+type = "FVNIS, the cable"
+current_ka = 8.0
+spread_pct = 1.0
+t_per_m = 0.61
+aperture_mm = 150
+trim_t = { value = 23, est = true }
+
+[channel.fvnis-mk2]
+name = "FVNIS Mk.2"
+type = "FVNIS, the cable"
+current_ka = 8.0
+spread_pct = 0.5
+t_per_m = 0.61
+aperture_mm = 150
+trim_t = { value = 23, est = true }
+
+# ---- optical panels ----------------------------------------------------------------------------------
+# aperture_m is the area-equivalent diameter. Output = emitters × 12 kW; draw = output ÷ 0.45;
+# mass = 0.357 t per m² of aperture; spot d = 2.44 λR / D.
+[panel.b]
+name = "PANEL B"
+shape = "regular hexagon, flat bench"
+aperture_m = 2.33
+emitters = 7
+
+[panel.i]
+name = "PANEL I"
+shape = "circular"
+aperture_m = 2.5
+emitters = 8
+
+[panel.c]
+name = "PANEL C"
+shape = "regular hexagon, flat bench: the facet"
+aperture_m = 3.53
+emitters = 16
+
+[panel.ii]
+name = "PANEL II"
+shape = "circular"
+aperture_m = 5.0
+emitters = 32
+
+[panel.iii]
+name = "PANEL III"
+shape = "circular"
+aperture_m = 10.0
+emitters = 128
+
+[panel.iv]
+name = "PANEL IV"
+shape = "circular"
+aperture_m = 20.0
+emitters = 512
+
+# ---- cells and sensors -------------------------------------------------------------------------------
+[cell.missile]
+name = "Missile cell"
+notes = "Ordinary cell missiles carry 50 kt warheads under ordinary authority. A missile is a delivery vehicle, not a weapon."
+
+[cell.tube]
+name = "Tube"
+notes = "Tube warheads are 100 kt and above; only a 4-star approves their use."
+
+[sensor.ir-telescope]
+name = "Infrared telescope, 6.5 m class"
+notes = "Cued and cryogenic, it can see a cold rod; a dome can then range it."
+
+[sensor.blister]
+name = "Active sensor blister"

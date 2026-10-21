@@ -11,7 +11,7 @@ symbol = "TUB"
 [[battery]]
 id = "tubes"
 label = "Tubes"
-component = "tube"
+cell = "tube"
 count = "—"
 notes = "Warheads of 100 kt and above. An armada 1-ring or above attaches her; only a 4-star approves her warheads."
 

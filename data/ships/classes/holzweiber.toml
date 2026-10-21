@@ -12,7 +12,7 @@ symbol = "HLZ"
 [[battery]]
 id = "blisters"
 label = "Active sensor blisters"
-component = "sensor-blister"
+sensor = "blister"
 count = "—"
 notes = "Fitted in place of her two 1.7 kg turrets."
 

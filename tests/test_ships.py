@@ -70,7 +70,7 @@ def test_thrust_agrees_light_and_full(reg):
 
 
 def test_blanks_are_the_authors_list(reg):
-    assert reg.classes["papilion"].blanks == ["Main battery: cycle"]
+    assert reg.classes["papilion"].blanks == []                  # her cycle now comes from the driver
     assert "drive" in reg.classes["aeshna"].blanks
     assert {"sail term", "acceleration", "protection", "complement"} <= set(reg.classes["aeshna"].blanks)
     assert "rate" in reg.classes["salticidae"].blanks
@@ -89,7 +89,7 @@ def bench_class(reg, **drive):
     cls = {"class": {"id": "bench", "name": "Bench", "lineage": "garden"}, "hull": {"mass_t": 50000},
            "drive": {"module": "bench", "dv_kms": 4000, "sized_g": 0.55, **drive},
            "endurance": {"thermal_store_tj": 10.8, "mane_gw": 1.0}}
-    return build_class(cls, reg.rules, reg.components, drives=cat), cat
+    return build_class(cls, reg.rules, reg.armoury, drives=cat), cat
 
 
 def test_bench_report_from_the_data(reg):
@@ -168,12 +168,12 @@ def test_drive_typed_and_direct(reg):
     try:
         doc = {"class": {"id": "t", "name": "T", "lineage": "garden"}, "hull": {"mass_t": 60000},
                "drive": {"module": "bench", "propellant_t": 30000}}
-        typed = build_class(doc, reg.rules, reg.components, drives=cat).drive
+        typed = build_class(doc, reg.rules, reg.armoury, drives=cat).drive
         assert typed["exhaust_kms"].value == 9000 and typed["typed"] == ["exhaust_kms"]
         assert typed["pattern"]["exhaust_kms"] == pytest.approx(10537, abs=1)
         doc["drive"]["module"] = "salvage"
         doc["endurance"] = {"thermal_store_tj": 10.8}
-        sal = build_class(doc, reg.rules, reg.components, drives=cat)
+        sal = build_class(doc, reg.rules, reg.armoury, drives=cat)
         assert not [f for f in sal.findings if f.level == "error"]
         wet = next(r for r in sal.drive["loads"] if r["tanks"] == "full")
         assert wet["per_100kms_t"].value == pytest.approx(1000, abs=1)
@@ -214,12 +214,58 @@ def test_named_quantities():
 def test_strictness(reg):
     doc = {"class": {"id": "x", "name": "X", "lineage": "garden", "rate": "line", "colour": "red"},
            "aim": {"tiers": {"green": 5.0, "rated": 6.0}},
-           "battery": [{"id": "b", "component": "nope", "count": 3, "stacks": 2}],
+           "battery": [{"id": "b", "stack": "nope", "count": 2}, {"id": "c", "stack": "line", "strip": "capital"},
+                       {"id": "d", "mounts": [{"turret": "qvadra-ii-44", "side": "aloft"}]}],
            "reach": {"teleport": 10, "open-woven": "aim"}, "weather": {}}
-    msgs = " | ".join(f.message for f in build_class(doc, reg.rules, reg.components).findings if f.level == "error")
-    for expect in ("unknown key 'colour'", "no worse than a green", "unknown component 'nope'",
-                   "unknown effect 'teleport'", "cannot be set by aim", "unknown section [weather]"):
+    msgs = " | ".join(f.message for f in build_class(doc, reg.rules, reg.armoury).findings if f.level == "error")
+    for expect in ("unknown key 'colour'", "no worse than a green", "unknown stack 'nope'", "fits one of",
+                   "a mount's side is one of", "unknown effect 'teleport'", "cannot be set by aim",
+                   "unknown section [weather]"):
         assert expect in msgs
+
+
+def test_armoury_parts_against_tormenta(reg):
+    """TORMENTA §10 and TELVM §2.1, worked from the parts."""
+    arm = reg.armoury
+    near = lambda got, want, rel=0.01: got == pytest.approx(want, rel=rel)
+    for tid, mass, volley, draw, heat, imp, react in [("bina-ii-31", 29, 170, 384, 146, 46.0, 12.8),
+                                                       ("bina-ii-44", 79, 500, 1067, 406, 128, 35.6),
+                                                       ("qvadra-ii-44", 148, 1000, 2133, 812, 256, 71.2)]:
+        t = arm.turret_figures(tid)
+        assert near(t["mass_t"], mass) and near(t["volley_mj"], volley) and near(t["volley_draw_mj"], draw)
+        assert near(t["volley_heat_mj"], heat) and near(t["volley_impulse_kns"], imp) and near(t["mean_reaction_mn"], react)
+    for sid, salvo, drawn, heat, charge, mass in [("picket", 79.2, 132, 52.8, 5.28, 804), ("line", 730, 1217, 487, 38.4, 1686),
+                                                  ("capital", 4800, 8000, 3200, 96.0, 8760)]:
+        st = arm.stack_figures(sid)
+        assert near(st["salvo_mj"], salvo) and near(st["drawn_mj"], drawn) and near(st["heat_mj"], heat)
+        assert near(st["charge_mc"], charge) and near(st["mass_t"], mass)
+    cap = arm.optical_figures("strip", "capital", 2)
+    assert near(cap["output_mw"], 18.4) and near(cap["heat_mw"], 22.5) and near(cap["mass_t"], 336)
+    assert near(cap["pd"][300], 140, 0.02) and near(cap["pd"][1000], 12, 0.05) and near(cap["pd"][3000], 1.4, 0.02)
+    pk = arm.optical_figures("strip", "picket", 2)
+    assert near(pk["pd"][300], 8.7, 0.02) and near(pk["pd"][1000], 0.8, 0.05)
+    wide = arm.optical_figures("dome", "xxxvii", 1)
+    assert near(wide["output_mw"], 7.10) and near(wide["heat_mw"], 8.69) and near(wide["pd"][1000], 17, 0.02)
+    assert near(arm.optical_figures("dome", "xix", 1)["pd"][300], 27, 0.02)
+
+
+def test_class_batteries_from_the_armoury(reg):
+    """PAPILION and PHALAENA third pattern: what the class documents state, from what the classes fit."""
+    bat = lambda cid, bid: next(b for b in reg.classes[cid].batteries if b["raw"]["id"] == bid)
+    main = bat("papilion", "main")["fig"]
+    assert main["guns"] == 16 and main["by_side"]["dorsal"] == 10 and main["balanced"] == 12
+    assert main["mass_t"] == pytest.approx(602) and main["barbette_m2"] == pytest.approx(590, rel=0.01)
+    assert bat("papilion", "main")["heat_mw"] == pytest.approx(325, rel=0.01)
+    spine = bat("papilion", "spinal")
+    assert spine["fig"]["interval_s"] == 10 and spine["heat_mw"] == pytest.approx(48.7, rel=0.01)
+    assert spine["fig"]["potential_mv"] == pytest.approx(7.7, rel=0.01)
+    ph = bat("phalaena", "spinal")
+    assert ph["fig"]["stacks_per_salvo"] == 4 and ph["heat_mw"] == pytest.approx(21.1, rel=0.01)
+    assert ph["fig"]["potential_mv"] == pytest.approx(7.6, rel=0.01)
+    guns = bat("phalaena", "main")
+    assert guns["fig"]["rounds_per_10s"] == 16 and guns["heat_mw"] == pytest.approx(117, rel=0.01)
+    assert reg.classes["papilion"].derived["reach_from"] == "LINE stack"
+    assert reg.classes["papilion"].beam["dazzle"].value == 40000
 
 
 def test_api_and_scenario_classes():

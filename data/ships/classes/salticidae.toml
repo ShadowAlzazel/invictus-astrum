@@ -20,34 +20,27 @@ mass_t = { value = 22000, approx = true }
 [[battery]]
 id = "domes"
 label = "Domes"
-component = "dome-xix-b"
+dome = "xix-b"
 count = 4
-facets = 76
-power_mw = 6.38
 
 [[battery]]
 id = "strips"
 label = "Strips"
-component = "light-strip"
-count = 12
-facets = 48
-power_mw = 4.61
+strip = "light"
+pairs = 6
 notes = "Dazzles 124 apertures at once; takes a mast by light in ~0.2 s at 1,000 km."
 
 [[battery]]
 id = "missiles"
 label = "Missiles"
-component = "missile-cell"
+cell = "missile"
 count = 84
 
 [[battery]]
 id = "telescopes"
 label = "Telescopes"
-component = "ir-telescope"
+sensor = "ir-telescope"
 count = 2
-
-[reach]
-dazzle = 40000
 
 [[point_defence]]
 bearing = "above or below"

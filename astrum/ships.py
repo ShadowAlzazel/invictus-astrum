@@ -1,7 +1,8 @@
 """Ship classes: the registry the fleet is built from.
 
     data/ships/rules.toml          rates, lineages, crew tiers, walls, beam effects
-    data/ships/components.toml     the parts batteries are built from
+    data/ships/parts.toml          TORMENTA's parts: drivers, rounds, channels, panels, cells, sensors
+    data/ships/assemblies.toml     TELVM's assemblies: turrets, stacks, strips, domes
     data/ships/drives.toml         the drive modules a class's [drive] connects to
     data/ships/classes/<id>.toml   one class per file
 
@@ -30,6 +31,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .armoury import PD_RANGES_KM, Armoury
 from .drives import Catalogue, block_figures, store_figures
 from .model import Finding
 
@@ -37,14 +39,13 @@ BLANK = "—"
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 TIER_ORDER = ("green", "rated", "veteran", "exceptional")       # worst aim to best
 
-SECTIONS = {"class", "hull", "drive", "aim", "battery", "reach", "point_defence", "endurance", "combat", "sensor",
+SECTIONS = {"class", "hull", "drive", "layout", "aim", "battery", "reach", "point_defence", "endurance", "combat", "sensor",
             "tending", "history"}
 CLASS_KEYS = {"id", "name", "lineage", "genus", "epithet", "designation", "rate", "terms", "body", "summary",
               "symbol", "in_classis", "places", "successor_of", "old_rating"}
-BATTERY_KEYS = {"id", "label", "component", "count", "stacks", "mounts", "facets", "cycle_s", "fire",
-                "rounds_per_cycle", "stack_salvo_mj", "power_mw", "magazine", "reach_km", "arrangement", "notes",
-                "engage_km", "focus"}
-PD_KINDS = {"panel", "dome", "strip"}             # optical batteries that answer for point defence
+BATTERY_KEYS = {"id", "label", "count", "fire", "magazine", "reach_km", "arrangement", "notes", "engage_km", "focus",
+                "mounts", "nature", "stack", "firing", "strip", "pairs", "dome", "sides", "panel", "cell", "sensor"}
+LAYOUT_KEYS = {"truss_m", "citadel_m", "wing_at_m", "notes"}
 DRIVE_KEYS = {"module", "count", "hull_mass", "propellant_t", "dv_kms", "sized_g", "cruise_g", "notes"}
 G0 = 9.80665                      # m/s² in a g
 # what every hull should state; missing ones are the author's open list
@@ -207,18 +208,242 @@ class ShipClass:
                 "mass_flow_kgs": thrust * 1e6 / (ve * 1e3)}
 
 
-def _engagement(sc: ShipClass, b: dict, comp: dict, rules: ShipRules, doc: dict, where: str,
+KINDS = ("mounts", "stack", "strip", "dome", "panel", "cell", "sensor")
+KIND_OF = {"mounts": "turret", "stack": "stack", "strip": "strip", "dome": "dome", "panel": "panel",
+           "cell": "cell", "sensor": "sensor"}
+KIND_MARK = {"turret": "GUN", "stack": "SPN", "strip": "OPT", "dome": "DOM", "panel": "OPT", "cell": "MSL",
+             "sensor": "SNS"}
+SIDES = ("dorsal", "ventral", "port", "starboard")
+EPS0 = 8.854e-12
+
+
+def _row(label: str, value, unit: str = "", est: bool = False, note: str = "") -> dict:
+    """A figure for the viewer: a number (shown with its unit), or text."""
+    if isinstance(value, (int, float)):
+        return {"label": label, "unit": unit, "q": Q(float(value), float(value), est=est, note=note).as_dict()}
+    return {"label": label, "unit": unit, "text": value if value is not None else BLANK}
+
+
+def _battery(sc: ShipClass, b: dict, arm: Armoury, rules: ShipRules, doc: dict, where: str,
+             f: list[Finding]) -> dict:
+    """One battery: the assembly it fits, how many, and what that does. Every figure comes from
+    parts.toml and assemblies.toml; the class says only what it fits, where, and how it fires."""
+    kinds = [k for k in KINDS if k in b]
+    out = {"raw": b, "kind": None, "fig": {}, "rows": [], "derived": {}, "layout": None, "heat_mw": None}
+    if len(kinds) != 1:
+        f.append(Finding("error", where, f"a battery fits one of {', '.join(KINDS)}; this one names "
+                                         f"{', '.join(kinds) or 'none'}"))
+        return out
+    key = kinds[0]
+    kind = out["kind"] = KIND_OF[key]
+    count = b.get("count", 1)
+    if key not in ("mounts",) and count != BLANK and not (isinstance(count, int) and not isinstance(count, bool) and count > 0):
+        f.append(Finding("error", where, "count is a whole number above zero, or — if not yet stated"))
+        return out
+    A, P = arm.assemblies, arm.parts
+    rows, d = out["rows"], out["derived"]
+    heaviest = max((q.value for q in _masses(doc).values()), default=None)
+
+    if kind == "turret":
+        mounts = b["mounts"]
+        if not isinstance(mounts, list) or not mounts:
+            f.append(Finding("error", where, "mounts is a list: [{ turret = \"…\", at_m = …, side = \"dorsal\" }, …]"))
+            return out
+        figs, layout = [], []
+        for m in mounts:
+            tid = m.get("turret") if isinstance(m, dict) else None
+            if tid not in A["turret"]:
+                f.append(Finding("error", where, f"unknown turret {tid!r}; turrets are in assemblies.toml"))
+                return out
+            side = m.get("side")
+            if side is not None and side not in SIDES:
+                f.append(Finding("error", where, f"a mount's side is one of {SIDES}"))
+            for k in set(m) - {"turret", "at_m", "side"}:
+                f.append(Finding("error", where, f"a mount has turret, at_m and side; not {k!r}"))
+            t = arm.turret_figures(tid, b.get("nature"))
+            figs.append((t, side))
+            layout.append({"turret": tid, "name": t["name"], "guns": t["guns"], "side": side, "at_m": m.get("at_m")})
+        nature = b.get("nature")
+        drivers = {t["driver"] for t, _ in figs}
+        if len(drivers) > 1:
+            f.append(Finding("warning", where, "mounts of different drivers in one battery: rounds and cycle are the first's"))
+        if nature and nature not in (P["driver"][next(iter(drivers))].get("natures") or []):
+            f.append(Finding("error", where, f"{next(iter(drivers))} does not fire {nature!r}"))
+        t0 = figs[0][0]
+        rnd = t0["round"]
+        guns = sum(t["guns"] for t, _ in figs)
+        by_side = {s: sum(t["guns"] for t, sd in figs if sd == s) for s in SIDES}
+        per10 = sum(t["rounds_per_10s"] for t, _ in figs)
+        balanced = 2 * min(by_side["dorsal"], by_side["ventral"]) if by_side["dorsal"] and by_side["ventral"] else None
+        mass = sum(t["mass_t"] for t, _ in figs) if all(t["mass_t"] is not None for t, _ in figs) else None
+        ring = sum(t["ring_m2"] for t, _ in figs if t["ring_m2"])
+        counts = {}
+        for t, _ in figs:
+            counts[t["name"]] = counts.get(t["name"], 0) + 1
+        out["fig"] = {"guns": guns, "by_side": by_side, "rounds_per_10s": per10, "round": rnd, "cycle_s": t0["cycle_s"],
+                      "mounts": len(figs), "mass_t": mass, "barbette_m2": ring, "balanced": balanced}
+        out["layout"] = {"mounts": layout}
+        out["count"] = guns
+        sides = " · ".join(f"{n} {s}" for s, n in by_side.items() if n)
+        rows += [_row("Mounts", " · ".join(f"{n} × {name}" for name, n in counts.items())),
+                 _row("Guns", f"{guns}: {sides}" if sides else guns)]
+        if rnd:
+            out["heat_mw"] = per10 * rnd["heat_mj"] / 10
+            d.update({"round_mj": rnd["energy_mj"], "broadside_gj": rnd["energy_mj"] * guns / 1e3,
+                      "rounds_per_s": per10 / 10})
+            rows += [_row("Round", f"{rnd['name']}, {rnd['mass_kg']:g} kg at {P['driver'][t0['driver']]['velocity_kms']:g} km/s"),
+                     _row("A round", rnd["energy_mj"], "MJ"),
+                     _row("Cycle, each gun", t0["cycle_s"], "s"),
+                     _row("Rounds per 10 s", per10),
+                     _row("Full broadside", f"{guns} guns, {rnd['energy_mj'] * guns / 1e3:.2f} GJ")]
+            if balanced:
+                rows.append(_row("Balanced broadside", f"{balanced} guns, {rnd['energy_mj'] * balanced / 1e3:.2f} GJ"))
+            imp = rnd["impulse_kns"] * guns
+            rows += [_row("Drawn, full broadside", rnd["draw_mj"] * guns / 1e3, "GJ"),
+                     _row("Heat into hull, full broadside", rnd["heat_mj"] * guns / 1e3, "GJ"),
+                     _row("Heat, sustained fire", out["heat_mw"], "MW"),
+                     _row("Recoil, full broadside", imp, "kN·s")]
+            if heaviest:
+                rows.append(_row("Δv per full broadside, full load", imp * 1e3 / (heaviest * 1e3), "m/s"))
+        if mass is not None:
+            rows.append(_row("Battery mass", mass, "t", est=any(t["mass_est"] for t, _ in figs)))
+        if ring:
+            rows.append(_row("Barbette rings", ring, "m²"))
+        mag = b.get("magazine")
+        if isinstance(mag, dict) and rnd:
+            for fit, n in mag.items():
+                if isinstance(n, int):
+                    rows.append(_row(f"Magazine, {fit}", f"{n:,} rounds · {n * rnd['mass_kg'] / 1e3:,.1f} t · "
+                                                         f"{n // guns:,} full broadsides"))
+
+    elif kind == "stack":
+        sid = b["stack"]
+        if sid not in A["stack"]:
+            f.append(Finding("error", where, f"unknown stack {sid!r}; stacks are in assemblies.toml"))
+            return out
+        s = arm.stack_figures(sid)
+        n = count if isinstance(count, int) else 1
+        firing = b.get("firing", "together")
+        if firing not in ("together", "alternate"):
+            f.append(Finding("error", where, "firing is \"together\" or \"alternate\""))
+            firing = "together"
+        interval = s["cycle_s"] / n if firing == "alternate" else s["cycle_s"]
+        per_salvo = 1 if firing == "alternate" else n
+        out["heat_mw"] = s["heat_mj"] * per_salvo / interval
+        half_beam = rules.rates.get(sc.rate or "", {}).get("half_beam_m")
+        q = s["charge_mc"] * per_salvo * 1e-3
+        potential = q / (4 * math.pi * EPS0 * half_beam) / 1e6 if half_beam else None
+        out["fig"] = {**s, "stacks": n, "firing": firing, "interval_s": interval, "stacks_per_salvo": per_salvo,
+                      "potential_mv": potential}
+        out["count"] = n * s["channels"]
+        out["layout"] = {"stacks": n, "trim_deg": s["trim_deg"], "length_m": s["length_m"]}
+        d["channels_per_stack"] = s["channels"]
+        rows += [_row("Stacks", f"{n} × {s['name']}"),
+                 _row("Channels", f"{n * s['channels']} × {s['channel_name']}, {s['channels']} per stack"),
+                 _row("Energy", f"{s['energy_gev']:g} GeV: {s['length_m']:g} m at {A['stack'][sid]['gradient_mev_m']} MeV/m · γ {s['gamma']:,.0f}"),
+                 _row("A pulse", f"{s['pulse_mj']:.1f} MJ · {s['pulse_mc']:.2f} mC"),
+                 _row("Stack salvo", s["salvo_mj"], "MJ"),
+                 _row("Drawn, a stack salvo", s["drawn_mj"], "MJ"),
+                 _row("Heat into hull, a stack salvo", s["heat_mj"], "MJ"),
+                 _row("Cycle, each channel", s["cycle_s"], "s"),
+                 _row("Fires", f"{'stacks alternate: ' if firing == 'alternate' else ''}"
+                               f"{per_salvo} stack salvo{'s' if per_salvo > 1 else ''} every {interval:g} s"),
+                 _row("Heat, sustained fire", out["heat_mw"], "MW"),
+                 _row("Charge a salvo", s["charge_mc"] * per_salvo, "mC")]
+        if potential:
+            rows.append(_row("Hull potential, unbled", potential, "MV"))
+        rows += [_row("Trim", f"±{s['trim_deg']:g}° per channel, independent"),
+                 _row("Largest rated spot", f"{s['channels']} channels, one stack"),
+                 _row("Stack mass", s["mass_t"], "t", est=s["mass_est"]),
+                 _row("Battery mass", s["mass_t"] * n, "t", est=s["mass_est"])]
+
+    elif kind in ("strip", "dome", "panel"):
+        aid = b[key]
+        table = A[kind] if kind != "panel" else P["panel"]
+        if aid not in table:
+            f.append(Finding("error", where, f"unknown {kind} {aid!r}"))
+            return out
+        n = count if isinstance(count, int) else 1
+        if kind == "strip":
+            pairs = b.get("pairs", 1)
+            if not (isinstance(pairs, int) and pairs > 0):
+                f.append(Finding("error", where, "pairs is a whole number above zero: strips are fitted in pairs"))
+                pairs = 1
+            n = 2 * pairs
+            o = arm.optical_figures("strip", aid, n)
+        elif kind == "dome":
+            o = arm.optical_figures("dome", aid, n)
+        else:
+            p = arm.panel_figures(aid)
+            o = {"name": p["name"], "panel": p, "panels": n, "output_mw": p["output_mw"] * n, "draw_mw": p["draw_mw"] * n,
+                 "heat_mw": p["heat_mw"] * n, "mass_t": p["mass_t"] * n, "tracks": n, "dazzle_km": None,
+                 "pd": {r: n * arm.kills_per_s(p["output_mw"], p["aperture_m"], 1, r) for r in PD_RANGES_KM},
+                 "pd_how": "every panel a track"}
+        out["fig"] = o
+        out["heat_mw"] = o["heat_mw"]
+        out["count"] = o["panels"] if kind == "strip" else n
+        sides = b.get("sides")
+        if isinstance(sides, dict) and sum(v for v in sides.values() if isinstance(v, int)) != n:
+            f.append(Finding("error", where, "sides must add up to the count"))
+        out["layout"] = {"kind": kind, "sides": sides, "count": n}
+        unit = {"strip": "strips", "dome": "domes", "panel": "panels"}[kind]
+        rows += [_row("Fitted", f"{n} × {o['name']}" + (f", {b.get('pairs', 1)} pair{'s' if b.get('pairs', 1) > 1 else ''}" if kind == "strip" else "")
+                      + (f": {', '.join(f'{v} {k}' for k, v in sides.items())}" if isinstance(sides, dict) else "")),
+                 _row("Panels" if kind != "dome" else "Facets", f"{o['panels']} × {o['panel']['name']}, {o['panel']['aperture_m']:g} m"),
+                 _row("Optical output", o["output_mw"], "MW"),
+                 _row("Electrical draw", o["draw_mw"], "MW"),
+                 _row("Heat into hull", o["heat_mw"], "MW"),
+                 _row("Independent tracks", o["tracks"]),
+                 _row("Spot, one panel", o["panel"]["spot_m_per_1000km"], "m per 1,000 km")]
+        if kind == "dome" and o.get("full_phase_aperture_m"):
+            rows.append(_row("Aperture, full phase", o["full_phase_aperture_m"], "m, on its own axis"))
+        if o.get("dazzle_km"):
+            rows.append(_row("Dazzles an open aperture to", o["dazzle_km"], "km"))
+        # a dome kills on the bearing it faces: quoted per dome, on its own axis, never summed
+        pd = o.get("pd_per_dome") if kind == "dome" else o["pd"]
+        for r, k in sorted(pd.items()):
+            rows.append(_row(f"Missile kills at {r:,} km" + (", one dome on its axis" if kind == "dome" else ""), k, "a second"))
+        rows.append(_row("Mass", o["mass_t"], "t"))
+        out["pd"] = pd
+
+    else:                                                   # cells and sensors: by count only
+        pid = b[key]
+        if pid not in P[kind]:
+            f.append(Finding("error", where, f"unknown {kind} {pid!r}"))
+            return out
+        part = P[kind][pid]
+        out["fig"] = {"name": part["name"], "notes": part.get("notes", "")}
+        out["count"] = count if isinstance(count, int) else None
+        if pid == "tube":
+            out["mark"] = "TUB"
+        rows += [_row("Fitted", f"{count if isinstance(count, int) else BLANK} × {part['name']}")]
+        if part.get("notes"):
+            rows.append(_row("Note", part["notes"]))
+    return out
+
+
+def _masses(doc: dict) -> dict:
+    m = quantity((doc.get("hull") or {}).get("mass_t"), "", [])
+    if isinstance(m, dict):
+        return {k: q for k, q in m.items() if q.lo is not None}
+    return {"": m} if isinstance(m, Q) and m.lo is not None else {}
+
+
+def _engagement(sc: ShipClass, bat: dict, rules: ShipRules, doc: dict, where: str,
                 f: list[Finding]) -> dict | None:
-    """The range a battery fights at, and what gives it: engage_km as stated; for a spinal battery
-    the usable reach of its first effect at a rated crew; for a gun its first stated reach; for an
-    optical battery the farthest its point defence is stated."""
+    """The range a battery fights at, and what gives it: engage_km as stated; for a stack the usable
+    reach of its first effect at a rated crew; for guns their first stated reach; for an optical
+    battery the farthest the class states its point defence, else the farthest it kills a missile
+    a second."""
+    b = bat["raw"]
     if "engage_km" in b:
         q = quantity(b["engage_km"], f"{where} engage_km", f)
         return {"q": q, "how": "stated"} if isinstance(q, Q) and q.lo is not None else None
-    kind = comp.get("kind")
-    if kind == "spinal-channel":
+    kind = bat["kind"]
+    if kind == "stack":
+        reach = bat["fig"].get("reach") or {}
         for e, spec in rules.effects.items():
-            if e in sc.beam:
+            if e in reach and e in sc.beam:
                 q, by = sc.reach_km(rules, e, "rated")
                 if q is not None:
                     return {"q": q, "how": f"{spec['label'].lower()}, rated crew ({by})"}
@@ -228,10 +453,13 @@ def _engagement(sc: ShipClass, b: dict, comp: dict, rules: ShipRules, doc: dict,
         q = quantity(km, where, [])
         if isinstance(q, Q) and q.lo is not None:
             return {"q": q, "how": what}
-    if kind in PD_KINDS:
+    if kind in ("strip", "dome", "panel"):
         ats = [p["at_km"] for p in doc.get("point_defence", []) if isinstance(p.get("at_km"), (int, float))]
         if ats:
             return {"q": Q(float(max(ats)), float(max(ats))), "how": "point defence"}
+        ok = [r for r, k in (bat.get("pd") or {}).items() if k >= 1]
+        if ok:
+            return {"q": Q(float(max(ok)), float(max(ok))), "how": "kills a missile a second or more"}
     return None
 
 
@@ -431,7 +659,7 @@ def _drive(sc: ShipClass, doc: dict, rules: ShipRules, cat: Catalogue, f: list[F
     sc.drive = out
 
 
-def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "",
+def build_class(doc: dict, rules: ShipRules, arm: Armoury, source: str = "",
                 drives: Catalogue | None = None) -> ShipClass:
     f: list[Finding] = []
     c = doc.get("class", {})
@@ -478,8 +706,33 @@ def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "",
         if sc.aim[a].lo < sc.aim[b].hi:
             f.append(Finding("error", where, f"[aim] a {b} crew must aim no worse than a {a} crew"))
 
-    # beam reaches
-    for e, v in (doc.get("reach") or {}).items():
+    # batteries: what each fits, from the armoury
+    seen = set()
+    for i, b in enumerate(doc.get("battery", [])):
+        bw = f"{where} battery.{b.get('id', i)}"
+        for k in set(b) - BATTERY_KEYS:
+            f.append(Finding("error", bw, f"unknown key {k!r}"))
+        if b.get("id") in seen:
+            f.append(Finding("error", bw, "battery id is used twice"))
+        seen.add(b.get("id"))
+        if "focus" in b and not isinstance(b["focus"], bool):
+            f.append(Finding("error", bw, "focus is true or false"))
+        sc.batteries.append(_battery(sc, b, arm, rules, doc, bw, f))
+    focused = [b for b in sc.batteries if b["raw"].get("focus") is True]
+    if len(focused) > 1:
+        f.append(Finding("error", where, "only one battery can be the focus"))
+    for i, b in enumerate(sc.batteries):                # the focus: as stated, else the battery listed first
+        b["focus"] = b in focused[:1] if focused else i == 0
+    layout = doc.get("layout") or {}
+    for k in set(layout) - LAYOUT_KEYS:
+        f.append(Finding("error", where, f"[layout] unknown key {k!r}"))
+
+    # beam reaches: as the class states them, else as its spinal stack is rated
+    stated = doc.get("reach")
+    spine = next((b for b in sorted(sc.batteries, key=lambda b: not b["focus"]) if b["kind"] == "stack" and b["fig"]), None)
+    source_reach = stated if stated is not None else (spine["fig"]["reach"] if spine else {})
+    sc.derived["reach_from"] = "class" if stated is not None else (spine["fig"]["name"] if spine else None)
+    for e, v in source_reach.items():
         if e not in rules.effects:
             f.append(Finding("error", where, f"[reach] unknown effect {e!r}; effects are in rules.toml"))
             continue
@@ -494,49 +747,13 @@ def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "",
             sc.beam[e] = q
         elif q is not None:
             f.append(Finding("error", where, f"[reach] {e} needs a distance in km"))
+    dazzle = [b["fig"].get("dazzle_km") for b in sc.batteries if b["kind"] in ("strip", "dome") and b["fig"].get("dazzle_km")]
+    if dazzle and "dazzle" not in sc.beam and "dazzle" in rules.effects:
+        sc.beam["dazzle"] = Q(max(dazzle), max(dazzle))
     if any(rules.effects[e].get("wall") for e in sc.beam) and "rated" not in sc.aim:
         f.append(Finding("warning", where, "reaches limited by aim need [aim] rated_urad to be read"))
-
-    # batteries, with what physics gives for free
-    seen = set()
-    for i, b in enumerate(doc.get("battery", [])):
-        bw = f"{where} battery.{b.get('id', i)}"
-        for k in set(b) - BATTERY_KEYS:
-            f.append(Finding("error", bw, f"unknown key {k!r}"))
-        if b.get("id") in seen:
-            f.append(Finding("error", bw, "battery id is used twice"))
-        seen.add(b.get("id"))
-        comp = components.get(b.get("component"))
-        if comp is None:
-            f.append(Finding("error", bw, f"unknown component {b.get('component')!r}"))
-            comp = {}
-        count = b.get("count")
-        if count != BLANK and not (isinstance(count, int) and count > 0):
-            f.append(Finding("error", bw, "count is a whole number above zero, or — if not yet stated"))
-            count = None
-        out = {"raw": b, "component": comp, "derived": {}}
-        d = out["derived"]
-        if isinstance(count, int) and b.get("stacks"):
-            if count % b["stacks"]:
-                f.append(Finding("error", bw, f"{count} channels do not divide into {b['stacks']} stacks"))
-            else:
-                d["channels_per_stack"] = count // b["stacks"]
-        if comp.get("round_kg") and comp.get("velocity_kms"):
-            mj = 0.5 * comp["round_kg"] * (comp["velocity_kms"] * 1e3) ** 2 / 1e6
-            d["round_mj"] = mj
-            if isinstance(count, int):
-                d["broadside_gj"] = mj * count / 1e3
-            if isinstance(b.get("rounds_per_cycle"), int) and isinstance(b.get("cycle_s"), (int, float)):
-                d["rounds_per_s"] = b["rounds_per_cycle"] / b["cycle_s"]
-        if "focus" in b and not isinstance(b["focus"], bool):
-            f.append(Finding("error", bw, "focus is true or false"))
-        out["engage"] = _engagement(sc, b, comp, rules, doc, bw, f)
-        sc.batteries.append(out)
-    focused = [b for b in sc.batteries if b["raw"].get("focus") is True]
-    if len(focused) > 1:
-        f.append(Finding("error", where, "only one battery can be the focus"))
-    for i, b in enumerate(sc.batteries):                # the focus: as stated, else the battery listed first
-        b["focus"] = b in focused[:1] if focused else i == 0
+    for i, bat in enumerate(sc.batteries):
+        bat["engage"] = _engagement(sc, bat, rules, doc, f"{where} battery.{bat['raw'].get('id', i)}", f) if bat["kind"] else None
 
     # hull: thrust from mass and acceleration, light and full should agree
     hull = doc.get("hull", {})
@@ -587,7 +804,7 @@ def build_class(doc: dict, rules: ShipRules, components: dict, source: str = "",
 @dataclass
 class ShipRegistry:
     rules: ShipRules
-    components: dict
+    armoury: Armoury
     drives: Catalogue
     classes: dict[str, ShipClass]
     findings: list[Finding]
@@ -596,9 +813,13 @@ class ShipRegistry:
     def load(folder: str | Path) -> "ShipRegistry":
         folder = Path(folder)
         rules = ShipRules.load(folder / "rules.toml")
-        with (folder / "components.toml").open("rb") as f:
-            components = tomllib.load(f).get("component", {})
         findings: list[Finding] = []
+        try:
+            armoury = Armoury.load(folder)
+        except tomllib.TOMLDecodeError as e:
+            findings.append(Finding("error", "parts.toml / assemblies.toml", str(e)))
+            armoury = Armoury()
+        findings += armoury.findings
         try:
             drives = Catalogue.load(folder / "drives.toml")
         except tomllib.TOMLDecodeError as e:
@@ -613,7 +834,7 @@ class ShipRegistry:
             except tomllib.TOMLDecodeError as e:
                 findings.append(Finding("error", p.name, str(e)))
                 continue
-            sc = build_class(doc, rules, components, p.name, drives)
+            sc = build_class(doc, rules, armoury, p.name, drives)
             if sc.id and sc.id != p.stem:
                 sc.findings.append(Finding("error", sc.id, f"id must match its file name, {p.stem!r}"))
             if sc.id in classes:
@@ -624,10 +845,7 @@ class ShipRegistry:
             if succ and succ not in classes:
                 sc.findings.append(Finding("error", sc.id, f"successor_of names unknown class {succ!r}"))
             findings += sc.findings
-        for cid, comp in components.items():
-            if comp.get("facet") and comp["facet"] not in components:
-                findings.append(Finding("error", f"component {cid}", f"facet {comp['facet']!r} is not a component"))
-        return ShipRegistry(rules, components, drives, classes, findings)
+        return ShipRegistry(rules, armoury, drives, classes, findings)
 
     @property
     def ok(self) -> bool:
@@ -697,15 +915,22 @@ def class_detail(reg: ShipRegistry, sc: ShipClass) -> dict:
              for t in tiers}
     batteries = []
     for b in sc.batteries:
-        raw = b["raw"]
-        rest = {k: v for k, v in raw.items() if k not in ("id", "label", "component", "notes", "fire", "arrangement", "reach_km", "magazine")}
+        raw, fig = b["raw"], b["fig"]
+        spread = None
+        if b["kind"] == "stack" and fig.get("spread"):
+            sp = fig["spread"]
+            spread = {"spots": sp.get("spots", []), "channels": fig["channels"],
+                      "rows": [{"effect": e, "label": rules.effects[e]["label"], "km": sp[e]}
+                               for e in rules.effects if e in sp]}
         batteries.append({
-            "id": raw.get("id"), "label": raw.get("label", raw.get("id")), "component": b["component"],
-            "component_id": raw.get("component"), "figures": figures(rest, sc.id),
+            "id": raw.get("id"), "label": raw.get("label", raw.get("id")), "kind": b["kind"],
+            "mark": b.get("mark") or KIND_MARK.get(b["kind"], "BAT"), "assembly": fig.get("name"),
+            "figures": b["rows"], "count": b.get("count"), "heat_mw": b["heat_mw"], "layout": b["layout"],
             "fire": raw.get("fire"), "arrangement": raw.get("arrangement"), "notes": raw.get("notes"),
-            "reach_km": raw.get("reach_km"), "magazine": raw.get("magazine"), "derived": b["derived"],
-            "engage": {"q": b["engage"]["q"].as_dict(), "how": b["engage"]["how"]} if b["engage"] else None,
-            "focus": b["focus"], "count": raw.get("count") if isinstance(raw.get("count"), int) else None,
+            "reach_km": raw.get("reach_km"), "derived": b["derived"], "spread": spread,
+            "pd": {str(k): v for k, v in (b.get("pd") or {}).items()},
+            "engage": {"q": b["engage"]["q"].as_dict(), "how": b["engage"]["how"]} if b.get("engage") else None,
+            "focus": b["focus"],
         })
     pd = [{"bearing": p.get("bearing", "best bearing"), "at_km": p.get("at_km"),
            "kills_per_s": _json(quantity(p.get("kills_per_s"), sc.id, []))} for p in sc.doc.get("point_defence", [])]
@@ -719,6 +944,8 @@ def class_detail(reg: ShipRegistry, sc: ShipClass) -> dict:
         "aim": {"tiers": {t: sc.aim[t].as_dict() for t in tiers},
                 "demasted": _json(quantity(sc.doc.get("aim", {}).get("demasted_urad"), sc.id, []))},
         "walls": walls, "reach": reach, "batteries": batteries, "point_defence": pd,
+        "reach_from": sc.derived.get("reach_from"), "layout": sc.doc.get("layout"),
+        "armament_heat_mw": sum(b["heat_mw"] for b in sc.batteries if b["heat_mw"]) or None,
         "endurance": figures(sc.doc.get("endurance", {}), sc.id),
         "combat": figures(sc.doc.get("combat", {}), sc.id),
         "tending": figures(sc.doc.get("tending", {}), sc.id),
@@ -733,7 +960,8 @@ def class_detail(reg: ShipRegistry, sc: ShipClass) -> dict:
 def rules_dict(reg: ShipRegistry) -> dict:
     r = reg.rules
     return {"rates": r.rates, "lineages": r.lineages, "crew": r.crew, "walls": r.walls, "effects": r.effects,
-            "drive": r.drive, "drives": catalogue_dict(reg.drives), "tiers": list(TIER_ORDER)}
+            "drive": r.drive, "drives": catalogue_dict(reg.drives), "tiers": list(TIER_ORDER),
+            "armoury": {"parts": reg.armoury.parts, "assemblies": reg.armoury.assemblies, "constants": reg.armoury.k}}
 
 
 def catalogue_dict(cat: Catalogue) -> dict:

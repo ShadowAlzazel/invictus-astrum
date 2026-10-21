@@ -1,5 +1,7 @@
 // Reading the canon's figures: { lo, hi, est, approx, note } as the server sends them.
-const num = (v) => Number(v).toLocaleString('en-US', { maximumFractionDigits: Math.abs(v) < 10 ? 2 : Math.abs(v) < 1000 ? 1 : 0 });
+const num = (v) => (v !== 0 && Math.abs(v) < 0.1
+  ? Number(v).toLocaleString('en-US', { maximumSignificantDigits: 2 })
+  : Number(v).toLocaleString('en-US', { maximumFractionDigits: Math.abs(v) < 10 ? 2 : Math.abs(v) < 1000 ? 1 : 0 }));
 
 export function q(x, unit = '') {
   if (x == null) return '—';

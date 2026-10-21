@@ -357,7 +357,7 @@ def create_app(config: dict | None = None) -> FastAPI:
         reg = world.ships
         if reg is None:
             raise HTTPException(503, "the ship registry did not load")
-        return {"version": world.version, "rules": rules_dict(reg), "components": reg.components,
+        return {"version": world.version, "rules": rules_dict(reg),
                 "classes": [class_summary(reg, sc) for sc in reg.classes.values()],
                 "findings": [f.__dict__ for f in reg.findings]}
 

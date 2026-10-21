@@ -20,7 +20,7 @@ wingspan_m = { spread = 80, folded = 38 }
 mass_t = { value = 19340, est = true }
 acceleration_ms2 = { value = 6.16, est = true }
 material = "MAJOR-6 woven silk"
-protection_kgm2 = { citadel = 200 }
+protection_kgm2 = { citadel = 200, bumper = 18 }
 complement = { note = "reduced; damage-control weaving, no splice party" }
 
 [drive]
@@ -33,45 +33,38 @@ rated_urad = 5.5
 demasted_urad = 15
 tiers = { green = [6.5, 7.0], rated = 5.5, veteran = 5.0, exceptional = 4.0 }
 
+[layout]                     # stations along the hull, metres from the bow; mount stations est.
+truss_m = 70
+citadel_m = [70, 220]
+wing_at_m = 95
+
 [[battery]]
 id = "spinal"
 label = "Spinal battery"
-component = "filvm-mk2"
-count = 24
-stacks = 4
-cycle_s = 10
-fire = "all four stacks every 10 s: four patterns, four targets, up to 24 spots"
-stack_salvo_mj = 79.2
+stack = "picket"
+count = 4
+firing = "together"
+fire = "Four patterns, four targets, up to 24 spots a salvo."
 
 [[battery]]
 id = "main"
 label = "Main battery"
-component = "cvrsvs-ii-31"
-count = 8
-mounts = 4
-rounds_per_cycle = 16
-cycle_s = 10
+mounts = [
+  { turret = "bina-ii-31", side = "dorsal", at_m = 120 },
+  { turret = "bina-ii-31", side = "dorsal", at_m = 150 },
+  { turret = "bina-ii-31", side = "ventral", at_m = 120 },
+  { turret = "bina-ii-31", side = "ventral", at_m = 150 },
+]
+arrangement = "Four BINA: two dorsal, two ventral; dorsal and ventral doubles wound opposite hands."
 magazine = { standard = 35000 }
 reach_km = { "dodgeable outside" = 47 }
 
 [[battery]]
 id = "optical"
 label = "PICKET strip pair"
-component = "picket-strip"
-count = 2
-facets = 12
-power_mw = 4.61
+strip = "picket"
+pairs = 1
 notes = "Dazzles without breaking cold; ranges to 0.15 m inside 5,000 km."
-
-[reach]
-open-woven = 1550
-open-titanium = 1900
-shatter-titanium = 2490
-mast = { value = 5450, note = "four at once" }
-radiator = 7370
-mane = 8450
-crew = "aim"
-dazzle = 40000
 
 [[point_defence]]
 at_km = 300

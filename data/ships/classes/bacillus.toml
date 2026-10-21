@@ -26,11 +26,8 @@ dv_kms = 4000
 [[battery]]
 id = "main"
 label = "Main battery"
-component = "cvrsvs-i-15"
-count = 12
-mounts = 6
-rounds_per_cycle = 24
-cycle_s = 10
+mounts = [{ turret = "bina-i-15" }, { turret = "bina-i-15" }, { turret = "bina-i-15" },
+          { turret = "bina-i-15" }, { turret = "bina-i-15" }, { turret = "bina-i-15" }]
 arrangement = "12 guns on two-thirds of the horizon; 8 forward; 4 aft"
 magazine = { standard = 26000 }
 reach_km = { "against warships, up to" = 70, "civil craft at 1 m/s²" = 77, "civil craft at 0.1 m/s²" = 245, "civil craft at 0.01 m/s²" = 775 }
@@ -39,16 +36,14 @@ notes = "Holes every hull in service; punctures, does not destroy. About 3 hours
 [[battery]]
 id = "optical"
 label = "LIGHT strips"
-component = "light-strip"
-count = 4
-facets = 16
-power_mw = 1.54
+strip = "light"
+pairs = 2
 notes = "Ranges to ~2,500 km."
 
 [[battery]]
 id = "missiles"
 label = "Missiles"
-component = "missile-cell"
+cell = "missile"
 count = "—"
 
 [[point_defence]]

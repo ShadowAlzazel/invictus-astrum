@@ -19,7 +19,7 @@ mass_t = { base = 20000, loaded = 50000 }
 [[battery]]
 id = "optical"
 label = "Point defence"
-component = "panel-i"
+panel = "i"
 count = 20
 
 [[point_defence]]
