@@ -165,7 +165,7 @@ def test_sol_demo_fleet(reg):
     world = app.state.world
     sc = world.scenarios["sol-demo"]
     f = world.fleet(sc)
-    assert len(f.ships) == 106 and not f.findings
+    assert len(f.ships) == 109 and not f.findings
     c = TestClient(app)
     meta = c.get("/api/meta").json()
     kiki = next(u for u in meta["scenarios"][0]["contacts"] if u["id"] == "kiki-1")
@@ -347,7 +347,9 @@ position = { body = "earth" }
     assert (k["flight"].faction, k["flight"].affiliation) == ("avc", "friend")
     assert (k["ship-a"].faction, k["ship-a"].hull_number, k["ship-a"].own_faction) == ("avc", "BBC-382", False)
     assert k["ship-b"].faction == "other" and k["ship-b"].own_faction
-    assert load_factions(ROOT / "data" / "factions.toml")["avc"]["prefix"] == "AVC"
+    factions = load_factions(ROOT / "data" / "factions.toml")
+    assert factions["avc"]["prefix"] == "AVC" and not factions["avc"]["branch_of"]
+    assert factions["aag"]["prefix"] == "AAG" and factions["aag"]["branch_of"] == "ARCVS Void Command"
     (tmp_path / "bad.toml").write_text('[scenario]\nid = "b"\nsystem = "sol"\n[[contact]]\nid = "x"\nposition = { body = "earth" }\n')
     with pytest.raises(ValueError, match="needs an affiliation"):
         load_scenario(tmp_path / "bad.toml")
@@ -572,7 +574,7 @@ def test_the_map_is_sent_changes_that_add_up():
         ws.send_json({**req, "t": t + 60})
         first = ws.receive_json()
         ships = first["ships"]
-        assert first["full"] and len(ships) == 106
+        assert first["full"] and len(ships) == 109
         for k in range(1, 6):
             ws.send_json({**req, "t": t + 60 + 30 * k})
             m = ws.receive_json()
@@ -761,7 +763,7 @@ def test_the_simulation_runs_in_a_process_of_its_own(run_ahead):
         with c.websocket_connect("/ws") as ws:
             ws.send_json({**req, "t": sol + 60})
             first = ws.receive_json()
-            assert first["full"] and len(first["ships"]) == 106 and "kiki" in first["contacts"]
+            assert first["full"] and len(first["ships"]) == 109 and "kiki" in first["contacts"]
             r = c.post("/api/order", json={**req, "unit": "kiki-1", "t": sol + 60, "g": 0.4,
                                            "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
             assert r.status_code == 200 and r.json()["ship"]["goal"]["eta_s"] > 0

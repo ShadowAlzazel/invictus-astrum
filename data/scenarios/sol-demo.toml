@@ -1345,6 +1345,42 @@ formation = "luna-patrol"
 class = "bacillus"
 position = { body = "earth", offset_km = [-30000, -51962, 0] }
 
+# ---- the Jupiter Astrum Defence Force (AAG): a branch of the same service, not of the Classis ----
+# A watch flight around Jupiter, a million km out: her VIGIL and two cutters. Placeholder callsigns.
+[[contact]]
+id = "jove"
+callsign = "Jove flight"
+affiliation = "friend"
+faction = "aag"
+echelon = "flight"
+
+[[contact]]
+id = "jove-1"
+callsign = "Jove Vigil"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove"
+class = "salticidae"
+position = { body = "jupiter", offset_km = [0, 1000000, 0] }
+
+[[contact]]
+id = "jove-2"
+callsign = "Jove 2"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove"
+class = "bacillus"
+position = { body = "jupiter", offset_km = [3000, 1000000, 500] }
+
+[[contact]]
+id = "jove-3"
+callsign = "Jove 3"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove"
+class = "bacillus"
+position = { body = "jupiter", offset_km = [-3000, 1000000, -500] }
+
 # ---- the local picture --------------------------------------------------------------------------------
 [[contact]]
 id = "g1"

@@ -117,19 +117,25 @@ class Contact:
 
 
 def load_factions(path: str | Path) -> dict[str, dict]:
-    """{id: {name, prefix}} from data/factions.toml; none if the file is not there."""
+    """{id: {name, prefix, branch_of}} from data/factions.toml (branch_of: the name of the faction
+    it is a branch of, if it is one); none if the file is not there."""
     path = Path(path)
     if not path.exists():
         return {}
     with path.open("rb") as f:
         doc = tomllib.load(f)
     out, problems = {}, []
-    for fid, spec in (doc.get("faction") or {}).items():
-        for k in set(spec) - {"name", "prefix", "notes"}:
+    every = doc.get("faction") or {}
+    for fid, spec in every.items():
+        for k in set(spec) - {"name", "prefix", "branch_of", "notes"}:
             problems.append(f"faction {fid}: unknown key {k!r}")
         if not spec.get("name"):
             problems.append(f"faction {fid}: needs a name")
-        out[fid] = {"id": fid, "name": spec.get("name", fid), "prefix": spec.get("prefix", "")}
+        parent = spec.get("branch_of")
+        if parent is not None and (parent not in every or parent == fid):
+            problems.append(f"faction {fid}: branch_of names no other faction ({parent!r})")
+        out[fid] = {"id": fid, "name": spec.get("name", fid), "prefix": spec.get("prefix", ""),
+                    "branch_of": every.get(parent, {}).get("name", "") if parent else ""}
     if problems:
         raise ValueError(f"{path.name}:\n  " + "\n  ".join(problems))
     return out
