@@ -15,7 +15,6 @@ Samples sit on a grid from the scenario's start, in a ring of MAX_SAMPLES; the o
 """
 from __future__ import annotations
 
-import bisect
 import math
 
 import numpy as np
@@ -54,6 +53,7 @@ class Versions:
             setattr(self, name, np.full((self.cap, *shape), empty, dtype=dtype))
         self.said: list[dict | None] = [None]
         self._rows: dict[int, tuple[list, list]] = {}      # row -> (when each of its versions began, which)
+        self._flat: tuple | None = None                   # the same, every row's run end to end, for at(): made when asked
 
     def new(self, i: int, since: float, said: dict, **cols) -> int:
         if self.n == self.cap:
@@ -73,6 +73,7 @@ class Versions:
             self.nxt[vs[-1]] = v
         ts.append(since)
         vs.append(v)
+        self._flat = None
         return v
 
     def cut(self, i: int, last: int) -> None:
@@ -81,6 +82,7 @@ class Versions:
         while vs and vs[-1] > last:
             ts.pop()
             vs.pop()
+            self._flat = None
         if vs:
             self.nxt[vs[-1]] = 0
 
@@ -90,13 +92,19 @@ class Versions:
             self.cut(i, int(last[i]) if i < len(last) else 0)
 
     def at(self, t: float, n: int) -> np.ndarray:
-        """The version each of rows 0..n is on at t."""
+        """The version each of rows 0..n is on at t: of each row's run, the last begun by t, every
+        row at once."""
+        if self._flat is None:
+            rows = [i for i in self._rows if self._rows[i][1]]
+            self._flat = (np.repeat(np.array(rows, dtype=np.int64), [len(self._rows[i][1]) for i in rows]),
+                          np.array([x for i in rows for x in self._rows[i][0]], dtype=float),
+                          np.array([x for i in rows for x in self._rows[i][1]], dtype=np.int64))
+        row, ts, vs = self._flat
         out = np.zeros(n, dtype=np.int64)
-        for i, (ts, vs) in self._rows.items():
-            if i < n:
-                k = bisect.bisect_right(ts, t + 1e-6) - 1
-                if k >= 0:
-                    out[i] = vs[k]
+        begun = ts <= t + 1e-6
+        last = begun & ~np.append((row[1:] == row[:-1]) & begun[1:], False)
+        last &= row < n
+        out[row[last]] = vs[last]
         return out
 
 

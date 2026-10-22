@@ -72,6 +72,7 @@ from . import kernels
 from .classis import COLUMNS, BURN_G, BURN_NONE, BURN_THROTTLE, DEAD, FREE, LEAD, SHIP, STATION, Classis, LeadView, ship_view
 from .entity import G0, Ship, ShipSpec, SpecError
 from .frames import from_aer
+from .placement import plan
 from .orders import ACTIVE, BURN, COAST, COLD, GOTO, KIND, PASSIVE, SETG, WARM, Given, OrderBook
 from .detect import Sensors
 from .signature import Signature
@@ -255,6 +256,7 @@ class Fleet:
         self._point_cache: dict[tuple, np.ndarray] = {}   # where bullseye and body points are, by moment
         self._place_cache: dict[float, tuple] = {}
         self._plans: dict[tuple, tuple] = {}    # how station ships are placed, by the versions they are on
+        self._plan_rows = None                  # (the scenario's placement plan, contact -> its row, rows -> theirs)
         self._pulls = [b for b in system.massive() if b.gm > 0]
         self._gms = np.array([b.gm for b in self._pulls])
         self.signature = Signature(getattr(getattr(registry, "rules", None), "signature", None))   # what she gives off
@@ -1066,7 +1068,9 @@ class Fleet:
             return rows, np.zeros((0, 3))
         scen, groups, units = self._station_plan(ver[rows])
         P = np.full((len(rows), 3), np.nan)
-        if scen:
+        if scen and self.bullseyes is not None:       # placed by the scenario's plan: only these rows
+            P[scen] = self._scenario_places(t, rows[scen])
+        elif scen:                                     # placed by a place() of its own (tools, tests)
             _, placed, _ = self._placed(t)
             for k in scen:
                 p = placed.get(c.ids[rows[k]])
@@ -1085,6 +1089,32 @@ class Fleet:
                 P[k] = p
         ok = ~np.isnan(P).any(axis=1)
         return rows[ok], P[ok]
+
+    def _scenario_places(self, t: float, rows: np.ndarray) -> np.ndarray:
+        """Where these rows' scenario places are at t (NaN: resting on what is not there): their
+        rows of the scenario's placement plan, from the bullseyes and bodies it rests on, and no
+        other contact."""
+        pl = plan(self.scenario)
+        if self._plan_rows is None or self._plan_rows[0] is not pl:
+            self._plan_rows = (pl, {cid: k for k, cid in enumerate(pl.ids)}, {})
+        at, kept = self._plan_rows[1], self._plan_rows[2]
+        ks = kept.get(rows.tobytes())
+        if ks is None:                                   # the plan's rows for these, kept by the rows asked for
+            if len(kept) > 64:
+                kept.clear()
+            ks = kept[rows.tobytes()] = np.array([at.get(self.c.ids[i], -1) for i in rows], dtype=np.int64)
+        out = np.full((len(rows), 3), np.nan)
+        ok = ks >= 0
+        if not ok.any():
+            return out
+        bulls = {bid: b for bid in pl.by_bull if (b := self._bull(None, bid, t)) is not None}
+        base = pl.base_positions(bulls, self._bodies(t))
+        unplaced = np.isnan(base).any(axis=1)
+        W = pl.W[ks[ok]]
+        X = W @ np.where(unplaced[:, None], 0.0, base)
+        X[(W[:, unplaced] != 0).any(axis=1)] = np.nan
+        out[ok] = X
+        return out
 
     def _stations_to(self, t_end: float, partial: bool = False) -> None:
         """Every station ship pays for her place up to t_end, on a grid STATION_S apart from the

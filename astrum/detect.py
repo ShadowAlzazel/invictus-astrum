@@ -24,6 +24,7 @@ from .armoury import num
 from .relay import relay
 
 SAMPLE_S = 60.0
+SWEEP_BUDGET = 12           # minutes swept for one picture at most; more since the last, on a stride
 GOLDEN = math.pi * (3.0 - math.sqrt(5.0))
 
 
@@ -127,6 +128,9 @@ class Sensors:
         self.thr = np.array(thr, dtype=float)
         self.period = np.array(period, dtype=float)
         self.phase = np.array(phase, dtype=float)
+        self._every = np.round(self.period / SAMPLE_S).astype(np.int64)      # in whole minutes, for due
+        self._at = np.round(self.phase / SAMPLE_S).astype(np.int64)
+        self._buf: tuple = ()                                # the kernel's out arrays, kept and grown
         self.what = what
         self.active = np.array(active, dtype=bool)
         self.reach = np.array(reach_m, dtype=float)
@@ -135,41 +139,54 @@ class Sensors:
         self.lost = float(rules.get("lost", 1.5))
         self.hold_s = float(rules.get("hold_s", 3600.0))
 
-    def due(self, k: int) -> np.ndarray:
-        """The sensors whose sweep comes round at whole minute k (from the scenario's start)."""
-        return np.flatnonzero(np.isclose(np.mod(k * SAMPLE_S - self.phase, self.period), 0.0))
+    def due(self, k: int, span: int = 1) -> np.ndarray:
+        """The sensors whose sweep comes round at whole minute k (from the scenario's start), or
+        at any of the span minutes up to it."""
+        return np.flatnonzero((k - self._at) % self._every < span)
+
+    def buffers(self, size: int) -> tuple:
+        """Out arrays for kernels.detect of at least size, kept between scans (hits are few)."""
+        if not self._buf or len(self._buf[0]) < size:
+            size = max(size, 2 * len(self._buf[0]) if self._buf else 0)
+            self._buf = (np.empty(size, dtype=np.int64), np.empty(size, dtype=np.int64), np.empty(size), np.empty(size),
+                         np.empty(size))
+        return self._buf
 
 
 def hull_axes(dirn: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Each ship's hull frame: forward where her hull points (else where she goes, else x), up the
     system's (made square to it), and the third across."""
-    f = np.where(np.linalg.norm(dirn, axis=1, keepdims=True) > 0.5, dirn, v)
-    n = np.linalg.norm(f, axis=1, keepdims=True)
+    f = np.where(np.einsum("ij,ij->i", dirn, dirn)[:, None] > 0.25, dirn, v)
+    n = np.sqrt(np.einsum("ij,ij->i", f, f))[:, None]
     f = np.where(n > 1e-9, f / np.where(n > 1e-9, n, 1.0), [1.0, 0.0, 0.0])
-    up = np.where(np.abs(f[:, 2:3]) > 0.99, [0.0, 1.0, 0.0], [0.0, 0.0, 1.0])
-    side = np.cross(up, f)
-    side /= np.linalg.norm(side, axis=1, keepdims=True)
-    return f, side, np.cross(f, side)
+    x, y, z = f[:, 0], f[:, 1], f[:, 2]
+    polar = np.abs(z) > 0.99                             # up: the system's z (y, along it)
+    side = np.where(polar[:, None], np.stack([z, np.zeros_like(z), -x], axis=1), np.stack([-y, x, np.zeros_like(z)], axis=1))
+    side /= np.sqrt(np.einsum("ij,ij->i", side, side))[:, None]
+    sx, sy, sz = side[:, 0], side[:, 1], side[:, 2]
+    return f, side, np.stack([y * sz - z * sy, z * sx - x * sz, x * sy - y * sx], axis=1)
 
 
 C = 299_792_458.0           # m/s
 HIT = ("s", "j", "flux", "plume", "d", "arrive", "act", "r")
 
 
-def scan(fleet, k: int, view: str, own: np.ndarray) -> dict:
+def scan(fleet, k: int, view: str, own: np.ndarray, span: int = 1) -> dict:
     """What the sensors of the view's own ships (own: by row) whose sweep comes round at whole
     minute k see of every other ship: hits as arrays (sensor, ship, flux W/m² and her plume's share
     of it, distance m, when the report reaches the view's flagship (astrum/relay.py), whether an
     active sensor saw her, and where she was when the light left her). Passive sensors see what is
     bright enough toward them, pings included; an active one, of a ship pinging then, any hull in
-    its cone and reach. Kept on the fleet, by minute and view."""
-    got = fleet._scans.get((k, view))
+    its cone and reach. span: every sensor whose sweep came round in the span minutes up to k, as at
+    k (a stride, latest). Kept on the fleet, by minute, view and span."""
+    key = (k, view) if span == 1 else (k, view, span)
+    got = fleet._scans.get(key)
     if got is not None:
         return got
     S, c = fleet.sensors, fleet.c
     n = len(c.row)
     ping = fleet.pinging(fleet.t0 + k * SAMPLE_S)
-    due = S.due(k)
+    due = S.due(k, span)
     due = due[own[S.row[due]] & (~S.active[due] | ping[S.row[due]])]
     tgt = np.flatnonzero(~own).astype(np.int64)
     got = {"s": np.zeros(0, dtype=np.int64), "j": np.zeros(0, dtype=np.int64), "flux": np.zeros(0), "plume": np.zeros(0),
@@ -177,12 +194,11 @@ def scan(fleet, k: int, view: str, own: np.ndarray) -> dict:
     if len(due) and len(tgt):
         pic = fleet.past_sample(k)
         r = np.ascontiguousarray(pic["r"][:n])
-        f, side, up = hull_axes(pic["dir"][:n], pic["v"][:n])
         o, b = S.row[due], S.body[due]
-        axis = np.ascontiguousarray(b[:, 0:1] * f[o] + b[:, 1:2] * side[o] + b[:, 2:3] * up[o])
+        f, side, up = hull_axes(pic["dir"][o], pic["v"][o])             # the hulls of the ships whose sensors sweep
+        axis = np.ascontiguousarray(b[:, 0:1] * f + b[:, 1:2] * side + b[:, 2:3] * up)
         quiet = ~S.active[due]
-        size = int(quiet.sum()) * len(tgt)
-        out = (np.zeros(size, dtype=np.int64), np.zeros(size, dtype=np.int64), np.zeros(size), np.zeros(size), np.zeros(size))
+        out = S.buffers(int(quiet.sum()) * len(tgt))
         sig = fleet.signature
         hits = kernels.detect(o[quiet], np.ascontiguousarray(axis[quiet]), S.cos[due[quiet]], S.thr[due[quiet]], tgt, r,
                               np.ascontiguousarray(pic["thrust"][:n]), c.ve[:n], np.ascontiguousarray(pic["dir"][:n]),
@@ -201,13 +217,13 @@ def scan(fleet, k: int, view: str, own: np.ndarray) -> dict:
             hs, hj = np.concatenate([hs, due[act][a_]]), np.concatenate([hj, tgt[q_]])
             flux, plume, d_ = np.concatenate([flux, np.zeros(len(a_))]), np.concatenate([plume, np.zeros(len(a_))]), \
                 np.concatenate([d_, dist[a_, q_]])
-        late = relay(fleet, view, own).delays(r)[S.row[hs]]
+        late = relay(fleet, view, own).delays(r)[S.row[hs]] if len(hs) else np.zeros(0)
         got = {"s": hs, "j": hj, "flux": flux, "plume": plume, "d": d_,
                "arrive": fleet.t0 + k * SAMPLE_S + np.nan_to_num(late), "act": S.active[hs],
                "r": r[hj] - pic["v"][hj] * (d_ / C)[:, None]}          # where she was when that light left her
     if len(fleet._scans) >= 4096:
         fleet._scans.pop(next(iter(fleet._scans)))
-    fleet._scans[(k, view)] = got
+    fleet._scans[key] = got
     return got
 
 
@@ -221,7 +237,11 @@ def latest(fleet, k: int, view: str, own: np.ndarray) -> dict:
     whether she has been identified (her hull and rads seen bright enough, the plume aside), both
     kept for the track. Each minute's is the one before it
     with that minute's scan laid over, kept by minute and view: a ship last seen long ago is
-    remembered as long as the minutes are (a jump of more than the hold skips the sweeps between)."""
+    remembered as long as the minutes are (a jump of more than the hold skips the sweeps between).
+    A clock faster than the sweeps can be followed (more than SWEEP_BUDGET minutes since the last
+    picture) is swept on a stride, the newest minute always, each sweep taking every sensor that came
+    round since the last (as at its minute): the minutes between keep what was known, so pictures
+    keep pace at the fastest warps."""
     key = ("latest", k, view)
     got = fleet._scans.get(key)
     if got is not None:
@@ -237,8 +257,12 @@ def latest(fleet, k: int, view: str, own: np.ndarray) -> dict:
         m0 = max(0, k - H)
     else:
         cur, m0 = fleet._scans[("latest", base, view)], max(base + 1, k - H)
+    step = max(1, math.ceil((k + 1 - m0) / SWEEP_BUDGET))
     for m in range(m0, k + 1):
-        h = scan(fleet, m, view, own)
+        if (k - m) % step:                               # between the minutes swept: what was known
+            fleet._scans[("latest", m, view)] = cur
+            continue
+        h = scan(fleet, m, view, own, min(step, m - m0 + 1))
         cur = {name: a.copy() for name, a in cur.items()}
         if len(h["s"]):                                  # the brightest hit on each ship this minute
             cls, ident = np.zeros(n, dtype=bool), np.zeros(n, dtype=bool)

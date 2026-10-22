@@ -519,6 +519,24 @@ body off the table (it read all of them); checkpoints are kept every block for a
 shorter and the rest a few ms longer (more checkpoints to mend); and braking counts gravity, so a
 ship from Mars stops at Earth (it used to fall through it, and its time to target said nothing).
 
+**What a side's picture costs** (the demo, the server's own process with its run-ahead flying,
+a client asking for the next picture as each arrives):
+
+| warp | MASTER | a side (ARCVS) | what bounds it |
+|---|---|---|---|
+| 1 min/s – 2 h/s | 150 pictures/s, 6 ms | 110–140/s, 6–8 ms | the picture itself |
+| 6 h/s | 115/s | 30–85/s | a few minutes swept a picture |
+| 12 h/s – 1 d/s | 70–100/s | 14–25/s (was 6–10) | sweeps: at most 12 a picture, on a stride beyond |
+
+Each new minute a side sees is a sweep: the fleet pictured at that minute (the timeline read,
+station ships placed from the placement plan's own rows, not every contact), and the compiled
+scan. A sweep now costs about 1.3 ms (it was 2.6): the scan's out arrays are kept between sweeps,
+the sensors due are worked out in whole minutes, hull frames only for the ships that sweep, and
+`Versions.at` reads every row at once. Past 12 minutes since the last picture
+(`detect.SWEEP_BUDGET`) the minutes are swept on a stride, each sweep taking every sensor whose
+sweep came round since the last, so a slow picture no longer makes the next one slower. The
+browser spends about 2.5 ms of a frame (the overlay, 2 ms; a picture parsed, 0.2 ms).
+
 ## On the wire
 
 `/api/meta` gives each ship class's spec once (`specs`, by class id); a unit names its class and
