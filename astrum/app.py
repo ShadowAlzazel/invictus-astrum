@@ -37,7 +37,8 @@ from .config import ROOT, ConfigError, load_config, load_style
 from .ephemeris import Ephemeris, Tabled
 from .fields import gravity, magnetic, potential
 from .frames import to_spherical
-from .loader import Player, contact_positions, load_factions, load_players, load_scenarios, load_systems
+from .factions import Factions, load_factions
+from .loader import Player, contact_positions, load_players, load_scenarios, load_systems
 from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify
 from . import workshop
@@ -101,7 +102,7 @@ class World:
             players = load_players(p["players"])
         except (BullseyeError, KeyError, ValueError) as e:
             errors["players.toml"] = str(e)
-        factions = getattr(self, "factions", {})
+        factions = getattr(self, "factions", Factions())
         try:
             factions = load_factions(Path(p["players"]).parent / "factions.toml")
         except (ValueError, tomllib.TOMLDecodeError) as e:
@@ -132,7 +133,7 @@ class World:
             errors["bullseyes.toml"] = problem
         trees = {}
         for fid, fac in factions.items():                    # a journal names classes there are
-            for cid in fac.get("knows") or ():
+            for cid in fac.knows or ():
                 if ships and cid not in ships.classes:
                     errors[f"factions.toml/{fid}"] = f"knows {cid!r}: no such ship class"
         for sc_ in scenarios.values():                       # a scenario's factions are factions.toml's
@@ -147,7 +148,7 @@ class World:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown role {c.role!r}; roles are in style.toml [formation_role]"
                 if c.own_faction and c.faction not in factions:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown faction {c.faction!r}; factions are in data/factions.toml"
-                elif c.own_faction and sc_.factions and root_of(factions, c.faction) not in sc_.factions and c.faction not in sc_.factions:
+                elif c.own_faction and sc_.factions and factions.owner(c.faction) not in sc_.factions and c.faction not in sc_.factions:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"faction {c.faction!r} is not among the scenario's factions {list(sc_.factions)}"
                 if c.ship_class and ships and c.ship_class not in ships.classes:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown ship class {c.ship_class!r}"
@@ -167,7 +168,7 @@ class World:
                     errors[f"scenarios/{sc_.id}/order {i + 1}"] = f"bullseye {b!r} is not one of player {sc_.player!r}'s"
             for fid in sc_.factions:                         # every side plays: as its player, else as itself
                 if fid in factions and fid not in players and not any(pl.faction == fid for pl in players.values()):
-                    players[fid] = Player(fid, factions[fid].get("name", fid), {}, fid)
+                    players[fid] = Player(fid, factions[fid].name, {}, fid)
             trees[sc_.id], problems = display.tree([c.__dict__ for c in sc_.contacts.values()], list(style.get("echelon", {})))
             for msg in problems:
                 errors[f"scenarios/{sc_.id}/{msg.split(':')[0]}"] = msg.split(": ", 1)[1]
@@ -483,11 +484,6 @@ def body_dict(s, b, zones) -> dict:
     }
 
 
-def root_of(factions: dict, fid: str | None) -> str | None:
-    """The faction a branch belongs to (a branch is listed under it)."""
-    return (factions.get(fid or "") or {}).get("parent") or fid
-
-
 def formation_role(style: dict | None, callsign: str) -> str:
     """The role a callsign's words give: the first word that begins one of the roles' words or
     phrases, the longest phrase where two begin there ("Forward Scout 1": forward-scout)."""
@@ -509,10 +505,10 @@ def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
     d = dict(c.__dict__)
     d.update((tree or {}).get(c.id, {}))
     d["has_position"] = bool(c.position)
-    fac = world.factions.get(c.faction) if c.faction else None
-    d["faction"] = {k: v for k, v in fac.items() if k != "knows"} if fac else None
+    fac = world.factions.get(c.faction or "")
+    d["faction"] = world.factions.for_map(c.faction)
     # a ship's name reads with her faction's prefix: AVC Antwerp
-    d["name"] = f"{fac['prefix']} {c.callsign}" if fac and fac.get("prefix") and c.echelon == "ship" else c.callsign
+    d["name"] = f"{fac.prefix} {c.callsign}" if fac and fac.prefix and c.echelon == "ship" else c.callsign
     if c.echelon != "ship":                    # a formation's role: as stated, else the first word of its callsign that names one
         d["role"] = c.role or formation_role(world.style, c.callsign)
     sc = world.ships.classes.get(c.ship_class) if world.ships and c.ship_class else None
@@ -532,7 +528,7 @@ def side_contacts(world: "World", sc, view: str) -> list[dict]:
     out = []
     for cid in (x for x in sc.contacts if x in keep):
         d = contact_dict(world, sc.contacts[cid], tree)
-        if view not in (home, picture.MASTER) and sc.contacts[cid].faction in picture.mine(world.factions, view):
+        if view not in (home, picture.MASTER) and sc.contacts[cid].faction in world.factions.mine(view):
             d["affiliation"] = "friend"
         if view != picture.MASTER:
             d["children"] = [x for x in d.get("children", []) if x in keep]
@@ -611,8 +607,8 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
                         for p in world.players.values()],
             "scenarios": [{"id": sc.id, "name": sc.name, "system": sc.system, "player": sc.player, "home": world.home(sc),
                            "view": (side := world.side(sc, view, player)),
-                           "factions": [{"id": f, "name": world.factions.get(f, {}).get("name", f),
-                                         "label": picture.side_label(world.factions, f), "player": world.side_player(sc, f)}
+                           "factions": [{"id": f, "name": world.factions[f].name if f in world.factions else f,
+                                         "label": world.factions.label(f), "player": world.side_player(sc, f)}
                                         for f in sc.factions],
                            "contacts": side_contacts(world, sc, side)}
                           for sc in world.scenarios.values()],

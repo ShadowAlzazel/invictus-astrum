@@ -28,6 +28,7 @@ from __future__ import annotations
 import numpy as np
 
 from .detect import SAMPLE_S, arrived, latest
+from .factions import Factions
 from .switches import resolve
 
 C = 299_792_458.0           # m/s
@@ -37,24 +38,7 @@ PRIVATE = ("mass_t", "dry_t", "propellant_t", "propellant_share", "dv_left_kms",
            "max_accel_g", "accel_g", "thrust_mn", "jet_pw", "heat_share", "cold_left_h", "cold")
 
 
-def root(factions: dict, fid: str | None) -> str | None:
-    """The faction a faction answers to: its own, or the one it is a branch of or a member of."""
-    f = factions.get(fid or "", {})
-    return f.get("parent") or f.get("member") or fid
-
-
-def mine(factions: dict, view: str | None) -> set:
-    """The factions whose units are the view's own: its own and its branches'."""
-    return {fid for fid, f in factions.items() if fid == view or f.get("parent") == view} if view else set()
-
-
-def side_label(factions: dict, fid: str) -> str:
-    """A side as the picker names it: its prefix, else its name (ARCVS, JADF, Bandits, GHOST)."""
-    f = factions.get(fid, {})
-    return f.get("prefix") or f.get("name") or fid
-
-
-def known_units(sc, factions: dict, view: str | None, home: str | None) -> set:
+def known_units(sc, factions: Factions, view: str | None, home: str | None) -> set:
     """The scenario's units the view holds in its own table: its own (its faction's and its
     branches'); and, for the scenario's own side, the units it was given that are no ships and hold
     none (what it knows of the others before any of its ships sees them). Others' ships reach it
@@ -62,7 +46,7 @@ def known_units(sc, factions: dict, view: str | None, home: str | None) -> set:
     contacts = sc.contacts
     if view == MASTER:
         return set(contacts)
-    own = mine(factions, view)
+    own = factions.mine(view)
     out = {cid for cid, c in contacts.items() if c.faction in own}
     if view and view == home:
         crewed = set()
@@ -77,32 +61,31 @@ def known_units(sc, factions: dict, view: str | None, home: str | None) -> set:
     return out
 
 
-def own_rows(fleet, factions: dict, view: str | None) -> np.ndarray:
+def own_rows(fleet, factions: Factions, view: str | None) -> np.ndarray:
     """Which of the fleet's ships are the view's own: of its faction, or of one of its branches
     (MASTER: every ship; no faction: none)."""
     c = fleet.c
     n = len(c.row)
     if view == MASTER:
         return np.ones(n, dtype=bool)
-    mine_ = mine(factions, view)
+    mine = factions.mine(view)
     contacts = fleet.scenario.contacts
-    return np.array([getattr(contacts.get(c.ids[i]), "faction", None) in mine_ for i in range(n)], dtype=bool)
+    return np.array([getattr(contacts.get(c.ids[i]), "faction", None) in mine for i in range(n)], dtype=bool)
 
 
-def friendly_rows(fleet, factions: dict, view: str | None) -> np.ndarray:
+def friendly_rows(fleet, factions: Factions, view: str | None) -> np.ndarray:
     """Ships of a faction that answers where the view's does (a member world's force, a sister
     branch): known for what they are once seen."""
-    c, top = fleet.c, root(factions, view)
+    c, top = fleet.c, factions.head(view)
     contacts = fleet.scenario.contacts
-    return np.array([top is not None and root(factions, getattr(contacts.get(c.ids[i]), "faction", None)) == top
+    return np.array([top is not None and factions.head(getattr(contacts.get(c.ids[i]), "faction", None)) == top
                      for i in range(len(c.row))], dtype=bool)
 
 
-def journal(fleet, factions: dict, view: str | None) -> np.ndarray:
-    """Which rows' classes the view's side knows (data/factions.toml knows, its root faction's: a
-    list of classes; none listed, every class): only those can be classified."""
+def journal(fleet, factions: Factions, view: str | None) -> np.ndarray:
+    """Which rows' classes the view's side knows (Factions.journal): only those can be classified."""
     c = fleet.c
-    knows = factions.get(root(factions, view) or "", {}).get("knows")
+    knows = factions.journal(view)
     return np.array([knows is None or (c.spec[i] is not None and c.spec[i].class_id in knows) for i in range(len(c.row))],
                     dtype=bool)
 

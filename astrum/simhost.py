@@ -100,12 +100,12 @@ class Side:
         self.last_k: dict[str, int] = {}                 # ... and the minute it last saw her
         self.dismissed = {} if dismissed is None else dismissed
         self.knows = picture.journal(fleet, world.factions, view)
-        home, top, tree = world.home(sc), picture.root(world.factions, view), world.trees.get(sc.id)
+        home, top, tree = world.home(sc), world.factions.head(view), world.trees.get(sc.id)
         self.known, self.classed, self.bogey = {}, {}, {}
         for sid, t_ in self.alias.items():
             c = sc.contacts[sid]
             d = contact_dict(world, c, tree)
-            friend = picture.root(world.factions, c.faction) == top
+            friend = world.factions.head(c.faction) == top
             base = {"id": t_, "echelon": "ship", "status": [], "has_position": True, "parent": None, "children": [],
                     "ancestors": [], "depth": 0, "role": "", "pry": None, "brevity": "", "track": True}
             self.known[t_] = {**base, **{k: d.get(k) for k in KNOWN},

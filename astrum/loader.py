@@ -118,40 +118,6 @@ class Contact:
     flag: str = ""                        # formation: its leader, the ship its reports go through (else its first ship)
 
 
-def load_factions(path: str | Path) -> dict[str, dict]:
-    """{id: {name, prefix, branch_of, member_of}} from data/factions.toml (branch_of, member_of: the
-    name of the faction it is a branch of, or whose member's force it is); none if the file is not
-    there."""
-    path = Path(path)
-    if not path.exists():
-        return {}
-    with path.open("rb") as f:
-        doc = tomllib.load(f)
-    out, problems = {}, []
-    every = doc.get("faction") or {}
-    for fid, spec in every.items():
-        for k in set(spec) - {"name", "prefix", "branch_of", "member_of", "knows", "notes"}:
-            problems.append(f"faction {fid}: unknown key {k!r}")
-        if not spec.get("name"):
-            problems.append(f"faction {fid}: needs a name")
-        if "branch_of" in spec and "member_of" in spec:
-            problems.append(f"faction {fid}: a branch of one faction, or a member's force: not both")
-        out[fid] = {"id": fid, "name": spec.get("name", fid), "prefix": spec.get("prefix", ""),
-                    "parent": spec.get("branch_of", ""),         # a branch's faction, by id: its ships are its players'
-                    "member": spec.get("member_of", ""),         # a member world's force: whose it answers to, by id
-                    "knows": spec.get("knows")}                  # its journal: the classes it can make out (None: all)
-        if "knows" in spec and not (isinstance(spec["knows"], list) and all(isinstance(x, str) for x in spec["knows"])):
-            problems.append(f"faction {fid}: knows is a list of ship classes")
-        for key in ("branch_of", "member_of"):
-            other = spec.get(key)
-            if other is not None and (other not in every or other == fid):
-                problems.append(f"faction {fid}: {key} names no other faction ({other!r})")
-            out[fid][key] = every.get(other, {}).get("name", "") if other else ""
-    if problems:
-        raise ValueError(f"{path.name}:\n  " + "\n  ".join(problems))
-    return out
-
-
 @dataclass(frozen=True)
 class Scenario:
     id: str

@@ -317,7 +317,8 @@ def test_each_order_keeps_its_own_telegraph():
 
 
 def test_faction_comes_down_the_chain(tmp_path):
-    from astrum.loader import load_factions, load_scenario
+    from astrum.factions import load_factions
+    from astrum.loader import load_scenario
     (tmp_path / "s.toml").write_text('''
 [scenario]
 id = "s"
@@ -348,9 +349,13 @@ position = { body = "earth" }
     assert (k["ship-a"].faction, k["ship-a"].hull_number, k["ship-a"].own_faction) == ("avc", "BBC-382", False)
     assert k["ship-b"].faction == "other" and k["ship-b"].own_faction
     factions = load_factions(ROOT / "data" / "factions.toml")
-    assert factions["avc"]["prefix"] == "AVC" and factions["avc"]["branch_of"] == "ARCVS"
-    assert factions["aag"]["prefix"] == "AAG" and factions["aag"]["branch_of"] == "ARCVS"
-    assert factions["jadf"]["member_of"] == "ARCVS" and not factions["jadf"]["branch_of"]   # a member world's own
+    assert factions["avc"].prefix == "AVC" and factions["avc"].branch_of == "arcvs"
+    assert factions.for_map("aag") == {"id": "aag", "name": "ARCVS Astrum Guard", "prefix": "AAG", "branch_of": "ARCVS", "member_of": ""}
+    assert factions.for_map("jadf")["member_of"] == "ARCVS" and not factions["jadf"].branch_of   # a member world's own
+    assert factions.head("avc") == factions.head("jadf") == factions.head("arcvs") == "arcvs" and factions.head("ghost") == "ghost"
+    assert factions.owner("avc") == "arcvs" and factions.owner("jadf") == "jadf"       # a member's force is its own
+    assert factions.mine("arcvs") == {"arcvs", "avc", "aag"} and factions.label("jadf") == "JADF" and factions.label("bandit") == "Bandits"
+    assert factions.journal("avc") is None                                        # no journal: every class
     (tmp_path / "bad.toml").write_text('[scenario]\nid = "b"\nsystem = "sol"\n[[contact]]\nid = "x"\nposition = { body = "earth" }\n')
     with pytest.raises(ValueError, match="needs an affiliation"):
         load_scenario(tmp_path / "bad.toml")
@@ -1351,7 +1356,7 @@ def test_a_track_is_detected_tracked_classified_identified_by_its_journal():
         app = create_app()
         w = app.state.world
         if knows is not None:
-            w.factions["arcvs"]["knows"] = knows
+            w.factions["arcvs"].knows = tuple(knows)
         f = _demo(w)
         t0, sc = f.t0, w.scenarios["sol-demo"]
         side = app.state.sim.host._side(sc, f, "arcvs")

@@ -23,10 +23,13 @@ What has been measured and left for later, biggest gain first. Figures are the d
 | 10 | **Old-track removals kept.** They live in the sim's memory (`SimHost._dismissed`): a restart brings them back. | Write them beside `bullseyes.toml`, per player. |
 | 11 | **Clock jumps longer than the hold.** Sweeps between are skipped and a ship seen on both sides starts a new track (her stage lost). | With #3 the run-ahead sweeps every minute anyway; else carry the track over a jump when she is seen on both sides. |
 | 12 | **`Versions` as arrays.** Per-row Python lists, flattened for `at` when they change. | Kept flat (append-only arrays with a per-row cut) would drop the rebuild and the lists. |
-| 13 | **Faction data in one shape.** `factions.toml` is read into dicts with derived keys (`parent`, `member`, `branch_of` by name) that the client and the sim each re-derive from (`picture.root`, `own_rows`, `known_units`). | A small Faction object with `root`, `mine`, `knows` methods. |
 
 ## Done
 
 - **8. One home for the picture's switches** (`astrum/switches.py`): one table (key, default and so
   type, label, range) that `config.toml [picture]` is checked against, a map's own choice is read
   through (`resolve`), and the Game tab is drawn from (`described`).
+- **13. Faction data in one shape** (`astrum/factions.py`): a `Faction` per entry and `Factions`, a
+  dict by id, that answers `head`, `owner`, `mine`, `label`, `journal` and `for_map`; the loader
+  with it. `picture.root`, `picture.mine`, `picture.side_label` and `app.root_of` are gone, and so
+  are the derived `parent` and `member` keys.
