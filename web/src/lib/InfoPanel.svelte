@@ -191,7 +191,8 @@
         <dl class="tight">
           {#if contact.brevity === 'bogey'}<dt title="Not yet seen bright enough to be known for what she is">Called</dt><dd>BOGEY</dd>{/if}
           {#if ship.lost}<dt title="Not seen again within her sensors' sweeps: where she was last seen">Track</dt><dd class="hot">lost</dd>{/if}
-          <dt title="How old the light is that showed her, as it reached the ship of ours that saw her">Seen</dt><dd>{age(ship.seen_s)} ago</dd>
+          <dt title="How old the light is that showed her: its flight to the ship of ours that saw her, and the report's up to our flagship">Seen</dt><dd>{age(ship.seen_s)} ago</dd>
+          {#if ship.relay_s > 0.5}<dt class="sub" title="How long the report took to come up the chain to our fleet flagship">relayed</dt><dd class="sub">{age(ship.relay_s)}</dd>{/if}
           <dt>Drive</dt><dd class:hot={ship.burning}>{ship.burning ? 'burning' : 'not burning'}</dd>
           <dt>Signature</dt><dd>{watts(ship.sig_w)}</dd>
           <dt class="sub">her rads</dt><dd class="sub">{watts(ship.glow_mw * 1e6)}</dd>

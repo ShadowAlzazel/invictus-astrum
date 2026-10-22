@@ -18,7 +18,8 @@ from .entity import G0
 from .picture import PRIVATE
 
 SCALARS = ("mass_t", "dry_t", "propellant_t", "propellant_share", "dv_left_kms", "dv_spent_kms",
-           "max_accel_g", "accel_g", "thrust_mn", "jet_pw", "glow_mw", "heat_share", "cold_left_h", "seen_s", "sig_w")
+           "max_accel_g", "accel_g", "thrust_mn", "jet_pw", "glow_mw", "heat_share", "cold_left_h", "seen_s", "sig_w",
+           "relay_s")
 GOAL_SCALARS = ("g", "eta_s", "range_km", "closing_kms")
 
 
@@ -68,6 +69,7 @@ def ship_columns(fleet, pic: dict, t: float, n: int, seen: dict | None = None) -
             "cold_left_h": np.where(c.coldt[:n] > 0, (c.store[:n] - pic["heat"][:n]) / np.where(c.quiet[:n] > 0, c.quiet[:n], 1.0) / 3600, np.nan),
             "seen_s": seen["seen_s"] if seen else np.full(n, np.nan),
             "sig_w": seen["sig_w"] if seen else np.full(n, np.nan),
+            "relay_s": seen["relay_s"] if seen else np.full(n, np.nan),
         }
     cols = {k: sig6(v) for k, v in cols.items()}
     cols["burning"] = thrust > 0

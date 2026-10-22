@@ -115,6 +115,7 @@ class Contact:
     hull_number: str = ""                 # her pennant, as written: "BBC-382"
     own_faction: bool = False             # the faction is stated on this unit, not taken from above
     role: str = ""                        # formation: its role (style.toml [formation_role]); else read from its callsign
+    flag: str = ""                        # formation: its leader, the ship its reports go through (else its first ship)
 
 
 def load_factions(path: str | Path) -> dict[str, dict]:
@@ -178,7 +179,7 @@ def load_scenario(path: str | Path) -> Scenario:
                                 formation=c.get("formation"), position=c.get("position", {}), notes=c.get("notes", ""),
                                 ship_class=c.get("class", ""), load=c.get("load"), propellant=c.get("propellant"),
                                 mode=c.get("mode"), faction=c.get("faction"), hull_number=str(c.get("hull_number", "")),
-                                own_faction="faction" in c, role=c.get("role", ""))
+                                own_faction="faction" in c, role=c.get("role", ""), flag=c.get("flag", ""))
         if c.get("mode") not in (None, "station", "free"):
             problems.append(f"{cid}: mode is \"station\" or \"free\"")
         pr = c.get("propellant")
@@ -190,6 +191,13 @@ def load_scenario(path: str | Path) -> Scenario:
     for c in contacts.values():
         if c.formation and c.formation not in contacts:
             problems.append(f"{c.id}: formation {c.formation!r} is not a contact")
+        if c.flag:                                     # a formation's leader is one of its own ships
+            up, x = set(), contacts.get(c.flag)
+            while x is not None and x.id not in up:
+                up.add(x.id)
+                x = contacts.get(x.formation or "")
+            if c.flag not in contacts or not contacts[c.flag].ship_class or c.id not in up:
+                problems.append(f"{c.id}: flag {c.flag!r} must be a ship under it")
         flag = c.position.get("unit")
         if flag is not None and (flag not in contacts or not contacts[flag].position or "unit" in contacts[flag].position):
             problems.append(f"{c.id}: position unit {flag!r} must be a contact with a position of its own")

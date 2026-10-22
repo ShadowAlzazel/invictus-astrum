@@ -142,3 +142,14 @@ identify = 25        # seen this many times over the faintest a sensor sees: her
 lost = 1.5           # a track not seen again within this many of its sensor's sweeps is called lost: shown where it was, uncertain
 hold_s = 3600        # ... and after this long, dropped
 
+# ---- relay: how what a ship sees reaches her fleet's flagship --------------------------------------
+# Every formation has a leader (its flag, in the scenario; else the ship it is placed on, else its
+# first ship), and the leader of a side's top formation is its fleet flagship: where its picture is.
+# A ship's report goes up the leaders to the flagship: between leaders, and from a Vigil (one of
+# these classes, straight to the flagship), at `fast` times c; from any other ship to her leader at
+# `slow` times c; through the nearest Vigil instead if that comes in sooner.
+[relay]
+vigils = ["salticidae"]
+fast = 1.0
+slow = 0.3
+

@@ -82,6 +82,26 @@ the angle off her tail and her rads. Scans are kept, by minute and side, and so 
 sighting of each ship as of each minute, so a picture reads one entry however long since she was
 seen: about half a millisecond a picture.
 
+## How it reaches the flagship
+
+What a ship sees is logged in the simulation at once; her side learns it when the report reaches
+its **fleet flagship**, the centre of its picture (`astrum/relay.py`, `rules.toml [relay]`). Every
+formation has a leader: its flag, one line in the scenario (`flag = "paris-2"`), else the ship it
+is placed on, else its first ship. The leader of the side's top formation is the fleet flagship
+(ARCVS: Luna Classis I's, Imoogi). A report goes up the leaders, hop by hop:
+
+| from | to | at |
+|---|---|---|
+| a leader | the next formation's leader up | c |
+| a Vigil (SALTICIDAE) | the flagship, straight | c |
+| any other ship | her leader | 0.3 c |
+| any other ship | the nearest Vigil, then the flagship, if that comes in sooner | c |
+
+The hops are fixed by the scenario; their lengths are taken where everyone stands at the scan, for
+every ship at once. Each sighting carries when it arrives, and a picture shows of each ship the
+newest sighting that has arrived: Task Force 3, near Mars, reports some 13 minutes late; the Luna
+Strike Squadron behind Jupiter, some 47. Where her own ships are, a side knows at once (for now).
+
 ## What a view is shown
 
 The simulation knows everything; a view is shown a picture made from it by functions
@@ -91,8 +111,8 @@ which owns everything: it sees the truth and orders every ship. A view's own shi
 faction's and its branches' (ARCVS: AVC and AAG), shown as they are, and only they take its
 orders.
 
-- **detection:** a ship not the view's own is shown once one of its ships' sensors has seen her,
-  where she was when that light left her (`Fleet.past`), for an hour after; not seen, she is not
+- **detection:** a ship not the view's own is shown once one of its ships' sensors has seen her
+  and the report has reached its flagship, where she was when that light left her (`Fleet.past`), for an hour after; not seen, she is not
   in the picture at all, nor is a formation none of whose ships is seen. Seen 25 times brighter
   than the faintest its sensor sees (within a fifth of its reach), or a friendly ship: known for
   what she is. Else a **bogey**: no name, no class, an unknown frame. Not seen again within one
@@ -103,10 +123,10 @@ orders.
 - **hide_private:** of a ship not the view's own, what only she knows (her tanks, her mass, her
   drive's figures, her orders, her store) is not sent.
 
-All off: the truth. To come: relay (what reaches the view, and when), dazzled cones, active
-sensors. GHOST's PHALAENA flight beyond Mars stands at the edge of what Task Force 3 sees: its
+All off: the truth. To come: its own ships known only by report, dazzled cones, active sensors. GHOST's PHALAENA flight beyond Mars stands at the edge of what Task Force 3 sees: its
 AESHNA's wide optics see a warm PHALAENA to 29.4 million km, and the flight's three ships stand at
-97%, 100% and 103% of it. ARCVS sees two bogeys there, by light some 98 s old, and not the third.
+97%, 100% and 103% of it. ARCVS sees two bogeys there, by light some 98 s old when it reached the AESHNA and 13 minutes more
+coming up to Imoogi, and not the third.
 
 ## Modes
 

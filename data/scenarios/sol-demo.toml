@@ -8,6 +8,8 @@
 #   propellant = 0.8       the share of her tanks she starts with (else full)
 #   mode = "free"          fly from the start instead of holding station
 #   hull_number = "BBC-382"  her pennant, shown beside her name
+# A formation may say  flag = "<ship>"  : its leader, the ship under it its reports go through to
+# the fleet flagship (else the ship it is placed on, else its first ship; astrum/relay.py).
 # Any unit takes its affiliation and its faction (data/factions.toml) from the formation above it,
 # unless it states its own.
 # A formation may say  role = "battle"  (style.toml [formation_role]: battle, line, picket, strike,
@@ -30,6 +32,7 @@ callsign = "Luna Classis I"
 affiliation = "friend"
 faction = "avc"             # every formation and ship under her takes it, unless it names its own
 echelon = "classis"
+flag = "paris-2"            # her flagship, Imoogi: the fleet's picture is hers (astrum/relay.py)
 position = { bullseye = "burn", aer = [0, 0, 1000000] }
 
 [[contact]]
@@ -37,6 +40,7 @@ id = "tf-1"
 callsign = "Task Force 1"
 affiliation = "friend"
 echelon = "task-force"
+flag = "kiki-1"
 formation = "luna-classis-1"
 
 [[contact]]
@@ -1355,6 +1359,7 @@ callsign = "Jupiter Home Force"
 affiliation = "friend"
 faction = "jadf"
 echelon = "task-force"
+flag = "jove-1"
 
 [[contact]]
 id = "jove"
@@ -1399,6 +1404,7 @@ callsign = "Ghost flight"
 affiliation = "unknown"
 faction = "ghost"
 echelon = "flight"
+flag = "ghost-1"
 
 [[contact]]
 id = "ghost-1"

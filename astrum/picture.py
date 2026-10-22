@@ -8,8 +8,8 @@ config.toml [picture]:
                    seen her (astrum/detect.py: cones that sweep), where she was when that light left
                    her, for as long as the track is held; known for what she is (her class and
                    name) only when seen bright enough, else a bogey; not seen again within its
-                   sweeps, a lost track, shown uncertain. Its faction knows what any of its own
-                   ships sees, at once (relay, to come).
+                   sweeps, a lost track, shown uncertain. Its faction knows what its ships see once
+                   the report has come up the chain to its fleet flagship (astrum/relay.py).
     light_delay    without detection: every other ship, where she was when the light that reaches
                    the nearest of the view's own ships left her (Fleet.past)
     hide_private   of a ship not the view's own, what only she knows is not shown: her tanks and
@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .detect import SAMPLE_S, latest, scan
+from .detect import SAMPLE_S, arrived
 
 C = 299_792_458.0           # m/s
 MASTER = "master"
@@ -63,7 +63,7 @@ def view(fleet, pic: dict, t: float, own: np.ndarray, settings: dict, view_id: s
     is (seen_s), how bright she looks to the ship that saw her (sig_w), whether she is shown at all,
     known for what she is, a lost track; and which rows are hidden (not the view's own)."""
     n = len(own)
-    seen = {"seen_s": np.full(n, np.nan), "sig_w": np.full(n, np.nan), "shown": np.ones(n, dtype=bool),
+    seen = {"seen_s": np.full(n, np.nan), "sig_w": np.full(n, np.nan), "relay_s": np.full(n, np.nan), "shown": np.ones(n, dtype=bool),
             "identified": np.ones(n, dtype=bool), "lost": np.zeros(n, dtype=bool),
             "hidden": ~own if settings.get("hide_private", True) else np.zeros(n, dtype=bool)}
     if own.all() or t <= fleet.t0 or fleet.timeline is None:     # MASTER, or before it starts (all on station)
@@ -77,12 +77,12 @@ def view(fleet, pic: dict, t: float, own: np.ndarray, settings: dict, view_id: s
 
 def detection(fleet, pic: dict, t: float, own: np.ndarray, seen: dict, view_id: str, friendly: np.ndarray) -> None:
     """Every ship not the view's own, as its own ships' sensors last saw her: the newest scan
-    (astrum/detect.py) that saw her, back as far as a track is held; where she was when that light
+    (astrum/detect.py) that saw her whose report has reached the flagship, back as far as a track
+    is held; where she was when that light
     left her (Fleet.past), and how bright she looked to the sensor that saw her. Not seen: not
     shown. Seen bright enough (identify times the faintest it sees), or a friendly ship: known."""
     S = fleet.sensors
-    k = int(np.floor((t - fleet.t0) / SAMPLE_S + 1e-9))
-    got = latest(fleet, k, view_id, own)
+    got = arrived(fleet, t, view_id, own)
     rows = np.flatnonzero(~own)
     seen["shown"][rows] = False
     J = rows[got["k"][rows] >= 0]
@@ -100,9 +100,10 @@ def detection(fleet, pic: dict, t: float, own: np.ndarray, seen: dict, view_id: 
     seen["shown"][J] = True
     seen["seen_s"][J] = t - te
     seen["sig_w"][J] = fl_ * 4 * np.pi * d_ * d_
+    seen["relay_s"][J] = got["arrive"][J] - tau
     seen["identified"][rows] = False
     seen["identified"][J] = (fl_ >= S.identify * S.thr[s_]) | friendly[J]
-    seen["lost"][J] = (t - tau) > S.lost * S.period[s_]
+    seen["lost"][J] = (t - got["arrive"][J]) > S.lost * S.period[s_]
 
 
 def light_delay(fleet, pic: dict, t: float, own: np.ndarray, seen: dict) -> None:

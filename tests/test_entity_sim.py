@@ -1079,8 +1079,9 @@ def test_sensors_are_cones_over_her_sphere():
 def test_a_flight_at_the_edge_of_what_task_force_3_sees():
     """GHOST's PHALAENA flight beyond Mars stands at 97%, 100% and 103% of the reach of TF-3's
     AESHNA against a warm frigate: the first two are seen, as bogeys (too faint to be known), the
-    light that showed them some 98 s old; the third is not seen at all. A friendly JADF ship seen is
-    known for what she is."""
+    light that showed them some 98 s old when it reached her (and up to one of her sweeps since), the report some 766 s more coming
+    up to Imoogi, the fleet flagship at Earth; the third is not seen at all. A friendly JADF ship
+    seen is known for what she is."""
     from astrum.app import create_app
     from astrum import picture
     w = create_app().state.world
@@ -1091,8 +1092,13 @@ def test_a_flight_at_the_edge_of_what_task_force_3_sees():
     seen = picture.view(f, f.picture(t), t, own, w.config["picture"], "arcvs", picture.friendly_rows(f, w.factions, "arcvs"))
     g = [f.c.row[f"ghost-{k}"] for k in (1, 2, 3)]
     assert list(seen["shown"][g]) == [True, True, False]
-    assert not seen["identified"][g[:2]].any() and 90 < seen["seen_s"][g[0]] < 100
+    assert not seen["identified"][g[:2]].any() and 90 < seen["seen_s"][g[0]] - seen["relay_s"][g[0]] < 400
+    assert 700 < seen["relay_s"][g[0]] < 800
     j = f.c.row["jove-1"]
+    assert not seen["shown"][j]                                  # seen by Luna Strike at Jupiter: ~2850 s on its way
+    t2 = f.t0 + 4000
+    f.reach(t2)
+    seen = picture.view(f, f.picture(t2), t2, own, w.config["picture"], "arcvs", picture.friendly_rows(f, w.factions, "arcvs"))
     assert seen["shown"][j] and seen["identified"][j]
     m = picture.own_rows(f, w.factions, picture.MASTER)              # MASTER: everything, as it is
     assert m.all() and picture.view(f, f.picture(t), t, m, w.config["picture"], picture.MASTER)["shown"].all()
@@ -1138,3 +1144,35 @@ def test_a_view_orders_only_its_own():
     assert fr["seen_as"]["g1"]["affiliation"] == "unknown"                       # another side's: unknown to it
     fr = json.loads(host.frame({"system": "sol", "t": f.t0 + 1800, "player": "arcvs", "view": "master", "scenario": "sol-demo"}, conn=2))
     assert fr["seen_as"] == {} and "ghost-3" in fr["contacts"]
+
+
+def test_reports_come_up_the_leaders_to_the_fleet_flagship():
+    """Every formation has a leader, up to the fleet flagship (Luna Classis I's flag, Imoogi): a
+    leader's report goes at c, any other ship's to her leader at 0.3c, a Vigil's straight to the
+    flagship at c; what the flagship holds at t is only what has reached it."""
+    from astrum.app import create_app
+    from astrum import picture
+    from astrum.detect import arrived, latest, SAMPLE_S
+    from astrum.relay import C, Relay, relay
+    w = create_app().state.world
+    f = _demo(w)
+    t = f.t0 + 1800
+    f.reach(t)
+    own = picture.own_rows(f, w.factions, "arcvs")
+    R = relay(f, "arcvs", own)
+    row = f.c.row
+    assert R.flagship == row["paris-2"] and relay(f, "arcvs", own) is R
+    r = f.picture(t)["r"][:len(own)]
+    d = R.delays(r)
+    far = lambda a, b: np.linalg.norm(r[row[a]] - r[row[b]])
+    assert d[row["paris-2"]] == 0 and np.isnan(d[row["jove-1"]])
+    assert np.isclose(d[row["kiki-1"]], far("kiki-1", "paris-2") / C)                   # TF-1's flag: a leader, at c
+    assert np.isclose(d[row["kiki-2"]], far("kiki-2", "kiki-1") / (0.3 * C) + d[row["kiki-1"]])   # to her leader, slow
+    jadf = Relay(f, picture.own_rows(f, w.factions, "jadf"), {"vigils": ["salticidae"], "fast": 1.0, "slow": 0.3})
+    dj = jadf.delays(r)
+    assert jadf.flagship == row["jove-1"] and list(jadf.vigils) == [row["jove-1"]]
+    assert np.isclose(dj[row["jove-2"]], far("jove-2", "jove-1") / C)                   # through the Vigil: at c
+    k = int((t - f.t0) // SAMPLE_S)
+    now, held = latest(f, k, "arcvs", own), arrived(f, t, "arcvs", own)
+    g = row["ghost-1"]
+    assert now["arrive"][g] > t >= held["arrive"][g] and held["k"][g] < now["k"][g]    # the newest is on its way

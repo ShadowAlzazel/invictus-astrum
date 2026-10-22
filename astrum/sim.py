@@ -266,6 +266,8 @@ class Fleet:
         self._now = t0                             # the moment what is being changed changes
         self._past: dict[int, dict] = {}           # the fleet at past samples, as pictured (past_sample)
         self._scans: dict[int, dict] = {}          # what the sensors saw at past samples (astrum/detect.py scan)
+        self._relays: dict[str, object] = {}       # each view's chain of command for its reports (astrum/relay.py)
+        self.registry = registry
         self.asked: dict[int, tuple] = {}         # row -> her time to target, to be flown ahead (arrivals): the newest
         self._setback: dict[int, int] = {}         # row -> how often she has been set back (-1: the whole fleet)
         for i in range(cl.n):

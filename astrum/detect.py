@@ -20,6 +20,7 @@ import zlib
 import numpy as np
 
 from . import kernels
+from .relay import relay
 
 SAMPLE_S = 60.0
 GOLDEN = math.pi * (3.0 - math.sqrt(5.0))
@@ -118,8 +119,8 @@ def hull_axes(dirn: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray, 
 
 def scan(fleet, k: int, view: str, own: np.ndarray) -> dict:
     """What the sensors of the view's own ships (own: by row) whose sweep comes round at whole
-    minute k see of every other ship: hits as arrays (sensor, ship, flux W/m², distance m). Kept
-    on the fleet, by minute and view."""
+    minute k see of every other ship: hits as arrays (sensor, ship, flux W/m², distance m, and when
+    the report reaches the view's flagship: astrum/relay.py). Kept on the fleet, by minute and view."""
     got = fleet._scans.get((k, view))
     if got is not None:
         return got
@@ -128,7 +129,8 @@ def scan(fleet, k: int, view: str, own: np.ndarray) -> dict:
     due = due[own[S.row[due]]]
     tgt = np.flatnonzero(~own).astype(np.int64)
     n = len(c.row)
-    empty = {"s": np.zeros(0, dtype=np.int64), "j": np.zeros(0, dtype=np.int64), "flux": np.zeros(0), "d": np.zeros(0)}
+    empty = {"s": np.zeros(0, dtype=np.int64), "j": np.zeros(0, dtype=np.int64), "flux": np.zeros(0), "d": np.zeros(0),
+             "arrive": np.zeros(0)}
     if len(due) and len(tgt):
         pic = fleet.past_sample(k)
         r = np.ascontiguousarray(pic["r"][:n])
@@ -142,7 +144,10 @@ def scan(fleet, k: int, view: str, own: np.ndarray) -> dict:
                               np.ascontiguousarray(pic["dir"][:n]), np.ascontiguousarray(pic["cold"][:n], dtype=float),
                               np.ascontiguousarray(pic["heat"][:n]), c.quiet[:n], sig.aspect_deg, sig.aspect_share,
                               sig.cold_share, sig.recover, *out)
-        got = {"s": due[out[0][:hits]], "j": out[1][:hits], "flux": out[2][:hits], "d": out[3][:hits]}
+        s = due[out[0][:hits]]
+        late = relay(fleet, view, own).delays(r)[S.row[s]]
+        got = {"s": s, "j": out[1][:hits], "flux": out[2][:hits], "d": out[3][:hits],
+               "arrive": fleet.t0 + k * SAMPLE_S + np.nan_to_num(late)}
     else:
         got = empty
     if len(fleet._scans) >= 4096:
@@ -154,8 +159,8 @@ def scan(fleet, k: int, view: str, own: np.ndarray) -> dict:
 def latest(fleet, k: int, view: str, own: np.ndarray) -> dict:
     """Per ship, the newest scan up to whole minute k in which the view's sensors saw her, as
     arrays by row: the minute (-1: not seen within the hold), the sensor that saw her brightest
-    then, the flux and the distance. Each minute's is the one before it with that minute's scan
-    laid over, kept by minute and view: a picture reads one, however long since she was seen."""
+    then, the flux, the distance, and when that report reaches the flagship. Each minute's is the
+    one before it with that minute's scan laid over, kept by minute and view."""
     key = ("latest", k, view)
     got = fleet._scans.get(key)
     if got is not None:
@@ -165,7 +170,7 @@ def latest(fleet, k: int, view: str, own: np.ndarray) -> dict:
     base = next((m for m in range(k - 1, max(-1, k - H - 1), -1) if ("latest", m, view) in fleet._scans), None)
     if base is None:
         m0, cur = max(0, k - H), {"k": np.full(n, -1, dtype=np.int64), "s": np.zeros(n, dtype=np.int64),
-                                    "flux": np.zeros(n), "d": np.zeros(n)}
+                                    "flux": np.zeros(n), "d": np.zeros(n), "arrive": np.zeros(n)}
     else:
         m0, cur = base + 1, fleet._scans[("latest", base, view)]
     for m in range(m0, k + 1):
@@ -176,10 +181,30 @@ def latest(fleet, k: int, view: str, own: np.ndarray) -> dict:
             _, first = np.unique(h["j"][order], return_index=True)
             pick = order[first]
             j = h["j"][pick]
-            cur["k"][j], cur["s"][j], cur["flux"][j], cur["d"][j] = m, h["s"][pick], h["flux"][pick], h["d"][pick]
+            cur["k"][j] = m
+            for name in ("s", "flux", "d", "arrive"):
+                cur[name][j] = h[name][pick]
         cur["k"][cur["k"] < m - H] = -1                    # held no longer
         if len(fleet._scans) >= 4096:
             fleet._scans.pop(next(iter(fleet._scans)))
         fleet._scans[("latest", m, view)] = cur
     return cur
 
+
+
+def arrived(fleet, t: float, view: str, own: np.ndarray) -> dict:
+    """Per ship, what the view's flagship holds of her at t: the newest sighting whose report has
+    reached it (latest, back a minute at a time while the newer ones are still on their way)."""
+    k = int(np.floor((t - fleet.t0) / SAMPLE_S + 1e-9))
+    got = {name: a.copy() for name, a in latest(fleet, k, view, own).items()}
+    late = (got["k"] >= 0) & (got["arrive"] > t)
+    H = int(fleet.sensors.hold_s // SAMPLE_S)
+    m = k
+    while late.any() and m > max(0, k - H):
+        m -= 1
+        back = latest(fleet, m, view, own)
+        for name in got:
+            got[name][late] = back[name][late]
+        late &= (got["k"] >= 0) & (got["arrive"] > t)
+    got["k"][late] = -1
+    return got
