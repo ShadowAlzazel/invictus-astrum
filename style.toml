@@ -12,26 +12,31 @@ cyan    = "#9ff0ff"   # bullseye plane and fields
 
 # Affiliation is told by SHAPE first, colour second (APP-6 style frames).
 # shape: rect | diamond | quatrefoil | square | circle; fill is the frame's fill opacity (0–1).
+# tag: under a unit whose faction has no prefix of its own (AVC, AAG, JADF), what it is called instead.
 [affiliation.friend]
 label = "Friend"
+tag   = "FRIEND"
 shape = "rect"
 color = "#e4def7"
 fill  = 0.10
 
 [affiliation.hostile]
 label = "Hostile"
+tag   = "HOSTILE"
 shape = "diamond"
 color = "#ff5a36"
 fill  = 0.12
 
 [affiliation.unknown]
 label = "Unknown"
+tag   = "UNKNOWN"
 shape = "quatrefoil"
 color = "#f5b82e"
 fill  = 0.10
 
 [affiliation.neutral]
 label = "Civil / neutral"
+tag   = "CIVIL"
 shape = "square"
 color = "#2ec4b6"
 fill  = 0.10

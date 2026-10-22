@@ -4,7 +4,8 @@
   // rebuilds map.marks, the list the cursor locks onto and clicks pick from.
   //
   // Folding keeps zoom honest. A moon closer than declutter_px to its planet on screen folds
-  // into it; formation members closer than aggregate_px fold into the formation's symbol.
+  // into it; formation members closer than aggregate_px fold into the formation's symbol; others'
+  // ships (tracks) closer than [tracks] cluster_px collapse into a flight, group or task force.
   // Zooming in never adds clutter, only resolves what was folded.
   import { onMount, onDestroy } from 'svelte';
   import { rgba, text, display, unitSymbol, bodyDisplay, bodyMark, barycentreMark, zoneRing } from './symbols.js';
@@ -120,7 +121,7 @@
         h, hot, ring, label: S.layers.labels || hot || ring !== null,
         alpha: selId && !related.has(c.id) ? S.selection.dim_others : 1,
         hq: S.icons.hq_staff && formation && c.has_position,
-        labelPx: S.text.unit_label_px, tagPx: S.text.unit_tag_px,
+        labelPx: S.text.unit_label_px, tagPx: S.text.unit_tag_px, faction: S.text.faction_tag ?? true,
       });
       drawnAt[c.id] = s;
       marks.push({ kind: 'contact', id: c.id, x: s.x, y: s.y, r: h, depth: s.depth });
@@ -134,9 +135,9 @@
     // body around it folds. Its parent then does the same with what is passed up.
     const R = S.folding.aggregate_px;
     const nLeaves = (id) => leaves(id).length;
-    const near = (a, b) => Math.hypot(a.s.x - b.s.x, a.s.y - b.s.y) < R;
 
-    function clusters(blobs) {                     // single-linkage: a chain of near blobs is one cluster
+    function clusters(blobs, r = R) {              // single-linkage: a chain of near blobs is one cluster
+      const near = (a, b) => Math.hypot(a.s.x - b.s.x, a.s.y - b.s.y) < r;
       const seen = new Set(), out = [];
       for (const b of blobs) {
         if (seen.has(b)) continue;
@@ -172,7 +173,24 @@
       const at = s && Math.hypot(s.x - cx, s.y - cy) < R ? s : { x: cx, y: cy, depth: core[0].s.depth };
       return [{ id: c.id, s: at, leaves: coreLeaves }, ...blobs.filter((b) => !core.includes(b))];
     }
-    for (const top of contacts.filter((c) => !c.parent)) for (const b of fold(top)) symbol(byId[b.id], b.s);
+    // Others' ships come one by one (tracks): those near each other on screen are drawn as one symbol
+    // of the echelon their count reads as (display.toml [tracks]), standing on the track first by id
+    // (hovered, it holds still; selected, that track stands out of it)
+    const T = S.tracks ?? {};
+    const tops = contacts.filter((c) => !c.parent).flatMap((c) => fold(c));
+    const loose = T.collapse ? tops.filter((b) => byId[b.id].track && b.id !== selId) : [];
+    for (const b of tops) if (!loose.includes(b)) symbol(byId[b.id], b.s);
+    for (const g of clusters(loose, T.cluster_px)) {
+      if (g.length < 2) { symbol(byId[g[0].id], g[0].s); continue; }
+      const cs = g.map((b) => byId[b.id]).sort((a, b) => (a.id < b.id ? -1 : 1)), n = cs.length;
+      const same = (f) => (cs.every((c) => f(c) === f(cs[0])) ? cs[0] : null);
+      const bogeys = cs.filter((c) => c.brevity === 'bogey').length;
+      symbol({ id: cs[0].id, track: true, children: [], echelon: n <= T.flight_max ? 'flight' : n <= T.group_max ? 'group' : 'task-force',
+               affiliation: same((c) => c.affiliation)?.affiliation ?? 'unknown', faction: same((c) => c.faction?.id)?.faction ?? null,
+               callsign: `${n} ${bogeys === n ? 'bogeys' : 'tracks'}`, brevity: bogeys ? 'bogey' : '',
+               status: cs.every((c) => c.status?.includes('track-lost')) ? ['track-lost'] : [] },
+             { x: g.reduce((a, b) => a + b.s.x, 0) / n, y: g.reduce((a, b) => a + b.s.y, 0) / n, depth: g[0].s.depth });
+    }
 
     // lines: from each open formation to the units it reveals, and from the selection up
     if (S.selection.hierarchy_lines && selId) {

@@ -72,6 +72,7 @@ the author*. The format is in `data/ships/README.md`.
 | Left-drag / right-drag / wheel | pan / rotate / zoom (in toward the cursor; out about the centre; never inside a body) |
 | Click | select a body or unit; on empty space, probe the point (zone, gravity, field) |
 | Click a formation | it opens: the units that answer to it are shown, highlighted and joined to it; the formation it answers to is marked; the rest dims |
+| Others' ships | drawn as tracks; tracks close together on screen collapse into one symbol by count: a flight (up to 5), a group (up to 20), a task force (more), the map's own reading, set in Settings, Display, Others' ships. Click one to pull that track out; zoom in to resolve |
 | U | up the chain of command: select the formation the selected unit answers to |
 | `,` | settings |
 | Double-click, or F | centre on the selection and ride with it |
@@ -81,6 +82,9 @@ the author*. The format is in `data/ships/README.md`.
 | Esc | clear the selection |
 
 Every key but Esc and Shift can be rebound in Settings, Hotkeys.
+
+Under each unit's name: its faction's designation (AVC, AAG, JADF), or, for one without a prefix
+or not yet known, what its frame says (HOSTILE, UNKNOWN, CIVIL); then Pry and brevity.
 
 The cursor reads bearing, range, Eve/Haid and light time from the **active bullseye**: one of the
 player's, at the bottom left (with a scenario on the map, the player is its side's). **+ New** there makes a bullseye of your own

@@ -72,11 +72,15 @@ function roleMarks(ctx, marks, x, y, shape, ew, eh, color) {
   ctx.stroke();
 }
 
-// one unit or formation symbol. c = contact (affiliation, echelon, unit_type, status, callsign, pry, brevity)
+// what a unit's faction is called under it: its prefix (AVC, AAG, JADF), else its frame's tag
+// (style.toml [affiliation]: HOSTILE, UNKNOWN, CIVIL)
+export const designation = (style, c) => c.faction?.prefix || (style.affiliation[c.affiliation] ?? style.affiliation.unknown).tag || '';
+
+// one unit or formation symbol. c = contact (affiliation, echelon, unit_type, status, callsign, pry, brevity, faction)
 // opts: h frame height; hot (hover/selected); label; alpha (dimming); ring (highlight colour);
-// hq (draw the headquarters staff); labelPx, tagPx (text sizes)
+// hq (draw the headquarters staff); labelPx, tagPx (text sizes); faction (its designation among the tags)
 export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = true, alpha: dim = 1, ring = null,
-                                                   hq = false, labelPx = 12, tagPx = 9 } = {}) {
+                                                   hq = false, labelPx = 12, tagPx = 9, faction = true } = {}) {
   const aff = style.affiliation[c.affiliation] ?? style.affiliation.unknown;
   const statuses = (c.status ?? []).map((s) => style.status[s]).filter(Boolean);
   const alpha = dim * Math.min(1, ...statuses.map((s) => s.opacity ?? 1));
@@ -118,7 +122,8 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
   }
   if (!label) return;
   display(ctx, c.callsign, x + ew + 6, y - 1, rgba(hot ? style.palette.fuchsia : style.palette.ink, 0.92 * alpha), labelPx);
-  const tags = [c.pry ? `Pry-${c.pry}` : null, c.brevity ? c.brevity.toUpperCase() : null].filter(Boolean).join('  ');
+  const tags = [...new Set([faction ? designation(style, c) : null, c.pry ? `Pry-${c.pry}` : null,
+                            c.brevity ? c.brevity.toUpperCase() : null].filter(Boolean))].join('  ');
   if (tags) text(ctx, tags, x + ew + 6, y + 2 + tagPx, rgba(aff.color, 0.85 * alpha), tagPx);
 }
 

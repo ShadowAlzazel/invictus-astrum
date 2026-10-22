@@ -96,7 +96,7 @@ def load_style(path: str | Path) -> dict:
         if a not in AFFILIATIONS:
             problems.append(f"[affiliation.{a}] is not one of {AFFILIATIONS}")
             continue
-        for key in set(spec) - {"label", "shape", "color", "fill"}:
+        for key in set(spec) - {"label", "shape", "color", "fill", "tag"}:
             problems.append(f"[affiliation.{a}] unknown key {key!r}")
         if spec.get("shape") not in SHAPES:
             problems.append(f"[affiliation.{a}] shape must be one of {SHAPES}")
