@@ -1,8 +1,8 @@
 """What a player is shown: functions of the truth.
 
 The fleet keeps the truth (astrum/sim.py: every row as it is, exactly). What a player is shown is
-made from it for a view, a faction of the scenario's or MASTER, by functions, each on or off in
-config.toml [picture]:
+made from it for a view, a faction of the scenario's or MASTER, by functions, each a switch
+(astrum/switches.py: config.toml [picture]'s defaults, a map's own choice):
 
     detection      a ship not the view's own is shown only once one of its own ships' sensors has
                    seen her (astrum/detect.py: cones that sweep, and active scans while it pings),
@@ -28,16 +28,10 @@ from __future__ import annotations
 import numpy as np
 
 from .detect import SAMPLE_S, arrived, latest
+from .switches import resolve
 
 C = 299_792_458.0           # m/s
 MASTER = "master"
-SWITCHES = {                # config.toml [picture], each switched for one map's pictures from its Settings
-    "detection": "Detection: others shown only once our sensors see them",
-    "relay": "Relay: ... once the report reaches our fleet flagship",
-    "light_delay": "Light delay (without detection): others as their light reaches us",
-    "hide_private": "Hide what only their ships know (tanks, orders, store)",
-    "old_days": "Old tracks kept, after a track is dropped (days)",
-}
 STAGES = ("", "detected", "tracked", "classified", "identified")
 PRIVATE = ("mass_t", "dry_t", "propellant_t", "propellant_share", "dv_left_kms", "dv_spent_kms",
            "max_accel_g", "accel_g", "thrust_mn", "jet_pw", "heat_share", "cold_left_h", "cold")
@@ -121,21 +115,21 @@ def view(fleet, pic: dict, t: float, own: np.ndarray, settings: dict, view_id: s
     minute she was last seen); and which rows are hidden (not the view's own). knows: the rows
     whose class the side knows (journal; else all)."""
     n = len(own)
+    settings = resolve(settings)                         # (a partial dict: the rest at their defaults)
     seen = {"seen_s": np.full(n, np.nan), "sig_w": np.full(n, np.nan), "relay_s": np.full(n, np.nan), "shown": np.ones(n, dtype=bool),
             "identified": np.ones(n, dtype=bool), "lost": np.zeros(n, dtype=bool), "old": np.zeros(n, dtype=bool),
             "stage": np.full(n, 4, dtype=np.int8), "seen_k": np.full(n, -1, dtype=np.int64),
-            "hidden": ~own if settings.get("hide_private", True) else np.zeros(n, dtype=bool)}
+            "hidden": ~own if settings["hide_private"] else np.zeros(n, dtype=bool)}
     if own.all():                                        # MASTER
         return seen
     if t <= fleet.t0 or fleet.timeline is None:          # before it starts: nothing seen yet
-        if settings.get("detection", True):
+        if settings["detection"]:
             seen["shown"][~own] = False
         return seen
-    if settings.get("detection", True):
+    if settings["detection"]:
         detection(fleet, pic, t, own, seen, view_id, friendly if friendly is not None else np.zeros(n, dtype=bool),
-                  settings.get("relay", True), knows if knows is not None else np.ones(n, dtype=bool),
-                  float(settings.get("old_days", 7)) * 86400.0)
-    elif settings.get("light_delay", True):
+                  settings["relay"], knows if knows is not None else np.ones(n, dtype=bool), settings["old_days"] * 86400.0)
+    elif settings["light_delay"]:
         light_delay(fleet, pic, t, own, seen)
     return seen
 

@@ -13,7 +13,7 @@
   export let onclose = () => {};
   export let status = '';
   export let game = {};                // the picture's switches: { key: bool }
-  export let gameRules = {};           // { key: { label, default } }
+  export let gameRules = {};           // astrum/switches.py: { key: { label, default, min, max, step } }
   export let ongame = () => {};        // (key, value | null: back to its default)
   export let tab = 'display';
 
@@ -94,7 +94,7 @@
       {#each Object.entries(gameRules) as [k, spec]}
         {#if typeof spec.default === 'number'}
           <label class="f" class:mod={(game[k] ?? spec.default) !== spec.default}><span>{spec.label}</span>
-            <input type="range" min="0" max="30" step="0.5" value={game[k] ?? spec.default} on:input={(e) => ongame(k, Number(e.target.value))} />
+            <input type="range" min={spec.min} max={spec.max} step={spec.step} value={game[k] ?? spec.default} on:input={(e) => ongame(k, Number(e.target.value))} />
             <output>{game[k] ?? spec.default}</output>
           </label>
         {:else}

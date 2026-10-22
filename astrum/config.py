@@ -13,6 +13,8 @@ import re
 import tomllib
 from pathlib import Path
 
+from . import switches
+
 ROOT = Path(__file__).resolve().parent.parent
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 SHAPES = ("rect", "diamond", "quatrefoil", "square", "circle")
@@ -25,7 +27,7 @@ CONFIG_SCHEMA = {
     "server": {"host": str, "port": int},
     "live": {"check_seconds": float},
     "sim": {"start": str, "orbit_samples": int, "table_days": float, "run_ahead": bool},
-    "picture": {"detection": bool, "relay": bool, "old_days": (int, float), "light_delay": bool, "hide_private": bool},
+    "picture": None,               # astrum/switches.py: every switch, its type and range
 }
 
 
@@ -49,6 +51,9 @@ def load_config(path: str | Path = ROOT / "config.toml") -> dict:
         got = doc.get(sec)
         if got is None:
             problems.append(f"missing section [{sec}]")
+            continue
+        if keys is None:
+            problems += switches.check(got)
             continue
         for key in set(got) - set(keys):
             problems.append(f"[{sec}] unknown key {key!r}")

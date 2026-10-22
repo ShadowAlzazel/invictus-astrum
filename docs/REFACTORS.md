@@ -19,9 +19,14 @@ What has been measured and left for later, biggest gain first. Figures are the d
 
 | # | Refactor | Why |
 |---|---|---|
-| 8 | **One home for the picture's switches.** `config.toml [picture]` defaults, `picture.SWITCHES` labels, the map's Game tab, the per-request override in `SimHost.frame`. | Four places say what a switch is; one table (key, type, default, label, range) would. |
 | 9 | **`detect.latest` kept by side, not in the shared `_scans` dict.** Summaries, scans and strided scans share one dict with a FIFO cap, and finding the newest summary before a minute scans its keys. | A per-side ring of summaries: clearer, and the lookup constant. |
 | 10 | **Old-track removals kept.** They live in the sim's memory (`SimHost._dismissed`): a restart brings them back. | Write them beside `bullseyes.toml`, per player. |
 | 11 | **Clock jumps longer than the hold.** Sweeps between are skipped and a ship seen on both sides starts a new track (her stage lost). | With #3 the run-ahead sweeps every minute anyway; else carry the track over a jump when she is seen on both sides. |
 | 12 | **`Versions` as arrays.** Per-row Python lists, flattened for `at` when they change. | Kept flat (append-only arrays with a per-row cut) would drop the rebuild and the lists. |
 | 13 | **Faction data in one shape.** `factions.toml` is read into dicts with derived keys (`parent`, `member`, `branch_of` by name) that the client and the sim each re-derive from (`picture.root`, `own_rows`, `known_units`). | A small Faction object with `root`, `mine`, `knows` methods. |
+
+## Done
+
+- **8. One home for the picture's switches** (`astrum/switches.py`): one table (key, default and so
+  type, label, range) that `config.toml [picture]` is checked against, a map's own choice is read
+  through (`resolve`), and the Game tab is drawn from (`described`).

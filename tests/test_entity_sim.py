@@ -1405,3 +1405,19 @@ def test_the_registry_shows_each_class_s_sensors():
     assert s["relay"]["vigil"] and s["rules"]["identify"] == 25 and s["gives_off"]["warm_mw"] == 20
     h = c.get("/api/ships/holzweiber").json()["sensing"]
     assert [u["sensor"] for u in h["unsimulated"]] == ["blister"]
+
+
+def test_the_picture_s_switches_are_one_table():
+    """astrum/switches.py: config.toml [picture] is checked against it (every switch, its type and
+    range), a map's own choice is read through it, and the Game tab is drawn from it."""
+    from astrum import switches
+    from astrum.config import load_config
+    base = load_config()["picture"]
+    assert switches.check(base) == []
+    bad = switches.check({**base, "relay": 1, "old_days": 99, "nope": True})
+    assert any("relay" in p for p in bad) and any("old_days" in p for p in bad) and any("nope" in p for p in bad)
+    got = switches.resolve(base, {"relay": 0, "old_days": 45, "nope": 1})
+    assert got["relay"] is False and got["old_days"] == 30.0 and "nope" not in got and got["detection"] is True
+    assert switches.resolve({"detection": False}) == {**switches.resolve({}), "detection": False}   # a partial dict
+    game = switches.described(base)
+    assert game["old_days"]["max"] == 30.0 and game["detection"]["label"].startswith("Detection")

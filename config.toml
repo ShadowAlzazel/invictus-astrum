@@ -25,7 +25,8 @@ table_days = 60        # body positions worked out up front, from each game's st
 run_ahead = true       # a worker keeps the fleet flown ahead of the map's clock; off, each picture flies it there
 
 [picture]              # what a view is shown, made from the simulation's truth (astrum/picture.py); all off: all of it
-                       # (the defaults: the map's Settings, Game, switches them for its own pictures)
+                       # (the defaults: the map's Settings, Game, switches them for its own pictures;
+                       # every switch, its type and range: astrum/switches.py)
 detection = true       # a ship not its own is shown once its own ships' sensors see her, as that light left her
 relay = true           # ... once the report has come up to its fleet flagship (off: the moment she is seen)
 light_delay = true     # (without detection) a ship not its own is shown as her light reached the nearest of its own

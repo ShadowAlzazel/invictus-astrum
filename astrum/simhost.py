@@ -36,6 +36,7 @@ import numpy as np
 from . import picture
 from .app import contact_dict
 from .encode import ShipEncoder, ship_columns
+from .switches import resolve
 from .loader import contact_positions
 from .placement import plan
 from .entity import G0
@@ -396,8 +397,7 @@ class SimHost:
             if self.ahead is not None:
                 self.ahead.want(sc.id, fleet, t)
             side = self._side(sc, fleet, world.side(sc, req.get("view"), req.get("player")))
-            switches = {**world.config["picture"], **{k: bool(v) if isinstance(world.config["picture"].get(k, True), bool) else float(v)
-                                                       for k, v in (req.get("picture") or {}).items() if k in picture.SWITCHES}}
+            switches = resolve(world.config["picture"], req.get("picture"))
             t, ids, cols, flown, seen = self._ships_at(fleet, t, side.own, side.view, side.friendly, switches, side.knows)
             names, tracks = side.picture(seen)
             ships, full = enc.encode(fleet, cols, names, (sid, sc.id, world.version, id(fleet), side.view, *sorted(switches.items())),

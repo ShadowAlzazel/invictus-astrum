@@ -46,6 +46,7 @@ from .entity import ShipSpec, SpecError
 from .sim import Fleet, Order
 from . import display
 from . import picture
+from . import switches
 from .detect import suite, unsimulated
 
 KM = 1e-3
@@ -621,7 +622,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             "speed_of_light_kms": k.C * KM,
             "ship_classes": len(world.ships.classes) if world.ships else 0,
             "display": {"rules": world.display_rules, "settings": world.settings},
-            "picture": {k: {"label": label, "default": config["picture"].get(k, True)} for k, label in picture.SWITCHES.items()},
+            "picture": switches.described(config["picture"]),
         }
 
     @app.get("/api/status")
