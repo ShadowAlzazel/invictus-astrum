@@ -449,9 +449,16 @@ def body_dict(s, b, zones) -> dict:
 
 
 def formation_role(style: dict | None, callsign: str) -> str:
+    """The role a callsign's words give: the first word that begins one of the roles' words or
+    phrases, the longest phrase where two begin there ("Forward Scout 1": forward-scout)."""
     roles = (style or {}).get("formation_role", {})
-    by_word = {w.lower(): r for r, spec in roles.items() for w in spec.get("words", [])}
-    return next((by_word[w] for w in callsign.lower().split() if w in by_word), "")
+    by_phrase = {tuple(w.lower().split()): r for r, spec in roles.items() for w in spec.get("words", [])}
+    words = callsign.lower().split()
+    for i in range(len(words)):
+        for n in sorted({len(p) for p in by_phrase}, reverse=True):
+            if tuple(words[i:i + n]) in by_phrase:
+                return by_phrase[tuple(words[i:i + n])]
+    return ""
 
 
 def contact_dict(world: "World", c, tree: dict | None = None) -> dict:

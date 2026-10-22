@@ -483,7 +483,12 @@ def test_formation_roles_from_the_callsign_or_stated():
     assert formation_role(style, "Line Flotilla 1") == "line"
     assert formation_role(style, "TF Picket 2") == "picket"
     assert formation_role(style, "Task Force 2") == ""
-    assert style["formation_role"]["vanguard"]["marks"] == ["oval", "slash"]
+    assert formation_role(style, "Forward Scout Squadron 1") == "forward-scout"     # the longer phrase
+    assert formation_role(style, "Scout Squadron 2") == "scout"
+    assert formation_role(style, "Tender Squadron 3") == "supply"
+    roles = style["formation_role"]                                  # roles are made of blocks
+    assert roles["forward-escort"]["marks"] == ["stroke", "dome"] and roles["forward-escort"]["label"] == "Forward Escort"
+    assert roles["relay"]["marks"] == ["dome", "bolt"] and roles["supply"]["marks"] == ["bar"]
     meta = TestClient(app).get("/api/meta").json()
     byid = {c["id"]: c for s in meta["scenarios"] if s["id"] == "sol-demo" for c in s["contacts"]}
     assert byid["tf2-lf1"]["role"] == "line" and byid["tf2-lf1-bs"]["role"] == "battle"
@@ -493,9 +498,13 @@ def test_formation_roles_from_the_callsign_or_stated():
 def test_a_role_must_be_known(tmp_path):
     from astrum.config import ConfigError, load_style
     from astrum.config import ROOT as R
-    text = (R / "style.toml").read_text() + '\n[formation_role.odd]\nmarks = ["star"]\n'
+    text = (R / "style.toml").read_text() + '\n[formation_role.odd]\nblocks = ["star"]\n'
     (tmp_path / "style.toml").write_text(text)
     with pytest.raises(ConfigError, match="formation_role.odd"):
+        load_style(tmp_path / "style.toml")
+    text = (R / "style.toml").read_text().replace('draw = "bolt"', 'draw = "zigzag"')
+    (tmp_path / "style.toml").write_text(text)
+    with pytest.raises(ConfigError, match="formation_block"):
         load_style(tmp_path / "style.toml")
 
 

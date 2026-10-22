@@ -88,7 +88,7 @@ above it comes down to it.
 | `bullseyes.toml` | bullseyes commanders made on the map (written by the map; not committed) |
 | `data/factions.toml` | factions: a name, and the prefix a ship's name reads with; units take theirs from the formation above |
 | `data/scenarios/*.toml` | units placed in a system (symbols only; no engagement is simulated yet) |
-| `style.toml` | colours, affiliation frames, echelon marks, formation roles (their APP-6 marks), body display sizes by role |
+| `style.toml` | colours, affiliation frames, echelon marks, formation roles (built from blocks, each an APP-6 mark: battle, line, picket, supply, forward, point defence, escort, signal), body display sizes by role |
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |
 | `settings.toml` | your settings, written by the map; overrides `display.toml`; not committed (delete to reset) |
 | `config.toml` | paths, port, clock start, orbit sampling |

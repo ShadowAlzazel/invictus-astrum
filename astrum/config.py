@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 SHAPES = ("rect", "diamond", "quatrefoil", "square", "circle")
 AFFILIATIONS = ("friend", "hostile", "unknown", "neutral")
-ROLE_MARKS = ("oval", "cross", "slash", "chevron", "dome")     # what a formation's role is drawn with, inside its frame
+BLOCK_DRAWS = ("oval", "cross", "slash", "bar", "stroke", "chevron", "dome", "bolt")   # what a role's blocks are drawn as
 
 CONFIG_SCHEMA = {
     "paths": {"systems": str, "scenarios": str, "players": str, "style": str, "ships": str,
@@ -77,10 +77,10 @@ def load_config(path: str | Path = ROOT / "config.toml") -> dict:
 def load_style(path: str | Path) -> dict:
     path = Path(path)
     doc, problems = _read(path), []
-    allowed = {"palette", "affiliation", "status", "echelon", "roles", "formation_role"}
+    allowed = {"palette", "affiliation", "status", "echelon", "roles", "formation_block", "formation_role"}
     for sec in set(doc) - allowed:
         problems.append(f"unknown section [{sec}]")
-    for sec in allowed - set(doc) - {"formation_role"}:
+    for sec in allowed - set(doc) - {"formation_block", "formation_role"}:
         problems.append(f"missing section [{sec}]")
     if problems:
         raise ConfigError(path.name, problems)
@@ -114,14 +114,21 @@ def load_style(path: str | Path) -> dict:
             problems.append(f"[roles.{r}] unknown key {key!r}")
         if not isinstance(spec.get("size_px"), (int, float)) or spec["size_px"] < 0:
             problems.append(f"[roles.{r}] size_px must be a number ≥ 0")
+    blocks = doc.setdefault("formation_block", {})
+    for b, spec in blocks.items():
+        if not isinstance(spec, dict) or set(spec) - {"draw", "label"} or spec.get("draw") not in BLOCK_DRAWS:
+            problems.append(f"[formation_block] {b} is {{ draw = one of {BLOCK_DRAWS}, label = \"…\" }}")
     for r, spec in doc.get("formation_role", {}).items():
-        for key in set(spec) - {"label", "marks", "words"}:
+        for key in set(spec) - {"label", "blocks", "words"}:
             problems.append(f"[formation_role.{r}] unknown key {key!r}")
-        marks = spec.get("marks")
-        if not isinstance(marks, list) or not marks or any(m not in ROLE_MARKS for m in marks):
-            problems.append(f"[formation_role.{r}] marks is a list of {ROLE_MARKS}")
+        made = spec.get("blocks")
+        if not isinstance(made, list) or not made or any(b not in blocks for b in made):
+            problems.append(f"[formation_role.{r}] blocks is a list of [formation_block] names: {sorted(blocks)}")
         if not isinstance(spec.get("words", []), list) or not all(isinstance(w, str) for w in spec.get("words", [])):
-            problems.append(f"[formation_role.{r}] words is a list of callsign words")
+            problems.append(f"[formation_role.{r}] words is a list of callsign words or phrases")
     if problems:
         raise ConfigError(path.name, problems)
+    for spec in doc.get("formation_role", {}).values():     # what the map draws and names, made from the blocks
+        spec["marks"] = [blocks[b]["draw"] for b in spec["blocks"]]
+        spec.setdefault("label", " ".join(blocks[b].get("label", b.title()) for b in spec["blocks"]))
     return doc

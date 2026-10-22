@@ -67,46 +67,91 @@ task-force = "XX"
 classis    = "XXX"
 armada     = "XXXX"
 
-# A formation's role, named in its panel by label, drawn inside its frame as the APP-6 marks it borrows (ships keep their
-# class's type). marks: oval (armour), cross (infantry), slash (reconnaissance: one diagonal,
-# lower left to upper right), chevron (anti-armour: an inverted V), dome (air defence: an arc on
-# the bottom edge). A scenario names a
-# formation's role (role = "battle"); if it does not, the first word of its callsign that one of
-# these lists under words gives it ("Battle Squadron 1": battle).
-[formation_role.vanguard]
-label = "Vanguard, Forward Recon"
-marks = ["oval", "slash"]
-words = ["Vanguard"]
+# ---- formation roles: what a formation is for, built from blocks --------------------------------
+# A formation's role is drawn inside its frame as one or more blocks, laid over each other: the
+# APP-6 marks, read for this setting. Like a rating in the age of sail, a role is a composite: a
+# forward escort is the forward block and the escort block. Ships keep their class's type.
+#
+# The blocks. draw is what the map draws (the APP-6 mark it was, in brackets):
+#   oval     an ellipse in the middle                        (armour)
+#   cross    corner to corner, both ways                     (infantry)
+#   slash    one diagonal, lower left to upper right         (reconnaissance)
+#   bar      a bar across the bottom                         (supply)
+#   stroke   a stroke down the middle, top to bottom         (motorized)
+#   chevron  an inverted V, the bottom corners to the top    (anti-armour)
+#   dome     an arc standing on the bottom edge              (air defence)
+#   bolt     a lightning bolt, upper left to lower right     (signal)
+[formation_block]
+battle  = { draw = "oval",    label = "Battle" }           # O
+line    = { draw = "cross",   label = "Line" }             # X
+picket  = { draw = "slash",   label = "Picket" }           # /
+supply  = { draw = "bar",     label = "Supply" }           # _
+forward = { draw = "stroke",  label = "Forward" }          # |
+pd      = { draw = "chevron", label = "Point Defence" }    # /\
+escort  = { draw = "dome",    label = "Escort" }           # the dome
+signal  = { draw = "bolt",    label = "Signal" }           # the bolt
 
+# The roles. blocks: what it is made of, drawn in that order. label: as its panel names it (left
+# out, the blocks' labels: ["forward", "escort"] reads "Forward Escort"). words: callsign words or
+# phrases that give a formation this role when it does not name one (role = "battle" in the
+# scenario); the first in the callsign wins, the longer phrase where two start at the same word
+# ("Forward Scout Squadron 1": forward-scout, not scout).
+# To make one: a new [formation_role.<id>] with its blocks; to make a new block: a line above.
 [formation_role.battle]
-label = "Battle"
-marks = ["oval"]
+blocks = ["battle"]
 words = ["Battle"]
 
 [formation_role.line]
-label = "Line"
-marks = ["cross"]
+blocks = ["line"]
 words = ["Line"]
 
-[formation_role.escort]
-label = "Escort, PD, Missile Defence"
-marks = ["chevron", "dome"]
-words = ["Escort"]
-
-# kept for later: the anti-armour mark alone; no callsign gives it, a scenario may name it
-[formation_role.anti-armour]
-label = "Anti-armour"
-marks = ["chevron"]
-
 [formation_role.picket]
-label = "Picket, Reconaissance"
-marks = ["slash"]
+label = "Picket, Reconnaissance"
+blocks = ["picket"]
 words = ["Picket"]
 
 [formation_role.strike]
 label = "Strike, Shock"
-marks = ["oval", "cross"]
+blocks = ["battle", "line"]
 words = ["Strike"]
+
+[formation_role.vanguard]
+label = "Vanguard"
+blocks = ["forward", "battle"]
+words = ["Vanguard"]
+
+[formation_role.escort]
+label = "Escort, Point Defence"
+blocks = ["pd", "escort"]
+words = ["Escort"]
+
+[formation_role.point-defence]
+blocks = ["pd"]
+words = ["PD"]
+
+[formation_role.scout]
+label = "Scout"
+blocks = ["escort", "picket"]
+words = ["Scout"]
+
+[formation_role.relay]
+label = "Relay, Communications"
+blocks = ["escort", "signal"]
+words = ["Relay"]
+
+[formation_role.supply]
+label = "Supply, Tender"
+blocks = ["supply"]
+words = ["Supply", "Tender"]
+
+[formation_role.forward-scout]
+label = "Forward Scout"
+blocks = ["forward", "escort", "picket"]
+words = ["Forward Scout"]
+
+[formation_role.forward-escort]
+blocks = ["forward", "escort"]
+words = ["Forward Escort"]
 
 # Bodies are drawn large by tactical role (size in px at display scale 1). 0 hides the display.
 [roles.star]
