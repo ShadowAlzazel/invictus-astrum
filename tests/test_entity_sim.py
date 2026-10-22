@@ -465,6 +465,28 @@ def test_time_to_target_is_flown_ahead():
     assert eta == pytest.approx(T - t, rel=0.03)
 
 
+def test_time_to_target_of_a_ship_keeping_her_place():
+    """A formation's ship flying her last leg alone asks with the place she keeps (hold_m) as her
+    row holds it, an array: flown ahead the same as given as a list."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-1", "t": t, "g": 0.4, "player": "arcvs",
+                               "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
+    f.at(t + 60)
+    i = f.c.row["kiki-1"]
+    with f.lock:
+        goal = {"target": f.c.target_of(i), "standoff_m": float(f.c.stand[i])}
+        t0, r, v, a = f.t, f.c.r[i].copy(), f.c.v[i].copy(), 0.4 * G0
+        R0, V0 = f._raw_target(goal, t0)
+    hold = np.array([2000e3, 0.0, 0.0])
+    as_array = f._predict({**goal, "hold_m": hold}, t0, r, v, a, R0 + hold, V0)
+    assert math.isfinite(as_array) and as_array == f._predict({**goal, "hold_m": hold.tolist()}, t0, r, v, a, R0 + hold, V0)
+
+
 def test_orders_given_in_the_same_second_are_told_apart():
     """A retune of the first order does not reach the second, given the same second to the same unit."""
     from fastapi.testclient import TestClient

@@ -1357,7 +1357,7 @@ class Fleet:
         d = float(np.linalg.norm(R0 - r))
         est = eta_s(d, 0.0, float(np.linalg.norm(v - V0)), a)
         horizon = min(PREDICT_HORIZON_S, 3 * est + 3600.0)
-        hold = np.asarray(goal.get("hold_m") or (0.0, 0.0, 0.0), dtype=float)
+        hold = np.zeros(3) if goal.get("hold_m") is None else np.asarray(goal["hold_m"], dtype=float)   # (an array, from _eta)
         # where the target is, on a grid from the scenario's start: every ship flying to it, and every
         # time it is flown ahead again, reads the same moments (Fleet._point keeps them)
         g0 = t0 if moving else self.t0 + math.floor((t0 - self.t0) / PREDICT_KNOT_S) * PREDICT_KNOT_S
