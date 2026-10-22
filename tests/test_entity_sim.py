@@ -1156,6 +1156,8 @@ def test_a_view_orders_only_its_own():
     assert sc["view"] == "ghost" and {x["id"] for x in sc["contacts"]} == {"ghost", "ghost-1", "ghost-2", "ghost-3"}
     assert all(x["affiliation"] == "friend" for x in sc["contacts"])               # its own, to it
     assert [x["label"] for x in sc["factions"]] == ["ARCVS", "JADF", "Bandits", "GHOST"]
+    vigil = {x["id"]: x for x in meta["specs"]["salticidae"]["sensors"]}           # what R draws: her class's suite
+    assert vigil["passive"]["cones"] == 6 and vigil["watch-optic"]["km"] == 6e7 and vigil["ir-telescope"]["ref_mw"] == 0.3
     fr = json.loads(host.frame({"system": "sol", "t": t, "view": "ghost", "scenario": "sol-demo"}, conn=3))
     assert set(fr["contacts"]) >= {"ghost", "ghost-1"} and "g1" not in fr["contacts"] and "kiki" not in fr["contacts"]
     fr = json.loads(host.frame({"system": "sol", "t": t, "player": "arcvs", "view": "master", "scenario": "sol-demo"}, conn=2))

@@ -259,7 +259,7 @@
           </dl>
           {/if}
         {/if}
-        {#if spec?.has_drive}<p class="dim hint"><kbd>{cap($keymap.order)}</kbd> order her{#if ship.goal} · <kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>{cap($keymap.ranges)}</kbd> weapon ranges{/if}</p>{/if}
+        {#if spec?.has_drive}<p class="dim hint"><kbd>{cap($keymap.order)}</kbd> order her{#if ship.goal} · <kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>{cap($keymap.ranges)}</kbd> weapon ranges{/if}{#if spec.sensors?.length} · <kbd>{cap($keymap.sensing)}</kbd> detection{/if}</p>{/if}
       </section>
     {:else if spec && !spec.has_drive}
       <section><h2>Ship</h2><p class="dim">No drive stated for her class; she holds station.</p></section>

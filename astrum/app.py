@@ -46,6 +46,7 @@ from .entity import ShipSpec, SpecError
 from .sim import Fleet, Order
 from . import display
 from . import picture
+from .detect import suite
 
 KM = 1e-3
 _conn_n = itertools.count(1)    # the map's connections, for the simulation's side to tell apart
@@ -595,8 +596,8 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
                                         for f in sc.factions],
                            "contacts": side_contacts(world, sc, side)}
                           for sc in world.scenarios.values()],
-            "specs": {cid: spec.as_dict() for cid in (world.ships.classes if world.ships else {})
-                      if (spec := world.spec(cid)) is not None},
+            "specs": {cid: {**spec.as_dict(), "sensors": suite(world.ships, world.ships.classes[cid])}
+                      for cid in (world.ships.classes if world.ships else {}) if (spec := world.spec(cid)) is not None},
             "style": world.style,
             "speed_of_light_kms": k.C * KM,
             "ship_classes": len(world.ships.classes) if world.ships else 0,

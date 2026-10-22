@@ -288,11 +288,14 @@
     legendPinned = !legendPinned;
     try { localStorage.setItem('astrum.legend.pinned', legendPinned ? '1' : '0'); } catch { /* not remembered */ }
   }
-  function keyUp(e) { if (is(e, 'ranges')) ranges = false; }
+  // R held: detection ranges
+  let sensing = false;
+  function keyUp(e) { if (is(e, 'ranges')) ranges = false; if (is(e, 'sensing')) sensing = false; }
 
   function key(e) {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'range') return;
     if (is(e, 'ranges') && mode === 'map') { ranges = true; return; }
+    if (is(e, 'sensing') && mode === 'map') { sensing = true; return; }
     if (is(e, 'pause')) { e.preventDefault(); paused = !paused; }
     if (is(e, 'faster')) warp = Math.min(warp + 1, WARPS.length - 1);
     if (is(e, 'slower')) warp = Math.max(warp - 1, 0);
@@ -397,10 +400,10 @@
   onDestroy(() => { cancelAnimationFrame(raf); clearInterval(poll); map?.dispose(); });
 </script>
 
-<svelte:window on:keydown={key} on:keyup={keyUp} on:blur={() => (ranges = false)} on:pointermove={trackUI} />
+<svelte:window on:keydown={key} on:keyup={keyUp} on:blur={() => (ranges = sensing = false)} on:pointermove={trackUI} />
 
 <canvas class="map" bind:this={canvas}></canvas>
-<Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} />
+<Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} sensing={sensing && mode === 'map'} />
 <HudCursor {map} {style} {settings} {overUI} />
 {#if mode === 'map'}
   <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />

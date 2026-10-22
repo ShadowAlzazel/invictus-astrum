@@ -86,3 +86,13 @@ readout   = { default = true, label = "Bearing and range readout" }
 label = "Weapon ranges (hold G)"
 selected_only = { default = false, label = "Only the selection's rings" }
 min_px        = { default = 14, min = 4, max = 60, step = 1, label = "Smallest ring drawn (px)" }
+
+# ---- detection ranges: hold R ----------------------------------------------------------------------
+# Rings where each of a ship's sensors (her class's: astrum/detect.py suite) sees a ship giving off
+# vs_mw: her plume and her rads, as the simulation reckons them (a sensor's reach goes as the square
+# root of that). A ring is the farthest it sees, not where it looks: optics are cones that sweep.
+[detection]
+label = "Detection ranges (hold R)"
+selected_only = { default = false, label = "Only the selection's rings" }
+vs_mw         = { default = "30", choices = ["0.3", "3", "30", "300", "3000", "30000"], label = "Against a ship giving off (MW): 0.3 cold, 30 warm, more burning" }
+min_px        = { default = 14, min = 4, max = 60, step = 1, label = "Smallest ring drawn (px)" }

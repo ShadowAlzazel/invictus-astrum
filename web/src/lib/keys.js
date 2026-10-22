@@ -14,6 +14,7 @@ export const ACTIONS = {
   haid:     { key: 'q', label: 'Aim toward Haid' },
   plane:    { key: 'b', label: "Orders: her own height or the bullseye's plane" },
   ranges:   { key: 'g', label: 'Weapon ranges (hold)' },
+  sensing:  { key: 'r', label: 'Detection ranges (hold)' },
   focus:    { key: 'f', label: 'Focus on the selection' },
   home:     { key: 'h', label: 'Frame everything' },
   chain:    { key: 'u', label: 'Up the chain of command' },

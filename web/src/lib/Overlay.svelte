@@ -18,6 +18,7 @@
   export let drules = {};            // display.toml rules
   export let contacts = [];          // scenario contacts (static definitions, with their tree)
   export let ranges = false;         // G held: where every armed ship's weapons start to matter
+  export let sensing = false;        // R held: how far every ship's sensors see
 
 
   let canvas, ctx, unhook, W = 0, H = 0, dpr = 1;
@@ -236,6 +237,13 @@
   // selected_only, the rest are not drawn.
   const RANGE_DASH = { 'de-mast': [2, 4], dazzle: [1, 7], guns: [5, 4] };
   const RANGE_ALPHA = { 'de-mast': 0.5, dazzle: 0.3, guns: 0.45 };
+  // R held: the same, for each of a ship's sensors (her class's suite), where it sees a ship giving
+  // off display.toml [detection] vs_mw; dotted finer, and fainter
+  const weapons = (c) => c.ship?.ranges ?? [];
+  const sensors = (c) => {
+    const vs = Number(settings.detection?.vs_mw ?? 30);
+    return (c.ship?.sensors ?? []).map((s) => ({ what: s.name, km: s.km * Math.sqrt(vs / s.ref_mw), dash: [1, 3], alpha: 0.3 }));
+  };
   function rangeFocus(byId, sel) {
     const c = sel && byId[sel];
     if (!c) return new Set();
@@ -246,26 +254,27 @@
     walk(sel);
     return out;
   }
-  function drawRanges() {
+  function drawRanges(ringsOf = weapons, R = settings.ranges ?? {}) {
     const pos = map.state.contacts ?? {}, sel = map.selected?.kind === 'contact' ? map.selected.id : null;
     const byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
-    const focus = rangeFocus(byId, sel), R = settings.ranges ?? {};
+    const focus = rangeFocus(byId, sel);
     const only = R.selected_only, minPx = R.min_px ?? 14;
     const childCol = style.palette[drules.selection?.rules.child_color] ?? style.palette.cyan;
     const labelled = new Set();
     for (const c of contacts) {
       const p = pos[c.id], on = focus.has(c.id);
-      if (!c.ship?.ranges?.length || !p || (only && !on)) continue;
+      const rings = ringsOf(c);
+      if (!rings.length || !p || (only && !on)) continue;
       const s = map.project(p);
       if (!s) continue;
       const col = on ? (c.id === sel ? style.palette.fuchsia : childCol) : (style.affiliation[c.affiliation] ?? style.affiliation.unknown).color;
-      for (const r of c.ship.ranges) {
+      for (const r of rings) {
         const px = map.pxRadius(p, r.km);
         if (px < minPx || px > 4 * Math.max(W, H)) continue;
         const key = `${r.what} ${r.km}`;
         const label = (on && !labelled.has(`on ${key}`)) || (!on && !labelled.has(key)) ? `${r.what} ${km(r.km)}` : '';
         labelled.add(on ? `on ${key}` : key);
-        zoneRing(ctx, s.x, s.y, px, rgba(col, on ? 0.85 : RANGE_ALPHA[r.what] ?? 0.45), label, RANGE_DASH[r.what] ?? [2, 4]);
+        zoneRing(ctx, s.x, s.y, px, rgba(col, on ? 0.85 : r.alpha ?? RANGE_ALPHA[r.what] ?? 0.45), label, r.dash ?? RANGE_DASH[r.what] ?? [2, 4]);
       }
     }
   }
@@ -285,6 +294,7 @@
     drawZones();
     drawBodies(marks);
     if (ranges && settings.layers.contacts) drawRanges();
+    if (sensing && settings.layers.contacts) drawRanges(sensors, settings.detection ?? {});
     if (settings.layers.contacts) drawContacts(marks);
     map.marks = marks;
   }

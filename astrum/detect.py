@@ -51,6 +51,41 @@ def spread(n: int, turn: float = 0.0) -> np.ndarray:
     return np.stack([x, rho * np.cos(phi), rho * np.sin(phi)], axis=1)
 
 
+SENSOR_KEYS = ("cone_deg", "reach_km", "ref_mw", "revisit_s")
+
+
+def mounts(registry, sc) -> list[tuple[str | None, int]]:
+    """A class's sensors, as (sensor, how many cones): the standard suite, and a cone for each of
+    her domes and strips (two to a pair) and sensor batteries."""
+    std = (getattr(getattr(registry, "rules", None), "detection", None) or {}).get("standard") or {}
+    arm = getattr(registry, "armoury", None)
+    asm = arm.assemblies if arm else {}
+    out = [(std.get("sensor"), int(std.get("cones", 1)))]
+    for b in getattr(sc, "batteries", ()):
+        kind, raw = b.get("kind"), b.get("raw", {})
+        if kind in ("dome", "strip"):
+            count = int(raw.get("count") or 2 * int(raw.get("pairs") or 0) or 1)
+            out.append((asm.get(kind, {}).get(raw.get(kind), {}).get("sensor"), count))
+        elif kind == "sensor":
+            out.append((raw.get("sensor"), int(raw.get("count") or 1)))
+    return out
+
+
+def suite(registry, sc) -> list[dict]:
+    """A class's simulated sensors for the map, one entry per kind: its name, how far it sees a ship
+    giving off ref_mw (reach scales as the square root of what she gives off), its cones."""
+    arm = getattr(registry, "armoury", None)
+    parts = arm.parts.get("sensor", {}) if arm else {}
+    out: dict[str, dict] = {}
+    for sid, count in mounts(registry, sc):
+        p = parts.get(sid or "", {})
+        if all(k in p for k in SENSOR_KEYS):
+            d = out.setdefault(sid, {"id": sid, "name": p.get("name", sid), "km": float(p["reach_km"]), "ref_mw": float(p["ref_mw"]),
+                                     "cone_deg": float(p["cone_deg"]), "revisit_s": float(p["revisit_s"]), "cones": 0})
+            d["cones"] += count
+    return sorted(out.values(), key=lambda d: d["km"] / math.sqrt(d["ref_mw"]))
+
+
 class Sensors:
     """Every sensor of a fleet, one row each (its cone)."""
 
@@ -59,25 +94,15 @@ class Sensors:
         rules = getattr(getattr(registry, "rules", None), "detection", None) or {}
         arm = getattr(registry, "armoury", None)
         parts = arm.parts.get("sensor", {}) if arm else {}
-        asm = arm.assemblies if arm else {}
-        std = rules.get("standard") or {}
         rows, body, cosr, thr, period, phase, what = [], [], [], [], [], [], []
         for i in range(len(c.row)):
             spec = c.spec[i]
             sc = registry.classes.get(spec.class_id) if spec is not None and hasattr(registry, "classes") else None
             if sc is None:
                 continue
-            mounts = [(std.get("sensor"), int(std.get("cones", 1)))]
-            for b in getattr(sc, "batteries", ()):
-                kind, raw = b.get("kind"), b.get("raw", {})
-                if kind in ("dome", "strip"):                # a cone for each dome, each strip (two to a pair)
-                    count = int(raw.get("count") or 2 * int(raw.get("pairs") or 0) or 1)
-                    mounts.append((asm.get(kind, {}).get(raw.get(kind), {}).get("sensor"), count))
-                elif kind == "sensor":
-                    mounts.append((raw.get("sensor"), int(raw.get("count") or 1)))
-            for m, (sid, count) in enumerate(mounts):
+            for m, (sid, count) in enumerate(mounts(registry, sc)):
                 p = parts.get(sid or "", {})
-                if not all(k in p for k in ("cone_deg", "reach_km", "ref_mw", "revisit_s")):
+                if not all(k in p for k in SENSOR_KEYS):
                     continue                              # not a simulated sensor (yet)
                 T = max(SAMPLE_S, round(float(p["revisit_s"]) / SAMPLE_S) * SAMPLE_S)
                 reach = float(p["reach_km"]) * 1e3
