@@ -109,9 +109,10 @@ journal"). Left out, as now, every class. Classified, a ship is a bogey of her c
 SPECULATRIX); identified, her name and faction.
 
 **Old tracks.** A track not seen for longer than the hold is not forgotten: for `old_days` (config
-`[picture]`, 7; Settings, Game) it stays an **old track**, a small dotted point where she was last
-seen, with what was known of her then and nothing of her since. Her side can remove one (Remove old
-track in its panel); seen again, she is a new track. A jump of the clock longer than the hold
+`[picture]`, 7; Settings, Game) it stays an **old track**, an empty frame where she was last seen
+(an unknown's, a circle; so too a lost track's), with what was known of her then and nothing of
+her since; old tracks near each other fold into one, as live ones do. Her side can remove one
+(Remove old track in its panel); seen again, she is a new track. A jump of the clock longer than the hold
 skips the sweeps between (the map at its fastest warps): what was seen before it is kept, but a
 ship seen on both sides of it starts a new track.
 

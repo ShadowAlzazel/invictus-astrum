@@ -179,17 +179,19 @@
     // (hovered, it holds still; selected, that track stands out of it)
     const T = S.tracks ?? {};
     const tops = contacts.filter((c) => !c.parent).flatMap((c) => fold(c));
-    const loose = T.collapse ? tops.filter((b) => byId[b.id].track && !byId[b.id].old && b.id !== selId) : [];
+    // (old tracks fold among themselves: an empty circle for many, as for one)
+    const loose = T.collapse ? tops.filter((b) => byId[b.id].track && b.id !== selId) : [];
     for (const b of tops) if (!loose.includes(b)) symbol(byId[b.id], b.s);
-    for (const g of clusters(loose, T.cluster_px)) {
+    const groups = [...clusters(loose.filter((b) => !byId[b.id].old), T.cluster_px), ...clusters(loose.filter((b) => byId[b.id].old), T.cluster_px)];
+    for (const g of groups) {
       if (g.length < 2) { symbol(byId[g[0].id], g[0].s); continue; }
       const cs = g.map((b) => byId[b.id]).sort((a, b) => (a.id < b.id ? -1 : 1)), n = cs.length;
       const same = (f) => (cs.every((c) => f(c) === f(cs[0])) ? cs[0] : null);
       const bogeys = cs.filter((c) => c.brevity === 'bogey').length;
       symbol({ id: cs[0].id, track: true, children: [], echelon: n <= T.flight_max ? 'flight' : n <= T.group_max ? 'group' : 'task-force',
                affiliation: same((c) => c.affiliation)?.affiliation ?? 'unknown', faction: same((c) => c.faction?.id)?.faction ?? null,
-               callsign: `${n} ${bogeys === n ? 'bogeys' : 'tracks'}`, brevity: bogeys ? 'bogey' : '',
-               status: cs.every((c) => c.status?.includes('track-lost')) ? ['track-lost'] : [] },
+               callsign: cs[0].old ? `${n} old tracks` : `${n} ${bogeys === n ? 'bogeys' : 'tracks'}`, brevity: bogeys && !cs[0].old ? 'bogey' : '',
+               old: !!cs[0].old, status: cs[0].old ? ['old-track'] : cs.every((c) => c.status?.includes('track-lost')) ? ['track-lost'] : [] },
              { x: g.reduce((a, b) => a + b.s.x, 0) / n, y: g.reduce((a, b) => a + b.s.y, 0) / n, depth: g[0].s.depth });
     }
 

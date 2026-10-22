@@ -86,22 +86,22 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
   const alpha = dim * Math.min(1, ...statuses.map((s) => s.opacity ?? 1));
   const dash = statuses.find((s) => s.dash)?.dash ?? [];
   h *= Math.min(1, ...statuses.map((s) => s.scale ?? 1));
+  const shape = statuses.find((s) => s.shape?.[c.affiliation])?.shape[c.affiliation] ?? aff.shape, hollow = statuses.some((s) => s.hollow);
   const col = hot ? style.palette.fuchsia : aff.color;
 
   if (statuses.some((s) => s.ellipse)) {                       // uncertainty: where it may be now
     ctx.setLineDash([2, 4]); ctx.strokeStyle = rgba(aff.color, 0.45 * alpha); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.ellipse(x, y, h * 1.9, h * 1.3, 0, 0, Math.PI * 2); ctx.stroke();
   }
-  framePath(ctx, aff.shape, x, y, h);
-  ctx.fillStyle = rgba(aff.color, (aff.fill ?? 0.1) * alpha);
-  ctx.fill();
+  framePath(ctx, shape, x, y, h);
+  if (!hollow) { ctx.fillStyle = rgba(aff.color, (aff.fill ?? 0.1) * alpha); ctx.fill(); }
   ctx.setLineDash(dash);
   ctx.strokeStyle = rgba(col, 0.95 * alpha);
   ctx.lineWidth = 1.4;
   ctx.stroke();
   ctx.setLineDash([]);
 
-  const [ew, eh] = frameExtent(aff.shape, h);
+  const [ew, eh] = frameExtent(shape, h);
   if (hq) {                                                    // APP-6 headquarters staff: down from the left edge
     ctx.strokeStyle = rgba(col, 0.95 * alpha); ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.moveTo(x - ew, y); ctx.lineTo(x - ew, y + eh + h * 0.9); ctx.stroke();
@@ -110,14 +110,14 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
     ctx.strokeStyle = rgba(ring, 0.9); ctx.lineWidth = 1.2; ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.arc(x, y, Math.max(ew, eh) + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
   }
-  if (statuses.some((s) => s.dot)) { ctx.fillStyle = rgba(col, 0.9 * alpha); ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2); ctx.fill(); }
   if (statuses.some((s) => s.cross)) {
     ctx.beginPath(); ctx.moveTo(x - ew, y - eh); ctx.lineTo(x + ew, y + eh); ctx.moveTo(x + ew, y - eh); ctx.lineTo(x - ew, y + eh); ctx.stroke();
   }
   const ech = style.echelon[c.echelon] ?? '';
   if (ech) text(ctx, ech, x, y - eh - 3, rgba(col, alpha), 10, FONT_MONO, 'center');
   const role = c.echelon !== 'ship' && c.role ? style.formation_role?.[c.role] : null;
-  if (role) roleMarks(ctx, role.marks, x, y, aff.shape, ew, eh, rgba(col, 0.9 * alpha));
+  if (hollow) { /* the frame alone */ }
+  else if (role) roleMarks(ctx, role.marks, x, y, shape, ew, eh, rgba(col, 0.9 * alpha));
   else if (c.unit_type) text(ctx, c.unit_type.slice(0, 3), x, y + 3.5, rgba(col, 0.9 * alpha), 9, FONT_MONO, 'center');
   else if (c.echelon !== 'ship') {                               // a formation: a small fill of its own
     ctx.fillStyle = rgba(col, 0.8 * alpha); ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
