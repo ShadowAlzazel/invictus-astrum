@@ -33,9 +33,10 @@ import traceback
 
 import numpy as np
 
-from . import picture
+from . import ai, picture, profiles
 from .app import contact_dict
 from .encode import ShipEncoder, ship_columns
+from .profiles import STANCES
 from .switches import resolve
 from .loader import contact_positions
 from .placement import plan
@@ -206,15 +207,23 @@ def give_order(world, req: dict, side_of=None) -> dict:
     side = (side_of or (lambda *a: Side(world, *a)))(sc, fleet, world.side(sc, req.get("view"), req.get("player")))
     unit, g, t = req.get("unit"), req.get("g"), req.get("t")
     switch = next((k for k in ("cold", "active") if isinstance(req.get(k), bool)), None)
-    if switch and isinstance(t, (int, float)):       # wings folded or spread; active sensors swept (pinging) or not
+    stance = {k: req[k] for k in ("stance", "profile") if k in req}
+    if (switch or stance) and isinstance(t, (int, float)):
+        # wings folded or spread; active sensors swept (pinging) or not; a stance or combat profile
+        if stance.get("stance", "hold-fire") not in STANCES:
+            raise OrderRefused(400, f"stance is one of {list(STANCES)}")
         with fleet.lock:
             fleet.reach(float(t), ORDER_BUDGET_S)
         ships = order_ships(world, sc, fleet, unit)
         if not ships:
             raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
         ordering(side, fleet, ships)
-        kind = {"cold": ("warm", "cold"), "active": ("passive", "active")}[switch][req[switch]]
-        return order_reply(fleet, float(t), unit, ships, [Order(sid, float(t), kind, source="map") for sid in ships], side)
+        if "profile" in stance and stance["profile"] not in world.profiles_of(ai.player_of(world, sc, unit)):
+            raise OrderRefused(400, f"no combat profile {stance['profile']!r} for {unit!r}'s side")
+        kind = {"cold": ("warm", "cold"), "active": ("passive", "active")}[switch][req[switch]] if switch else "stance"
+        oid = f"{unit}:{kind}@{t:.0f}#{next(_order_n)}"
+        return order_reply(fleet, float(t), unit, ships, [Order(sid, float(t), kind, target=dict(stance) or None, source="map",
+                                                                order_id=oid, by=unit) for sid in ships], side)
     if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
         raise OrderRefused(400, "an order needs t, and g of 0 or more")
     t = float(t)
@@ -360,6 +369,18 @@ class SimHost:
             elif payload["drop"] in made:
                 self.world.drop_bullseye(player, payload["drop"], save=False)
             return None
+        if kind == "profile":                           # made, changed or deleted on the map (the web side saved it)
+            if "make" in payload:
+                d = payload["make"]
+                self.world.keep_profile(profiles.make(d, d["player"]), save=False)
+            elif payload["drop"] in self.world.profiles_made.get(payload["player"], {}):
+                self.world.drop_profile(payload["player"], payload["drop"], save=False)
+            return None
+        if kind == "engagement":
+            try:
+                return {"ok": True, "reply": self.engagement(payload)}
+            except OrderRefused as e:
+                return {"ok": False, "status": e.status, "detail": e.detail}
         if kind == "draft":
             from .ephemeris import Ephemeris
             from . import workshop
@@ -369,6 +390,28 @@ class SimHost:
                     self.world.drafts["draft"] = (system, Ephemeris(system))
             return None
         raise ValueError(f"no such request {kind!r}")
+
+    def engagement(self, req: dict) -> dict:
+        """How a unit of the side's stands at t (ai.standing; a formation: the stance and profile
+        its ships share, else none, and how many hold each), and the last orders given it."""
+        sc = self.world.scenarios.get(req.get("scenario") or "")
+        fleet = self.world.fleet(sc) if sc else None
+        if fleet is None:
+            raise OrderRefused(404, f"no scenario {req.get('scenario')!r}")
+        side = self._side(sc, fleet, self.world.side(sc, req.get("view"), req.get("player")))
+        unit, t = req.get("unit"), float(req.get("t") or fleet.t)
+        ships = order_ships(self.world, sc, fleet, unit)
+        if not ships:
+            raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
+        ordering(side, fleet, ships)
+        with fleet.lock:
+            each = [ai.standing(self.world, sc, fleet, sid, t) for sid in ships]
+            orders = ai.ledger(fleet, ships, t, int(req.get("n") or 3))
+        out = dict(each[0]) if len(each) == 1 else {
+            **{k: (each[0][k] if all(s[k] == each[0][k] for s in each) else None) for k in ("stance", "profile")},
+            "stances": {s: sum(x["stance"] == s for x in each) for s in dict.fromkeys(x["stance"] for x in each)},
+            "profile_name": each[0]["profile_name"] if all(x["profile"] == each[0]["profile"] for x in each) else None}
+        return {**out, "unit": unit, "ships": len(ships), "veterancy": sc.contacts[unit].veterancy, "ledger": orders}
 
     def stop(self) -> None:
         self.arrivals.stop()

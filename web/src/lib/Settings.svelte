@@ -4,6 +4,8 @@
   //            one means); the server's settings.toml under it
   //   Hotkeys  the key for each action (lib/keys.js): click one, then press its new key
   //   Game     the picture's switches (config.toml [picture]), sent with every picture asked for
+  //   Combat   the commander's combat profiles (astrum/profiles.py), kept by the server: the root
+  //            read-only, a copy of any made their own
   import { ACTIONS, bind, cap, keymap, resetKeys } from './keys.js';
 
   export let rules = {};
@@ -16,8 +18,31 @@
   export let gameRules = {};           // astrum/switches.py: { key: { label, default, min, max, step } }
   export let ongame = () => {};        // (key, value | null: back to its default)
   export let tab = 'display';
+  export let profiles = [];            // the player's: the shared ones (root first), then their own
+  export let profileRules = {};        // { stances: {id: label}, ranges: {id: what}, targets: [...] }
+  export let onprofile = async () => {};      // (profile): saved (a new one has no id); resolves to the saved one
+  export let ondropprofile = async () => {};  // (id)
 
-  const TABS = [['display', 'Display'], ['hotkeys', 'Hotkeys'], ['game', 'Game']];
+  const TABS = [['display', 'Display'], ['hotkeys', 'Hotkeys'], ['game', 'Game'], ['combat', 'Combat']];
+  const short = (label) => label?.split(':')[0] ?? '';
+
+  // the profile shown, and the draft of it being edited (a shared one is copied first)
+  let pick = 'root', draft = null, problem = '';
+  $: shown = profiles.find((p) => p.id === pick) ?? profiles[0];
+  $: if (shown) edit(shown);
+  function edit(p) { draft = p.player ? structuredClone(p) : null; problem = ''; }
+  function copy(p) { draft = { ...structuredClone(p), id: undefined, name: `${p.name} (mine)`, copy: true, player: '' }; problem = ''; }
+  const fixed = (r) => typeof r === 'number';
+  async function save() {
+    const { id, name, targets, stance, range } = draft;
+    try {
+      const p = await onprofile({ id, name, targets, stance, range });
+      pick = p.id;
+    } catch (err) { problem = String(err.message ?? err); }
+  }
+  async function drop() {
+    try { await ondropprofile(draft.id); pick = 'root'; } catch (err) { problem = String(err.message ?? err); }
+  }
   const fmt = (spec, v) => (spec.type === 'float' ? Number(v).toFixed(spec.step < 0.1 ? 2 : 1) : v);
   const changed = (sec, k) => values[sec]?.[k] !== rules[sec].settings[k].default;
 
@@ -88,6 +113,53 @@
     </section>
     <footer><button class="reset" on:click={resetKeys}>Reset keys</button></footer>
     <p class="hint">Kept in this browser. A key taken from another action leaves that one unbound. Esc always cancels; Shift steps finer.</p>
+  {:else if tab === 'combat'}
+    <section>
+      <h2>Combat profiles</h2>
+      <div class="pills">
+        {#each profiles as p}<button class:on={p.id === pick && !draft?.copy} on:click={() => { pick = p.id; edit(p); }}>{p.name}</button>{/each}
+        {#if draft?.copy}<button class="on">{draft.name}</button>{/if}
+      </div>
+    </section>
+    {#if draft}
+      <section>
+        <label class="f"><span>Name</span><input class="name" bind:value={draft.name} /></label>
+        <label class="f"><span title="Each unit standing in this profile, when none is ordered">Stance</span>
+          <select bind:value={draft.stance}>{#each Object.entries(profileRules.stances ?? {}) as [k, label]}<option value={k} title={label}>{short(label)}</option>{/each}</select></label>
+        <div class="f"><span title="Whom its stances engage">Targets</span>
+          <div class="checks">{#each profileRules.targets ?? [] as k}
+            <button class="toggle" class:on={draft.targets.includes(k)}
+              on:click={() => (draft.targets = draft.targets.includes(k) ? draft.targets.filter((x) => x !== k) : [...draft.targets, k])}><i></i>{k}</button>{/each}</div></div>
+        <h2>Ranges <span class="dim">what sets each stance off</span></h2>
+        {#each Object.entries(profileRules.stances ?? {}).filter(([k]) => k !== 'hold-fire') as [k, label]}
+          <label class="f rng" class:mod={draft.range[k] != null}><span title={label}>{short(label)}</span>
+            <select value={draft.range[k] == null ? '' : fixed(draft.range[k]) ? 'km' : draft.range[k]}
+              on:change={(e) => { const v = e.target.value; draft.range[k] = v === '' ? undefined : v === 'km' ? 50000 : v; draft = draft; }}>
+              <option value="">the root's ({profiles[0]?.range[k]})</option>
+              {#each Object.entries(profileRules.ranges ?? {}) as [r, what]}<option value={r} title={what}>{r}</option>{/each}
+              <option value="km">km</option>
+            </select>
+            {#if fixed(draft.range[k])}<input class="km" type="number" min="1" step="1000" bind:value={draft.range[k]} />{:else}<output></output>{/if}
+          </label>
+        {/each}
+      </section>
+      <footer>
+        <span>{#if !draft.copy}<button class="reset" on:click={drop}>Delete</button>{/if}</span>
+        <span><button class="reset" on:click={() => edit(shown)}>Cancel</button> · <button class="save" on:click={save}>Save</button></span>
+      </footer>
+      {#if problem}<p class="hint bad">{problem}</p>{/if}
+    {:else if shown}
+      <section>
+        <dl>
+          <dt>Stance</dt><dd>{short(profileRules.stances?.[shown.stance])}</dd>
+          <dt>Targets</dt><dd>{shown.targets.join(', ')}</dd>
+          {#each Object.entries(shown.range) as [k, r]}<dt class="sub">{short(profileRules.stances?.[k])}</dt><dd>{fixed(r) ? `${r.toLocaleString()} km` : r}</dd>{/each}
+        </dl>
+      </section>
+      <footer><span></span><button class="save" on:click={() => copy(shown)}>Make a copy of my own</button></footer>
+    {/if}
+    <p class="hint">Kept by the server, for this commander. {shown?.root ? 'The root is every unit\'s fallback and is not changed here. ' : ''}A
+      range is read off each ship's own figures (sensor: her passive reach on a warm ship; dazzle; weapons: her focus battery's reach), or set in km.</p>
   {:else}
     <section>
       <h2>Picture</h2>
@@ -143,6 +215,22 @@
   footer { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; }
   .status { color: var(--dim); font-size: 11px; }
   .hint { color: var(--dim); font-size: 10px; margin: 8px 0 0; }
+  .hint.bad { color: var(--fuchsia); }
+  .pills { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .pills button.on { color: var(--ink); text-decoration: underline var(--fuchsia); text-underline-offset: 4px; }
+  .checks { display: flex; gap: 14px; grid-column: span 2; }
+  input.name, input.km { background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: inherit; padding: 1px 4px; min-width: 0; }
+  input.name { grid-column: span 2; }
+  input.km { width: 100%; }
+  .f.rng { grid-template-columns: 1fr 150px 6em; }
+  .f.rng select { grid-column: auto; }
+  .save { color: var(--ink); }
+  .save:hover { color: var(--fuchsia); }
+  .dim { color: var(--dim); font-size: 11px; }
+  dl { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; margin: 0; }
+  dt { color: var(--dim); }
+  dt.sub { padding-left: 10px; }
+  dd { margin: 0; }
   input[type='range'] { appearance: none; background: transparent; width: 100%; height: 18px; margin: 0; }
   input[type='range']::-webkit-slider-runnable-track { height: 1px; background: var(--rule); }
   input[type='range']::-moz-range-track { height: 1px; background: var(--rule); }

@@ -47,6 +47,8 @@ from .entity import ShipSpec, SpecError
 from .sim import Fleet, Order
 from . import display
 from . import picture
+from . import profiles
+from .profiles import Profile
 from . import switches
 from .detect import suite, unsimulated
 
@@ -72,6 +74,8 @@ class World:
         self.fleets: dict[str, Fleet] = {}       # scenario id -> its ships, flown; rebuilt on reload
         self.made: dict[str, dict[str, Bullseye]] = {}     # player -> bullseyes commanders made on the map
         self.retired: dict[str, dict[str, Bullseye]] = {}  # ... and deleted: still flown to, never listed
+        self.profiles: dict[str, Profile] = {}              # the shared combat profiles (data/profiles.toml), by id
+        self.profiles_made: dict[str, dict[str, Profile]] = {}  # player -> combat profiles made on the map
         self.tables: dict[str, Tabled] = {}      # system id -> its body table, filled up front (see _prefill)
         self.style = {}
         self._stamp = None
@@ -84,7 +88,8 @@ class World:
         p = self.config["paths"]
         files = list(Path(p["systems"]).glob("*.toml")) + list(Path(p["scenarios"]).glob("*.toml"))
         files += list(Path(p["ships"]).glob("*.toml")) + list((Path(p["ships"]) / "classes").glob("*.toml"))
-        return files + [Path(p["players"]), Path(p["players"]).parent / "factions.toml", Path(p["style"]),
+        return files + [Path(p["players"]), Path(p["players"]).parent / "factions.toml",
+                        Path(p["players"]).parent / "profiles.toml", Path(p["style"]),
                         Path(p["display"]), Path(p["settings"])]
 
     def _mtimes(self):
@@ -107,6 +112,11 @@ class World:
             factions = load_factions(Path(p["players"]).parent / "factions.toml")
         except (ValueError, tomllib.TOMLDecodeError) as e:
             errors["factions.toml"] = str(e)
+        shared = self.profiles
+        try:
+            shared = profiles.load_shared(Path(p["players"]).parent / "profiles.toml")
+        except (OSError, ValueError, tomllib.TOMLDecodeError) as e:
+            errors["profiles.toml"] = str(e)
         style = self.style
         try:
             style = load_style(p["style"])
@@ -131,6 +141,10 @@ class World:
         made, problem = self._read_made()
         if problem:
             errors["bullseyes.toml"] = problem
+        try:
+            made_profiles = profiles.load_made(p["profiles"])
+        except (OSError, tomllib.TOMLDecodeError) as e:
+            made_profiles, errors[Path(p["profiles"]).name] = self.profiles_made, str(e)
         trees = {}
         for fid, fac in factions.items():                    # a journal names classes there are
             for cid in fac.knows or ():
@@ -150,6 +164,8 @@ class World:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown faction {c.faction!r}; factions are in data/factions.toml"
                 elif c.own_faction and sc_.factions and factions.owner(c.faction) not in sc_.factions and c.faction not in sc_.factions:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"faction {c.faction!r} is not among the scenario's factions {list(sc_.factions)}"
+                if c.profile and c.profile not in shared:
+                    errors[f"scenarios/{sc_.id}/{c.id}"] = f"profile {c.profile!r} is not one of data/profiles.toml's"
                 if c.ship_class and ships and c.ship_class not in ships.classes:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown ship class {c.ship_class!r}"
                 b = c.position.get("bullseye", "system") if "aer" in c.position else None
@@ -198,6 +214,7 @@ class World:
             self.players, self.style, self.errors, self.ships = players, style, errors, ships
             self.factions = factions
             self.made, self.retired = made, {}
+            self.profiles, self.profiles_made = shared, made_profiles
             self.display_rules, self.settings, self.trees = rules, settings, trees
             self.fleets = {}
             self._specs = {}
@@ -342,6 +359,56 @@ class World:
             n += 1
             bid = f"{base}-{n}"
         return bid
+
+    # ---- combat profiles commanders make and delete on the map --------------------------------------
+    def profiles_of(self, player: str | None) -> dict[str, Profile]:
+        """The profiles a player reads: the shared ones (the root first), then their own."""
+        return {**self.profiles, **self.profiles_made.get(player or "", {})}
+
+    def profile(self, player: str | None, pid: str | None) -> Profile:
+        """A profile by id, the player's own first; the root if there is none by that id (deleted)."""
+        return self.profiles_of(player).get(pid or "") or self.profiles[profiles.ROOT]
+
+    def make_profile(self, player: str, d: dict, save: bool = True) -> Profile:
+        """A commander's new profile, or one of theirs changed (d: id to change one; name, targets,
+        stance, range). The shared ones are not changed on the map."""
+        import re
+        if player not in self.players:
+            raise ValueError(f"no player {player!r}")
+        problems = profiles.check({k: v for k, v in d.items() if k != "player"})
+        if problems:
+            raise ValueError("; ".join(problems))
+        pid, own = d.get("id"), self.profiles_made.get(player, {})
+        if pid in self.profiles:
+            raise ValueError(f"{pid!r} is shared, and not changed on the map: make a profile of your own")
+        if not pid:
+            base = re.sub(r"[^a-z0-9]+", "-", d["name"].lower()).strip("-") or "profile"
+            pid, n = base, 1
+            while pid in own or pid in self.profiles:
+                n += 1
+                pid = f"{base}-{n}"
+        elif pid not in own:
+            raise ValueError(f"{pid!r} is not a profile of {player!r}'s")
+        pr = profiles.make({**d, "id": pid}, player)
+        self.keep_profile(pr, save)
+        return pr
+
+    def keep_profile(self, pr: Profile, save: bool = True) -> None:
+        """A commander's profile kept (the simulation's side is handed those the web side made)."""
+        with self.lock:
+            self.profiles_made = {**self.profiles_made, pr.player: {**self.profiles_made.get(pr.player, {}), pr.id: pr}}
+        if save:
+            profiles.save_made(self.config["paths"]["profiles"], self.profiles_made)
+
+    def drop_profile(self, player: str, pid: str, save: bool = True) -> None:
+        """Delete a commander's profile: the units that read it read the root from then."""
+        own = self.profiles_made.get(player, {})
+        if pid not in own:
+            raise ValueError(f"{pid!r} is shared, and stays" if pid in self.profiles else f"{pid!r} is not a profile of {player!r}'s")
+        with self.lock:
+            self.profiles_made = {**self.profiles_made, player: {k: v for k, v in own.items() if k != pid}}
+        if save:
+            profiles.save_made(self.config["paths"]["profiles"], self.profiles_made)
 
     def home(self, sc) -> str | None:
         """The scenario's own side: its player's faction."""
@@ -765,6 +832,45 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             raise HTTPException(400, str(e))
         await sim.call("bullseye", {"player": player, "drop": bid})
         return {"ok": True}
+
+    @app.get("/api/profiles")
+    def profile_list(player: str | None = None):
+        """The combat profiles a player reads (the shared ones, the root first, then their own), and
+        what a profile is made of: the stances, the ranges' presets, the targets."""
+        world.check()
+        return {"profiles": [p.as_dict() for p in world.profiles_of(player).values()],
+                "stances": profiles.STANCES, "ranges": profiles.RANGES, "targets": list(profiles.TARGETS)}
+
+    @app.post("/api/profiles")
+    async def profile_make(req: dict = Body(...)):
+        """A commander's new profile, or one of theirs changed (World.make_profile); the simulation's
+        side reads it too."""
+        try:
+            p = world.make_profile(req.get("player") or "", {k: v for k, v in req.items() if k != "player"})
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        await sim.call("profile", {"player": p.player, "make": p.as_dict()})
+        return {"ok": True, "profile": p.as_dict()}
+
+    @app.delete("/api/profiles/{player}/{pid}")
+    async def profile_drop(player: str, pid: str):
+        """Delete one of a commander's profiles: their units on it read the root."""
+        try:
+            world.drop_profile(player, pid)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
+        await sim.call("profile", {"player": player, "drop": pid})
+        return {"ok": True}
+
+    @app.get("/api/engagement/{scenario}/{unit}")
+    async def engagement(scenario: str, unit: str, t: float | None = None, view: str | None = None,
+                         player: str | None = None, n: int = 3):
+        """How one of the side's units stands (its stance and combat profile, and where each comes
+        from) at t, and the last n orders given it."""
+        out = await sim.call("engagement", {"scenario": scenario, "unit": unit, "t": t, "view": view, "player": player, "n": n})
+        if not out["ok"]:
+            raise HTTPException(out["status"], out["detail"])
+        return out["reply"]
 
     @app.delete("/api/order/{scenario}/{order_id}")
     async def order_withdraw(scenario: str, order_id: str, view: str | None = None, player: str | None = None):

@@ -1,0 +1,15 @@
+# Combat profiles (astrum/profiles.py). The root profile is every unit's fallback and the start of
+# every commander's own: nobody changes it on the map. Commanders' own profiles are kept by the
+# server in profiles.toml beside bullseyes.toml.
+#
+#   targets   whom its stances engage: "hostile" (identified as hostile), "unknown" (bogeys)
+#   stance    the stance of a unit none is given for: aggressive, guard, hold, return-fire, hold-fire
+#   range     for each stance, what sets it off: "sensor" (her passive suite's reach against a warm
+#             ship, 30 MW), "half-sensor", "dazzle" (her dazzle range), "weapons" (her focus
+#             battery's engagement range), or a number of km
+
+[profile.root]
+name = "Standing orders"
+targets = ["hostile"]
+stance = "return-fire"
+range = { aggressive = "sensor", guard = "half-sensor", hold = "dazzle", return-fire = "dazzle" }

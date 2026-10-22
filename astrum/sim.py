@@ -158,7 +158,8 @@ class Order:
     at: float                      # TDB s
     kind: str                      # "burn", "goto", "setg" (a new g for the go-to she is flying), "coast",
                                    # "cold" (fold her wings) or "warm" (spread them), "active" (sweep
-                                   # her active sensors: ping) or "passive" (stop)
+                                   # her active sensors: ping) or "passive" (stop), "stance" (her stance
+                                   # or combat profile: target {stance, profile}; read by astrum/ai.py)
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s
     target: dict | None = None     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body}, and a label
     g: float | None = None         # goto: the acceleration to hold, capped at her most

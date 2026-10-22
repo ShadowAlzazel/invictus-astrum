@@ -18,9 +18,11 @@ import numpy as np
 from .builder import BuildError, SystemBuilder, epoch_of
 from .bullseye import Bullseye, BullseyeError, from_dict
 from .model import StellarSystem
+from .profiles import STANCES
 
 SYSTEM_KEYS = {"system", "frame", "body", "binary", "ephemeris"}
 AFFILIATIONS = ("friend", "hostile", "unknown", "neutral")
+VETERANCY = ("green", "rated", "veteran", "exceptional")     # a crew's tiers, worst to best (rules.toml [crew])
 
 
 def build_system(doc: dict, where: str = "") -> StellarSystem:
@@ -116,6 +118,9 @@ class Contact:
     own_faction: bool = False             # the faction is stated on this unit, not taken from above
     role: str = ""                        # formation: its role (style.toml [formation_role]); else read from its callsign
     flag: str = ""                        # formation: its leader, the ship its reports go through (else its first ship)
+    veterancy: str | None = None          # her crew's tier (rules.toml [crew]); taken from the formation above, else rated
+    stance: str | None = None             # its stance (astrum/profiles.py STANCES); else the one above it holds
+    profile: str | None = None            # the combat profile its stance reads (an id); else the one above it holds
 
 
 @dataclass(frozen=True)
@@ -148,7 +153,12 @@ def load_scenario(path: str | Path) -> Scenario:
                                 formation=c.get("formation"), position=c.get("position", {}), notes=c.get("notes", ""),
                                 ship_class=c.get("class", ""), load=c.get("load"), propellant=c.get("propellant"),
                                 mode=c.get("mode"), faction=c.get("faction"), hull_number=str(c.get("hull_number", "")),
-                                own_faction="faction" in c, role=c.get("role", ""), flag=c.get("flag", ""))
+                                own_faction="faction" in c, role=c.get("role", ""), flag=c.get("flag", ""),
+                                veterancy=c.get("veterancy"), stance=c.get("stance"), profile=c.get("profile"))
+        if c.get("veterancy") not in (None, *VETERANCY):
+            problems.append(f"{cid}: veterancy is one of {list(VETERANCY)}")
+        if c.get("stance") not in (None, *STANCES):
+            problems.append(f"{cid}: stance is one of {list(STANCES)}")
         if c.get("mode") not in (None, "station", "free"):
             problems.append(f"{cid}: mode is \"station\" or \"free\"")
         pr = c.get("propellant")
@@ -184,7 +194,7 @@ def load_scenario(path: str | Path) -> Scenario:
         if aff is None:
             problems.append(f"{cid}: needs an affiliation, on itself or on a formation above it")
             aff = "unknown"
-        resolved[cid] = replace(c, affiliation=aff, faction=fac)
+        resolved[cid] = replace(c, affiliation=aff, faction=fac, veterancy=above(cid, "veterancy") or "rated")
     contacts = resolved
     orders = []
     for i, o in enumerate(doc.get("order", [])):

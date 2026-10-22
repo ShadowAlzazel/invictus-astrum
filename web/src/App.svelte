@@ -95,6 +95,27 @@
     game = g;
     try { localStorage.setItem('astrum.game', JSON.stringify(game)); } catch { /* for this visit only */ }
   }
+  // the commander's combat profiles (Settings, Combat; the panel's Engagement), kept by the server
+  let profiles = [], profileRules = {};
+  $: loadProfiles(playerId);
+  async function loadProfiles(pid) {
+    if (!pid) return;
+    try { ({ profiles, ...profileRules } = await api.profiles(pid)); } catch { /* none to show */ }
+  }
+  async function saveProfile(p) {
+    const r = await api.saveProfile({ ...p, player: playerId });
+    await loadProfiles(playerId);
+    return r.profile;
+  }
+  async function dropProfile(id) { await api.dropProfile(playerId, id); await loadProfiles(playerId); }
+  const engagement = (unit) => api.engagement(scenario.id, unit, { t, view: side, player: playerId });
+  async function setStance(unit, change) {
+    try {
+      await api.order({ scenario: scenario.id, unit, t, ...change, player: playerId, view: side });
+      const what = change.stance ? profileRules.stances?.[change.stance]?.split(':')[0] : profiles.find((p) => p.id === change.profile)?.name;
+      say(`${map.contactName(unit)}: ${change.stance ? 'stance' : 'profile'} ${what}`);
+    } catch (err) { say(String(err.message ?? err)); }
+  }
   async function setSide(id) {
     sides = { ...sides, [scenario.id]: id };
     try { localStorage.setItem('astrum.sides', JSON.stringify(sides)); } catch { /* for this visit only */ }
@@ -548,13 +569,15 @@
 <InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold}
-  master={side === 'master'} onstop={stopOrder} ondecel={decelOrder} onping={setPing} ondismiss={dismissTrack} />
+  master={side === 'master'} onstop={stopOrder} ondecel={decelOrder} onping={setPing} ondismiss={dismissTrack}
+  {profiles} stances={profileRules.stances ?? {}} {engagement} onstance={setStance} />
 {/if}
 {/if}
 
 {#if showSettings && settings}
   <Settings rules={drules} values={settings} status={settingsStatus} onchange={setSetting} onreset={resetSettings}
-    {game} gameRules={meta?.picture ?? {}} ongame={setGame} bind:tab={settingsTab} onclose={() => (showSettings = false)} />
+    {game} gameRules={meta?.picture ?? {}} ongame={setGame} bind:tab={settingsTab} onclose={() => (showSettings = false)}
+    {profiles} {profileRules} onprofile={saveProfile} ondropprofile={dropProfile} />
 {/if}
 
 <style>

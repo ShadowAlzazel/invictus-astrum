@@ -21,6 +21,10 @@ export const api = {
   dismissTrack: (scenario, id, view, player) => send('DELETE', `/track/${encodeURIComponent(scenario)}/${encodeURIComponent(id)}?${new URLSearchParams(Object.entries({ view, player }).filter(([, v]) => v != null))}`),
   makeBullseye: (b) => post('/bullseyes', b),
   dropBullseye: (player, id) => send('DELETE', `/bullseyes/${encodeURIComponent(player)}/${encodeURIComponent(id)}`),
+  profiles: (player) => get('/profiles', { player }),
+  saveProfile: (p) => post('/profiles', p),
+  dropProfile: (player, id) => send('DELETE', `/profiles/${encodeURIComponent(player)}/${encodeURIComponent(id)}`),
+  engagement: (scenario, unit, q) => get(`/engagement/${encodeURIComponent(scenario)}/${encodeURIComponent(unit)}`, q),
   workshop: {
     schema: () => get('/workshop/schema'),
     source: (id) => get(`/workshop/source/${id}`),

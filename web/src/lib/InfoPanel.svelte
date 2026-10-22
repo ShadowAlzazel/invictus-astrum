@@ -25,6 +25,10 @@
   export let oncold = () => {};     // (cold): fold her wings (run cold) or spread them
   export let onping = () => {};     // (on): sweep her active sensors (ping) or go quiet
   export let ondismiss = () => {};  // (track id): remove an old track
+  export let profiles = [];         // the commander's combat profiles (the shared ones first)
+  export let stances = {};          // stance -> what it does ("Guard: ...")
+  export let engagement = async () => null;   // (unit): how it stands, and its last orders (/api/engagement)
+  export let onstance = () => {};   // (unit, {stance} | {profile}): a stance or profile ordered
   // how far a track has been made out (astrum/picture.py STAGES)
   const STAGES = ['detected', 'tracked', 'classified', 'identified'];
   const STAGE_NOTE = { detected: 'seen once', tracked: 'seen again: a track', classified: 'her class made out: her plume, or an active return',
@@ -82,6 +86,25 @@
     shut = { ...shut, [k]: !shut[k] };
     try { localStorage.setItem(FOLD_KEY, JSON.stringify(shut)); } catch { /* not remembered */ }
   }
+  // Engagement (folded until opened): stance, profile and the last orders, asked of the server for
+  // each unit selected, and again once a new order is flown
+  let eng = null, engAsked = '';
+  $: ownUnit = contact && (ship ? !seenOnly : under.some((id) => state?.ships?.[id]?.mass_t != null));
+  $: engKey = ownUnit ? `${contact.id}|${ship?.goal?.order_id ?? orders.map((o) => o.id).join()}|${ship?.active}|${ship?.cold}` : '';
+  $: if (engKey !== engAsked) { engAsked = engKey; askEngagement(); }
+  async function askEngagement() {
+    const key = engAsked;
+    if (!key) { eng = null; return; }
+    try { const e = await engagement(contact.id); if (key === engAsked) eng = e; } catch { eng = null; }
+  }
+  async function stance(change) { await onstance(contact.id, change); engAsked = ''; }
+  const short = (label) => label?.split(':')[0] ?? '';
+  const whence = (f) => !f ? '' : f.from === 'ordered' ? `ordered to ${nameOf(f.by)}` : f.from === 'written' ? `written for ${nameOf(f.by)}`
+    : f.from === 'profile' ? "the profile's" : f.gone ? `the root (${f.gone} deleted)` : 'the root';
+  const SAID = { coast: 'Stop: drive cut', cold: 'Run cold', warm: 'Spread wings', active: 'Ping', passive: 'Go quiet' };
+  const said = (o) => o.kind === 'setg' ? `Telegraph ${o.g ? `${o.g.toFixed(2)} g` : 'cut'}` : o.kind === 'goto' ? `To ${o.label}`
+    : o.kind === 'stance' ? o.label.replace(/(stance|profile) (\S+)/g, (_, k, v) => k === 'stance' ? short(stances[v]) || v
+      : `profile ${profiles.find((p) => p.id === v)?.name ?? v}`) : SAID[o.kind] ?? o.label ?? o.kind;
   $: affColor = contact && style ? (style.affiliation[contact.affiliation] ?? style.affiliation.unknown).color : null;
   $: doing = !ship ? '' : seenOnly ? (ship.burning ? 'seen burning' : 'as seen') : ship.goal ? (ship.burning ? `on her order, ${ship.accel_g.toFixed(2)} g` : 'on her order, coasting') : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
     : ship.mode === 'station' ? 'holding station' : 'coasting';
@@ -289,6 +312,36 @@
     {:else if spec && !spec.has_drive}
       <section><h2>Ship</h2><p class="dim">No drive stated for her class; she holds station.</p></section>
     {/if}
+    {#if ownUnit}
+      <section class="engage">
+        <h2><button class="fold" class:shut={!shut.engage_open} on:click={() => flip('engage_open')}><i></i>Engagement</button>{#if eng}
+          <span class="dim">{eng.stance ? short(stances[eng.stance]) : 'mixed stances'} · {eng.profile_name ?? 'mixed profiles'}</span>{/if}</h2>
+        {#if shut.engage_open && eng}
+        <dl class="tight">
+          <dt title={stances[eng.stance] ?? 'Its ships stand in more than one'}>Stance</dt>
+          <dd><select value={eng.stance ?? ''} on:change={(e) => stance({ stance: e.target.value })}>
+            {#if !eng.stance}<option value="" disabled>mixed: {Object.entries(eng.stances).map(([s, k]) => `${k} ${short(stances[s])}`).join(', ')}</option>{/if}
+            {#each Object.entries(stances) as [k, label]}<option value={k} title={label}>{short(label)}</option>{/each}</select></dd>
+          {#if eng.stance_from}<dt class="sub">from</dt><dd class="sub">{whence(eng.stance_from)}</dd>{/if}
+          <dt title="The rules its stance reads: ranges and targets (Settings, Combat)">Profile</dt>
+          <dd><select value={eng.profile ?? ''} on:change={(e) => stance({ profile: e.target.value })}>
+            {#if !eng.profile}<option value="" disabled>mixed</option>{/if}
+            {#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></dd>
+          {#if eng.profile_from}<dt class="sub">from</dt><dd class="sub">{whence(eng.profile_from)}</dd>{/if}
+          <dt title="Her crew's tier">Crew</dt><dd>{eng.veterancy ?? 'rated'}</dd>
+        </dl>
+        {#if eng.ledger.length}
+          <h3>Last orders</h3>
+          <ol class="ledger">
+            {#each eng.ledger as o (o.id)}
+              <li class:now={o.id === ship?.goal?.order_id || orders.some((x) => x.id === o.id)} class:gone={o.withdrawn}>
+                <span>{said(o)}{#if o.by !== contact.id} <i class="dim">· {nameOf(o.by)}</i>{/if}</span><span class="dim">{state ? `${age(state.t - o.at)} ago` : ''}</span></li>
+            {/each}
+          </ol>
+        {/if}
+        {/if}
+      </section>
+    {/if}
     {#if chain.length}
       <section>
         <h2><button class="fold" class:shut={shut.chain} on:click={() => flip('chain')}><i></i>Chain of command</button>{#if shut.chain} <span class="dim">{chain.map((a) => a.name ?? a.callsign).join(' · ')}</span>{/if}</h2>
@@ -381,6 +434,12 @@
   .acts .withdraw { margin-left: 0; }
   .order .form { font-size: 10px; margin-top: 3px; }
   /* the chain of command, read upward: a ladder of rungs joined by a rail */
+  .engage select { background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: inherit; max-width: 100%; }
+  .ledger { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+  .ledger li { display: flex; justify-content: space-between; gap: 10px; padding-left: 10px; border-left: 1px solid var(--rule); }
+  .ledger li.now { border-left-color: var(--cyan, #9ff0ff); }
+  .ledger li.gone span:first-child { text-decoration: line-through; color: var(--dim); }
+  .ledger i { font-style: normal; }
   .ladder { list-style: none; margin: 4px 0 0; padding: 0; }
   .ladder li { position: relative; padding: 0 0 14px 18px; }
   .ladder li:last-child { padding-bottom: 0; }

@@ -20,9 +20,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE = 0, 1, 2, 3, 4, 5, 6, 7
+GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE, STANCE = 0, 1, 2, 3, 4, 5, 6, 7, 8
 KIND = {"goto": GOTO, "burn": BURN, "setg": SETG, "coast": COAST, "cold": COLD, "warm": WARM,
-        "active": ACTIVE, "passive": PASSIVE}
+        "active": ACTIVE, "passive": PASSIVE, "stance": STANCE}
 
 
 @dataclass(frozen=True)
@@ -32,7 +32,8 @@ class Given:
     by: str                        # the unit it was given to
     kind: int
     at: float
-    target: dict = field(default_factory=dict)     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body}
+    target: dict = field(default_factory=dict)     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body};
+                                                   # stance: {stance, profile} (either, or both)
     label: str | None = None
     g: float = 0.0                 # goto: held; setg: the new g
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s
@@ -86,6 +87,14 @@ class OrderBook:
         q = q[np.isin(self.kind[q], kinds)]
         ships, first = np.unique(self.ship[q], return_index=True)
         return ships, q[first]
+
+    def last_set(self, ship: int, key: str, t: float) -> int:
+        """Her last STANCE event before t that sets this key (stance, profile); -1 if none."""
+        q = self.queue[: self.before(t)]
+        for e in q[(self.kind[q] == STANCE) & (self.ship[q] == ship)][::-1]:
+            if key in self.of(e).target:
+                return int(e)
+        return -1
 
     def events_of(self, oid: str) -> np.ndarray:
         """The events still in the queue of the order given with this id."""
