@@ -4,7 +4,7 @@ id = "holzweiber"
 name = "Holzweiber"
 lineage = "old-forest"
 rate = "line"
-terms = { sail = "third rate; the 74", arcvs = "the emitter" }
+terms = ["third rate; the 74", "the emitter"]
 old_rating = "the third-rate cruiser of its time"
 summary = "The 74 of the Old Forest, the backbone of its line. Refitted as the emitter: the ship that ranges so the line can stay cold."
 symbol = "HLZ"

@@ -4,12 +4,14 @@ id = "yggdrasil"
 name = "Yggdrasil"
 lineage = "old-forest"
 rate = "line"
-terms = { sail = "first rate of her day", modern = "the old battleship kept as escort", arcvs = "a line-rate hull of the old plan" }
+terms = ["first rate of her day", "the old battleship kept as escort", "a line-rate hull of the old plan"]
 old_rating = "—"
-body = "no wings; domes"
 summary = "Built as the line ship of the Old Forest. Now a cruiser and internal escort: the Atlanta class of her age. Her rate never changed; her line moved past her."
 symbol = "YGG"
 places = ["escort", "internal escort"]
+
+[hull]
+body = "no wings; domes"
 
 [history]
 built_as = "the line ship of the Old Forest"

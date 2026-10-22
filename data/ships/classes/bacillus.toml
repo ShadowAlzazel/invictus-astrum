@@ -5,15 +5,16 @@ name = "BACILLUS LICTRIX"
 lineage = "garden"
 genus = { word = "BACILLUS", meaning = "little rod" }
 epithet = { word = "LICTRIX", meaning = "female lictor" }
-designation = "AVC in a Classis; AAG in the Astrum Guard"
+builder = "ARCVS"
+places = ["in a Classis (AVC)", "the Astrum Guard (AAG)"]
 rate = "unrated"
-terms = { sail = "revenue cutter", modern = "coast guard cutter", arcvs = "LICTRIX" }
-body = "four wings, stacked in pairs; they do not fold"
+terms = ["revenue cutter", "coast guard cutter"]
 summary = "Police vessel and auxiliary escort. She guards headquarters and transports against what is not a warship, and answers civil craft with force she can scale."
 symbol = "CUT"
 in_classis = { range = [8, 12] }
 
 [hull]
+body = "four wings, stacked in pairs; they do not fold"
 length_m = { value = 150, approx = true }
 mass_t = { value = 16000, approx = true }
 acceleration_ms2 = { value = 5.2, approx = true }

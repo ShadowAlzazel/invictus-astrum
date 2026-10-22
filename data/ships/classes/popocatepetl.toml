@@ -4,7 +4,7 @@ id = "popocatepetl"
 name = "Popocatepetl"
 lineage = "old-forest"
 rate = "unrated"
-terms = { sail = "bomb vessel", modern = "arsenal ship", arcvs = "the tube ship" }
+terms = ["bomb vessel", "arsenal ship", "the tube ship"]
 summary = "The tube ship. Not a ship of the line, carries no LINE stacks and no kinetic battery, and is nothing to treat lightly. Her name breaks the forest-spirit pattern for a volcano."
 symbol = "TUB"
 

@@ -5,15 +5,15 @@ name = "PAPILION VENATRIX"
 lineage = "garden"
 genus = { word = "PAPILION", meaning = "Butterfly" }
 epithet = { word = "VENATRIX", meaning = "Huntress" }
-designation = "AVC"
+builder = "ARCVS"
 rate = "line"
-terms = { sail = "Ship of the Line", modern = "Battlecruiser", arcvs = "VENATRIX" }
-body = "two wings per side"
+terms = ["Ship of the Line", "Battlecruiser"]
 summary = "The heavy of ARCVS. She kills hulls, and works behind the frigate screen."
 symbol = "PAP"
 in_classis = { range = [58, 72], note = "midpoint ~65" }
 
 [hull]
+body = "two wings per side"
 length_m = 390
 wingspan_m = { spread = 140, folded = 62 }
 mass_t = { light = 62340, full = 70340 }

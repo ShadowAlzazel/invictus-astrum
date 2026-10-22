@@ -41,15 +41,16 @@ TIER_ORDER = ("green", "rated", "veteran", "exceptional")       # worst aim to b
 
 SECTIONS = {"class", "hull", "drive", "layout", "aim", "battery", "reach", "point_defence", "endurance", "combat", "sensor",
             "tending", "history"}
-CLASS_KEYS = {"id", "name", "lineage", "genus", "epithet", "designation", "rate", "terms", "body", "summary",
+CLASS_KEYS = {"id", "name", "lineage", "genus", "epithet", "builder", "rate", "terms", "summary",
               "symbol", "in_classis", "places", "successor_of", "old_rating"}
+MOVED = {"designation": "[class] builder", "body": "[hull] body"}      # keys of the old format, and where they went
 BATTERY_KEYS = {"id", "label", "count", "fire", "magazine", "reach_km", "arrangement", "notes", "engage_km", "focus",
                 "mounts", "nature", "stack", "firing", "strip", "pairs", "dome", "sides", "panel", "cell", "sensor"}
 LAYOUT_KEYS = {"truss_m", "citadel_m", "wing_at_m", "notes"}
 DRIVE_KEYS = {"module", "count", "hull_mass", "propellant_t", "dv_kms", "sized_g", "cruise_g", "notes"}
 G0 = 9.80665                      # m/s² in a g
 # what every hull should state; missing ones are the author's open list
-TEMPLATE = [("rate", "rate"), ("terms.sail", "sail term"), ("hull.length_m", "length"), ("hull.mass_t", "mass"),
+TEMPLATE = [("rate", "rate"), ("terms", "terms"), ("hull.length_m", "length"), ("hull.mass_t", "mass"),
             ("hull.acceleration_ms2", "acceleration"), ("hull.protection_kgm2", "protection"),
             ("hull.complement", "complement"), ("drive.module", "drive"), ("in_classis", "numbers in a Classis")]
 
@@ -702,7 +703,10 @@ def build_class(doc: dict, rules: ShipRules, arm: Armoury, source: str = "",
     for s in set(doc) - SECTIONS:
         f.append(Finding("error", where, f"unknown section [{s}]"))
     for k in set(c) - CLASS_KEYS:
-        f.append(Finding("error", where, f"[class] unknown key {k!r}"))
+        f.append(Finding("error", where, f"[class] {k!r} is now {MOVED[k]}" if k in MOVED else f"[class] unknown key {k!r}"))
+    terms = c.get("terms")
+    if terms is not None and not (isinstance(terms, list) and all(isinstance(x, str) for x in terms)):
+        f.append(Finding("error", where, '[class] terms is a list of what she is called: ["heavy frigate", "multi-role destroyer"]'))
     if not ID_RE.match(cid):
         f.append(Finding("error", where, "[class] id must be lower-case letters, digits and hyphens"))
     if not c.get("name"):
@@ -823,7 +827,7 @@ def build_class(doc: dict, rules: ShipRules, arm: Armoury, source: str = "",
 
     # the author's open list: template fields not stated, and explicit blanks
     for path, label in TEMPLATE:
-        v = _get(c, path) if path in ("rate", "in_classis") or path.startswith("terms.") else _get(doc, path)
+        v = _get(c, path) if path in ("rate", "in_classis", "terms") else _get(doc, path)
         if v is None:
             sc.blanks.append(label)
     explicit = []
@@ -924,7 +928,8 @@ def class_summary(reg: ShipRegistry, sc: ShipClass) -> dict:
     return {
         "id": sc.id, "name": sc.name, "lineage": sc.lineage, "rate": sc.rate,
         "rate_label": reg.rules.rates.get(sc.rate or "", {}).get("label"),
-        "terms": c.get("terms", {}), "symbol": c.get("symbol", ""), "summary": c.get("summary", ""),
+        "terms": c["terms"] if isinstance(c.get("terms"), list) else [], "builder": c.get("builder"),
+        "symbol": c.get("symbol", ""), "summary": c.get("summary", ""),
         "length": figures({"length_m": hull["length_m"]}, sc.id)[0] if "length_m" in hull else None,
         "blanks": len(sc.blanks), "errors": sum(x.level == "error" for x in sc.findings),
         "warnings": sum(x.level == "warning" for x in sc.findings),
@@ -971,8 +976,8 @@ def class_detail(reg: ShipRegistry, sc: ShipClass) -> dict:
            "kills_per_s": _json(quantity(p.get("kills_per_s"), sc.id, []))} for p in sc.doc.get("point_defence", [])]
     return {
         **class_summary(reg, sc),
-        "genus": c.get("genus"), "epithet": c.get("epithet"), "designation": c.get("designation"),
-        "body": c.get("body"), "places": c.get("places", []), "old_rating": c.get("old_rating"),
+        "genus": c.get("genus"), "epithet": c.get("epithet"),
+        "body": sc.doc.get("hull", {}).get("body"), "places": c.get("places", []), "old_rating": c.get("old_rating"),
         "in_classis": _json(quantity(c.get("in_classis"), sc.id, [])),
         "lineage_rules": rules.lineages.get(sc.lineage, {}), "rate_rules": rules.rates.get(sc.rate or "", {}),
         "hull": figures(sc.doc.get("hull", {}), sc.id),

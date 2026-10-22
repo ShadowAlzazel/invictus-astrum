@@ -5,16 +5,16 @@ name = "SALTICIDAE VIGIL"
 lineage = "garden"
 genus = { word = "SALTICIDAE", meaning = "jumping spiders" }
 epithet = { word = "VIGIL", meaning = "watchman: Rome's night watch" }
-designation = "AVC"
+builder = "ARCVS"
 rate = "frigate"
-terms = { sail = "fifth rate; repeating frigate", modern = "airborne early warning", arcvs = "VIGIL" }
-body = "eight wings, fixed, in an X from both ends: the radiators"
+terms = ["fifth rate; repeating frigate", "airborne early warning"]
 summary = "The eyes and voice of the fleet. She sees, relays, assays and controls the picture as Overlord or Overwatch. Not a frontline ship."
 symbol = "VIG"
 in_classis = { range = [5, 6] }
 successor_of = "holzweiber"
 
 [hull]
+body = "eight wings, fixed, in an X from both ends: the radiators"
 length_m = { value = 150, approx = true }
 mass_t = { value = 22000, approx = true }       # dry: her tanks empty
 acceleration_ms2 = { value = 5.4, est = true, note = "tanks empty; about 3.7 full" }

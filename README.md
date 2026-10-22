@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 194 tests
+python -m pytest -q tests             # 195 tests
 ```
 
 The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
@@ -59,7 +59,8 @@ the map; copies are saved under a new id.
 ## The ship registry
 
 Every class in `data/ships/classes/`: the Garden's fleet and auxiliaries, its shore-war classes,
-and the Old Forest. Each shows the three readers' words (sail, modern, ARCVS), rate and command,
+and the Old Forest. Each shows what she is called (her rate and her terms, in one line), who builds
+her, rate and command,
 particulars, batteries, point defence and endurance, and reach by crew tier: pick green, rated,
 veteran or exceptional and the table shows how far each effect reaches and whether the beam or
 the aim sets it (DE COLLINEATIONE). Its Sensors tab shows the suite as the simulation fits it

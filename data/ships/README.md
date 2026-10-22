@@ -36,17 +36,23 @@ The unit is the key's suffix: `_m`, `_t`, `_ms2`, `_kgm2`, `_km`, `_s`, `_h`, `_
 id = "papilion"                       # = the file name
 name = "PAPILION VENATRIX"
 lineage = "garden"                    # rules.toml [lineage.*]
+symbol = "PAP"                        # what the tactical symbol shows inside its frame
+rate = "line"                         # rules.toml [rate.*]; leave out if not yet set
+builder = "ARCVS"                     # who builds her
+
+# flavour
 genus = { word = "PAPILION", meaning = "butterfly" }      # Garden classes: the body
 epithet = { word = "VENATRIX", meaning = "huntress" }     # and the vocation
-rate = "line"                         # rules.toml [rate.*]; leave out if not yet set
-terms = { sail = "ship of the line", modern = "battlecruiser", arcvs = "VENATRIX" }
-body = "two wings per side"
-symbol = "PAP"                        # what the tactical symbol shows inside its frame
-in_classis = [58, 72]
-# optional: designation, summary, places = [...], old_rating, successor_of = "<class id>"
+summary = "..."
 
-[hull]                                # length_m, wingspan_m, mass_t, acceleration_ms2, material,
-                                      # protection_kgm2, complement, and anything else with a unit suffix
+# designations
+in_classis = [58, 72]                 # how many in a Classis
+places = ["line", "detached"]         # where she serves
+terms = ["Ship of the Line", "Battlecruiser"]   # what she is called besides her rate: one line with it
+# optional: old_rating, successor_of = "<class id>"
+
+[hull]                                # body (her wings), length_m, wingspan_m, mass_t, acceleration_ms2, material,
+body = "two wings per side"           # protection_kgm2, complement, and anything else with a unit suffix
 
 [drive]                               # connects a drive in drives.toml
 module = "line"

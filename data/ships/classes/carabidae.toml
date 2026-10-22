@@ -5,6 +5,6 @@ name = "CARABIDAE BALLISTATRIX"
 lineage = "garden"
 genus = { word = "CARABIDAE", meaning = "ground beetles: the bombardiers" }
 epithet = { word = "BALLISTATRIX", meaning = "she of the ballista" }
-terms = { modern = "bombardment vessel", arcvs = "BALLISTATRIX" }
+terms = ["bombardment vessel"]
 summary = "The bombardment vessel of the shore-war group. An armada 1-ring may attach them."
 symbol = "BMB"

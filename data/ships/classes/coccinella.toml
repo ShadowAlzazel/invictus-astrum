@@ -6,7 +6,7 @@ lineage = "garden"
 genus = { word = "COCCINELLA", meaning = "ladybird" }
 epithet = { word = "MOLLITRIX", meaning = "she who softens (sense not yet set)" }
 rate = "auxiliary"
-terms = { sail = "storeship", modern = "fleet tender", arcvs = "MOLLITRIX" }
+terms = ["storeship", "fleet tender"]
 summary = "The most common tender. She takes the line's heat so the line can stay dark, and carries its stores."
 symbol = "TND"
 in_classis = { range = [12, 16] }

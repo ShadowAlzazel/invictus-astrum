@@ -295,3 +295,18 @@ def test_drive_bench_tool(capsys):
     assert "DRIVE BLOCK" in out and "394.2 MN" in out and "> Mk II.7" in out
     assert tool.main(["papilion", "--mark", "mk3"]) == 0
     assert "> Mk III" in capsys.readouterr().out
+
+
+def test_a_class_is_called_in_one_line_and_says_who_builds_her(reg):
+    """terms is a list: with her rate, one line of what she is called. builder says who builds her;
+    her body (wings) is the hull's. The old keys say where they went."""
+    from astrum.ships import build_class, class_detail
+    sc = reg.classes["phalaena"]
+    d = class_detail(reg, sc)
+    assert d["terms"] == ["Heavy Frigate", "Multi-Role Destroyer"] and d["builder"] == "ARCVS"
+    assert d["body"] == "One wing per side" and any(r["key"] == "body" for r in d["hull"])
+    old = {"class": {**sc.doc["class"], "terms": {"sail": "frigate"}, "designation": "AVC", "body": "wings"}}
+    msgs = [f.message for f in build_class({**sc.doc, **old}, reg.rules, reg.armoury).findings if f.level == "error"]
+    assert any("terms is a list" in m for m in msgs) and "[class] 'designation' is now [class] builder" in msgs
+    assert "[class] 'body' is now [hull] body" in msgs
+    assert not [f for c in reg.classes.values() for f in c.findings if f.level == "error"]     # every class moved over

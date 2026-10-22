@@ -4,7 +4,7 @@ id = "dryad"
 name = "Dryad"
 lineage = "old-forest"
 rate = "frigate"
-terms = { sail = "heavy frigate; Constitution", arcvs = "the backbone frigate's ancestor" }
+terms = ["heavy frigate; Constitution", "the backbone frigate's ancestor"]
 old_rating = "the 38"
 summary = "The experimental heavy frigate who broke the 1 kA barrier and became the backbone of Garden frigate doctrine: the Old Forest's Constitution."
 symbol = "DRY"

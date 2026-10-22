@@ -4,7 +4,7 @@ id = "kodama"
 name = "Kodama"
 lineage = "old-forest"
 rate = "frigate"
-terms = { sail = "the 28", modern = "corvette", arcvs = "the depot hull" }
+terms = ["the 28", "corvette", "the depot hull"]
 old_rating = "the 28"
 summary = "The standard light frigate of the Old Forest, made second-line by the Dryad. The only class held in ordinary."
 symbol = "KOD"

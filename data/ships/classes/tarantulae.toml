@@ -6,7 +6,7 @@ lineage = "garden"
 genus = { word = "TARANTULAE", meaning = "tarantula" }
 epithet = { word = "NUTRIX", meaning = "nurse" }
 rate = "auxiliary"
-terms = { modern = "repair ship", arcvs = "NUTRIX" }
+terms = ["repair ship"]
 summary = "The repair ship: splice and loom works on her docking legs."
 symbol = "REP"
 in_classis = 2

@@ -4,34 +4,21 @@ id = "phalaena"
 name = "PHALAENA SPECULATRIX"
 lineage = "garden"
 symbol = "PHA"
-
-# we have frigate rate, and frigate terms. This can be folded into one to be simple and 
 rate = "frigate"
+builder = "ARCVS"
 
-
-# Change designation to Builder, ARCVS 
-designation = "AVC"
-
-
-
-# move to hull
-body = "One wing per side"
-
-
-# Flavor
+# flavour
 genus = { word = "PHALAENA", meaning = "Moth" }
 epithet = { word = "SPECULATRIX", meaning = "Scout, Watcher" }
 summary = "The workhorse of the navy. She opens the action by taking eyes, and decides it against titanium."
 
-# Designations
+# designations
 in_classis = { range = [102, 144], note = "midpoint ~123" }
 places = ["line", "picket", "light escort", "police", "detached"]
-
-# Should also be a list of tags. Like heavy-frigate, multi-role-destroyer, frigate. And then displaye as before.
-# Basically fold all the tags into one term list/line. 
-terms = { sail = "Heavy Frigate", modern = "Multi-Role Destroyer", arcvs = "SPECULATRIX" }
+terms = ["Heavy Frigate", "Multi-Role Destroyer"]
 
 [hull]
+body = "One wing per side"
 length_m = 240
 wingspan_m = { spread = 80, folded = 38 }
 mass_t = { value = 19340, est = true }

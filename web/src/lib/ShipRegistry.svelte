@@ -110,6 +110,8 @@
   const toggle = (k) => (why = { ...why, [k]: !why[k] });
 
   $: d = cls?.drive ?? null;
+  // what she is called, in one line: her rate, then her terms (one the rate already says, once)
+  $: called = cls ? [cls.rate_rules.label ?? '', ...cls.terms.filter((t) => t.toLowerCase() !== (cls.rate_rules.label ?? '').toLowerCase())] : [];
   $: pat = d?.pattern ?? null;
   // the load the drive is judged at: the heaviest, tanks full
   $: heavy = d ? d.cruise?.heaviest ?? [...d.loads].sort((a, b) => (v(b.mass_t) ?? 0) - (v(a.mass_t) ?? 0))[0] ?? null : null;
@@ -248,7 +250,7 @@
     <svg class="logo" viewBox="0 0 40 32" aria-hidden="true"><path d="M20 2l9 9-9 9-9-9zM6 18l7 7-7 7M34 18l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" /></svg>
     <div class="crumb">
       <p><span class="sl">//</span> Ship registry <span class="sl">/</span> {cls?.name ?? '…'} <span class="sl">/</span> <b>{TABS.find((t) => t.id === tab).label}</b></p>
-      <div class="code"><i class="bars"></i><span>ARCVS · {cls?.designation ?? 'CLASSIS'} · {cls?.file ?? ''}</span></div>
+      <div class="code"><i class="bars"></i><span>{cls?.builder ?? 'Builder not stated'} · {cls?.lineage_rules?.label ?? 'CLASSIS'} · {cls?.file ?? ''}</span></div>
     </div>
     <button class="close" on:click={onback} title="Back to the menu (Esc)"><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17" /></svg></button>
   </header>
@@ -262,7 +264,7 @@
         <button class="ship" class:on={c.id === current} on:click={() => open(c.id)}>
           {#if style}<canvas use:symbol={{ sym: c.symbol, size: 12, color: c.id === current ? '#9ff0ff' : null }}></canvas>{/if}
           <span class="nm">{c.name}</span>
-          <span class="tm">{[c.terms.sail, c.terms.modern].filter(Boolean).join(' · ') || '—'}</span>
+          <span class="tm">{c.terms.slice(0, 2).join(' · ') || '—'}</span>
           {#if c.errors}<span class="flag ex">{c.errors}</span>{:else if c.blanks}<span class="flag" title="figures not yet stated">{c.blanks}</span>{/if}
         </button>
       {/each}
@@ -296,13 +298,19 @@
                 {/if}
               </div>
             </div>
+            <!-- what she is called, in one line: her lineage, her rate, her terms -->
             <div class="chips">
               <span>{cls.lineage_rules.label ?? cls.lineage}</span>
-              <span class:blank={!cls.rate}>{cls.rate_rules.label ?? 'Not yet rated'}</span>
-              {#if cls.terms.sail}<span>{cls.terms.sail}</span>{/if}
-              {#if cls.terms.modern}<span>{cls.terms.modern}</span>{/if}
+              {#each called as term, i}<span class:blank={!term} class:hl={i === 0 && cls.rate}>{term || 'Not yet rated'}</span>{/each}
             </div>
             {#if cls.summary}<p class="summary">{cls.summary}</p>{/if}
+            {#if cls.in_classis || cls.places.length}
+              <p class="desig">
+                {#if cls.in_classis}<b>{num(v(cls.in_classis))}</b> in a Classis <span>({q(cls.in_classis)})</span>{/if}
+                {#if cls.in_classis && cls.places.length}<i>·</i>{/if}
+                {cls.places.join(' · ')}
+              </p>
+            {/if}
 
             <div class="bar"><span>Particulars</span><button on:click={() => (tab = 'systems')} title="All particulars">•••</button></div>
             <div class="attrs">
@@ -622,11 +630,7 @@
                 {#if cls.epithet}<div><span>Epithet · the vocation</span><b>{cls.epithet.word}</b><i>{cls.epithet.meaning}</i></div>{/if}
               </div>
             {/if}
-            <div class="readers">
-              {#each [['Sail reader', cls.terms.sail], ['Modern reader', cls.terms.modern], ['ARCVS reader', cls.terms.arcvs]] as [who, word]}
-                <div><span>{who}</span><b class:blank={!word}>{word ?? '—'}</b></div>
-              {/each}
-            </div>
+            <div class="chips terms">{#each called as term}<span class:blank={!term}>{term || 'Not yet rated'}</span>{/each}</div>
             <dl class="rows">
               {#if cls.body}<dt>Body</dt><dd>{cls.body}</dd>{/if}
               {#if cls.places.length}<dt>Places</dt><dd>{cls.places.join(', ')}</dd>{/if}
@@ -646,7 +650,7 @@
               <i class="wedge"></i>
             </div>
             <dl class="rows">
-              {#if cls.designation}<dt>Designation</dt><dd>{cls.designation}</dd>{/if}
+              {#if cls.builder}<dt>Builder</dt><dd>{cls.builder}</dd>{/if}
               {#if cls.old_rating}<dt>Old Forest rating</dt><dd class:blank={cls.old_rating === '—'}>{cls.old_rating}</dd>{/if}
               {#if cls.successor}<dt>Succeeded by</dt><dd><button class="link" on:click={() => open(cls.successor)}>{cls.successor}</button></dd>{/if}
               {#if cls.derived.successor_of}<dt>Successor of</dt><dd><button class="link" on:click={() => open(cls.derived.successor_of)}>{cls.derived.successor_of}</button></dd>{/if}
@@ -822,10 +826,11 @@
   .oth.slim { min-height: 30px; padding: 5px 14px; grid-template-columns: 1fr auto; }
   .oth.slim .lb { font-size: 13px; color: var(--t2); }
   .oth.slim b { font-size: 14px; }
-  .readers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; margin-bottom: 12px; }
-  .readers div { padding: 8px 10px; background: var(--band); }
-  .readers span { display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--t2); }
-  .readers b { font-size: 15px; font-weight: 600; }
+  .chips.terms { margin: 0 0 12px; }
+  .desig { margin: 10px 0 0; color: var(--t2); font-size: 13px; }
+  .desig b { color: var(--t); font-size: 15px; }
+  .desig span { font-size: 11px; }
+  .desig i { font-style: normal; margin: 0 6px; }
 
   /* ---- drive: attribute cards and stat rows ---- */
   .st { display: grid; grid-template-columns: 330px 1fr; gap: 34px; margin-top: 10px; }
