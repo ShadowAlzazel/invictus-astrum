@@ -1288,6 +1288,7 @@ affiliation = "friend"
 echelon = "ship"
 formation = "luna-tenders"
 class = "coccinella"
+load = "loaded"
 position = { bullseye = "burn", aer = [0, 0, 1005000] }
 
 [[contact]]
@@ -1297,6 +1298,7 @@ affiliation = "friend"
 echelon = "ship"
 formation = "luna-tenders"
 class = "coccinella"
+load = "loaded"
 position = { bullseye = "burn", aer = [0.1, 0, 1005000] }
 
 [[contact]]
@@ -1306,6 +1308,7 @@ affiliation = "friend"
 echelon = "ship"
 formation = "luna-tenders"
 class = "coccinella"
+load = "loaded"
 position = { bullseye = "burn", aer = [359.9, 0, 1005000] }
 
 [[contact]]

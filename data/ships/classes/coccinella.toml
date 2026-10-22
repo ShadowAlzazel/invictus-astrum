@@ -14,17 +14,19 @@ in_classis = { range = [12, 16] }
 [hull]
 length_m = 210
 width_m = { closed = 180, expanded = 350 }
-mass_t = { base = 20000, loaded = 50000 }
+# With her tanks full: her hull and her own propellant alone (light), with the formation's stores,
+# ammunition and propellant aboard (loaded), and overfilled with 20,000 t more fuel (carried as
+# stores for now: the simulation burns only her own propellant).
+mass_t = { light = 34700, loaded = 50000, overfilled = 70000 }
+acceleration_ms2 = { value = 3.43, approx = true, note = "about 0.35 g, light" }
 
-# TEMPORARY, for the simulation only: her acceleration and drive are not yet stated (class document,
-# Appendix B). The line drive, sized to 0.45 g fully loaded (the top of the cruise band, so she
-# keeps up with a line formation at cruise), with 6,000 t of propellant inside the stated masses.
-# Replace when her pattern states them.
+# Her drive: the frigate drive, 119 MN. Her own propellant is set so she makes about 0.35 g at her
+# most, light: 119 MN / 0.35 g = 34,700 t, less a hull of about 20,000 t. Loaded she makes about
+# 0.24 g; overfilled, about 0.17 g.
 [drive]
-module = "line"
+module = "frigate"
 hull_mass = "wet"
-propellant_t = { value = 6000, est = true }
-sized_g = { value = 0.45, est = true }
+propellant_t = { value = 14700, est = true }
 
 [[battery]]
 id = "optical"
