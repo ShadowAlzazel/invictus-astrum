@@ -652,6 +652,18 @@ minute of every side, where before a picture swept at most twelve minutes of its
 stride. The AI's picture of a side nobody is shown reads the sweeper too: 8–15 ms (it was 30–110).
 The browser spends about 2.5 ms of a frame (the overlay, 2 ms; a picture parsed, 0.2 ms).
 
+**A task force flying at 1 h/s** (`python tools/bench_flight.py`, `--live 15` for the server's
+threads sampled by py-spy). Task Force 3 (44) flown out of Mars, 112 rows. Through `serve.py`, a map
+asking as the browser does: 51 pictures a second, 13 ms a round trip (99%: under 50 ms), never
+behind; 32 a second at 6 h/s; at 1 d/s 7 a second and over a day behind (the interpreter is busy
+99% of the time, and the pictures fly the fleet themselves). At 1 h/s the sim process uses about
+three quarters of a core: the map's pictures half of one (7–9 ms each), the run-ahead a tenth, time
+to target a tenth during a long burn, the AI next to nothing. A game hour of flight costs about
+30 ms, quiet or with the whole task force flying; of it, station ships keeping their places 41–46%
+(every 5 minutes each is placed twice off the scenario's plan, its bullseyes and bodies resolved in
+Python), the timeline's writes 19–23%, a block's setup (units, tracks, steps) 15–20%, the compiled
+step itself 9–12%.
+
 ## On the wire
 
 `/api/meta` gives each ship class's spec once (`specs`, by class id); a unit names its class and
