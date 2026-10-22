@@ -230,6 +230,24 @@ export class SystemMap {
     return { x: (this._v.x + 1) / 2 * this.canvas.clientWidth, y: (1 - this._v.y) / 2 * this.canvas.clientHeight, depth: -depth };
   }
 
+  // project for many points at once: origin (system frame km) plus offsets from it (rel: 3 a point),
+  // into out (2 a point, x and y px; NaN behind the camera). The camera's matrices once, nothing made
+  projectMany(origin, rel, out) {
+    const v = this.camera.matrixWorldInverse.elements, P = this.camera.projectionMatrix.elements;
+    const w = this.canvas.clientWidth, h = this.canvas.clientHeight, n = rel.length / 3;
+    const ox = origin[0] - this.focus[0], oy = origin[1] - this.focus[1], oz = origin[2] - this.focus[2];
+    for (let k = 0; k < n; k++) {
+      const X = ox + rel[3 * k], Y = oz + rel[3 * k + 2], Z = -(oy + rel[3 * k + 1]);      // (as toThree)
+      const vx = v[0] * X + v[4] * Y + v[8] * Z + v[12], vy = v[1] * X + v[5] * Y + v[9] * Z + v[13];
+      const vz = v[2] * X + v[6] * Y + v[10] * Z + v[14];
+      if (vz >= 0) { out[2 * k] = out[2 * k + 1] = NaN; continue; }
+      const cw = P[3] * vx + P[7] * vy + P[11] * vz + P[15];
+      out[2 * k] = ((P[0] * vx + P[4] * vy + P[8] * vz + P[12]) / cw + 1) / 2 * w;
+      out[2 * k + 1] = (1 - (P[1] * vx + P[5] * vy + P[9] * vz + P[13]) / cw) / 2 * h;
+    }
+    return out;
+  }
+
   // a sphere of radius r km at p -> its radius on screen, px
   pxRadius(p, r) {
     const s = this.project(p);

@@ -418,6 +418,11 @@
     if (is(e, 'settings')) { showSettings = !showSettings; return; }
     if (e.key === 'Escape' && showSettings) { showSettings = false; return; }
     if (!inMap) return;                                  // menus have their own keys
+    if (is(e, 'paths') && mode === 'map' && settings) {
+      setSetting('layers', 'paths', !settings.layers.paths);
+      say(`Trajectories ${settings.layers.paths ? 'shown' : 'hidden'}`);
+      return;
+    }
     if (is(e, 'ruler') && mode === 'map') { ruler = ruler ? null : { a: null, b: null }; return; }
     if (e.key === 'Escape' && ruler) { ruler = null; return; }
     if (ordering) {                                      // aiming an order: its own keys first
@@ -539,7 +544,8 @@
 <Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} sensing={sensing && mode === 'map'}
   watched={mode === 'map' ? watched : new Set()} />
 <HudCursor {map} {style} {settings} {overUI} />
-{#if mode === 'map' && scenarioOn && scenario}<Paths {map} {style} on={settings?.layers.paths ?? true} contacts={scenario.contacts} {sel} {ordering} aim={() => orderTool?.aim()} />{/if}
+{#if mode === 'map' && scenarioOn && scenario}<Paths {map} {style} on={settings?.layers.paths ?? true} estimates={settings?.layers.path_estimates ?? true}
+  contacts={scenario.contacts} {sel} {ordering} aim={() => orderTool?.aim()} />{/if}
 {#if ruler && mode === 'map'}<Ruler {map} {style} {ruler} {markAt} />{/if}
 {#if mode === 'map'}
   <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />

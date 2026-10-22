@@ -94,6 +94,7 @@ the author*. The format is in `data/ships/README.md`.
 | Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
 | V | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond); a formation: every ship under it |
 | K | station or free: a ship (or every ship under a formation) holding station goes free, onto an orbit of the body whose well she is in (paying only the burn onto it), else coasting; a free one takes station (decelerate, as X). Aiming a move: once there, free (at a body, an orbit of it) or holding station |
+| Y | trajectories: the free ships' paths on the map, on or off (Display, Free paths; the fuchsia estimates are Free path estimates) |
 | C | show sensors: the selection's drawn on the map always (a formation: every ship under it); again: hide |
 | X | DECELERATE the selection: a new order to turn and burn to rest on the active bullseye (on the star centre: by the body that pulls hardest) and hold there |
 | `,` | settings |
@@ -122,7 +123,8 @@ which, with her orbit's height and period; the map draws every free ship's path 
 paths): her conic about the body whose well she is in, read off the picture, one for a formation
 drawn folded into its mark. Dotted fuchsia, what K would give: for the selection's ships on
 station, the orbit they would go onto (or their coast, out of every well); aiming a move given free
-at a body, the orbit she would be on there. **Bingo:** a ship flying an order with less Δv left than
+once there: at a body, or a point in a well, the orbit she would be on; a point out of every well,
+her coast from it. **Bingo:** a ship flying an order with less Δv left than
 she closes on its target at can no longer stop there; she drops it and goes free, keeping the rest
 (the findings say so).
 

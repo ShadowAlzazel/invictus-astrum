@@ -20,6 +20,7 @@ export const ACTIONS = {
   decel:    { key: 'x', label: 'DECELERATE: drop the order, turn and burn to rest on the bullseye' },
   ping:     { key: 'v', label: 'Active sensors: ping, or go quiet (a ping shows the pinger)' },
   free:     { key: 'k', label: 'Station or free: the selection takes station, or goes free (an orbit in a well, else coasting); aiming a move: arrive free' },
+  paths:    { key: 'y', label: 'Trajectories: the free ships\' paths on the map, on or off' },
   watch:    { key: 'c', label: 'Show sensors: the selection\'s drawn always, every ship under a formation (again: hide)' },
   plane:    { key: 'b', label: "Orders: her own height or the bullseye's plane" },
   ranges:   { key: 'g', label: 'Weapon ranges (hold)' },
