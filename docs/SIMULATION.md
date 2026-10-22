@@ -84,7 +84,7 @@ seen: about half a millisecond a picture.
 
 **Active sensors and the ping.** Every ship also carries an active scan (`[detection] active`,
 `parts.toml [sensor.ranging]`: a cold hull by active scan, ~4,400 km, the VIGIL's figure), swept
-only while she pings: **P** with her selected, or Ping in her panel (orders `active` / `passive`;
+only while she pings: **V** with her selected, or Ping in her panel (orders `active` / `passive`;
 whether she pings at a moment is read off the order book, `Fleet.pinging`, so nothing is flown for
 it). An active scan sees any hull in its reach, however cold, and its return makes out her class.
 Every ping shows the pinger: she gives off `emit_mw` (300 MW, for now) to everyone's passive
@@ -210,7 +210,7 @@ order rewinds the fleet to the last checkpoint before it and flies on from there
 
 ## Orders from the map
 
-Select a ship and press **A**. A vector runs from her to the cursor:
+Select a ship and press **M** (move). A vector runs from her to the cursor:
 
 - over a unit or a body, it takes theirs: she will rendezvous, stopping 50 km short of a unit, or
   three radii (at least 1,000 km) short of a body, and further out where its pull would be more
@@ -227,7 +227,8 @@ The telegraph sets the acceleration she will hold, from her most down to stop: *
 through Full, Cruise (the doctrine band), Cruise floor, Half, Slow, Dead slow and Stop; **Shift**
 steps by 0.01 g; the scale can be dragged. Above her most, she gives her most. Stop cuts her drive.
 The vector shows the distance, time to target and Δv from rest (2√(d/a), 2√(a·d)). A click gives
-the order at the map's clock; **Esc**, **A** or a right click cancels.
+the order at the map's clock; **Esc**, **M** or a right click cancels. **A** and **P** while aiming
+make it an attack-move or a patrol (below); **Shift**-click queues it.
 
 A go-to is closed-loop flip-and-burn: every step she steers her velocity relative to the target
 toward √(2·(0.9·a − pull)·d) along the line to it, within the acceleration ordered: the pull is
@@ -254,7 +255,7 @@ the flight itself it is within about 1% (Moon runs, a far point, a short hop; te
 3%). Where the flight has nothing to say (past 60 days, or she is late on it) the one-dimensional
 estimate stands in: bang-bang along the line, plus nulling the velocity across it.
 
-**Formations.** Select a formation (a flight, a squadron, a task force) and press **A**: the order
+**Formations.** Select a formation (a flight, a squadron, a task force) and press **M**: the order
 goes to every ship under it, and they fly it together. The formation gets a **lead**: a point that
 starts at the formation (the mean of its ships, less their offsets) and flies the order by the same
 flip-and-burn, at the ordered g capped at 95% of its slowest ship's most. Each ship keeps her place
@@ -322,6 +323,58 @@ ships under it; target `{bullseye, aer: [deg, deg, km]}`, `{unit}` or `{body}`; 
 drive. `{scenario, unit, t, g, keep_target: true, order_id?}` retunes the orders being flown by the
 ships under the unit, or only the one named. Orders from the map live in the running fleet; a
 data reload rebuilds the fleet from the scenario file.
+
+## Combat: stances and standing orders
+
+No weapon is fired yet: an engagement is where a ship goes and what she faces. Every ship stands in
+a **stance**, read with a **combat profile** (`astrum/profiles.py`):
+
+| Stance | Does | Root range |
+|---|---|---|
+| aggressive | a target known within range is engaged, and followed while it is known | her passive suite's reach against a warm ship (30 MW) |
+| guard | a target known within range is engaged; once it is lost or out of range of her post, back to her post | half that |
+| hold ground | faces the nearest target in range, her hull on it while she does not burn; never moves | her dazzle range |
+| return fire | a ship flying an engage order on her within range is engaged; once none is, back to her post | her dazzle range |
+| hold fire | nothing | |
+
+**Profiles.** `data/profiles.toml` holds the shared ones: the root, the fallback and the start,
+states every range and is not changed on the map. Commanders make their own (Settings, Combat;
+`GET/POST /api/profiles`, `DELETE /api/profiles/{player}/{id}`), kept in `profiles.toml` beside
+`bullseyes.toml`: a name, the stance of a unit none is given, a range per stance (`sensor`,
+`half-sensor`, `dazzle`, `weapons`: her focus battery's engagement range, or km; one left out is the
+root's), and targets: `hostile` (identified, and hostile to her side) and `unknown` (bogeys).
+
+**Which a ship stands in.** At a moment: the last stance ordered to her or a formation above her
+(a STANCE event in the order book: `POST /api/order {unit, t, stance?, profile?, frame?}`), else
+what the scenario writes for her or the nearest formation above her (`stance`, `profile` on a
+contact), else her profile's stance; the profile likewise, else the root. Her panel's Engagement
+section shows both and where each comes from (`GET /api/engagement/{scenario}/{unit}`), her crew
+(`veterancy`: green, rated, veteran, exceptional; rated unless written) and her last three orders
+(the order book, each once however many ships it went to).
+
+**Orders the AI gives.** `astrum/ai.py` `Mind`, the fleet's `ai`, ticks at each block end on the
+grid (every 10 minutes of the fleet's time, on the run-ahead or as a past order's rows fly again).
+A ship is free to act unless she flies a plain go-to of the map's or the scenario's; an
+attack-move (**A**) is aggressive the whole way and a patrol (**P**) on guard, and after an
+engagement she flies on with it. What she decides is an order with source `auto`, at the tick:
+an engage (a go-to on the target, held at her focus battery's farthest range: `ShipSpec.engage_km`,
+else her farthest, else 50,000 km), back to her post (her place, or where she stood, in the frame
+the stance was ordered in: the active bullseye's; on the star centre, carried with the body pulling
+hardest), or the drive cut. Patrol legs and queued orders (**Shift**-click: a QUEUE event, given
+once the order it follows is carried out) are `auto` too, on the grid after she arrives. Every
+`auto` order after the moment the fleet is set back to (or a past order flies rows again from) is
+struck and decided again as it flies past, so the same flight gives the same orders.
+
+**What she knows.** Her side's picture as reported to its flagship (the reports that reached it),
+and what her own sensors saw, at once. One sweep per side per tick (every sensor that came round in
+the ten minutes, as at the tick: `detect.scan` with a span), kept with the fleet's scans, and only
+for a side with a ship that needs it; a track not seen within the hold starts again. A target is
+hostile only once identified: hostile to the scenario's own side as its contact says; to another
+side, if it is the own side's and that side holds it hostile; else a bogey.
+
+**What it costs** (sol-demo, three days flown, wall time): no AI 3.6 s; every ship on the root's
+return fire 3.8 s (a tick without an engage order anywhere reads nothing); ARCVS aggressive against
+bogeys and GHOST on guard 7.1 s, the side's sweep about 2 ms a tick and the chases flown besides.
 
 ## Time
 

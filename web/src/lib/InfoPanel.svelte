@@ -106,7 +106,7 @@
   const goes = (label) => /^(engage|patrol|attack|hold|back)/.test(label ?? '') ? upper(label) : `To ${label}`;
   const said = (o) => o.kind === 'setg' ? `Telegraph ${o.g ? `${o.g.toFixed(2)} g` : 'cut'}` : o.kind === 'goto' ? goes(o.label)
     : o.kind === 'queue' ? `Then ${o.label}` : o.kind === 'coast' && o.label ? upper(o.label)
-    : o.kind === 'stance' ? o.label.replace(/(stance|profile) (\S+)/g, (_, k, v) => k === 'stance' ? short(stances[v]) || v
+    : o.kind === 'stance' ? o.label.replace(/(stance|profile) ([\w-]+)/g, (_, k, v) => k === 'stance' ? short(stances[v]) || v
       : `profile ${profiles.find((p) => p.id === v)?.name ?? v}`) : SAID[o.kind] ?? o.label ?? o.kind;
   $: affColor = contact && style ? (style.affiliation[contact.affiliation] ?? style.affiliation.unknown).color : null;
   $: doing = !ship ? '' : seenOnly ? (ship.burning ? 'seen burning' : 'as seen') : ship.goal ? (ship.burning ? `on her order, ${ship.accel_g.toFixed(2)} g` : 'on her order, coasting') : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`

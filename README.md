@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 195 tests
+python -m pytest -q tests             # 206 tests
 ```
 
 The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
@@ -41,7 +41,7 @@ The map opens on the main menu, over a live system:
 4. **Ship workshop**: next.
 5. **Settings** (also `,` anywhere), kept in this browser: Display (text and icon sizes, folding,
    what a selection shows), Hotkeys (every key below, rebound by clicking it and pressing another),
-   Game (the picture's switches).
+   Game (the picture's switches), Combat (your combat profiles, kept on the server).
 
 ## Levels and the workshop
 
@@ -79,8 +79,12 @@ the author*. The format is in `data/ships/README.md`.
 | Hold R | detection ranges: a ring for each of a ship's sensors, how far it sees a ship giving off 30 MW (warm; Settings, Display, Detection ranges: 0.3 MW cold to 30,000 MW burning) |
 | Others' ships | drawn as tracks; tracks close together on screen collapse into one symbol by count: a flight (up to 5), a group (up to 20), a task force (more), the map's own reading, set in Settings, Display, Others' ships. Click one to pull that track out; zoom in to resolve |
 | U | up the chain of command: select the formation the selected unit answers to |
+| M | move: aim an order for the selection (a ship, or every ship under a formation); a click gives it. Onto another side's track it is an engage: she holds at her focus battery's range |
+| A | attack-move: as M, aggressive the whole way; after each engagement she flies on |
+| P | patrol: to the point and back to where it stands now, over and over, on guard |
+| Shift-click | (aiming) queue the order after what the selection flies; aiming goes on |
 | Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
-| P | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond) |
+| V | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond) |
 | X | DECELERATE the selection: a new order to turn and burn to rest on the active bullseye (on the star centre: by the body that pulls hardest) and hold there |
 | `,` | settings |
 | Double-click, or F | centre on the selection and ride with it |
@@ -90,6 +94,15 @@ the author*. The format is in `data/ships/README.md`.
 | Esc | clear the selection |
 
 Every key but Esc and Shift can be rebound in Settings, Hotkeys.
+
+A unit's **Engagement** (in its panel, folded until opened) sets its stance and combat profile and
+lists its last three orders, the one it flies marked: aggressive (engages what it sees in range and
+follows it), guard (engages, then back to its post), hold ground (faces, never moves), return fire
+(the default: answers an engage order on it) or hold fire. A formation's stance goes to every ship
+under it. Settings, Combat, keeps your profiles on the server: the ranges each stance reads (her
+sensors' reach, half of it, her dazzle range, her weapons' or a number of km) and whom it engages
+(identified hostiles; bogeys too). The root profile is everyone's start and is not changed there.
+No weapon is fired yet: an engagement is where she goes and what she faces.
 
 Under each unit's name: its faction's designation (AVC, AAG, JADF), or, for one without a prefix
 or not yet known, what its frame says (HOSTILE, UNKNOWN, CIVIL); then Pry and brevity.
@@ -110,13 +123,15 @@ above it comes down to it.
 | `data/ships/` | ship classes, their components, and the rules they are read against |
 | `data/players.toml` | players and their bullseyes |
 | `bullseyes.toml` | bullseyes commanders made on the map (written by the map; not committed) |
+| `data/profiles.toml` | the shared combat profiles: the root, every unit's fallback, states each stance's range |
+| `profiles.toml` | combat profiles commanders made on the map (written by the map; not committed) |
 | `data/factions.toml` | factions: a name, the prefix a ship's name reads with, and whose branch (AVC, AAG of ARCVS) or member world's force (JADF) it is; units take theirs from the formation above |
-| `data/scenarios/*.toml` | units placed in a system (symbols only; no engagement is simulated yet) |
+| `data/scenarios/*.toml` | units placed in a system, with their stance, combat profile and crew (veterancy) if not the formation's; no weapon is simulated yet |
 | `style.toml` | colours, affiliation frames, echelon marks, formation roles (built from blocks, each an APP-6 mark: battle, line, picket, supply, forward, point defence, escort, signal), body display sizes by role |
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |
 | `settings.toml` | display settings over `display.toml`, if you keep one (the map keeps yours in the browser); not committed |
 | `config.toml` | paths, port, clock start, orbit sampling, the run-ahead, and what a player is shown ([picture]) |
-| `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server; the fleet (`classis.py`, `sim.py`), its order book (`orders.py`), timeline (`timeline.py`) |
+| `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server; the fleet (`classis.py`, `sim.py`), its order book (`orders.py`), timeline (`timeline.py`), standing orders and the AI (`ai.py`, `profiles.py`) |
 | `web/` | the map (Svelte + Three.js) |
 | `tools/formation_tf2.py` | lays out the demo's Task Force 2 wedge; edit its numbers and rerun |
 | `tools/formation_tf3.py` | lays out Task Force 3, docked tight around Mars, and the Luna Strike Squadron behind Jupiter |

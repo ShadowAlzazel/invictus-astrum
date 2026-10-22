@@ -97,7 +97,7 @@
   }
   // the commander's combat profiles (Settings, Combat; the panel's Engagement), kept by the server
   let profiles = [], profileRules = {};
-  $: loadProfiles(playerId);
+  $: if (showSettings || playerId) loadProfiles(playerId);       // (again whenever Settings opens: made elsewhere too)
   async function loadProfiles(pid) {
     if (!pid) return;
     try { ({ profiles, ...profileRules } = await api.profiles(pid)); } catch { /* none to show */ }
@@ -108,7 +108,7 @@
     return r.profile;
   }
   async function dropProfile(id) { await api.dropProfile(playerId, id); await loadProfiles(playerId); }
-  const engagement = (unit) => api.engagement(scenario.id, unit, { t, view: side, player: playerId });
+  const engagement = (unit) => { loadProfiles(playerId); return api.engagement(scenario.id, unit, { t, view: side, player: playerId }); };
   async function setStance(unit, change) {
     try {
       await api.order({ scenario: scenario.id, unit, t, ...change, frame: change.stance ? bullseyeId : undefined, player: playerId, view: side });
