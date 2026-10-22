@@ -487,6 +487,35 @@ def test_time_to_target_of_a_ship_keeping_her_place():
     assert math.isfinite(as_array) and as_array == f._predict({**goal, "hold_m": hold.tolist()}, t0, r, v, a, R0 + hold, V0)
 
 
+def test_station_places_worked_out_ahead_are_the_same_bits():
+    """Station ships' places are worked out hours ahead at once (Fleet._station_grid): the fleet
+    flies to the bit as it does with every place worked out alone, an order in the past and all."""
+    from astrum.app import create_app
+    from astrum.simhost import give_order
+
+    def flown(alone):
+        world = create_app().state.world
+        f = world.fleet(world.scenarios["sol-demo"])
+        if alone:                                      # every moment asked for by itself
+            bulls_at, bodies_at = f._bulls_at, f._bodies_at
+
+            def bulls_alone(player, bid, ts):
+                got = [bulls_at(player, bid, [t]) for t in ts]
+                return None if any(g is None for g in got) else tuple(np.concatenate(z) for z in zip(*got))
+            f._bulls_at = bulls_alone
+            f._bodies_at = lambda ts: {k: np.concatenate([bodies_at([t])[k] for t in ts]) for k in bodies_at(ts[:1])}
+        t = f.t0 + 600
+        f.at(t)
+        give_order(world, {"scenario": "sol-demo", "unit": "luna-strike", "t": t, "g": 0.3, "target": {"body": "jupiter"}})
+        f.at(t + 8 * 3600)
+        f.command(Order("kiki-1", t + 3 * 3600, "goto", target={"body": "moon", "label": "Moon"}, g=0.3))
+        f.at(t + 10 * 3600)
+        return f.c.prop[: f.c.n].copy(), f.c.r[: f.c.n].copy()
+
+    (p1, r1), (p2, r2) = flown(False), flown(True)
+    assert np.array_equal(p1, p2) and np.array_equal(r1, r2, equal_nan=True)
+
+
 def test_orders_given_in_the_same_second_are_told_apart():
     """A retune of the first order does not reach the second, given the same second to the same unit."""
     from fastapi.testclient import TestClient

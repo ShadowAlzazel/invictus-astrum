@@ -83,6 +83,19 @@ class Placement:
                 P[i] = r
         return P
 
+    def base_many(self, bullseyes: dict, bodies: dict, T: int) -> np.ndarray:
+        """base_positions at T moments (T × nb × 3): bullseyes as {id: (origins T × 3, axes T × 3 × 3)},
+        bodies as {id: T × 3}. Each moment is worked out as base_positions works out one: the same bits."""
+        P = np.full((T, len(self.base), 3), np.nan)
+        for bid, (rows, L) in self.by_bull.items():
+            if bid in bullseyes:
+                for j, (O, A) in enumerate(zip(*bullseyes[bid])):
+                    P[j, rows] = O + L @ A.T
+        for body, (rows, off) in self.by_body.items():
+            if body in bodies:
+                P[:, rows] = np.asarray(bodies[body])[:, None, :] + off
+        return P
+
     def arrays(self, bullseyes: dict, bodies: dict, ships: dict | None = None) -> tuple[list[str], np.ndarray]:
         """positions() as (ids, positions n×3): what rests on a bullseye or body not given is left out."""
         P = self.base_positions(bullseyes, bodies, ships)

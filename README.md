@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 215 tests
+python -m pytest -q tests             # 216 tests
 ```
 
 `serve.py` says at start whether the simulation's hot loops are compiled (`kernels compiled

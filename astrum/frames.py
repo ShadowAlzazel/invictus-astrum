@@ -30,11 +30,13 @@ def rot_z(a: float) -> np.ndarray:
 
 
 def unit(v) -> np.ndarray:
-    v = np.asarray(v, dtype=float)
-    n = np.linalg.norm(v)
+    """A 3-vector's direction, written out (numpy's norm of one vector rounds differently from its
+    norm along an axis of many, which resolve_many reads: the same bullseye must be the same bits)."""
+    v0, v1, v2 = (float(c) for c in v)
+    n = math.sqrt(v0 * v0 + v1 * v1 + v2 * v2)
     if n == 0:
         raise ValueError("zero vector has no direction")
-    return v / n
+    return np.array([v0 / n, v1 / n, v2 / n])
 
 
 def radec_to_vec(ra: float, dec: float) -> np.ndarray:

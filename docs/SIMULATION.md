@@ -664,6 +664,13 @@ to target a tenth during a long burn, the AI next to nothing. A game hour of fli
 Python), the timeline's writes 19–23%, a block's setup (units, tracks, steps) 15–20%, the compiled
 step itself 9–12%.
 
+Since: station ships' places are worked out two hours of their grid at a time (every moment and its
+probe at once: each bullseye resolved once for all of them, `resolve_many`; the bodies off the
+table's `positions_many`), and kept while the same ships hold the same places; a ship holding on a
+unit is worked out as she goes, the unit may be flying. To the bit what one moment at a time gives
+(`unit` is written out so a bullseye resolved alone and among many rounds alike). Station-keeping:
+221 → 121 ms a game day here, the flight as a whole 494 → 392 ms.
+
 ## On the wire
 
 `/api/meta` gives each ship class's spec once (`specs`, by class id); a unit names its class and

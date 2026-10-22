@@ -79,6 +79,7 @@ from .signature import Signature
 from .timeline import FIELDS, MAX_SAMPLES, Timeline, Versions
 
 STATION_S = 300.0              # station ships pay for their places on a grid this fine (finer changes the bill by < 0.2%)
+STATION_AHEAD_S = 7200.0       # ... worked out this far ahead at once: a place moves by the clock alone
 TRACK_DT = 60.0                # a target is worked out this often across a block, and drawn straight between
 CLOSE_SHARE, CLOSE_MIN_S = 0.02, 1.0   # an order closes in steps of this share of the time left, at least this
 SAMPLE_S = 300.0               # an ephemeris without a table is sampled this often for the step
@@ -260,6 +261,7 @@ class Fleet:
         self._point_cache: dict[tuple, np.ndarray] = {}   # where bullseye and body points are, by moment
         self._place_cache: dict[float, tuple] = {}
         self._base_cache: dict[float, np.ndarray] = {}
+        self._st_ahead: tuple = (None, {})            # station ships' places ahead: (who holds what, {t: (P, P a probe after)})
         self._plans: dict[tuple, tuple] = {}    # how station ships are placed, by the versions they are on
         self._plan_rows = None                  # (the scenario's placement plan, contact -> its row, rows -> theirs)
         self._pulls = [b for b in system.massive() if b.gm > 0]
@@ -1087,45 +1089,59 @@ class Fleet:
         return plan
 
     def _station_positions(self, t: float, only: np.ndarray | None = None, ver: np.ndarray | None = None) -> tuple:
+        """Where the ships on station (among `only`, if given) stand at t: (rows, positions), those
+        whose place is not there left out."""
+        rows, P = self._station_positions_many([t], only, ver)
+        ok = ~np.isnan(P[0]).any(axis=1)
+        return rows[ok], P[0][ok]
+
+    def _station_positions_many(self, ts, only: np.ndarray | None = None, ver: np.ndarray | None = None) -> tuple:
         """Where the ships on station (among `only`, if given; by the version each is on, now if not
-        given) stand at t, all at once: the scenario's placement for those on their scenario place,
-        one product per bullseye and one sum per body for those holding where an order left them,
-        and a look for the few holding on a unit."""
+        given) stand at each of the moments ts, all at once: (rows, T × rows × 3, NaN where her place
+        rests on what is not there). The scenario's placement for those on their scenario place, one
+        product per bullseye and one sum per body for those holding where an order left them (each
+        bullseye and the bodies worked out once for every moment), and a look for the few holding on
+        a unit. A moment's figures are the same bits whatever else is asked with it."""
         c = self.c
         ver = c.mver[: len(c.row)] if ver is None else ver
         rows = np.flatnonzero(self.versions.mode[ver] == STATION)
         if only is not None:
             rows = rows[np.isin(rows, only)]
+        P = np.full((len(ts), len(rows), 3), np.nan)
         if not len(rows):
-            return rows, np.zeros((0, 3))
+            return rows, P
         scen, groups, units = self._station_plan(ver[rows])
-        P = np.full((len(rows), 3), np.nan)
         if scen and self.bullseyes is not None:       # placed by the scenario's plan: only these rows
-            P[scen] = self._scenario_places(t, rows[scen])
+            P[:, scen] = self._scenario_places_many(ts, rows[scen])
         elif scen:                                     # placed by a place() of its own (tools, tests)
-            _, placed, _ = self._placed(t)
-            for k in scen:
-                p = placed.get(c.ids[rows[k]])
-                if p is not None:
-                    P[k] = p
+            for j, t in enumerate(ts):
+                _, placed, _ = self._placed(t)
+                for k in scen:
+                    p = placed.get(c.ids[rows[k]])
+                    if p is not None:
+                        P[j, k] = p
         for key, ks, L, off in groups:
             if key[0] == "b":
-                b = self._bull(key[1], key[2], t)
-                if b is not None:
-                    P[ks] = b.origin + L @ b.axes.T + off
+                got = self._bulls_at(key[1], key[2], ts)
+                if got is not None:
+                    for j, (O, A) in enumerate(zip(*got)):
+                        P[j, ks] = O + L @ A.T + off
             else:
-                P[ks] = np.asarray(self._bodies(t)[key[1]]) + off
+                P[:, ks] = self._bodies_at(ts)[key[1]][:, None, :] + off
         for k, sa in units:
-            p = self._point(sa, t)
-            if p is not None:
-                P[k] = p
-        ok = ~np.isnan(P).any(axis=1)
-        return rows[ok], P[ok]
+            for j, t in enumerate(ts):
+                p = self._point(sa, t)
+                if p is not None:
+                    P[j, k] = p
+        return rows, P
 
     def _scenario_places(self, t: float, rows: np.ndarray) -> np.ndarray:
-        """Where these rows' scenario places are at t (NaN: resting on what is not there): their
-        rows of the scenario's placement plan, from the bullseyes and bodies it rests on, and no
-        other contact."""
+        return self._scenario_places_many([t], rows)[0]
+
+    def _scenario_places_many(self, ts, rows: np.ndarray) -> np.ndarray:
+        """Where these rows' scenario places are at each of the moments ts (T × rows × 3; NaN: resting
+        on what is not there): their rows of the scenario's placement plan, from the bullseyes and
+        bodies it rests on, and no other contact."""
         pl = plan(self.scenario)
         if self._plan_rows is None or self._plan_rows[0] is not pl:
             self._plan_rows = (pl, {cid: k for k, cid in enumerate(pl.ids)}, {})
@@ -1135,20 +1151,23 @@ class Fleet:
             if len(kept) > 64:
                 kept.clear()
             ks = kept[rows.tobytes()] = np.array([at.get(self.c.ids[i], -1) for i in rows], dtype=np.int64)
-        out = np.full((len(rows), 3), np.nan)
+        out = np.full((len(ts), len(rows), 3), np.nan)
         ok = ks >= 0
         if not ok.any():
             return out
-        base = self._base_cache.get(t)                   # (what the plan rests on at t: kept, every row asked at t shares it)
+        base = self._base_cache.get(ts[0]) if len(ts) == 1 else None    # (one moment: kept, every row asked then shares it)
         if base is None:
-            _room(self._base_cache, 64)
-            bulls = {bid: b for bid in pl.by_bull if (b := self._bull(None, bid, t)) is not None}
-            base = self._base_cache[t] = pl.base_positions(bulls, self._bodies(t))
-        unplaced = np.isnan(base).any(axis=1)
+            bulls = {bid: got for bid in pl.by_bull if (got := self._bulls_at(None, bid, ts)) is not None}
+            base = pl.base_many(bulls, self._bodies_at(ts), len(ts))
+            if len(ts) == 1:
+                _room(self._base_cache, 64)
+                self._base_cache[ts[0]] = base
         W = pl.W[ks[ok]]
-        X = W @ np.where(unplaced[:, None], 0.0, base)
-        X[(W[:, unplaced] != 0).any(axis=1)] = np.nan
-        out[ok] = X
+        for j, B in enumerate(base):
+            unplaced = np.isnan(B).any(axis=1)
+            X = W @ np.where(unplaced[:, None], 0.0, B)
+            X[(W[:, unplaced] != 0).any(axis=1)] = np.nan
+            out[j, ok] = X
         return out
 
     def _stations_to(self, t_end: float, partial: bool = False) -> None:
@@ -1158,33 +1177,52 @@ class Fleet:
 
     def _station_grid(self, st_t: float, t_end: float, rows: np.ndarray | None, partial: bool = False) -> float:
         """Charge station ships (those among rows, if given) on the grid from st_t to t_end;
-        returns the time they are paid up to."""
+        returns the time they are paid up to. Where they stand at each moment of the grid (and a
+        probe after it) is worked out STATION_AHEAD_S at a time, and kept while the same ships hold
+        the same places (an order or an arrival changes that): charging moves no ship off her place,
+        and a place moves by the clock alone. Unless one holds on a unit, which may be flying."""
+        steps = []
         while True:
             nxt = self.t0 + (math.floor((st_t - self.t0) / STATION_S + 1e-9) + 1) * STATION_S
             if nxt <= t_end + 1e-9:
-                self._charge(nxt, st_t, rows)
+                steps.append((nxt, st_t))
                 st_t = nxt
             else:
                 if partial and t_end > st_t + 1e-9:
-                    self._charge(t_end, st_t, rows)
+                    steps.append((t_end, st_t))
                     st_t = t_end
-                return st_t
-
-    def _charge(self, t1: float, t_prev: float, only: np.ndarray | None = None) -> None:
-        """Bring every station ship (among `only`, if given) up to t1: she rides her place and pays
-        what it cost against gravity since she was last brought up to date, |Δv_place − g·Δt|,
-        all of them at once."""
+                break
         c = self.c
-        if only is not None and not (c.mode[only] == STATION).any():
-            return                                     # none of them on station: nothing to pay
-        rows, P1 = self._station_positions(t1, only)
+        if not steps or (rows is not None and not (c.mode[rows] == STATION).any()):
+            return st_t                                # (none of them on station: nothing to pay)
+        ver = c.mver[: len(c.row)]
+        on = np.flatnonzero(self.versions.mode[ver] == STATION)
+        if rows is not None:
+            on = on[np.isin(on, rows)]
+        key = (on.tobytes(), ver[on].tobytes())
+        if self._st_ahead[0] != key:
+            self._st_ahead = (key, {})
+        kept, ahead = self._st_ahead[1], not self._station_plan(ver[on])[2]
+        for t1, t_prev in steps:
+            if t1 not in kept:
+                on_grid = abs((t1 - self.t0) / STATION_S - round((t1 - self.t0) / STATION_S)) < 1e-9
+                ts = [t1 + k * STATION_S for k in range(int(STATION_AHEAD_S / STATION_S))] if ahead and on_grid else [t1]
+                if len(kept) > 4 * len(ts):
+                    kept.clear()
+                _, P = self._station_positions_many([t for x in ts for t in (x, x + PROBE_S)], on, ver)
+                kept.update((x, (P[2 * k], P[2 * k + 1])) for k, x in enumerate(ts))
+            self._charge(t1, t_prev, on, *kept[t1])
+        return st_t
+
+    def _charge(self, t1: float, t_prev: float, rows: np.ndarray, P1: np.ndarray, P2: np.ndarray) -> None:
+        """Bring the station ships among rows up to t1: she rides her place (P1 at t1, P2 a probe
+        after: NaN where it is not there) and pays what it cost against gravity since she was last
+        brought up to date, |Δv_place − g·Δt|, all of them at once."""
+        c = self.c
+        ok = ~(np.isnan(P1).any(axis=1) | np.isnan(P2).any(axis=1))
+        rows, P1, P2 = rows[ok], P1[ok], P2[ok]
         if not len(rows):
             return
-        rows2, P2 = self._station_positions(t1 + PROBE_S, only)
-        if len(rows2) != len(rows) or (rows2 != rows).any():
-            keep = np.isin(rows, rows2)
-            rows, P1 = rows[keep], P1[keep]
-            P2 = P2[np.isin(rows2, rows)]
         V1 = (P2 - P1) / PROBE_S
         dt = np.where(c.t[rows] < t1, t1 - np.maximum(c.t[rows], t_prev), 0.0)
         mid = P1 - c.v[rows] * dt[:, None] / 2
@@ -1213,6 +1251,22 @@ class Fleet:
             else:
                 c[key] = self._placed(t)[2].get(bid)
         return c[key]
+
+    def _bulls_at(self, player: str | None, bid: str, ts) -> tuple | None:
+        """One of a player's bullseyes at each of the moments ts: (origins T × 3, axes T × 3 × 3), or
+        None if it is not there. Many at once off the table (resolve_many: the same bits as one by
+        one); one alone, kept like any other (_bull)."""
+        if len(ts) > 1 and self.bullseyes_many is not None and hasattr(self.eph, "positions_many"):
+            return self.bullseyes_many(player or self.scenario.player, bid, ts)
+        got = [self._bull(player, bid, t) for t in ts]
+        return None if any(b is None for b in got) else (np.array([b.origin for b in got]), np.array([b.axes for b in got]))
+
+    def _bodies_at(self, ts) -> dict:
+        """Every body at each of the moments ts: {id: T × 3}, the same bits as _bodies at each."""
+        if len(ts) > 1 and hasattr(self.eph, "positions_many"):
+            return dict(zip(self.eph.ids, self.eph.positions_many(ts).transpose(1, 0, 2)))
+        got = [self._bodies(t) for t in ts]
+        return {k: np.array([g[k] for g in got]) for k in got[0]}
 
     def _point(self, spec: dict, t: float, placed: dict | None = None, depth: int = 0) -> np.ndarray | None:
         """Where a target or a station is at t (system frame, m): an AER from a bullseye, a unit,

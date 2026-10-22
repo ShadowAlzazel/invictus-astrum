@@ -88,12 +88,13 @@ def test_api_round_trip():
 
 
 def test_bullseyes_resolve_at_many_moments_as_at_one():
-    """resolve_many gives what resolve gives, moment by moment: every kind of origin and axes."""
+    """resolve_many gives what resolve gives, moment by moment, to the bit: every kind of origin and
+    axes (a station ship's place is worked out either way, and must be the same)."""
     from astrum.app import create_app
     from astrum.bullseye import resolve_many
     world = create_app().state.world
     s, tb = world.systems["sol"], world.table("sol")
-    ts = world.start_time(s) + np.array([0.0, 4321.0, 86400.0, 7 * 86400.0])
+    ts = world.start_time(s) + np.array([0.0, 4321.0, 8700.0, 9660.0, 86400.0, 7 * 86400.0])
     P = tb.positions_many(ts)
     for player in ("arcvs", "terran"):
         bulls = world.bullseyes("sol", player)
@@ -101,7 +102,7 @@ def test_bullseyes_resolve_at_many_moments_as_at_one():
             O, A = resolve_many(s, b, tb.ids, P, bulls)
             for k, t in enumerate(ts):
                 r = resolve(s, b, tb.positions(t), bulls)
-                assert np.abs(r.origin - O[k]).max() < 0.1 and np.abs(r.axes - A[k]).max() < 1e-9
+                assert np.array_equal(r.origin, O[k]) and np.array_equal(r.axes, A[k]), (b.id, k)
 
 
 def _maker(tmp_path):
