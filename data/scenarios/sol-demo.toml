@@ -21,6 +21,7 @@ id = "sol-demo"
 name = "Cislunar picture"
 system = "sol"
 player = "arcvs"
+factions = ["arcvs", "jadf", "bandit", "ghost"]   # whose forces it holds: each a view of it (with MASTER, everything)
 
 # ---- friendly: one task force element, in flights, out of plane over Earth --------------------------
 [[contact]]
@@ -1389,11 +1390,49 @@ formation = "jove"
 class = "bacillus"
 position = { body = "jupiter", offset_km = [-3000, 1000000, -500] }
 
+# ---- GHOST: the practice force. A PHALAENA flight beyond Mars, at the edge of what Task Force 3 sees:
+# the AESHNA's wide optics see a warm PHALAENA to about 29.4 million km; the flight stands at 97%,
+# 100% and 103% of that, out from Mars on the line from the Sun. Placeholder callsigns.
+[[contact]]
+id = "ghost"
+callsign = "Ghost flight"
+affiliation = "unknown"
+faction = "ghost"
+echelon = "flight"
+
+[[contact]]
+id = "ghost-1"
+callsign = "Ghost 1"
+affiliation = "unknown"
+echelon = "ship"
+formation = "ghost"
+class = "phalaena"
+position = { body = "mars", offset_km = [-2073703, 28478774, 647676] }
+
+[[contact]]
+id = "ghost-2"
+callsign = "Ghost 2"
+affiliation = "unknown"
+echelon = "ship"
+formation = "ghost"
+class = "phalaena"
+position = { body = "mars", offset_km = [-2137838, 29359561, 667707] }
+
+[[contact]]
+id = "ghost-3"
+callsign = "Ghost 3"
+affiliation = "unknown"
+echelon = "ship"
+formation = "ghost"
+class = "phalaena"
+position = { body = "mars", offset_km = [-2201973, 30240348, 687739] }
+
 # ---- the local picture --------------------------------------------------------------------------------
 [[contact]]
 id = "g1"
 callsign = "Single Group"
 affiliation = "hostile"
+faction = "bandit"
 echelon = "squadron"
 brevity = "bandit"
 pry = 4
@@ -1420,6 +1459,7 @@ position = { body = "earth", offset_km = [-42164, 0, 0] }
 id = "x1"
 callsign = "Crab"
 affiliation = "hostile"
+faction = "bandit"
 echelon = "ship"
 brevity = "crab"
 status = ["crab"]

@@ -134,8 +134,10 @@ crew = 100000
 crew-kill = 100000
 
 # ---- strips ------------------------------------------------------------------------------------------
-# Panels in a strip combine incoherently: each panel is its own aperture and its own track.
+# Panels in a strip combine incoherently: each panel is its own aperture and its own track. A strip
+# or a dome is also a sensor (sensor: which, parts.toml): one cone for each.
 [strip.light]
+sensor = "strip-optic"
 name = "LIGHT strip"
 panel = "i"
 panels = 4
@@ -143,6 +145,7 @@ edge_m = 12
 dazzle_km = 40000
 
 [strip.picket]
+sensor = "strip-optic"
 name = "PICKET strip"
 panel = "ii"
 panels = 6
@@ -150,6 +153,7 @@ edge_m = 32
 dazzle_km = 40000
 
 [strip.capital]
+sensor = "strip-optic"
 name = "CAPITAL strip"
 panel = "iii"
 panels = 6
@@ -157,6 +161,7 @@ edge_m = 60
 dazzle_km = 40000
 
 [strip.heavy]
+sensor = "strip-optic"
 name = "HEAVY strip"
 panel = "iv"
 panels = 4
@@ -168,6 +173,7 @@ dazzle_km = 40000
 # on the dome's own axis. A dome may state its rated missile kills where the model does not reach.
 [dome.xix]
 name = "DOME XIX"
+sensor = "dome-optic"
 panel = "c"
 facets = 19
 base_ring_m = 13
@@ -176,6 +182,7 @@ dazzle_km = 40000
 
 [dome.xix-b]
 name = "DOME XIX-B, the watch dome"
+sensor = "watch-optic"
 panel = "b"
 facets = 19
 cap_deg = 70
@@ -186,6 +193,7 @@ pd_kills_per_s = { 100 = 48, 300 = 5.3, 1000 = 0.48, 3000 = 0.05 }     # TELVM Â
 
 [dome.xxxvii]
 name = "DOME XXXVII, the wide dome"
+sensor = "wide-optic"
 panel = "c"
 facets = 37
 cap_deg = 55

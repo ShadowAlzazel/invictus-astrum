@@ -189,11 +189,12 @@
       <section class="ship">
         <h2>Ship <span class="dim">{doing}</span></h2>
         <dl class="tight">
-          <dt>Seen</dt><dd>{age(ship.seen_s)} ago</dd>
-          <dt class="sub">her light, to the nearest of ours</dt><dd class="sub"></dd>
+          {#if contact.brevity === 'bogey'}<dt title="Not yet seen bright enough to be known for what she is">Called</dt><dd>BOGEY</dd>{/if}
+          {#if ship.lost}<dt title="Not seen again within her sensors' sweeps: where she was last seen">Track</dt><dd class="hot">lost</dd>{/if}
+          <dt title="How old the light is that showed her, as it reached the ship of ours that saw her">Seen</dt><dd>{age(ship.seen_s)} ago</dd>
           <dt>Drive</dt><dd class:hot={ship.burning}>{ship.burning ? 'burning' : 'not burning'}</dd>
           <dt>Signature</dt><dd>{watts(ship.sig_w)}</dd>
-          <dt class="sub">her wings</dt><dd class="sub">{watts(ship.glow_mw * 1e6)}</dd>
+          <dt class="sub">her rads</dt><dd class="sub">{watts(ship.glow_mw * 1e6)}</dd>
           {#if ship.velocity_kms}<dt>Speed</dt><dd>{n(Math.hypot(...ship.velocity_kms), 2)} km/s</dd>{/if}
         </dl>
       </section>
@@ -238,13 +239,15 @@
         {#if !shut.heat}
           {#if ship.cold != null}<div class="tank heat" title="her thermal store"><i style="width:{Math.max(0, Math.min(1, ship.heat_share ?? 0)) * 100}%"></i></div>{/if}
           <dl class="tight">
-            <dt>Wings</dt><dd class:cool={ship.cold}>{ship.cold ? 'folded: running cold' : ship.cold === false ? 'spread' : 'fixed'}</dd>
+            <!-- Rads, as standard; Wings, where they fold -->
+            {#if ship.cold != null}<dt>Wings</dt><dd class:cool={ship.cold}>{ship.cold ? 'folded: running cold' : 'spread'}</dd>
+            {:else}<dt>Rads</dt><dd>always radiating</dd>{/if}
             {#if ship.cold != null}<dt>Cold time left</dt><dd>{n(ship.cold_left_h, 1)} h <span class="dim">of {n(spec?.cold_h, 0)}</span></dd>{/if}
             {#if ship.heat_share != null}<dt>Store</dt><dd>{n(ship.heat_share * 100, 1)}% <span class="dim">of {n(spec?.store_tj, 1)} TJ</span></dd>{/if}
             <dt>Radiating</dt><dd>{watts(ship.glow_mw * 1e6)}</dd>
           </dl>
           {#if ship.cold != null}<button class="act" on:click={() => oncold(!ship.cold)}
-            title={ship.cold ? 'Spread her wings: she sheds her heat and empties her store, glowing the brighter for it' : 'Fold her wings: she sheds little while her store fills'}>{ship.cold ? 'Spread wings' : 'Run cold'}</button>{/if}
+            title={ship.cold ? 'Spread her wings: her rads shed her heat and empty her store, glowing the brighter for it' : 'Fold her wings: her rads shed little while her store fills'}>{ship.cold ? 'Spread wings' : 'Run cold'}</button>{/if}
         {/if}
         {#if spec?.ranges?.length}
           <h3><button class="fold" class:shut={shut.weapons} on:click={() => flip('weapons')}><i></i>Weapons</button>{#if shut.weapons} <span class="dim">{spec.ranges.map((r) => `${r.what} ${km(r.km)}`).join(' · ')}</span>{/if}</h3>

@@ -24,6 +24,7 @@ orbit_samples = 360    # points per drawn orbit
 table_days = 60        # body positions worked out up front, from each game's start (the rest as it goes)
 run_ahead = true       # a worker keeps the fleet flown ahead of the map's clock; off, each picture flies it there
 
-[picture]              # what a player is shown, made from the simulation's truth (astrum/picture.py); both off: all of it
-light_delay = true     # a ship not her own is shown where she was when her light reached the nearest of her own
+[picture]              # what a view is shown, made from the simulation's truth (astrum/picture.py); all off: all of it
+detection = true       # a ship not its own is shown once its own ships' sensors see her, as that light left her
+light_delay = true     # (without detection) a ship not its own is shown as her light reached the nearest of its own
 hide_private = true    # ... and what only that ship knows (tanks, orders, store) is not shown

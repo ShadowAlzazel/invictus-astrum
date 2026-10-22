@@ -126,6 +126,10 @@ class World:
         if problem:
             errors["bullseyes.toml"] = problem
         trees = {}
+        for sc_ in scenarios.values():                       # a scenario's factions are factions.toml's
+            for fid in sc_.factions:
+                if fid not in factions:
+                    errors[f"scenarios/{sc_.id}"] = f"unknown faction {fid!r} in its factions; factions are in data/factions.toml"
         for sc_ in scenarios.values():                       # units must name classes and bullseyes that exist
             own = {"system"} | {b.id for b in players.get(sc_.player, None).bullseyes.values()
                                 if b.system == sc_.system} if sc_.player in players else {"system"}
@@ -134,6 +138,8 @@ class World:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown role {c.role!r}; roles are in style.toml [formation_role]"
                 if c.own_faction and c.faction not in factions:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown faction {c.faction!r}; factions are in data/factions.toml"
+                elif c.own_faction and sc_.factions and root_of(factions, c.faction) not in sc_.factions and c.faction not in sc_.factions:
+                    errors[f"scenarios/{sc_.id}/{c.id}"] = f"faction {c.faction!r} is not among the scenario's factions {list(sc_.factions)}"
                 if c.ship_class and ships and c.ship_class not in ships.classes:
                     errors[f"scenarios/{sc_.id}/{c.id}"] = f"unknown ship class {c.ship_class!r}"
                 b = c.position.get("bullseye", "system") if "aer" in c.position else None
@@ -448,6 +454,11 @@ def body_dict(s, b, zones) -> dict:
     }
 
 
+def root_of(factions: dict, fid: str | None) -> str | None:
+    """The faction a branch belongs to (a branch is listed under it)."""
+    return (factions.get(fid or "") or {}).get("parent") or fid
+
+
 def formation_role(style: dict | None, callsign: str) -> str:
     """The role a callsign's words give: the first word that begins one of the roles' words or
     phrases, the longest phrase where two begin there ("Forward Scout 1": forward-scout)."""
@@ -528,11 +539,12 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         return {
             "version": world.version,
             "systems": [level_dict(world, s) for s in sorted(world.systems.values(), key=lambda s: s.name)],
-            "players": [{"id": p.id, "name": p.name,
+            "players": [{"id": p.id, "name": p.name, "faction": p.faction,
                          "bullseyes": [{"id": b.id, "name": b.name, "system": b.system, "made": b.id in world.made.get(p.id, {})}
                                        for b in [*p.bullseyes.values(), *world.made.get(p.id, {}).values()]]}
                         for p in world.players.values()],
             "scenarios": [{"id": sc.id, "name": sc.name, "system": sc.system, "player": sc.player,
+                           "factions": [{"id": f, "name": world.factions.get(f, {}).get("name", f)} for f in sc.factions],
                            "contacts": [contact_dict(world, c, world.trees.get(sc.id)) for c in sc.contacts.values()]}
                           for sc in world.scenarios.values()],
             "specs": {cid: spec.as_dict() for cid in (world.ships.classes if world.ships else {})
@@ -689,9 +701,10 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         return {"ok": True}
 
     @app.delete("/api/order/{scenario}/{order_id}")
-    async def order_withdraw(scenario: str, order_id: str):
-        """Take back an order given from the map: as if it had never been given (Fleet.withdraw)."""
-        if not (await sim.call("withdraw", {"scenario": scenario, "order_id": order_id}))["ok"]:
+    async def order_withdraw(scenario: str, order_id: str, view: str | None = None, player: str | None = None):
+        """Take back an order given from the map: as if it had never been given (Fleet.withdraw);
+        only the view's own (MASTER: any)."""
+        if not (await sim.call("withdraw", {"scenario": scenario, "order_id": order_id, "view": view, "player": player}))["ok"]:
             raise HTTPException(404, f"no order {order_id!r} from the map in {scenario}")
         return {"ok": True}
 

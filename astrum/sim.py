@@ -73,6 +73,7 @@ from .classis import COLUMNS, BURN_G, BURN_NONE, BURN_THROTTLE, DEAD, FREE, LEAD
 from .entity import G0, Ship, ShipSpec, SpecError
 from .frames import from_aer
 from .orders import BURN, COAST, COLD, GOTO, KIND, SETG, WARM, Given, OrderBook
+from .detect import Sensors
 from .signature import Signature
 from .timeline import FIELDS, Timeline, Versions
 
@@ -264,12 +265,14 @@ class Fleet:
         self._spare: list[int] = []                # leads' rows an order set back for good: the next leads take them
         self._now = t0                             # the moment what is being changed changes
         self._past: dict[int, dict] = {}           # the fleet at past samples, as pictured (past_sample)
+        self._scans: dict[int, dict] = {}          # what the sensors saw at past samples (astrum/detect.py scan)
         self.asked: dict[int, tuple] = {}         # row -> her time to target, to be flown ahead (arrivals): the newest
         self._setback: dict[int, int] = {}         # row -> how often she has been set back (-1: the whole fleet)
         for i in range(cl.n):
             self._touch(i)
         self._enter(orders or [])
         self._checkpoints: list[tuple] = [(t0, self._snapshot(), t0)]    # (t, the rows then, station ships paid to)
+        self.sensors = Sensors(self, registry)              # every ship's sensors, a cone each (astrum/detect.py)
 
     # ---- the timeline: what the map reads ----------------------------------------------------
     def keep_timeline(self) -> Timeline:
@@ -405,6 +408,7 @@ class Fleet:
         self.mending, self._spare = None, []
         self.asked.clear()
         self._past.clear()
+        self._scans.clear()
         self._setback[-1] = self._setback.get(-1, 0) + 1
         unanswered = np.isnan(self.c.arrive_at[: self.c.n])    # asked before the checkpoint, answered after: ask again
         self.c.predicted[: self.c.n][unanswered] = math.nan
@@ -459,7 +463,8 @@ class Fleet:
         once up to t_end and the rest of the way after (Mend). Returns the given events' ships as
         they stand once given."""
         B = self.book
-        self._past.clear()                                # what was pictured from t_o on is flown again
+        self._past.clear()                                # what was pictured (and seen) from t_o on is flown again
+        self._scans.clear()
         rows = self._affected(ships, set())
         if self.mending is not None:                      # an earlier order's rows still on their way: with these
             rows |= self.mending.rows
@@ -1383,7 +1388,7 @@ class Fleet:
             self._coast(i)
         elif kind == COLD:
             if c.coldt[i] <= 0:
-                self.findings.append(f"{c.ids[i]}: her wings do not fold; she cannot run cold")
+                self.findings.append(f"{c.ids[i]}: her rads do not fold; she cannot run cold")
             elif c.heat[i] >= c.store[i]:
                 self.findings.append(f"{c.ids[i]}: her store is full; she cannot run cold until it empties")
             else:

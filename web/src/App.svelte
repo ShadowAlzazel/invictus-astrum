@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { SystemMap } from './lib/SystemMap.js';
   import { api, StateStream } from './lib/api.js';
+  import { asSeen } from './lib/seen.js';
   import HudCursor from './lib/HudCursor.svelte';
   import Orders from './lib/Orders.svelte';
   import Bullseyes from './lib/Bullseyes.svelte';
@@ -20,6 +21,7 @@
 
   let canvas, map = null, stream, meta = null, style = null, def = null, state = null;
   let systemId = null, playerId = 'arcvs', bullseyeId = 'system', scenarioOn = true;
+  let viewId = null;                // whose picture: one of the scenario's factions, or MASTER (null: the player's faction)
   let t = 0, warp = WARPS.findIndex(([s]) => s === 3600), paused = false, last = 0, raf;
   let orbitsT = null, orbitsBusy = false;
   let drules = {}, settings = null, showSettings = false, settingsStatus = '', saveTimer, pendingSave = false;
@@ -41,6 +43,10 @@
   let schema = null, wdoc = null, lastLevel = null;
 
   $: player = meta?.players.find((p) => p.id === playerId);
+  $: view = viewId ?? player?.faction ?? null;
+  $: views = scenario ? [...(scenario.factions ?? []), { id: 'master', name: 'MASTER' }] : [];
+  // every unit as the view knows it: unseen ones out, unknown ones bogeys (lib/seen.js)
+  $: seenContacts = contacts.map((c) => asSeen(c, state?.seen_as?.[c.id])).filter(Boolean);
   $: bullseyes = [{ id: 'system', name: `${def?.name ?? ''} centre` }, ...(player?.bullseyes.filter((b) => b.system === systemId) ?? [])];   // the star centre always first
   $: scenario = meta?.scenarios.find((s) => s.system === systemId);
   $: contacts = scenarioOn && scenario ? scenario.contacts : [];
@@ -142,7 +148,7 @@
     map.setClock(t);
     // running, ask for a moment a round trip or two ahead, so the picture after the clock is there
     const ahead = paused ? 0 : WARPS[warp][0] * Math.min(0.25, 1.5 * stream.rtt + 1 / 60);
-    if (systemId) stream.request({ system: systemId, t: t + ahead, player: playerId, scenario: scenarioOn ? scenario?.id : null });
+    if (systemId) stream.request({ system: systemId, t: t + ahead, player: playerId, view, scenario: scenarioOn ? scenario?.id : null });
   }
 
   // ---- pointer ----------------------------------------------------------------------------------
@@ -196,7 +202,7 @@
     clearTimeout(retuneTimer);
     const send = async () => {
       try {
-        await api.order({ scenario: scenario.id, unit, t, g, keep_target: true, order_id: orderId });
+        await api.order({ scenario: scenario.id, unit, t, g, keep_target: true, order_id: orderId, player: playerId, view });
         say(`${map.contactName(unit)}${order ? `, to ${order.label}` : ''}: ${g > 0 ? `${g.toFixed(2)} g` : 'drive cut'}`);
       } catch (err) { say(String(err.message ?? err)); }
     };
@@ -205,12 +211,12 @@
   async function setCold(cold) {
     if (!scenario || sel?.kind !== 'contact') return;
     try {
-      await api.order({ scenario: scenario.id, unit: sel.id, t, cold });
+      await api.order({ scenario: scenario.id, unit: sel.id, t, cold, player: playerId, view });
       say(`${map.contactName(sel.id)}: ${cold ? 'wings folded, running cold' : 'wings spread'}`);
     } catch (err) { say(String(err.message ?? err)); }
   }
   async function withdrawOrder(id) {
-    try { await api.withdrawOrder(scenario.id, id); say('Order withdrawn: as if it had never been given'); }
+    try { await api.withdrawOrder(scenario.id, id, view, playerId); say('Order withdrawn: as if it had never been given'); }
     catch (err) { say(String(err.message ?? err)); }
   }
   async function giveOrder() {
@@ -218,7 +224,7 @@
     if (!aim || !scenario) return say('Nothing to aim at there.');
     const o = ordering;
     try {
-      const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId,
+      const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId, view,
                                   target: aim.target });
       const goal = Object.values(r.ships)[0]?.goal;
       const who = `${map.contactName(o.unit)}${o.ships.length > 1 ? ` (${o.ships.length} ships)` : ''}`;
@@ -362,10 +368,10 @@
 <svelte:window on:keydown={key} on:keyup={keyUp} on:blur={() => (ranges = false)} on:pointermove={trackUI} />
 
 <canvas class="map" bind:this={canvas}></canvas>
-<Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} />
+<Overlay {map} {style} {settings} {drules} contacts={seenContacts} ranges={ranges && mode === 'map'} />
 <HudCursor {map} {style} {settings} {overUI} />
 {#if mode === 'map'}
-  <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />
+  <Orders bind:this={orderTool} bind:ordering {map} {style} {state} contacts={seenContacts} {sel} message={orderMsg} />
 {/if}
 
 {#if mode === 'menu'}
@@ -425,6 +431,14 @@
       {#each meta?.players ?? [] as p}<option value={p.id}>{p.name}</option>{/each}
     </select>
   </div>
+  {#if views.length}
+    <div class="row" title="Whose picture: what that side's ships have seen. MASTER sees and orders everything.">
+      <span class="lbl">View</span>
+      <select value={view} on:change={(e) => (viewId = e.target.value)}>
+        {#each views as v}<option value={v.id}>{v.name}</option>{/each}
+      </select>
+    </div>
+  {/if}
   {#if scenario}
     <button class="toggle" class:on={scenarioOn} on:click={() => (scenarioOn = !scenarioOn)}><i></i>{scenario.name}</button>
   {/if}
@@ -459,7 +473,7 @@
 </div>
 
 {#if !showSettings}
-<InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
+<InfoPanel {map} {style} {sel} {state} contacts={seenContacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold} />
 {/if}

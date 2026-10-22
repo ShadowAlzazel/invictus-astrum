@@ -136,7 +136,8 @@ def load_factions(path: str | Path) -> dict[str, dict]:
         if "branch_of" in spec and "member_of" in spec:
             problems.append(f"faction {fid}: a branch of one faction, or a member's force: not both")
         out[fid] = {"id": fid, "name": spec.get("name", fid), "prefix": spec.get("prefix", ""),
-                    "parent": spec.get("branch_of", "")}         # a branch's faction, by id: its ships are its players'
+                    "parent": spec.get("branch_of", ""),         # a branch's faction, by id: its ships are its players'
+                    "member": spec.get("member_of", "")}         # a member world's force: whose it answers to, by id
         for key in ("branch_of", "member_of"):
             other = spec.get(key)
             if other is not None and (other not in every or other == fid):
@@ -156,6 +157,7 @@ class Scenario:
     player: str
     contacts: dict[str, Contact]
     orders: list = field(default_factory=list)
+    factions: tuple[str, ...] = ()        # whose forces it holds (data/factions.toml): each a view of it, besides MASTER
 
 
 def load_scenario(path: str | Path) -> Scenario:
@@ -231,7 +233,8 @@ def load_scenario(path: str | Path) -> Scenario:
     if problems:
         raise ValueError(f"{path.name}:\n  " + "\n  ".join(problems))
     epoch = epoch_of(s["epoch"]) if "epoch" in s else None
-    return Scenario(s["id"], s.get("name", s["id"]), s["system"], epoch, s.get("player", ""), contacts, orders)
+    return Scenario(s["id"], s.get("name", s["id"]), s["system"], epoch, s.get("player", ""), contacts, orders,
+                    tuple(s.get("factions", ())))
 
 
 def load_scenarios(folder: str | Path) -> tuple[dict[str, Scenario], dict[str, str]]:

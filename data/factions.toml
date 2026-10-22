@@ -29,3 +29,13 @@ name = "Jupiter Astrum Defence Force"
 prefix = "JADF"
 member_of = "arcvs"
 notes = "The Jovian moons' own police."
+
+# The forces ARCVS meets.
+[faction.bandit]
+name = "Bandits"
+notes = "Hostile forces: brigands, raiders, a polity's navy at war."
+
+[faction.ghost]
+name = "GHOST"
+notes = "Unknown: the practice and test force. Whose it is, nobody says."
+

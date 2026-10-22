@@ -165,7 +165,7 @@ def test_sol_demo_fleet(reg):
     world = app.state.world
     sc = world.scenarios["sol-demo"]
     f = world.fleet(sc)
-    assert len(f.ships) == 109 and not f.findings
+    assert len(f.ships) == 112 and not f.findings
     c = TestClient(app)
     meta = c.get("/api/meta").json()
     kiki = next(u for u in meta["scenarios"][0]["contacts"] if u["id"] == "kiki-1")
@@ -575,7 +575,7 @@ def test_the_map_is_sent_changes_that_add_up():
         ws.send_json({**req, "t": t + 60})
         first = ws.receive_json()
         ships = first["ships"]
-        assert first["full"] and len(ships) == 109
+        assert first["full"] and len(ships) == 112
         for k in range(1, 6):
             ws.send_json({**req, "t": t + 60 + 30 * k})
             m = ws.receive_json()
@@ -764,7 +764,7 @@ def test_the_simulation_runs_in_a_process_of_its_own(run_ahead):
         with c.websocket_connect("/ws") as ws:
             ws.send_json({**req, "t": sol + 60})
             first = ws.receive_json()
-            assert first["full"] and len(first["ships"]) == 109 and "kiki" in first["contacts"]
+            assert first["full"] and len(first["ships"]) == 112 and "kiki" in first["contacts"]
             r = c.post("/api/order", json={**req, "unit": "kiki-1", "t": sol + 60, "g": 0.4,
                                            "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
             assert r.status_code == 200 and r.json()["ship"]["goal"]["eta_s"] > 0
@@ -1008,6 +1008,7 @@ def test_others_are_seen_as_their_light_left_them():
     from astrum.app import create_app
     from astrum.simhost import SimHost
     w = create_app().state.world
+    w.config["picture"] = {"detection": False, "light_delay": True, "hide_private": True}
     host = SimHost(w)
     f = _demo(w)
     f.command(Order("jove-1", f.t0 + 600, "burn", burn={"g": 0.3, "bullseye": "system", "bearing": 90, "elevation": 0,
@@ -1018,7 +1019,7 @@ def test_others_are_seen_as_their_light_left_them():
     seen, ours = fr["ships"]["jove-1"], fr["ships"]["kiki-1"]
     i = f.c.row["jove-1"]
     then = f.picture(t - seen["seen_s"])["r"][i]
-    own = host._own(w.scenarios["sol-demo"], f, "arcvs")
+    own, _ = host._own(w.scenarios["sol-demo"], f, "arcvs")
     nearest = np.min(np.linalg.norm(f.picture(t)["r"][own] - then, axis=1))
     assert seen["seen_s"] == pytest.approx(nearest / 299792458.0, rel=1e-4)
     assert np.linalg.norm(np.array(fr["contacts"]["jove-1"]) * 1e3 - then) < 10.0
@@ -1026,7 +1027,7 @@ def test_others_are_seen_as_their_light_left_them():
     assert seen["burning"] and seen["sig_w"] > 1e13
     assert seen["mass_t"] is None and seen["goal"] is None and seen["cold"] is None
     assert ours["seen_s"] is None and ours["mass_t"] > 0 and ours["cold"] is True
-    w.config["picture"] = {"light_delay": False, "hide_private": False}         # both off: the truth
+    w.config["picture"] = {"detection": False, "light_delay": False, "hide_private": False}   # all off: the truth
     fr = json.loads(host.frame({"system": "sol", "t": t, "player": "arcvs", "scenario": "sol-demo"}, conn=2))
     assert np.allclose(np.array(fr["contacts"]["jove-1"]) * 1e3, f.picture(t)["r"][i], atol=10.0)
     assert fr["ships"]["jove-1"]["mass_t"] > 0
@@ -1054,3 +1055,86 @@ def test_wings_show_folded_or_spread_at_the_moment_given():
     assert f.picture(t)["cold"][i] == 1.0
     f.command(Order("kiki-2", t, "warm", source="map"))
     assert f.picture(t - 1)["cold"][i] == 1.0 and f.picture(t)["cold"][i] == 0.0 and f.picture(t + 20)["cold"][i] == 0.0
+
+
+# ---- detection and views -------------------------------------------------------------------------
+
+def test_sensors_are_cones_over_her_sphere():
+    """Every ship has the standard suite (six cones, the whole sphere); her strips and domes are
+    sensors too, a cone each; a VIGIL has her telescopes besides. Each sweeps on its own phase."""
+    from astrum.app import create_app
+    from astrum.detect import spread
+    w = create_app().state.world
+    f = _demo(w)
+    S = f.sensors
+    kinds = lambda sid: sorted(S.what[k] for k in np.flatnonzero(S.row == f.c.row[sid]))
+    assert kinds("kiki-2").count("passive") == 6 and kinds("kiki-2").count("strip-optic") == 2   # PHALAENA: a strip pair
+    assert kinds("jove-1").count("watch-optic") == 4 and kinds("jove-1").count("ir-telescope") == 2
+    d = spread(6)
+    angle = np.degrees(np.arccos(np.clip(np.max(spread(400) @ d.T, axis=1), -1, 1)))
+    assert angle.max() < 60.0                                    # six 60° cones leave no gap
+    assert set(np.mod(S.phase, 60.0)) == {0.0} and all(S.phase < S.period)
+
+
+def test_a_flight_at_the_edge_of_what_task_force_3_sees():
+    """GHOST's PHALAENA flight beyond Mars stands at 97%, 100% and 103% of the reach of TF-3's
+    AESHNA against a warm frigate: the first two are seen, as bogeys (too faint to be known), the
+    light that showed them some 98 s old; the third is not seen at all. A friendly JADF ship seen is
+    known for what she is."""
+    from astrum.app import create_app
+    from astrum import picture
+    w = create_app().state.world
+    f = _demo(w)
+    t = f.t0 + 1800
+    f.reach(t)
+    own = picture.own_rows(f, w.factions, "arcvs")
+    seen = picture.view(f, f.picture(t), t, own, w.config["picture"], "arcvs", picture.friendly_rows(f, w.factions, "arcvs"))
+    g = [f.c.row[f"ghost-{k}"] for k in (1, 2, 3)]
+    assert list(seen["shown"][g]) == [True, True, False]
+    assert not seen["identified"][g[:2]].any() and 90 < seen["seen_s"][g[0]] < 100
+    j = f.c.row["jove-1"]
+    assert seen["shown"][j] and seen["identified"][j]
+    m = picture.own_rows(f, w.factions, picture.MASTER)              # MASTER: everything, as it is
+    assert m.all() and picture.view(f, f.picture(t), t, m, w.config["picture"], picture.MASTER)["shown"].all()
+
+
+def test_a_cold_ship_drops_out_of_sight_and_a_burning_one_is_seen_across_the_system():
+    from astrum.app import create_app
+    from astrum import picture
+    w = create_app().state.world
+    f = _demo(w)
+    t0 = f.t0 + 600
+    f.command(Order("ghost-1", t0, "cold", source="map"),
+              Order("ghost-3", t0, "burn", burn={"g": 0.2, "bullseye": "system", "bearing": 0, "elevation": 0,
+                                                 "duration_s": 3 * 3600}, source="map"))
+    t = t0 + 2 * 3600                                            # (past the hour a track is held)
+    f.reach(t)
+    own = picture.own_rows(f, w.factions, "arcvs")
+    seen = picture.view(f, f.picture(t), t, own, w.config["picture"], "arcvs")
+    assert not seen["shown"][f.c.row["ghost-1"]] and seen["shown"][f.c.row["ghost-3"]]
+
+
+def test_a_view_orders_only_its_own():
+    """The ARCVS view cannot order GHOST's ships; MASTER orders anyone's. What a view is shown leaves
+    out what its ships have not seen."""
+    import json
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    from astrum.simhost import SimHost
+    app = create_app()
+    c, w = TestClient(app), app.state.world
+    f = w.fleet(w.scenarios["sol-demo"])
+    o = {"scenario": "sol-demo", "unit": "ghost", "t": f.t0 + 600, "cold": True, "player": "arcvs"}
+    assert c.post("/api/order", json=o).status_code == 403
+    assert c.post("/api/order", json={**o, "view": "ghost"}).status_code == 200
+    assert c.post("/api/order", json={**o, "unit": "kiki", "view": "master"}).status_code == 200
+    host = SimHost(w)
+    fr = json.loads(host.frame({"system": "sol", "t": f.t0 + 1800, "player": "arcvs", "view": "arcvs", "scenario": "sol-demo"}, conn=1))
+    assert fr["seen_as"]["ghost-3"] == {"shown": False} and "ghost-3" not in fr["contacts"]
+    assert fr["seen_as"]["ghost-2"] == {"identified": False, "lost": True}         # a bogey, gone cold: a lost track
+    assert fr["seen_as"]["ghost"]["identified"] is False                         # and so its flight
+    fr = json.loads(host.frame({"system": "sol", "t": f.t0 + 1800, "player": "arcvs", "view": "ghost", "scenario": "sol-demo"}, conn=3))
+    assert fr["seen_as"]["jove"] == {"shown": False}                             # far beyond GHOST's sight
+    assert fr["seen_as"]["g1"]["affiliation"] == "unknown"                       # another side's: unknown to it
+    fr = json.loads(host.frame({"system": "sol", "t": f.t0 + 1800, "player": "arcvs", "view": "master", "scenario": "sol-demo"}, conn=2))
+    assert fr["seen_as"] == {} and "ghost-3" in fr["contacts"]

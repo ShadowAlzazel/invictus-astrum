@@ -30,15 +30,15 @@ PART_KEYS = {
     "channel": {"name", "type", "current_ka", "spread_pct", "t_per_m", "aperture_mm", "trim_t", "notes"},
     "panel": {"name", "shape", "aperture_m", "emitters", "notes"},
     "cell": {"name", "notes"},
-    "sensor": {"name", "notes"},
+    "sensor": {"name", "cone_deg", "reach_km", "ref_mw", "revisit_s", "notes"},
 }
 ASSEMBLY_KEYS = {
     "turret": {"name", "driver", "guns", "ring_m", "furniture_t", "handed", "notes"},
     "stack": {"name", "channel", "channels", "gradient_mev_m", "length_m", "overhead_t_per_m", "pulse_store_t",
               "cycle_s", "trim_deg", "reach", "spread", "notes"},
-    "strip": {"name", "panel", "panels", "edge_m", "dazzle_km", "notes"},
+    "strip": {"name", "panel", "panels", "edge_m", "dazzle_km", "sensor", "notes"},
     "dome": {"name", "panel", "facets", "cap_deg", "base_ring_m", "full_phase_aperture_m", "dazzle_km",
-             "pd_kills_per_s", "notes"},
+             "pd_kills_per_s", "sensor", "notes"},
 }
 CONSTANTS = {"gun_efficiency": 0.60, "gun_heat_share": 0.38, "beam_efficiency": 0.60, "pulse_us": 0.8,
              "emitter_kw": 12.0, "wall_plug": 0.45, "panel_t_per_m2": 0.357, "wavelength_um": 1.03,

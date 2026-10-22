@@ -132,3 +132,13 @@ plume_aspect = [[0, 1.0], [45, 0.6], [90, 0.2], [135, 0.03], [180, 0.005]]
 cold_share = 0.01    # wings folded, what she still sheds, as a share of her quiet load. TEMPORARY
 recover = 4          # wings spread, her store empties this many times faster than it filled. TEMPORARY
 
+# ---- detection: what a ship sees, and what her faction makes of it ---------------------------------
+# Every ship carries the standard suite (a sphere of cones), and her strips, domes and sensor
+# batteries besides (parts.toml [sensor.*]). A faction knows a ship once any of its own sees her:
+# where she was when that light left her.
+[detection]
+standard = { sensor = "passive", cones = 6 }
+identify = 25        # seen this many times over the faintest a sensor sees: her class and name are known (within a fifth of its reach)
+lost = 1.5           # a track not seen again within this many of its sensor's sweeps is called lost: shown where it was, uncertain
+hold_s = 3600        # ... and after this long, dropped
+

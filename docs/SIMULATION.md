@@ -34,10 +34,11 @@ a held thrust F burns m₁ = m₀ − F·dt/vₑ. A held acceleration is never m
 Each class's heat comes from its canon `[endurance]`, turned into three simple figures (ShipSpec):
 her thermal store, how long she can run cold, and what she sheds at rest (her quiet load: stated,
 or the store over the cold time). PAPILION: 10.8 TJ, 36 h, 83 MW. PHALAENA: 5 TJ, 48 h, 29 MW.
-AESHNA: 45.4 TJ, 8 days, 66 MW. BACILLUS and SALTICIDAE have fixed wings and never run cold
-(19 MW; SALTICIDAE's 20 MW is a placeholder); COCCINELLA never runs cold (0.56 GW at her dimmest).
+AESHNA: 45.4 TJ, 8 days, 66 MW. A ship's radiators are her **rads**; where they fold, her
+**wings**. BACILLUS and SALTICIDAE have fixed rads and never run cold (19 MW; SALTICIDAE's 20 MW
+is a placeholder); COCCINELLA always runs bright (0.56 GW at her dimmest).
 
-| Wings | What she sheds | Her store |
+| Wings | What her rads shed | Her store |
 |---|---|---|
 | folded (`cold` order, or `status = ["cold"]` in the scenario) | 1% of her quiet load | fills at her quiet load; full, she must spread her wings, at that moment |
 | spread (`warm` order) | her quiet load, and her store emptying on top of it | empties four times faster than it filled |
@@ -56,23 +57,56 @@ Two sources (`astrum/signature.py`), arithmetic on columns, every ship at once:
   a fifth, from dead ahead half a percent (`plume_aspect`, temporary).
 - **Her radiators:** as the table above.
 
-## What a player is shown
+## What each ship sees
 
-The simulation knows everything; a player is shown a picture made from it by functions
-(`astrum/picture.py`), each on or off in `config.toml [picture]`:
+Every ship's sensors are cones spread over her sphere (`astrum/detect.py`): the standard suite
+(`rules.toml [detection] standard`, six 60° cones on the octahedron's axes: the whole sphere,
+no gap), her strips and domes (each a cone: the optics are sensors too, `assemblies.toml` names
+the sensor each acts as) and her sensor batteries (the VIGIL's telescopes). Each sensor
+(`parts.toml [sensor.*]`) has a cone, a reach against a source of a stated power (so the faintest
+flux it sees is that power over 4π·reach²), and a sweep: it looks once every `revisit_s`, each
+cone on its own phase, on whole minutes. Its axis is in her hull's frame: forward where her hull
+points, up the system's.
 
-- **light_delay:** a ship that is not the player's own (her faction's, or a branch's:
-  `data/players.toml faction`) is shown where she was when the light that reaches the nearest of
-  the player's own ships now left her, with her burn, her hull and her heat then. Those come from
-  the fleet's own pictures at past whole minutes, kept, drawn by Hermite between (`Fleet.past`):
-  what was flown is read back, not flown again. How bright she looks to that ship, plume and
-  wings, goes with her (`sig_w`).
-- **hide_private:** of such a ship, what only she knows (her tanks, her mass, her drive's figures,
-  her orders, her store) is not sent.
+| Sensor | Cone | Sees a warm frigate (30 MW) to | Sweeps every |
+|---|---|---|---|
+| passive (every ship, six cones) | 60° | 5 million km | 1 min |
+| strip optics (a cone a strip) | 50° | 12 million km | 3 min |
+| dome optics / wide (AESHNA) / watch (VIGIL) | 60° / 55° / 70° | 20 / 30 / 60 million km | 5 min |
+| infrared telescope (VIGIL) | the sphere, swept | a cold hull (0.3 MW) at 1 AU: a warm one at 10 AU | 30 min |
 
-The player's own ships are shown as they are. Both off: the truth (a referee's view). To come:
-detection (what sensors make of what reaches them) and relay (what reaches the player, and when).
-The light delay costs about half a millisecond a picture.
+A cold frigate (0.3 MW) is seen a tenth as far; any drive burning, across the system. A scan is
+every sensor whose sweep comes round at a minute, against every ship that is not its side's, in
+one compiled call (`kernels.detect`): inside the cone, and bright enough toward it, her plume at
+the angle off her tail and her rads. Scans are kept, by minute and side, and so is the newest
+sighting of each ship as of each minute, so a picture reads one entry however long since she was
+seen: about half a millisecond a picture.
+
+## What a view is shown
+
+The simulation knows everything; a view is shown a picture made from it by functions
+(`astrum/picture.py`), each on or off in `config.toml [picture]`. A view is one of the scenario's
+factions (`[scenario] factions`: Sol holds ARCVS, the JADF, the Bandits and GHOST) or MASTER,
+which owns everything: it sees the truth and orders every ship. A view's own ships are its
+faction's and its branches' (ARCVS: AVC and AAG), shown as they are, and only they take its
+orders.
+
+- **detection:** a ship not the view's own is shown once one of its ships' sensors has seen her,
+  where she was when that light left her (`Fleet.past`), for an hour after; not seen, she is not
+  in the picture at all, nor is a formation none of whose ships is seen. Seen 25 times brighter
+  than the faintest its sensor sees (within a fifth of its reach), or a friendly ship: known for
+  what she is. Else a **bogey**: no name, no class, an unknown frame. Not seen again within one
+  and a half of its sensor's sweeps, a lost track (drawn with its uncertainty). Seen from any
+  side but the scenario's own, the others' forces are of unknown affiliation.
+- **light_delay** (without detection): every other ship where she was when the light reaching the
+  nearest of the view's own ships left her.
+- **hide_private:** of a ship not the view's own, what only she knows (her tanks, her mass, her
+  drive's figures, her orders, her store) is not sent.
+
+All off: the truth. To come: relay (what reaches the view, and when), dazzled cones, active
+sensors. GHOST's PHALAENA flight beyond Mars stands at the edge of what Task Force 3 sees: its
+AESHNA's wide optics see a warm PHALAENA to 29.4 million km, and the flight's three ships stand at
+97%, 100% and 103% of it. ARCVS sees two bogeys there, by light some 98 s old, and not the third.
 
 ## Modes
 

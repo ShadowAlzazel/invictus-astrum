@@ -94,6 +94,20 @@ def order_reply(fleet, t: float, unit: str, ships: list[str], orders: list) -> d
     return out
 
 
+def ordering(world, sc, fleet, req: dict, ships: list[str]) -> None:
+    """A view may order only its own ships (MASTER, every ship): refused otherwise."""
+    view = req.get("view")
+    if view == picture.MASTER:
+        return
+    if not view:
+        p = world.players.get(req.get("player") or sc.player)
+        view = p.faction if p else None
+    own = picture.own_rows(fleet, world.factions, view)
+    theirs = [sid for sid in ships if not own[fleet.c.row[sid]]]
+    if theirs:
+        raise OrderRefused(403, f"{', '.join(theirs[:3])}{'…' if len(theirs) > 3 else ''}: not {view or 'yours'} to order")
+
+
 def give_order(world, req: dict) -> dict:
     """An order at the map's clock, for one ship or for every ship under a formation.
     target: {bullseye, aer: [deg, deg, km]} (the ordering player's bullseye, so the point moves
@@ -114,6 +128,7 @@ def give_order(world, req: dict) -> dict:
         ships = order_ships(world, sc, fleet, unit)
         if not ships:
             raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
+        ordering(world, sc, fleet, req, ships)
         kind = "cold" if req["cold"] else "warm"
         return order_reply(fleet, float(t), unit, ships, [Order(sid, float(t), kind, source="map") for sid in ships])
     if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
@@ -124,6 +139,7 @@ def give_order(world, req: dict) -> dict:
     ships = order_ships(world, sc, fleet, unit)
     if not ships:
         raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
+    ordering(world, sc, fleet, req, ships)
     if req.get("keep_target"):                      # the telegraph: one order's g, or every order under the unit
         return order_reply(fleet, t, unit, ships, [Order(sid, t, "setg", g=float(g), source="map",
                                                          order_id=req.get("order_id")) for sid in ships])
@@ -187,7 +203,15 @@ class SimHost:
         if kind == "withdraw":                         # an order from the map taken back (Fleet.withdraw)
             sc = self.world.scenarios.get(payload.get("scenario") or "")
             fleet = self.world.fleet(sc) if sc else None
-            return {"ok": bool(fleet and fleet.withdraw(payload.get("order_id") or ""))}
+            if fleet is None:
+                return {"ok": False}
+            B = fleet.book
+            ships = sorted({fleet.c.ids[B.ship[e]] for e in B.events_of(payload.get("order_id") or "")})
+            try:
+                ordering(self.world, sc, fleet, payload, ships)
+            except OrderRefused:
+                return {"ok": False}
+            return {"ok": bool(fleet.withdraw(payload.get("order_id") or ""))}
         if kind == "close":
             self._encoders.pop(payload, None)
             return None
@@ -234,40 +258,109 @@ class SimHost:
         if fleet is not None:
             if self.ahead is not None:
                 self.ahead.want(sc.id, fleet, t)
-            t, ids, cols, flown = self._ships_at(fleet, t, self._own(sc, fleet, req.get("player")))
-            ships, full = enc.encode(fleet, cols, ids, (sid, sc.id, world.version, id(fleet)))
+            view = self._view(sc, req)
+            own, friendly = self._own(sc, fleet, view)
+            t, ids, cols, flown, seen = self._ships_at(fleet, t, own, view, friendly)
+            ships, full = enc.encode(fleet, cols, ids, (sid, sc.id, world.version, id(fleet), view))
         else:
             enc.key = None
         table = world.table(sid)
         pos = table.positions(t)                         # the table: what the fleet flew among
         bulls = world.resolved(sid, req.get("player"), pos)
-        contacts = {}
+        contacts, seen_as = {}, {}
         if fleet is not None:
             # units are placed from their scenario's own bullseyes, whoever is watching;
-            # ships stand where the simulation has flown them, formations follow
+            # ships stand where the simulation has flown them (as the view is shown them), formations follow
             placed = world.resolved(sid, sc.player, pos)
             contacts = _km_all(*plan(sc).arrays(placed, pos, flown))
+            seen_as = self._seen_as(sc, fleet, ids, seen, own, view, contacts)
         return json.dumps({
             "t": t, "utc": iso(t), "behind_s": asked - t, "system": sid, "version": world.version, "source": eph.source(t),
             "bodies": _km_all(list(pos), np.array(list(pos.values()))),
             "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
-            "contacts": contacts, "ships": ships, "full": full,
+            "contacts": contacts, "ships": ships, "full": full, "seen_as": seen_as,
             "magnetopause_km": {b.id: round(m * KM, 1) for b in s if (m := magnetopause(s, pos, b))},
         })
 
-    def _own(self, sc, fleet, player: str | None):
-        """Which of the fleet's ships are the player's own (astrum/picture.py own_rows), kept."""
+    def _view(self, sc, req: dict) -> str:
+        """Whose picture: the view asked for (one of the scenario's factions, or MASTER), else the
+        player's faction."""
+        v = req.get("view")
+        if v == picture.MASTER or (v and (v in sc.factions or v in self.world.factions)):
+            return v
+        p = self.world.players.get(req.get("player") or sc.player)
+        return (p.faction if p else None) or ""
+
+    def _own(self, sc, fleet, view: str):
+        """Which of the fleet's ships are the view's own, and which answer where its faction does
+        (astrum/picture.py), kept."""
         world = self.world
-        key = (id(fleet), player or sc.player, world.version, len(fleet.c.row))
+        key = (id(fleet), view, world.version, len(fleet.c.row))
         got = self._owns.get(key)
         if got is None:
             if len(self._owns) > 32:
                 self._owns.clear()
-            p = world.players.get(player or sc.player)
-            got = self._owns[key] = picture.own_rows(fleet, world.factions, p.faction if p else None)
+            got = self._owns[key] = (picture.own_rows(fleet, world.factions, view),
+                                     picture.friendly_rows(fleet, world.factions, view))
         return got
 
-    def _ships_at(self, fleet, t: float, own):
+    def _members(self, sc, fleet, ids) -> tuple:
+        """Which ships each of the scenario's units holds (itself, for a ship), as a matrix, kept."""
+        world = self.world
+        key = (sc.id, world.version, id(fleet), len(ids))
+        got = self._owns.get(("members",) + key)
+        if got is None:
+            tree, rows = world.trees.get(sc.id, {}), {sid: k for k, sid in enumerate(ids)}
+            cids = list(sc.contacts)
+            M = np.zeros((len(cids), len(ids)))
+            for a, cid in enumerate(cids):
+                stack = [cid]
+                while stack:
+                    x = stack.pop()
+                    kids = tree.get(x, {}).get("children", [])
+                    stack.extend(kids)
+                    if not kids and x in rows:
+                        M[a, rows[x]] = 1.0
+            got = self._owns[("members",) + key] = (cids, M)
+        return got
+
+    def _seen_as(self, sc, fleet, ids, seen: dict, own, view: str, contacts: dict) -> dict:
+        """How the view knows the scenario's units that are not its own: a ship or a formation not
+        yet seen leaves the picture (contacts, in place); one seen but not known for what it is, a
+        bogey; one whose track is lost, uncertain. Seen from another side than the scenario's own,
+        its other forces are of unknown affiliation, and the view's friends friendly."""
+        if view == picture.MASTER:
+            return {}
+        world = self.world
+        cids, M = self._members(sc, fleet, ids)
+        key = ("theirs", sc.id, world.version, id(fleet), view)
+        theirs = self._owns.get(key)
+        if theirs is None:                                # which units can be another's, and as which side: by view
+            top = picture.root(world.factions, view)
+            home = world.players.get(sc.player).faction if sc.player in world.players else None
+            n_mem, n_own = M.sum(axis=1), M @ own.astype(float)
+            theirs = self._owns[key] = [
+                (a, cids[a], bool(n_mem[a]), "friend" if picture.root(world.factions, sc.contacts[cids[a]].faction) == top
+                 else None if view == home else "unknown")
+                for a in range(len(cids)) if not (n_mem[a] and n_own[a] == n_mem[a])]
+        shown = seen["shown"].astype(float)
+        n_shown = M @ shown
+        known = M @ (shown * seen["identified"]) > 0
+        held = M @ (shown * ~seen["lost"]) > 0
+        out = {}
+        for a, cid, ships, side in theirs:
+            if ships and not n_shown[a]:
+                contacts.pop(cid, None)
+                out[cid] = {"shown": False}
+                continue
+            d = {"identified": bool(known[a]), "lost": not held[a]} if ships else {}
+            if side:
+                d["affiliation"] = side
+            if d:
+                out[cid] = d
+        return out
+
+    def _ships_at(self, fleet, t: float, own, view: str = "", friendly=None):
         """The ships at t (or as near as the fleet could be got), as the player is shown them
         (astrum/picture.py): (the moment, ids, their figures, {id: position}). Read off the
         timeline, the fleet got ready for it first (Fleet.reach)."""
@@ -276,10 +369,10 @@ class SimHost:
             pic = fleet.picture(t)
             n = len(fleet.c.row)
             ids = fleet.c.ids[:n]
-            seen = picture.view(fleet, pic, t, own, self.world.config["picture"])
+            seen = picture.view(fleet, pic, t, own, self.world.config["picture"], view, friendly)
             cols = ship_columns(fleet, pic, t, n, seen)
             flown = {ids[i]: pic["r"][i] for i in range(n) if np.isfinite(pic["r"][i]).all()}
-        return t, ids, cols, flown
+        return t, ids, cols, flown, seen
 
 
 class RunAhead:

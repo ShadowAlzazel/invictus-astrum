@@ -91,6 +91,8 @@ def ship_columns(fleet, pic: dict, t: float, n: int, seen: dict | None = None) -
     cols["eta_flown"] = np.isfinite(arrive)
     cols["mver"] = pic["mver"][:n]
     cols["cold"] = np.where(c.coldt[:n] > 0, (pic["cold"][:n] > 0.5).astype(float), np.nan)
+    for k in ("shown", "identified", "lost"):            # how the view knows her (astrum/picture.py)
+        cols[k] = seen[k] if seen else np.full(n, k != "lost")
     hidden = seen["hidden"] if seen else np.zeros(n, dtype=bool)
     if hidden.any():                                   # what only she knows
         for k in PRIVATE:
@@ -136,6 +138,9 @@ class ShipEncoder:
                 d["burning"] = bool(cols["burning"][i])
             if changed["cold"][i]:
                 d["cold"] = None if np.isnan(cols["cold"][i]) else bool(cols["cold"][i])
+            for k in ("shown", "identified", "lost"):
+                if changed[k][i]:
+                    d[k] = bool(cols[k][i])
             if changed["velocity_kms"][i]:
                 d["velocity_kms"] = val["velocity_kms"][i]
             if changed["mode"][i]:

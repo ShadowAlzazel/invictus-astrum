@@ -243,9 +243,59 @@ notes = "Ordinary cell missiles carry 50 kt warheads under ordinary authority. A
 name = "Tube"
 notes = "Tube warheads are 100 kt and above; only a 4-star approves their use."
 
+# A sensor, as the simulation keeps it (the ones without these figures are not simulated yet). It
+# sees within a cone (cone_deg: its half-angle about its axis; 180: the whole sphere, swept), as far
+# as reach_km against a source of ref_mw (so the faintest it sees is ref_mw / 4π·reach²), and sweeps
+# its cone once every revisit_s: a target is seen only when the sweep comes round (whole minutes).
+# A ship's cones are spread over her sphere; each is one sensor, to be dazzled on its own. Reaches
+# are the design's working figures: a warm frigate sheds about 30 MW, a cold one about 0.3 MW, and
+# any drive burning is seen across the system.
+[sensor.passive]
+name = "Passive suite"
+cone_deg = 60
+reach_km = 5000000
+ref_mw = 30
+revisit_s = 60
+notes = "Every ship's own: six cones, the whole sphere, every minute."
+
+[sensor.strip-optic]
+name = "Strip optics"
+cone_deg = 50
+reach_km = 12000000
+ref_mw = 30
+revisit_s = 180
+notes = "A strip's panels, looking out along her wing edge between shots."
+
+[sensor.dome-optic]
+name = "Dome optics"
+cone_deg = 60
+reach_km = 20000000
+ref_mw = 30
+revisit_s = 300
+
+[sensor.wide-optic]
+name = "Wide dome optics"
+cone_deg = 55
+reach_km = 30000000
+ref_mw = 30
+revisit_s = 300
+notes = "The AESHNA's: Overwatch."
+
+[sensor.watch-optic]
+name = "Watch dome optics"
+cone_deg = 70
+reach_km = 60000000
+ref_mw = 30
+revisit_s = 300
+notes = "The VIGIL's: Overlord."
+
 [sensor.ir-telescope]
 name = "Infrared telescope, 6.5 m class"
-notes = "Cued and cryogenic, it can see a cold rod; a dome can then range it."
+cone_deg = 180
+reach_km = 150000000
+ref_mw = 0.3
+revisit_s = 1800
+notes = "Cued and cryogenic, it can see a cold rod; a dome can then range it. A cold hull at ~1 AU; its narrow field sweeps the sphere every half hour."
 
 [sensor.blister]
 name = "Active sensor blister"
