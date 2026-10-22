@@ -169,9 +169,12 @@
   {:else if tab === 'adjutant'}
     <section>
       <h2>Adjutant</h2>
-      {#each [['on', 'On: she reads the picture and calls what changes'], ['voice', 'Say her calls aloud'], ['estimates', 'Her heading estimates on the tracks']] as [k, label]}
+      {#each [['on', 'On: she reads the picture and calls what changes'], ['voice', 'Say her calls aloud']] as [k, label]}
         <button class="toggle" class:on={adjutant[k]} on:click={() => adj(k, !adjutant[k])}><i></i>{label}</button>
       {/each}
+      <label class="f" class:mod={adjutant.estimate_alpha !== DEFAULTS.estimate_alpha}><span title="Her heading estimates on the tracks: notched at 10 min, 1 h and 1 day">Heading arrows</span>
+        <input type="range" min="0" max="1" step="0.05" value={adjutant.estimate_alpha} on:input={(e) => adj('estimate_alpha', Number(e.target.value))} />
+        <output>{adjutant.estimate_alpha > 0 ? adjutant.estimate_alpha.toFixed(2) : 'off'}</output></label>
       <label class="f"><span>Her name</span><input class="name" value={adjutant.name} on:change={(e) => adj('name', e.target.value)} /></label>
       <label class="f"><span>She calls you</span><input class="name" value={adjutant.role} on:change={(e) => adj('role', e.target.value)} /></label>
       <label class="f" class:mod={adjutant.low_fuel_pct !== DEFAULTS.low_fuel_pct}><span>Low fuel at</span>

@@ -43,11 +43,16 @@
   let watchedBy = {};
   try { watchedBy = JSON.parse(localStorage.getItem('astrum.watched') ?? '{}'); } catch { /* not kept */ }
   $: watched = new Set(scenario ? watchedBy[scenario.id] ?? [] : []);
-  function toggleWatch(id) {
-    const now = new Set(watched);
-    if (now.has(id)) now.delete(id); else now.add(id);
+  // a ship, or every ship under a formation that states sensors: all shown already, all hidden; else all shown
+  function toggleWatch(unit = sel?.id) {
+    if (!scenario || sel?.kind !== 'contact' || !unit) return say(`Select a ship or a formation: ${cap($keymap.watch)} shows its sensors`);
+    const ids = shipsUnder(contacts, state, unit).filter((id) => contacts.find((c) => c.id === id)?.ship?.sensors?.length);
+    if (!ids.length) return say('No sensors stated there to show.');
+    const now = new Set(watched), all = ids.every((id) => now.has(id));
+    for (const id of ids) all ? now.delete(id) : now.add(id);
     watchedBy = { ...watchedBy, [scenario.id]: [...now] };
     try { localStorage.setItem('astrum.watched', JSON.stringify(watchedBy)); } catch { /* for this visit only */ }
+    say(`${map.contactName(unit)}: sensors ${all ? 'hidden' : 'shown'}${ids.length > 1 ? `, ${ids.length} ships` : ''}`);
   }
   // whom she serves: the side's own units (a formation's ships are under it), by scenario and side
   $: adjContext = mode === 'map' && scenarioOn && scenario ? {
@@ -407,6 +412,7 @@
     else if (is(e, 'stop') && mode === 'map') { stopOrder(); return; }
     else if (is(e, 'decel') && mode === 'map') { decelOrder(); return; }
     else if (is(e, 'ping') && mode === 'map') { setPing(); return; }
+    else if (is(e, 'watch') && mode === 'map') { toggleWatch(); return; }
     else if ((is(e, 'up') || is(e, 'down')) && mode === 'map') {
       const up = is(e, 'up'), ship = state?.ships?.[sel?.id];
       if (ship?.goal) {                                     // a ship: her own telegraph

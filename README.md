@@ -91,7 +91,8 @@ the author*. The format is in `data/ships/README.md`.
 | L | ruler: click where to measure from, then where to; it reads the length, the light time, and the bearing and elevation in the active bullseye's axes (on a unit or a body, from it). L again or a right click puts it away |
 | Shift-click | (aiming) queue the order after what the selection flies; aiming goes on |
 | Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
-| V | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond) |
+| V | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond); a formation: every ship under it |
+| C | show sensors: the selection's drawn on the map always (a formation: every ship under it); again: hide |
 | X | DECELERATE the selection: a new order to turn and burn to rest on the active bullseye (on the star centre: by the body that pulls hardest) and hold there |
 | `,` | settings |
 | Double-click, or F | centre on the selection and ride with it |
@@ -110,8 +111,9 @@ sensors' reach, half of it, her dazzle range, her weapons' or a number of km) an
 (identified hostiles; bogeys too). The root profile is everyone's start and is not changed there.
 No weapon is fired yet: an engagement is where she goes and what she faces.
 
-A ship's **Show sensors** (in her panel, under Sensors) draws her sensors on the map always, R held
-or not: each one's reach, and the narrow ones (the VIGIL's telescopes) as cones along her hull, so
+A ship's **Show sensors** (in her panel, under Sensors; C) draws her sensors on the map always, R held
+or not, and a formation's does so for every ship under it (its panel's Fleet: its lowest tanks and
+the ship they are hers, how many ping, Ping and Show sensors for all of them): each one's reach, and the narrow ones (the VIGIL's telescopes) as cones along her hull, so
 you see where she looks as she turns. Kept in this browser, by scenario.
 
 The **Adjutant** (bottom left, over the bullseyes) reads the side's picture as the map is sent it,
@@ -119,9 +121,10 @@ in a worker of her own in the browser, and calls what changes: the picture when 
 new track or group (bullseye, azimuth and range, Eve or Haid, where it seems to head: "Commander,
 Eva. Single group, Burn Bullseye, zero-niner-zero for three-hundred thousand. Eve zero-six-zero.
 Track east. Bogey."), a track identified, a track lost, a ship or a whole formation at 10% fuel or
-less. Her heading estimates are positions as seen, differenced off the active bullseye, and drawn
-as a short dashed arrow on each track shown alone. Click her title for her whole log; *voice* says
-her calls aloud. Settings, Adjutant, turns her or any call off and rewrites each call's template
+less. Her heading estimates are positions as seen, differenced off the active bullseye, drawn to
+scale on each track shown alone, in its affiliation's colour: notched where it would be in 10 min,
+1 h and 1 day, a chevron past the last (Settings, Adjutant: how opaque, or off). Click her title for
+her whole log; *voice* says her calls aloud; the chevron at the right folds her panel away. Settings, Adjutant, turns her or any call off and rewrites each call's template
 (`[role]`, `[name]`, `[contact-type]`, `[bullseye]`, `[azimuth]`, `[range]`, `[eve]`, `[elevation]`,
 `[direction]`, `[declare]`, `[track]`, `[class]`, `[unit]`, `[fuel]`, …); kept in this browser. She
 knows nothing the map was not sent, and asks the server for nothing.

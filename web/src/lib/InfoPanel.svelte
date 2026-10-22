@@ -25,7 +25,7 @@
   export let oncold = () => {};     // (cold): fold her wings (run cold) or spread them
   export let onping = () => {};     // (on): sweep her active sensors (ping) or go quiet
   export let watched = new Set();   // ships whose sensors the map draws always
-  export let onwatch = () => {};    // (id): draw her sensors always, or not
+  export let onwatch = () => {};    // (unit): draw her sensors always, or not (a formation: every ship under it)
   export let ondismiss = () => {};  // (track id): remove an old track
   export let profiles = [];         // the commander's combat profiles (the shared ones first)
   export let stances = {};          // stance -> what it does ("Guard: ...")
@@ -58,6 +58,12 @@
   // the ships under this formation, and the orders they fly: each order its own telegraph
   $: under = contact ? shipsUnder(contacts, state, contact.id) : [];
   $: grp = under.length ? group(state, contacts, under) : null;
+  // a formation at a glance: its lowest tanks, how many ping, whose sensors are drawn (its own ships only)
+  $: fuelled = !ship ? under.filter((id) => state?.ships?.[id]?.propellant_share != null) : [];
+  $: lowest = fuelled.reduce((a, id) => (a == null || state.ships[id].propellant_share < state.ships[a].propellant_share ? id : a), null);
+  $: pinging = fuelled.filter((id) => state.ships[id].active).length;
+  $: sensed = fuelled.filter((id) => byId[id]?.ship?.sensors?.length);
+  $: allShown = sensed.length > 0 && sensed.every((id) => watched.has(id));
   $: flying = grp?.flying ?? [];
   $: orders = !ship && flying.length ? orderGroups(state, contacts, under) : [];
   // a telegraph shows where it was set until the server's g moves (the order took it, or another did)
@@ -211,6 +217,23 @@
         {/if}
       </section>
     {/if}
+    {#if fuelled.length}
+      <section>
+        <h2>Fleet <span class="dim">{fuelled.length} ship{fuelled.length > 1 ? 's' : ''}</span></h2>
+        {#if lowest}
+          {@const low = state.ships[lowest]}
+          <p class="low">Lowest fuel <b class:short={low.propellant_share <= 0.1}>{n(low.propellant_share * 100, 1)}%</b>
+            <button class="unit inline" on:click={() => onselect({ kind: 'contact', id: lowest })}>{nameOf(lowest)}</button>
+            <span class="dim">{n(low.dv_left_kms, 0)} km/s left</span></p>
+          <div class="tank" title="the lowest tanks under it"><i style="width:{Math.max(0, Math.min(1, low.propellant_share)) * 100}%"></i></div>
+        {/if}
+        <p class="dim">Sensors: {pinging ? `${pinging} of ${fuelled.length} pinging` : 'passive'}{sensed.length && allShown ? ' · drawn' : ''}</p>
+        <button class="act" on:click={() => onping(pinging < fuelled.length)}
+          title="Every ship under it: sweep their active sensors, or all go quiet">{pinging === fuelled.length ? 'Go quiet' : 'Ping'} <kbd>{cap($keymap.ping)}</kbd></button>
+        {#if sensed.length}<button class="act" class:on={allShown} on:click={() => onwatch(contact.id)}
+          title="Draw the sensors of every ship under it always">{allShown ? 'Hide sensors' : 'Show sensors'} <kbd>{cap($keymap.watch)}</kbd></button>{/if}
+      </section>
+    {/if}
     {#if orders.length}
       <section class="orders">
         <h2><button class="fold" class:shut={shut.orders} on:click={() => flip('orders')}><i></i>Orders</button> <span class="dim">{orders.length} order{orders.length > 1 ? 's' : ''} · {flying.length} of {under.length} ships flying</span></h2>
@@ -309,7 +332,7 @@
         <button class="act" on:click={() => onping(!ship.active)}
           title={ship.active ? 'Stop the active sweep: passive only' : 'Sweep her active sensors: any hull in reach is seen and made out, and every ping shows her far beyond'}>{ship.active ? 'Go quiet' : 'Ping'} <kbd>{cap($keymap.ping)}</kbd></button>
         {#if spec?.sensors?.length}<button class="act" class:on={watched.has(sel.id)} on:click={() => onwatch(sel.id)}
-          title="Draw her sensors on the map always: each one's reach, and the narrow ones as cones along her hull">{watched.has(sel.id) ? 'Hide sensors' : 'Show sensors'}</button>{/if}
+          title="Draw her sensors on the map always: each one's reach, and the narrow ones as cones along her hull">{watched.has(sel.id) ? 'Hide sensors' : 'Show sensors'} <kbd>{cap($keymap.watch)}</kbd></button>{/if}
         {#if spec?.ranges?.length}
           <h3><button class="fold" class:shut={shut.weapons} on:click={() => flip('weapons')}><i></i>Weapons</button>{#if shut.weapons} <span class="dim">{spec.ranges.map((r) => `${r.what} ${km(r.km)}`).join(' · ')}</span>{/if}</h3>
           {#if !shut.weapons}
@@ -408,6 +431,9 @@
   .act { margin-top: 10px; font-size: 11px; color: var(--violet); filter: brightness(1.5); }
   .act:hover { color: var(--fuchsia); filter: none; }
   .act + .act { margin-left: 14px; }
+  .low { margin: 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .low b.short { color: #ffd27a; }
+  .unit.inline { display: inline; padding: 0; width: auto; }
   .act.on { color: var(--ink); filter: none; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--rule); }
   dt { color: var(--dim); }

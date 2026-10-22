@@ -15,6 +15,10 @@
   export let onchange = () => {};       // (cfg): her settings changed here (her voice)
 
   let worker = null, key = null, last = null, log = [], open = false, est = {}, canvas, ctx, unhook, W = 0, H = 0;
+  // folded: her panel down to its title (her calls still kept, said, and drawn); kept in this browser
+  let folded = false;
+  try { folded = localStorage.getItem('astrum.adjutant.folded') === '1'; } catch { /* not kept */ }
+  function fold() { folded = !folded; try { localStorage.setItem('astrum.adjutant.folded', folded ? '1' : '0'); } catch { /* for this visit */ } }
   const KEEP = 60, DRAWN = 4;
 
   function start() {
@@ -55,7 +59,10 @@
   // the call's moment as UTC (TDB seconds since J2000; UTC is some 69 s behind)
   const clock = (t) => new Date(Date.UTC(2000, 0, 1, 12) + (t - 69.184) * 1000).toISOString().slice(11, 16);
 
-  // ---- her heading estimates: a short dashed vector from each track drawn alone, along where it seems to go
+  // ---- her heading estimates: from each track drawn alone, along where it seems to go, to scale: a
+  // notch where it would be in 10 min, 1 h and 1 day (a reticle's marks), a chevron past the last; in
+  // the track's own colour (its affiliation's), as opaque as Settings, Adjutant says
+  const MARKS_S = [600, 3600, 86400], MIN_PX = 26, TICK = 4, CHEVRON = 7;
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     W = window.innerWidth; H = window.innerHeight;
@@ -64,22 +71,36 @@
   }
   function draw() {
     ctx.clearRect(0, 0, W, H);
-    if (!cfg?.estimates || !map?.state) return;
-    const color = style?.palette?.cyan ?? '#9ff0ff';
-    ctx.strokeStyle = rgba(color, 0.75); ctx.fillStyle = rgba(color, 0.75); ctx.lineWidth = 1.2;
+    const alpha = cfg?.estimate_alpha ?? 0;
+    if (!on || alpha <= 0 || !map?.state || !style) return;
     const drawn = new Set((map.marks ?? []).map((m) => m.id));        // a track folded into a group has none of its own
+    ctx.lineWidth = 1.2;
     for (const [id, v] of Object.entries(est)) {
       if (!drawn.has(id)) continue;
       const p = map.position({ kind: 'contact', id }), s = p && map.project(p);
-      const q = s && map.project([p[0] + v[0] * 3600, p[1] + v[1] * 3600, p[2] + v[2] * 3600]);
-      if (!q) continue;
-      const dx = q.x - s.x, dy = q.y - s.y, n = Math.hypot(dx, dy);
-      if (n < 1e-6) continue;
-      const ux = dx / n, uy = dy / n, L = 34, x = s.x + ux * (10 + L), y = s.y + uy * (10 + L);
-      ctx.setLineDash([4, 3]);
-      ctx.beginPath(); ctx.moveTo(s.x + ux * 10, s.y + uy * 10); ctx.lineTo(x, y); ctx.stroke();
+      const marks = s && MARKS_S.map((T) => map.project([p[0] + v[0] * T, p[1] + v[1] * T, p[2] + v[2] * T]));
+      if (!marks || marks.some((m) => !m)) continue;
+      const day = marks[2], L = Math.hypot(day.x - s.x, day.y - s.y);
+      if (L < 1e-6) continue;
+      const ux = (day.x - s.x) / L, uy = (day.y - s.y) / L, reach = Math.max(L, MIN_PX) + CHEVRON + 4;
+      const tip = { x: s.x + ux * reach, y: s.y + uy * reach };
+      const aff = style.affiliation[map.state.tracks?.[id]?.affiliation] ?? style.affiliation.unknown;
+      ctx.strokeStyle = rgba(aff.color, alpha);
+      ctx.setLineDash([5, 3]);
+      ctx.beginPath(); ctx.moveTo(s.x + ux * 9, s.y + uy * 9); ctx.lineTo(tip.x, tip.y); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - ux * 7 - uy * 4, y - uy * 7 + ux * 4); ctx.lineTo(x - ux * 7 + uy * 4, y - uy * 7 - ux * 4); ctx.fill();
+      ctx.beginPath();
+      let last = 9;                                     // notches: each far enough from the mark and the one before to read
+      for (const m of marks) {
+        const d = Math.hypot(m.x - s.x, m.y - s.y);
+        if (d < last + 5) continue;
+        ctx.moveTo(m.x - uy * TICK, m.y + ux * TICK); ctx.lineTo(m.x + uy * TICK, m.y - ux * TICK);
+        last = d;
+      }
+      ctx.moveTo(tip.x - ux * CHEVRON - uy * CHEVRON * 0.6, tip.y - uy * CHEVRON + ux * CHEVRON * 0.6);
+      ctx.lineTo(tip.x, tip.y);
+      ctx.lineTo(tip.x - ux * CHEVRON + uy * CHEVRON * 0.6, tip.y - uy * CHEVRON - ux * CHEVRON * 0.6);
+      ctx.stroke();
     }
   }
   $: if (canvas && !ctx) { ctx = canvas.getContext('2d'); resize(); window.addEventListener('resize', resize); }
@@ -92,9 +113,13 @@
   <div class="adj" data-ui>
     <header>
       <button class="title" on:click={() => (open = !open)} title={open ? 'Fewer calls' : 'Her whole log'}>Adjutant · {cfg.name}<i class:open></i></button>
-      <button class="voice" class:on={cfg.voice} on:click={() => onchange({ ...cfg, voice: !cfg.voice })} title="Say her calls aloud">voice</button>
+      <span class="right">
+        <button class="voice" class:on={cfg.voice} on:click={() => onchange({ ...cfg, voice: !cfg.voice })} title="Say her calls aloud">voice</button>
+        <button class="fold" on:click={fold} title={folded ? 'Show her calls' : 'Fold her panel away'}><i class:folded></i></button>
+      </span>
     </header>
-    {#if log.length}
+    {#if folded}
+    {:else if log.length}
       <ol class:open>
         {#each open ? log : log.slice(-DRAWN) as c (c)}
           <li class={c.kind}><time>{clock(c.t)}</time>{c.text}</li>
@@ -115,6 +140,11 @@
   .title:hover { color: var(--ink); }
   .title i { width: 5px; height: 5px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(-135deg); margin-top: 3px; }
   .title i.open { transform: rotate(45deg); margin-top: -2px; }
+  .right { display: flex; align-items: center; gap: 8px; }
+  .fold { background: none; border: 0; padding: 2px 3px; color: var(--dim); display: flex; }
+  .fold:hover { color: var(--ink); }
+  .fold i { width: 6px; height: 6px; border-right: 1px solid currentColor; border-bottom: 1px solid currentColor; transform: rotate(45deg); margin-top: -3px; }
+  .fold i.folded { transform: rotate(-135deg); margin-top: 3px; }
   .voice { background: none; border: 1px solid var(--rule); color: var(--dim); font-size: 10px; padding: 0 6px; }
   .voice.on { color: var(--ink); border-color: var(--cyan, #9ff0ff); }
   ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 11px; line-height: 1.35; }

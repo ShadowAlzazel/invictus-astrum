@@ -15,12 +15,14 @@ export const TOKENS = ['role', 'name', 'contact-type', 'declare', 'class', 'trac
                        'eve', 'elevation', 'direction', 'speed', 'unit', 'fuel'];
 
 export const DEFAULTS = {
-  on: true, voice: false, estimates: true, name: 'Eva', role: 'Commander',
+  on: true, voice: false, estimate_alpha: 0.7, name: 'Eva', role: 'Commander',
   low_fuel_pct: 10, group_km: 100000, hold_s: 2,
   calls: Object.fromEntries(Object.entries(CALLS).map(([k, c]) => [k, { on: true, text: c.text }])),
 };
 export function config(saved) {             // what was kept, over the defaults
-  const s = saved ?? {};
+  const s = { ...(saved ?? {}) };
+  if (s.estimates === false && s.estimate_alpha == null) s.estimate_alpha = 0;   // (kept before the opacity: off)
+  delete s.estimates;
   return { ...DEFAULTS, ...s, calls: Object.fromEntries(Object.keys(CALLS).map((k) => [k, { ...DEFAULTS.calls[k], ...(s.calls?.[k] ?? {}) }])) };
 }
 

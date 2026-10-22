@@ -19,6 +19,6 @@ onmessage = ({ data: m }) => {
     if (now < due) return;
     due = now + SPEAK_S;
     const calls = officer.calls(now);
-    postMessage({ kind: 'calls', calls, estimates: officer.cfg.estimates ? officer.estimates() : null });
+    postMessage({ kind: 'calls', calls, estimates: officer.cfg.estimate_alpha > 0 ? officer.estimates() : null });
   }
 };

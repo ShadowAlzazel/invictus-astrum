@@ -19,6 +19,7 @@ export const ACTIONS = {
   stop:     { key: 'z', label: 'STOP: drop the order, cut the drive, fly on as she goes' },
   decel:    { key: 'x', label: 'DECELERATE: drop the order, turn and burn to rest on the bullseye' },
   ping:     { key: 'v', label: 'Active sensors: ping, or go quiet (a ping shows the pinger)' },
+  watch:    { key: 'c', label: 'Show sensors: the selection\'s drawn always, every ship under a formation (again: hide)' },
   plane:    { key: 'b', label: "Orders: her own height or the bullseye's plane" },
   ranges:   { key: 'g', label: 'Weapon ranges (hold)' },
   sensing:  { key: 'r', label: 'Detection ranges (hold)' },

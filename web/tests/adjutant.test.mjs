@@ -1,5 +1,5 @@
 // The adjutant (web/src/lib/adjutant.js): her figures as said, her templates, and her calls on a few pictures.
-import { Officer, words, digits, spokenRange, fill } from '../src/lib/adjutant.js';
+import { Officer, words, digits, spokenRange, fill, config } from '../src/lib/adjutant.js';
 const assert = (c, m) => { if (!c) { console.error('FAIL', m); process.exitCode = 1; } };
 assert(words(300) === 'three-hundred' && words(42) === 'forty-two' && words(120) === 'one-hundred-twenty', 'words');
 assert(digits(90) === 'zero-niner-zero' && digits(359.7) === 'zero-zero-zero', 'digits');
@@ -24,3 +24,4 @@ c = o.calls(3);
 assert(c.some((x) => x.kind === 'on-unit-lost') && c.filter((x) => x.kind === 'on-ship-low-fuel').length === 2 && c.some((x) => /Task Force 3, bingo fuel, eight percent/.test(x.text)), 'lost and fuel');
 c = o.calls(4); assert(c.length === 0, 'said once');
 assert(Object.keys(o.estimates()).join() === 'T1', 'estimates: live tracks only');
+assert(config({ estimates: false }).estimate_alpha === 0 && config({}).estimate_alpha > 0 && !('estimates' in config({ estimates: true })), 'heading arrows: kept off stays off');
