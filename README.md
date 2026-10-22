@@ -76,12 +76,14 @@ the author*. The format is in `data/ships/README.md`.
 | Left-drag / right-drag / wheel | pan / rotate / zoom (in toward the cursor; out about the centre; never inside a body) |
 | Click | select a body or unit; on empty space, probe the point (zone, gravity, field) |
 | Click a formation | it opens: the units that answer to it are shown, highlighted and joined to it; the formation it answers to is marked; the rest dims |
-| Hold R | detection ranges: a ring for each of a ship's sensors, how far it sees a ship giving off 30 MW (warm; Settings, Display, Detection ranges: 0.3 MW cold to 30,000 MW burning) |
+| Hold R | detection ranges: a ring for each of a ship's sensors, how far it sees a ship giving off 30 MW (warm; Settings, Display, Detection ranges: 0.3 MW cold to 30,000 MW burning); sensors that leave most of the sphere unseen (the infrared telescopes, the strip optics) as their cones along her hull. Rings of one kind that all but share a centre on screen (a formation from far off) are drawn as one about them all |
 | Others' ships | drawn as tracks; tracks close together on screen collapse into one symbol by count: a flight (up to 5), a group (up to 20), a task force (more), the map's own reading, set in Settings, Display, Others' ships. Click one to pull that track out; zoom in to resolve |
 | U | up the chain of command: select the formation the selected unit answers to |
 | M | move: aim an order for the selection (a ship, or every ship under a formation); a click gives it. Onto another side's track it is an engage: she holds at her focus battery's range |
 | A | attack-move: as M, aggressive the whole way; after each engagement she flies on |
 | P | patrol: to the point and back to where it stands now, over and over, on guard |
+| T | turn: point the selection's hulls at the cursor, a unit or a body; nothing flown (a ship flying an order drops it, her drive cut) |
+| L | ruler: click where to measure from, then where to; it reads the length, the light time, and the bearing and elevation in the active bullseye's axes (on a unit or a body, from it). L again or a right click puts it away |
 | Shift-click | (aiming) queue the order after what the selection flies; aiming goes on |
 | Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
 | V | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond) |
@@ -90,7 +92,6 @@ the author*. The format is in `data/ships/README.md`.
 | Double-click, or F | centre on the selection and ride with it |
 | H | frame the whole system |
 | Space, `[` `]` | pause, slower, faster (1 s/s up to 1 yr/s) |
-| L | back to the level selector |
 | Esc | clear the selection |
 
 Every key but Esc and Shift can be rebound in Settings, Hotkeys.

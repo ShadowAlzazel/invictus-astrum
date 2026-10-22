@@ -248,7 +248,8 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
     if req.get("keep_target"):                      # the telegraph: one order's g, or every order under the unit
         return order_reply(fleet, t, unit, ships, [Order(sid, t, "setg", g=float(g), source="map",
                                                          order_id=req.get("order_id")) for sid in ships], side)
-    if g == 0:
+    mode = req.get("mode") or "move"
+    if g == 0 and mode != "turn":
         if overrule is not None:                     # (the AI's later orders to them go: ai.AI.overrule)
             overrule(sc, fleet, ships, t)
         return order_reply(fleet, t, unit, ships, [Order(sid, t, "coast", source="map") for sid in ships], side)
@@ -287,9 +288,10 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
         target = {"body": b.id, "label": b.name}
     else:
         raise OrderRefused(400, "target is {bullseye, aer}, {unit} or {body}")
-    mode = req.get("mode") or "move"
-    if mode not in ("move", "attack", "patrol") or (mode == "patrol" and "bullseye" not in target):
-        raise OrderRefused(400, "mode is move, attack or patrol (patrol: to a point off a bullseye)")
+    if mode not in ("move", "attack", "patrol", "turn") or (mode == "patrol" and "bullseye" not in target):
+        raise OrderRefused(400, "mode is move, attack, patrol or turn (patrol: to a point off a bullseye)")
+    if mode == "turn":
+        return turn_order(world, sc, fleet, side, unit, ships, t, tp, target, player, overrule)
     formation, offsets, anchor = len(ships) > 1 or unit not in ships, {sid: np.zeros(3) for sid in ships}, None
     if formation or mode == "patrol":                # where it is now (where the fleet has got, if it is behind the clock)
         flown = fleet.positions_at(tp)
@@ -313,6 +315,40 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
                     target=dict(target, **({"offset_m": offsets[sid].tolist()} if np.any(offsets[sid]) else {}),
                                 **({"after": after[sid]} if sid in after else {})))
               for sid in ships]
+    return order_reply(fleet, t, unit, ships, orders, side)
+
+
+def turn_order(world, sc, fleet, side, unit: str, ships: list[str], t: float, tp: float, target: dict, player: str,
+               overrule=None) -> dict:
+    """TURN: each ship's hull pointed at the target (a point off a bullseye, a unit, a body) as it
+    stands at t, and nothing flown: a ship flying an order drops it (her drive cut, she flies on as
+    she goes); one holding station turns where she holds."""
+    with fleet.lock:
+        pic = fleet.picture(tp)
+    pos = world.table(sc.system).positions(tp)
+    if "bullseye" in target:
+        b = world.resolved(sc.system, player, pos, only=target["bullseye"])[target["bullseye"]]
+        brg, el, rng = target["aer"]
+        P = b.point(math.radians(brg), math.radians(el), rng)
+    elif "unit" in target:
+        P = pic["r"][fleet.c.row[target["unit"]]]
+    else:
+        P = pos[target["body"]]
+    if overrule is not None:
+        overrule(sc, fleet, ships, t)
+    oid, label = f"{unit}@{t:.0f}#{next(_order_n)}", f"turn to {target['label']}"
+    orders = []
+    for sid in ships:
+        i = fleet.c.row[sid]
+        d = np.asarray(P, dtype=float) - pic["r"][i]
+        if not np.isfinite(d).all() or not np.linalg.norm(d) > 0:
+            continue
+        if pic["goal"][i] or pic["thrust"][i] > 0:
+            orders.append(Order(sid, t, "coast", source="map", order_id=oid, by=unit))
+        orders.append(Order(sid, t, "face", target={"dir": (d / np.linalg.norm(d)).tolist(), "label": label}, source="map",
+                            order_id=oid, by=unit))
+    if not orders:
+        raise OrderRefused(400, "nothing to turn to from there")
     return order_reply(fleet, t, unit, ships, orders, side)
 
 

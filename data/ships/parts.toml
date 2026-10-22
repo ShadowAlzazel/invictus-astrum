@@ -291,11 +291,11 @@ notes = "The VIGIL's: Overlord."
 
 [sensor.ir-telescope]
 name = "Infrared telescope, 6.5 m class"
-cone_deg = 180
+cone_deg = 60
 reach_km = 150000000
 ref_mw = 0.3
 revisit_s = 1800
-notes = "Cued and cryogenic, it can see a cold rod; a dome can then range it. A cold hull at ~1 AU; its narrow field sweeps the sphere every half hour."
+notes = "Cued and cryogenic, it can see a cold rod; a dome can then range it. A cold hull at ~1 AU, within 60° of where it looks; it looks again every half hour."
 
 # An active sensor (active = true) sees any hull within its reach, however cold, while its ship sweeps
 # actively (an order); each sweep is a ping, and a ping shows the pinger to anyone's passive sensors as

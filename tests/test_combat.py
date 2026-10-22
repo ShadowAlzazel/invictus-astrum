@@ -227,3 +227,23 @@ def test_hold_faces_its_target_and_never_moves(tmp_path):
     i, j = fleet.c.row["tf3-es-1"], fleet.c.row["ghost-1"]
     u = fleet.c.r[j] - fleet.c.r[i]
     assert float(fleet.c.dir[i] @ (u / np.linalg.norm(u))) > 0.98
+
+
+def test_turn_points_her_hull_and_flies_nothing(tmp_path):
+    c, world = _app(tmp_path)
+    fleet = world.fleet(world.scenarios["sol-demo"])
+    t = fleet.t0 + 600
+    o = {"scenario": "sol-demo", "player": "arcvs", "t": t, "g": 0.3}
+    r = c.post("/api/order", json={**o, "unit": "kiki-1", "mode": "turn", "target": {"body": "moon"}})
+    assert r.status_code == 200 and r.json()["ship"]["mode"] == "station"          # she holds where she is
+    i = fleet.c.row["kiki-1"]
+    pos = world.table("sol").positions(t)
+    u = pos["moon"] - fleet.positions_at(t)["kiki-1"]
+    assert float(fleet.c.dir[i] @ (u / np.linalg.norm(u))) > 0.9999
+    c.post("/api/order", json={**o, "unit": "kiki-2", "target": {"body": "mars"}})              # flying an order:
+    c.post("/api/order", json={**o, "unit": "kiki-2", "t": t + 1800, "mode": "turn", "target": {"bullseye": "burn", "aer": [90, 0, 1000]}})
+    fleet.reach(t + 3600)
+    j = fleet.c.row["kiki-2"]
+    assert not fleet.c.goal[j] and fleet.c.thrust[j] == 0                            # she drops it, and turns
+    last = c.get("/api/engagement/sol-demo/kiki-2", params={"player": "arcvs", "t": t + 3600}).json()["ledger"][0]
+    assert last["kind"] == "face" and last["label"].startswith("turn to 090°")         # one order: dropped, and turned

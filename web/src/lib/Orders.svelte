@@ -115,9 +115,11 @@
         }
         if (aimed.kind === 'point') diamond(b, 6, col(F, 0.95));
         else { ctx.strokeStyle = col(F, 0.95); ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(b.x, b.y, 12, 0, Math.PI * 2); ctx.stroke(); }
-        label([aimed.kind === 'point' ? `to ${bearing(hd.bearing)} ${elev(hd.elevation)}` : `to ${aimed.label}`,
-               `${km(est.distance)}${aimed.standoff ? `, stopping ${km(aimed.standoff)} short` : ''}`,
-               shown > 0 ? `ETA ≈ ${hms(est.eta)} at ${shown.toFixed(2)} g · Δv ≈ ${est.dv.toFixed(1)} km/s` : 'stop: cut her drive'],
+        label(ordering.mode === 'turn'
+          ? [`turn to ${aimed.kind === 'point' ? `${bearing(hd.bearing)} ${elev(hd.elevation)}` : aimed.label}`, 'her hull pointed there, nothing flown']
+          : [aimed.kind === 'point' ? `to ${bearing(hd.bearing)} ${elev(hd.elevation)}` : `to ${aimed.label}`,
+             `${km(est.distance)}${aimed.standoff ? `, stopping ${km(aimed.standoff)} short` : ''}`,
+             shown > 0 ? `ETA ≈ ${hms(est.eta)} at ${shown.toFixed(2)} g · Δv ≈ ${est.dv.toFixed(1)} km/s` : 'stop: cut her drive'],
               b.x, b.y, F);
       }
     }
@@ -141,7 +143,7 @@
 
 {#if ordering && grp}
   <aside class="telegraph" data-ui>
-    <header><b>{{ move: 'Move', attack: 'Attack-move', patrol: 'Patrol' }[ordering.mode] ?? 'Order'}</b><span>{name}</span>{#if ordering.ships.length > 1}<i>{ordering.ships.length} ships</i>{/if}</header>
+    <header><b>{{ move: 'Move', attack: 'Attack-move', patrol: 'Patrol', turn: 'Turn' }[ordering.mode] ?? 'Order'}</b><span>{name}</span>{#if ordering.ships.length > 1}<i>{ordering.ships.length} ships</i>{/if}</header>
     <div class="body">
       <Telegraph maxG={grp.maxG} cruise={grp.cruise} value={shown}
                  {note}
@@ -152,7 +154,7 @@
     <button class="plane" class:on={onBull} on:click={togglePlane} title="B: Eve and Haid from her own height, or from the bullseye's plane">
       <i></i>{onBull ? "Bullseye's plane" : 'Her own height'}<kbd>{cap($keymap.plane)}</kbd>
     </button>
-    <p class="keys"><kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>{cap($keymap.eve)}</kbd><kbd>{cap($keymap.haid)}</kbd> Eve / Haid · <kbd>{cap($keymap.plane)}</kbd> plane · click to order, <kbd>⇧</kbd>-click to queue · <kbd>{cap($keymap.order)}</kbd><kbd>{cap($keymap.attack)}</kbd><kbd>{cap($keymap.patrol)}</kbd> move, attack, patrol · <kbd>Esc</kbd> cancel</p>
+    <p class="keys"><kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>{cap($keymap.eve)}</kbd><kbd>{cap($keymap.haid)}</kbd> Eve / Haid · <kbd>{cap($keymap.plane)}</kbd> plane · click to order, <kbd>⇧</kbd>-click to queue · <kbd>{cap($keymap.order)}</kbd><kbd>{cap($keymap.attack)}</kbd><kbd>{cap($keymap.patrol)}</kbd><kbd>{cap($keymap.turn)}</kbd> move, attack, patrol, turn · <kbd>Esc</kbd> cancel</p>
     {#if message}<p class="msg">{message}</p>{/if}
   </aside>
 {:else if message}

@@ -75,6 +75,7 @@ def ship_columns(fleet, pic: dict, t: float, n: int, seen: dict | None = None) -
     cols["burning"] = thrust > 0
     cols["active"] = fleet.pinging(t)[:n]                # sweeping her active sensors: pinging
     cols["velocity_kms"] = sig6(pic["v"][:n] / 1e3)
+    cols["dir"] = np.round(pic["dir"][:n], 4)              # where her hull points (only she knows it)
     cols["mode"] = pic["mode"][:n]
     # how each order stands: a ship in formation reads her lead's, aiming at its aim plus her offset
     lead = pic["lead"][:n]
@@ -105,6 +106,7 @@ def ship_columns(fleet, pic: dict, t: float, n: int, seen: dict | None = None) -
         for k in PRIVATE:
             cols[k] = np.where(hidden, np.nan, cols[k])
         cols["goal_on"] = cols["goal_on"] & ~hidden
+        cols["dir"] = np.where(hidden[:, None], np.nan, cols["dir"])
         cols["mver"] = np.where(hidden, 0, cols["mver"])
     return cols
 
@@ -144,7 +146,7 @@ class ShipEncoder:
         rows = np.flatnonzero(np.logical_or.reduce([changed[k] for k in cols]))
         if not len(rows):
             return out, full
-        val = {k: _values(cols[k]) for k in (*SCALARS, *GOAL_SCALARS, "velocity_kms", "aim_km")}
+        val = {k: _values(cols[k]) for k in (*SCALARS, *GOAL_SCALARS, "velocity_kms", "aim_km", "dir")}
         for i in rows:
             if ids[i] is None:
                 continue
@@ -163,6 +165,8 @@ class ShipEncoder:
                     d[k] = bool(cols[k][i])
             if changed["velocity_kms"][i]:
                 d["velocity_kms"] = val["velocity_kms"][i]
+            if changed["dir"][i]:                       # (none for a ship not hers)
+                d["dir"] = None if None in val["dir"][i] else val["dir"][i]
             if changed["mode"][i]:
                 d["mode"] = "station" if cols["mode"][i] == STATION else "free"
             st = said[int(cols["mver"][i])] or {}

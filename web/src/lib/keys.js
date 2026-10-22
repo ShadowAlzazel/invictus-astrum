@@ -10,6 +10,8 @@ export const ACTIONS = {
   order:    { key: 'm', label: 'Move: order the selection (again: cancel; Shift-click queues)' },
   attack:   { key: 'a', label: 'Attack-move: aggressive the whole way, on after each engagement' },
   patrol:   { key: 'p', label: 'Patrol: to the point and back, over and over, on guard' },
+  turn:     { key: 't', label: 'Turn: point her hull at the cursor or a target, nothing flown' },
+  ruler:    { key: 'l', label: 'Ruler: click two points to measure (again: put away)' },
   up:       { key: 'w', label: 'Telegraph up' },
   down:     { key: 's', label: 'Telegraph down' },
   eve:      { key: 'e', label: 'Aim toward Eve' },
@@ -23,9 +25,9 @@ export const ACTIONS = {
   focus:    { key: 'f', label: 'Focus on the selection' },
   home:     { key: 'h', label: 'Frame everything' },
   chain:    { key: 'u', label: 'Up the chain of command' },
-  levels:   { key: 'l', label: 'Levels' },
+  levels:   { key: '', label: 'Levels' },
 };
-const STORE = 'astrum.keys.2';       // (.2: move went to M, ping to V)
+const STORE = 'astrum.keys.3';       // (.2: move went to M, ping to V; .3: L the ruler, T turn)
 const defaults = () => Object.fromEntries(Object.entries(ACTIONS).map(([a, d]) => [a, d.key]));
 
 function load() {

@@ -1,7 +1,7 @@
 <script>
   // What is selected: a body, a unit, or a point in space (probed on the server).
   import { km, kmFull, n, bearing, elev, lightTime, duration, watts, age } from './format.js';
-  import { hms, group, shipsUnder, orderGroups } from './orders.js';
+  import { hms, group, shipsUnder, orderGroups, heading } from './orders.js';
   import { unitSymbol } from './symbols.js';
   import Telegraph from './Telegraph.svelte';
   import { cap, keymap } from './keys.js';
@@ -108,6 +108,8 @@
     : o.kind === 'queue' ? `Then ${o.label}` : o.kind === 'coast' && o.label ? upper(o.label)
     : o.kind === 'stance' ? o.label.replace(/(stance|profile) ([\w-]+)/g, (_, k, v) => k === 'stance' ? short(stances[v]) || v
       : `profile ${profiles.find((p) => p.id === v)?.name ?? v}`) : SAID[o.kind] ?? o.label ?? o.kind;
+  // where her hull points (her drive's axis), in the active bullseye's axes (bullseyeName: when it changes)
+  $: pointing = bullseyeName !== undefined && ship?.dir && Math.hypot(...ship.dir) > 0.5 && map ? heading(map, { from: [0, 0, 0], to: ship.dir }) : null;
   $: affColor = contact && style ? (style.affiliation[contact.affiliation] ?? style.affiliation.unknown).color : null;
   $: doing = !ship ? '' : seenOnly ? (ship.burning ? 'seen burning' : 'as seen') : ship.goal ? (ship.burning ? `on her order, ${ship.accel_g.toFixed(2)} g` : 'on her order, coasting') : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
     : ship.mode === 'station' ? 'holding station' : 'coasting';
@@ -268,6 +270,8 @@
         {:else if ship.station_at}
           <p class="dim held">Holding at {ship.station_at}</p>
         {/if}
+        {#if pointing}<p class="dim held" title="Where her hull points (her drive's axis), in the active bullseye's axes: {cap($keymap.turn)} turns her">
+          Pointing <b class="point">{bearing(pointing.bearing)} {elev(pointing.elevation)}</b> from {bullseyeName}{ship.burning ? ', burning along it' : ''}</p>{/if}
         <h3><button class="fold" class:shut={shut.drive} on:click={() => flip('drive')}><i></i>Propulsion</button>{#if shut.drive} <span class="dim">{n(ship.dv_left_kms, 0)} km/s left · most {ship.max_accel_g.toFixed(2)} g</span>{/if}</h3>
         {#if !shut.drive}
         <dl class="tight">
@@ -310,7 +314,7 @@
           </dl>
           {/if}
         {/if}
-        {#if spec?.has_drive}<p class="dim hint"><kbd>{cap($keymap.order)}</kbd> move <kbd>{cap($keymap.attack)}</kbd> attack <kbd>{cap($keymap.patrol)}</kbd> patrol{#if ship.goal} · <kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>{cap($keymap.ranges)}</kbd> weapon ranges{/if}{#if spec.sensors?.length} · <kbd>{cap($keymap.sensing)}</kbd> detection{/if}</p>{/if}
+        {#if spec?.has_drive}<p class="dim hint"><kbd>{cap($keymap.order)}</kbd> move <kbd>{cap($keymap.attack)}</kbd> attack <kbd>{cap($keymap.patrol)}</kbd> patrol <kbd>{cap($keymap.turn)}</kbd> turn{#if ship.goal} · <kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>{cap($keymap.ranges)}</kbd> weapon ranges{/if}{#if spec.sensors?.length} · <kbd>{cap($keymap.sensing)}</kbd> detection{/if}</p>{/if}
       </section>
     {:else if spec && !spec.has_drive}
       <section><h2>Ship</h2><p class="dim">No drive stated for her class; she holds station.</p></section>
@@ -438,6 +442,7 @@
   .order .form { font-size: 10px; margin-top: 3px; }
   /* the chain of command, read upward: a ladder of rungs joined by a rail */
   .engage select { background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: inherit; max-width: 100%; }
+  .point { color: var(--ink); font-weight: 400; }
   .ledger { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
   .ledger li { display: flex; justify-content: space-between; gap: 10px; padding-left: 10px; border-left: 1px solid var(--rule); }
   .ledger li.now { border-left-color: var(--cyan, #9ff0ff); }

@@ -73,7 +73,7 @@ points, up the system's.
 | passive (every ship, six cones) | 60° | 5 million km | 1 min |
 | strip optics (a cone a strip) | 50° | 12 million km | 3 min |
 | dome optics / wide (AESHNA) / watch (VIGIL) | 60° / 55° / 70° | 20 / 30 / 60 million km | 5 min |
-| infrared telescope (VIGIL) | the sphere, swept | a cold hull (0.3 MW) at 1 AU: a warm one at 10 AU | 30 min |
+| infrared telescope (VIGIL) | 60° | a cold hull (0.3 MW) at 1 AU: a warm one at 10 AU | 30 min |
 
 A cold frigate (0.3 MW) is seen a tenth as far; any drive burning, across the system. A sweep is
 every sensor of a side whose sweep comes round at a minute, against every ship that is not its
@@ -302,6 +302,12 @@ where it goes, the unit it was given to, its ships, when the first and the last 
 telegraph, in the light blue of the order vectors on the map. Moving one retunes that order, all of
 its ships (those outside the selected formation too), and no other; **W** / **S** do the same when
 the formation flies one order. Stop cuts the drive.
+
+**TURN.** **T** aims like a move order; a click points the selection's hulls at the cursor, a unit
+or a body, and flies nothing (a `face` order: her hull's axis set while she does not burn, so her
+sensors and her plume's aspect turn with it). A ship flying an order drops it first (her drive
+cut, she flies on as she goes); one holding station turns where she holds. Her panel shows where
+her hull points, bearing and elevation in the active bullseye's axes.
 
 **STOP and DECELERATE.** With a ship or a formation selected (or from an order's block in its
 panel), **Z** stops it: the order dropped and the drive cut, it flies on as it goes, under gravity

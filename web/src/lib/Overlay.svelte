@@ -236,15 +236,21 @@
   // selected ship's rings are fuchsia; a selected formation's units' rings (its own ships, or if it
   // has none, the ships of the units under it) take the selection's child colour. Those carry
   // their figures; of the rest, the first ring of each kind and range does. With [ranges]
-  // selected_only, the rest are not drawn.
+  // selected_only, the rest are not drawn. Rings of one kind whose centres all but meet on screen
+  // (a formation seen from far off) are drawn as one about them all, with how many it holds.
   const RANGE_DASH = { 'de-mast': [2, 4], dazzle: [1, 7], guns: [5, 4] };
   const RANGE_ALPHA = { 'de-mast': 0.5, dazzle: 0.3, guns: 0.45 };
+  const MERGE = 0.25;                   // rings merge when their centres are this share of the ring apart, or less
   // R held: the same, for each of a ship's sensors (her class's suite), where it sees a ship giving
-  // off display.toml [detection] vs_mw; dotted finer, and fainter
+  // off display.toml [detection] vs_mw; dotted finer, and fainter. Sensors whose cones leave most of
+  // the sphere unseen (the infrared telescopes, the strip optics) are drawn as their cones along her
+  // hull, for a ship of the side's own drawn alone; otherwise, and for a formation, a ring.
   const weapons = (c) => c.ship?.ranges ?? [];
   const sensors = (c) => {
     const vs = Number(settings.detection?.vs_mw ?? 30);
-    return (c.ship?.sensors ?? []).map((s) => ({ what: s.name, km: s.km * Math.sqrt(vs / s.ref_mw), dash: [1, 3], alpha: 0.3 }));
+    return (c.ship?.sensors ?? []).map((s) => ({
+      what: s.name, km: s.km * Math.sqrt(vs / s.ref_mw), dash: [1, 3], alpha: 0.3,
+      cone: s.cone_deg < 90 && s.cones * (1 - Math.cos((s.cone_deg * Math.PI) / 180)) < 1.9 ? s : null }));
   };
   function rangeFocus(byId, sel) {
     const c = sel && byId[sel];
@@ -256,13 +262,43 @@
     walk(sel);
     return out;
   }
+  // her hull's frame, as the simulation lays her sensors on it: forward where her hull points (else
+  // where she goes), up the system's, and across
+  function hullFrame(dir, v) {
+    let f = dir && dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2] > 0.25 ? dir : v;
+    const fn = f ? Math.hypot(...f) : 0;
+    f = fn > 1e-9 ? f.map((x) => x / fn) : [1, 0, 0];
+    let side = Math.abs(f[2]) > 0.99 ? [f[2], 0, -f[0]] : [-f[1], f[0], 0];
+    const sn = Math.hypot(...side);
+    side = side.map((x) => x / sn);
+    return [f, side, [f[1] * side[2] - f[2] * side[1], f[2] * side[0] - f[0] * side[2], f[0] * side[1] - f[1] * side[0]]];
+  }
+  // one cone, apex at p (km), along axis a, half-angle th (rad), reaching L km: its rim and four edges
+  function cone(p, a, th, L, color, dash) {
+    const e1 = Math.abs(a[2]) < 0.9 ? [-a[1], a[0], 0] : [0, -a[2], a[1]], n1 = Math.hypot(...e1);
+    const u = e1.map((x) => x / n1), w = [a[1] * u[2] - a[2] * u[1], a[2] * u[0] - a[0] * u[2], a[0] * u[1] - a[1] * u[0]];
+    const c = Math.cos(th) * L, r = Math.sin(th) * L;
+    const rim = [];
+    for (let k = 0; k <= 32; k++) {
+      const q = (k / 32) * 2 * Math.PI, cs = Math.cos(q) * r, sn = Math.sin(q) * r;
+      rim.push(map.project([0, 1, 2].map((i) => p[i] + a[i] * c + u[i] * cs + w[i] * sn)));
+    }
+    const s = map.project(p);
+    if (!s || rim.some((x) => !x)) return;
+    ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.setLineDash(dash);
+    ctx.beginPath();
+    rim.forEach((x, k) => (k ? ctx.lineTo(x.x, x.y) : ctx.moveTo(x.x, x.y)));
+    for (const k of [0, 8, 16, 24]) { ctx.moveTo(s.x, s.y); ctx.lineTo(rim[k].x, rim[k].y); }
+    ctx.stroke(); ctx.setLineDash([]);
+  }
   function drawRanges(ringsOf = weapons, R = settings.ranges ?? {}) {
     const pos = map.state.contacts ?? {}, sel = map.selected?.kind === 'contact' ? map.selected.id : null;
+    const ships = map.state.ships ?? {};
     const byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
     const focus = rangeFocus(byId, sel);
     const only = R.selected_only, minPx = R.min_px ?? 14;
     const childCol = style.palette[drules.selection?.rules.child_color] ?? style.palette.cyan;
-    const labelled = new Set();
+    const kinds = new Map();              // one kind of ring, one colour -> every one of them on screen
     for (const c of contacts) {
       const p = pos[c.id], on = focus.has(c.id);
       const rings = ringsOf(c);
@@ -273,10 +309,34 @@
       for (const r of rings) {
         const px = map.pxRadius(p, r.km);
         if (px < minPx || px > 4 * Math.max(W, H)) continue;
-        const key = `${r.what} ${r.km}`;
-        const label = (on && !labelled.has(`on ${key}`)) || (!on && !labelled.has(key)) ? `${r.what} ${km(r.km)}` : '';
-        labelled.add(on ? `on ${key}` : key);
-        zoneRing(ctx, s.x, s.y, px, rgba(col, on ? 0.85 : r.alpha ?? RANGE_ALPHA[r.what] ?? 0.45), label, r.dash ?? RANGE_DASH[r.what] ?? [2, 4]);
+        const key = `${r.what} ${r.km} ${col} ${on}`;
+        if (!kinds.has(key)) kinds.set(key, []);
+        kinds.get(key).push({ c, p, s, px, r, col, on });
+      }
+    }
+    const labelled = new Set();
+    for (const items of kinds.values()) {
+      const groups = [];                  // centres that all but meet: one ring about them all
+      for (const it of items.sort((x, y) => y.px - x.px)) {
+        const g = groups.find((g) => Math.hypot(g.x - it.s.x, g.y - it.s.y) <= MERGE * Math.max(g.px, it.px));
+        if (g) { g.items.push(it); g.x += (it.s.x - g.x) / g.items.length; g.y += (it.s.y - g.y) / g.items.length; }
+        else groups.push({ x: it.s.x, y: it.s.y, px: it.px, items: [it] });
+      }
+      for (const g of groups) {
+        const it = g.items[0], r = it.r;
+        const key = `${it.on ? 'on ' : ''}${r.what} ${r.km}`;
+        const label = labelled.has(key) ? '' : `${r.what} ${km(r.km)}${g.items.length > 1 ? ` ×${g.items.length}` : ''}`;
+        labelled.add(key);
+        const color = rgba(it.col, it.on ? 0.85 : r.alpha ?? RANGE_ALPHA[r.what] ?? 0.45), dash = r.dash ?? RANGE_DASH[r.what] ?? [2, 4];
+        const own = ships[it.c.id];
+        if (g.items.length === 1 && r.cone && own?.dir) {       // her cones, along her hull
+          const [f, side, up] = hullFrame(own.dir, own.velocity_kms), th = (r.cone.cone_deg * Math.PI) / 180;
+          for (const b of r.cone.axes ?? []) cone(it.p, [0, 1, 2].map((i) => b[0] * f[i] + b[1] * side[i] + b[2] * up[i]), th, r.km, color, dash);
+          if (label) text(ctx, label, g.x + 6, g.y - 6, color, settings.text.readout_px);
+          continue;
+        }
+        const rad = Math.max(...g.items.map((x) => Math.hypot(x.s.x - g.x, x.s.y - g.y) + x.px));
+        zoneRing(ctx, g.x, g.y, rad, color, label, dash);
       }
     }
   }

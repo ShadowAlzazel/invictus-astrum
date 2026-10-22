@@ -86,19 +86,21 @@ def _count(x) -> int:
 
 def suite(registry, sc) -> list[dict]:
     """A class's simulated sensors for the map, one entry per kind: its name, how far it sees a ship
-    giving off ref_mw (reach scales as the square root of what she gives off), its cones."""
+    giving off ref_mw (reach scales as the square root of what she gives off), its cones (their
+    half-angle, and each one's axis in her hull's frame: forward, across, up)."""
     arm = getattr(registry, "armoury", None)
     parts = arm.parts.get("sensor", {}) if arm else {}
     out: dict[str, dict] = {}
-    for sid, count, what in mounts(registry, sc):
+    for m, (sid, count, what) in enumerate(mounts(registry, sc)):
         p = parts.get(sid or "", {})
         if all(k in p for k in SENSOR_KEYS):
             d = out.setdefault(sid, {"id": sid, "name": p.get("name", sid), "km": float(p["reach_km"]), "ref_mw": float(p["ref_mw"]),
                                      "cone_deg": float(p["cone_deg"]), "revisit_s": float(p["revisit_s"]), "cones": 0,
                                      "active": bool(p.get("active")), "emit_mw": num(p, "emit_mw") if p.get("active") else None,
                                      "emit_est": bool(isinstance(p.get("emit_mw"), dict) and p["emit_mw"].get("est")),
-                                     "notes": p.get("notes", ""), "mounted": []})
+                                     "notes": p.get("notes", ""), "mounted": [], "axes": []})
             d["cones"] += count
+            d["axes"] += np.round(spread(count, turn=1.3 * m), 4).tolist()    # in her hull's frame, as Sensors lays them
             d["mounted"].append({"as": what, "cones": count})
     return sorted(out.values(), key=lambda d: d["km"] / math.sqrt(d["ref_mw"]))
 

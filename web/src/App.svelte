@@ -4,6 +4,7 @@
   import { api, StateStream } from './lib/api.js';
   import { cap, is, keymap } from './lib/keys.js';
   import HudCursor from './lib/HudCursor.svelte';
+  import Ruler from './lib/Ruler.svelte';
   import Orders from './lib/Orders.svelte';
   import Bullseyes from './lib/Bullseyes.svelte';
   import { group, hms, orderGroups, shipsUnder, stepG } from './lib/orders.js';
@@ -214,7 +215,19 @@
   }
   function pointerMove(e) { const m = markAt(e.clientX, e.clientY); map.hover = m ? { kind: m.kind, id: m.id } : null; }
   function pointerDown(e) { down = { x: e.clientX, y: e.clientY, b: e.button, shift: e.shiftKey }; }
+  // the ruler (L): a click sets where it starts, the next where it ends; a third starts again
+  let ruler = null;                     // { a, b }: system-frame km, b null while it follows the cursor
+  function rulerPoint(x, y) {
+    const m = markAt(x, y);
+    return (m && map.position({ kind: m.kind, id: m.id })) || map.planeAt(x, y);
+  }
   async function pointerUp(e) {
+    if (ruler && down && down.b === 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) {
+      const p = rulerPoint(e.clientX, e.clientY);
+      if (p) ruler = !ruler.a || ruler.b ? { a: p, b: null } : { ...ruler, b: p };
+      return;
+    }
+    if (ruler && down?.b === 2 && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) { ruler = null; return; }
     if (ordering && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) {
       if (down.b === 2) { ordering = null; return; }             // right click: cancel
       if (down.b === 0) return giveOrder(down.shift);
@@ -237,11 +250,11 @@
   function say(m) { orderMsg = m; clearTimeout(msgTimer); msgTimer = setTimeout(() => (orderMsg = ''), 3500); }
   // the ships an order from the selection goes to: the ship, or every ship under the formation
   $: selShips = sel?.kind === 'contact' ? shipsUnder(contacts, state, sel.id) : [];
-  const MODES = { order: 'move', attack: 'attack', patrol: 'patrol' };   // the key's action -> the order's mode
+  const MODES = { order: 'move', attack: 'attack', patrol: 'patrol', turn: 'turn' };   // the key's action -> the order's mode
   function startOrder(mode = 'move') {
     if (sel?.kind !== 'contact' || !selShips.length) return say(`Select a ship or a formation to order: ${cap($keymap.order)}`);
     if (contacts.find((c) => c.id === sel.id)?.track) return say('A track: not ours to order.');
-    const able = selShips.filter((id) => contacts.find((c) => c.id === id)?.ship?.has_drive);
+    const able = mode === 'turn' ? selShips : selShips.filter((id) => contacts.find((c) => c.id === id)?.ship?.has_drive);
     if (!able.length) return say('No ship there has a drive stated; they cannot be ordered to move.');
     const grp = group(state, contacts, able);
     const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
@@ -316,7 +329,8 @@
                                   target: aim.target, mode: o.mode, queue });
       const goal = Object.values(r.ships)[0]?.goal;
       const who = `${map.contactName(o.unit)}${o.ships.length > 1 ? ` (${o.ships.length} ships)` : ''}`;
-      say(o.g <= 0 ? `${who}: drive cut` : queue ? `${who}: queued, then ${aim.label}` : `${who}: ${goal?.label ?? aim.label} at ${o.g.toFixed(2)} g`);
+      say(o.mode === 'turn' ? `${who}: turned to ${aim.kind === 'point' ? 'the point' : aim.label}` : o.g <= 0 ? `${who}: drive cut`
+        : queue ? `${who}: queued, then ${aim.label}` : `${who}: ${goal?.label ?? aim.label} at ${o.g.toFixed(2)} g`);
       if (!queue) ordering = null;
     } catch (err) {
       say(String(err.message ?? err));
@@ -358,6 +372,8 @@
     if (is(e, 'settings')) { showSettings = !showSettings; return; }
     if (e.key === 'Escape' && showSettings) { showSettings = false; return; }
     if (!inMap) return;                                  // menus have their own keys
+    if (is(e, 'ruler') && mode === 'map') { ruler = ruler ? null : { a: null, b: null }; return; }
+    if (e.key === 'Escape' && ruler) { ruler = null; return; }
     if (ordering) {                                      // aiming an order: its own keys first
       const m = Object.keys(MODES).find((a) => is(e, a));
       if (e.key === 'Escape' || (m && MODES[m] === ordering.mode)) { ordering = null; return; }
@@ -466,6 +482,7 @@
 <canvas class="map" bind:this={canvas}></canvas>
 <Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} sensing={sensing && mode === 'map'} />
 <HudCursor {map} {style} {settings} {overUI} />
+{#if ruler && mode === 'map'}<Ruler {map} {style} {ruler} {markAt} />{/if}
 {#if mode === 'map'}
   <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />
 {/if}
@@ -481,7 +498,7 @@
 {:else}
   <div class="bar" data-ui>
     <button on:click={toMenu}>◂ Menu</button>
-    <button on:click={toLevels} title="L">Levels</button>
+    <button on:click={toLevels} title={$keymap.levels ? cap($keymap.levels) : "Levels"}>Levels</button>
     <button on:click={() => (showSettings = !showSettings)} title={cap($keymap.settings)}>Settings</button>
     <span class="brand">INVICTUS <b>ASTRUM</b></span>
     <span class="here">{def?.name ?? ''}</span>
