@@ -3,13 +3,13 @@
 id = "papilion"
 name = "PAPILION VENATRIX"
 lineage = "garden"
-genus = { word = "PAPILION", meaning = "butterfly" }
-epithet = { word = "VENATRIX", meaning = "huntress" }
+genus = { word = "PAPILION", meaning = "Butterfly" }
+epithet = { word = "VENATRIX", meaning = "Huntress" }
 designation = "AVC"
 rate = "line"
-terms = { sail = "ship of the line", modern = "battlecruiser", arcvs = "VENATRIX" }
+terms = { sail = "Ship of the Line", modern = "Battlecruiser", arcvs = "VENATRIX" }
 body = "two wings per side"
-summary = "The heavy of the Classis. She kills hulls, and works behind the frigate screen."
+summary = "The heavy of ARCVS. She kills hulls, and works behind the frigate screen."
 symbol = "PAP"
 in_classis = { range = [58, 72], note = "midpoint ~65" }
 

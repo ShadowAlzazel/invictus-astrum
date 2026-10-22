@@ -3,13 +3,13 @@
 id = "aeshna"
 name = "AESHNA ARQUITRIX"
 lineage = "garden"
-genus = { word = "AESHNA", meaning = "hawker dragonfly" }
-epithet = { word = "ARQUITRIX", meaning = "archeress (read from arquites, archers; sense not yet set)" }
+genus = { word = "AESHNA", meaning = "Hawker Dragonfly" }
+epithet = { word = "ARQUITRIX", meaning = "Archeress" }
 designation = "AVC"
 rate = "line"
-terms = { sail = "ship of the line", modern = "air-defence cruiser", arcvs = "ARQUITRIX" }
-body = "four wings in an X"
-summary = "The point-defence cruiser. She stands over what cannot dodge, and is the fleet's answer to missile saturation."
+terms = { sail = "Second Rate", modern = "Air-Defence Cruiser", arcvs = "ARQUITRIX" }
+body = "Four wings in an X"
+summary = "The Point-Defence cruiser. She stands over what cannot dodge, and is the fleet's answer to missile saturation."
 symbol = "AES"
 in_classis = { range = [10, 15], note = "midpoint ~12.5" }
 
