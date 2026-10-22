@@ -3,8 +3,8 @@
 Every ship carries the standard suite (rules.toml [detection] standard: a sphere of cones), and her
 strips, domes and sensor batteries besides: the optics are sensors too (assemblies.toml: a strip or
 dome names the sensor it acts as; parts.toml [sensor.*] gives its cone, reach and sweep). Each
-cone is a row here: its ship, its axis in her hull's frame (forward is where her hull points, up is
-the system's), the cos of its half-angle, the faintest flux it sees, how often its sweep comes
+cone is a row here: its ship, its axis in her hull's frame (forward is where her hull points, port
+across her, up is the system's as near as it can be; a battery's facing points it), the cos of its half-angle, the faintest flux it sees, how often its sweep comes
 round, and where in that its own sweep falls.
 
 A sweep is every sensor of a side whose sweep comes round at a whole minute, against every other
@@ -25,6 +25,7 @@ import numpy as np
 from . import kernels
 from .armoury import num
 from .relay import C, relay
+from .ships import facing
 
 SAMPLE_S = 60.0
 GOLDEN = math.pi * (3.0 - math.sqrt(5.0))
@@ -55,27 +56,32 @@ def spread(n: int, turn: float = 0.0) -> np.ndarray:
     return np.stack([x, rho * np.cos(phi), rho * np.sin(phi)], axis=1)
 
 
+def axes(count: int, faces: list | None, turn: float = 0.0) -> np.ndarray:
+    """A mount's cone axes in her hull's frame: as its battery faces (ships.facing), else spread."""
+    return np.array([faces[k % len(faces)] for k in range(count)], dtype=float).reshape(-1, 3) if faces else spread(count, turn)
+
+
 SENSOR_KEYS = ("cone_deg", "reach_km", "ref_mw", "revisit_s")
 
 
-def mounts(registry, sc) -> list[tuple[str | None, int, str]]:
-    """A class's sensors, as (sensor, how many cones, what it is mounted as): the standard suite
-    and active scan, and a cone for each of her domes and strips (two to a pair) and sensor
-    batteries."""
+def mounts(registry, sc) -> list[tuple[str | None, int, str, list | None]]:
+    """A class's sensors, as (sensor, how many cones, what it is mounted as, where they face): the
+    standard suite and active scan, and a cone for each of her domes and strips (two to a pair) and
+    sensor batteries; a battery's facing (ships.facing) points its cones, else they are spread."""
     rules = getattr(getattr(registry, "rules", None), "detection", None) or {}
     arm = getattr(registry, "armoury", None)
     asm = arm.assemblies if arm else {}
-    out = [(m.get("sensor"), int(m.get("cones", 1)), what) for m, what in
+    out = [(m.get("sensor"), int(m.get("cones", 1)), what, None) for m, what in
            ((rules.get("standard") or {}, "Standard suite"), (rules.get("active") or {}, "Active scan"))]
     for b in getattr(sc, "batteries", ()):
         kind, raw = b.get("kind"), b.get("raw", {})
-        label = raw.get("label") or raw.get("id") or kind
+        label, faces = raw.get("label") or raw.get("id") or kind, facing(raw["facing"]) if "facing" in raw else None
         if kind in ("dome", "strip"):
             count = _count(raw.get("count")) or 2 * _count(raw.get("pairs")) or 1
             a = asm.get(kind, {}).get(raw.get(kind), {})
-            out.append((a.get("sensor"), count, f"{label} · {a.get('name', raw.get(kind))}"))
+            out.append((a.get("sensor"), count, f"{label} · {a.get('name', raw.get(kind))}", faces))
         elif kind == "sensor":
-            out.append((raw.get("sensor"), _count(raw.get("count")) or 1, label))
+            out.append((raw.get("sensor"), _count(raw.get("count")) or 1, label, faces))
     return out
 
 
@@ -91,7 +97,7 @@ def suite(registry, sc) -> list[dict]:
     arm = getattr(registry, "armoury", None)
     parts = arm.parts.get("sensor", {}) if arm else {}
     out: dict[str, dict] = {}
-    for m, (sid, count, what) in enumerate(mounts(registry, sc)):
+    for m, (sid, count, what, faces) in enumerate(mounts(registry, sc)):
         p = parts.get(sid or "", {})
         if all(k in p for k in SENSOR_KEYS):
             d = out.setdefault(sid, {"id": sid, "name": p.get("name", sid), "km": float(p["reach_km"]), "ref_mw": float(p["ref_mw"]),
@@ -100,7 +106,7 @@ def suite(registry, sc) -> list[dict]:
                                      "emit_est": bool(isinstance(p.get("emit_mw"), dict) and p["emit_mw"].get("est")),
                                      "notes": p.get("notes", ""), "mounted": [], "axes": []})
             d["cones"] += count
-            d["axes"] += np.round(spread(count, turn=1.3 * m), 4).tolist()    # in her hull's frame, as Sensors lays them
+            d["axes"] += np.round(axes(count, faces, turn=1.3 * m), 4).tolist()    # in her hull's frame, as Sensors lays them
             d["mounted"].append({"as": what, "cones": count})
     return sorted(out.values(), key=lambda d: d["km"] / math.sqrt(d["ref_mw"]))
 
@@ -110,7 +116,7 @@ def unsimulated(registry, sc) -> list[dict]:
     reach or sweep (the Holzweiber's blisters), or names none."""
     arm = getattr(registry, "armoury", None)
     parts = arm.parts.get("sensor", {}) if arm else {}
-    return [{"as": what, "sensor": sid, "name": parts.get(sid or "", {}).get("name", sid)} for sid, count, what in mounts(registry, sc)
+    return [{"as": what, "sensor": sid, "name": parts.get(sid or "", {}).get("name", sid)} for sid, count, what, _ in mounts(registry, sc)
             if sid and not all(k in parts.get(sid, {}) for k in SENSOR_KEYS)]
 
 
@@ -130,14 +136,14 @@ class Sensors:
             sc = registry.classes.get(spec.class_id) if spec is not None and hasattr(registry, "classes") else None
             if sc is None:
                 continue
-            for m, (sid, count, _) in enumerate(mounts(registry, sc)):
+            for m, (sid, count, _, faces) in enumerate(mounts(registry, sc)):
                 p = parts.get(sid or "", {})
                 if not all(k in p for k in SENSOR_KEYS):
                     continue                              # not a simulated sensor (yet)
                 T = max(SAMPLE_S, round(float(p["revisit_s"]) / SAMPLE_S) * SAMPLE_S)
                 reach = float(p["reach_km"]) * 1e3
                 self.emit[i] += (num(p, "emit_mw") or 0.0) * 1e6 if p.get("active") else 0.0
-                for k, d in enumerate(spread(count, turn=1.3 * m)):
+                for k, d in enumerate(axes(count, faces, turn=1.3 * m)):
                     rows.append(i)
                     body.append(d)
                     cosr.append(math.cos(math.radians(min(float(p["cone_deg"]), 180.0))))

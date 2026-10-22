@@ -215,13 +215,23 @@ def test_strictness(reg):
     doc = {"class": {"id": "x", "name": "X", "lineage": "garden", "rate": "line", "colour": "red"},
            "aim": {"tiers": {"green": 5.0, "rated": 6.0}},
            "battery": [{"id": "b", "stack": "nope", "count": 2}, {"id": "c", "stack": "line", "strip": "capital"},
-                       {"id": "d", "mounts": [{"turret": "qvadra-ii-44", "side": "aloft"}]}],
+                       {"id": "d", "mounts": [{"turret": "qvadra-ii-44", "side": "aloft"}]},
+                       {"id": "e", "sensor": "ir-telescope", "facing": ["port", "bow"]}],
            "reach": {"teleport": 10, "open-woven": "aim"}, "weather": {}}
     msgs = " | ".join(f.message for f in build_class(doc, reg.rules, reg.armoury).findings if f.level == "error")
     for expect in ("unknown key 'colour'", "no worse than a green", "unknown stack 'nope'", "fits one of",
                    "a mount's side is one of", "unknown effect 'teleport'", "cannot be set by aim",
-                   "unknown section [weather]"):
+                   "unknown section [weather]", "facing is one of"):
         assert expect in msgs
+
+
+def test_telescopes_face_where_the_class_says(reg):
+    """The VIGIL's telescopes look out of her sides, whichever way her hull points; unfaced mounts spread."""
+    from astrum.detect import axes, suite
+    ir = next(d for d in suite(reg, reg.classes["salticidae"]) if d["id"] == "ir-telescope")
+    assert ir["axes"] == [[0.0, 1.0, 0.0], [0.0, -1.0, 0.0]]                  # port, starboard
+    assert axes(3, [(1.0, 0.0, 0.0)]).tolist() == [[1.0, 0.0, 0.0]] * 3
+    assert axes(2, None).tolist() == [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]]
 
 
 def test_armoury_parts_against_tormenta(reg):

@@ -52,6 +52,7 @@ id = "telescopes"
 label = "Telescopes"
 sensor = "ir-telescope"
 count = 2
+facing = ["port", "starboard"]        # one per cone: forward, aft, port, starboard, dorsal, ventral, or [forward, port, up]
 
 [[point_defence]]
 bearing = "above or below"

@@ -66,7 +66,10 @@ the sensor each acts as) and her sensor batteries (the VIGIL's telescopes). Each
 (`parts.toml [sensor.*]`) has a cone, a reach against a source of a stated power (so the faintest
 flux it sees is that power over 4π·reach²), and a sweep: it looks once every `revisit_s`, each
 cone on its own phase, on whole minutes. Its axis is in her hull's frame: forward where her hull
-points, up the system's.
+points, port across her, up the system's. A battery states where its cones face (`facing`, one per
+cone: forward, aft, port, starboard, dorsal, ventral or a [forward, port, up] vector), else they
+are spread over her sphere: the VIGIL's two telescopes look out of her sides, so pointing her at a
+mark puts it out of their sight.
 
 | Sensor | Cone | Sees a warm frigate (30 MW) to | Sweeps every |
 |---|---|---|---|

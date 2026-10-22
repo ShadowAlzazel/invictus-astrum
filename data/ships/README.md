@@ -99,6 +99,8 @@ pairs = 1
 # panel = "i", count = 20             loose panels, each its own track
 # cell = "missile", count = 90        or cell = "tube"
 # sensor = "ir-telescope", count = 2
+# facing = ["port", "starboard"]      a sensor's cones, one each (round again if more): forward, aft,
+#                                     port, starboard, dorsal, ventral, or [forward, port, up]; else spread
 # any battery: engage_km (else derived), fire, arrangement, notes
 
 # [reach]                             # optional: overrides the spinal stack's rated reaches

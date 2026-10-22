@@ -45,7 +45,9 @@ CLASS_KEYS = {"id", "name", "lineage", "genus", "epithet", "builder", "rate", "t
               "symbol", "in_classis", "places", "successor_of", "old_rating"}
 MOVED = {"designation": "[class] builder", "body": "[hull] body"}      # keys of the old format, and where they went
 BATTERY_KEYS = {"id", "label", "count", "fire", "magazine", "reach_km", "arrangement", "notes", "engage_km", "focus",
-                "mounts", "nature", "stack", "firing", "strip", "pairs", "dome", "sides", "panel", "cell", "sensor"}
+                "mounts", "nature", "stack", "firing", "strip", "pairs", "dome", "sides", "panel", "cell", "sensor", "facing"}
+FACING = {"forward": (1.0, 0.0, 0.0), "aft": (-1.0, 0.0, 0.0), "port": (0.0, 1.0, 0.0), "starboard": (0.0, -1.0, 0.0),
+          "dorsal": (0.0, 0.0, 1.0), "ventral": (0.0, 0.0, -1.0)}     # in her hull's frame: forward, port, up
 LAYOUT_KEYS = {"truss_m", "citadel_m", "wing_at_m", "notes"}
 DRIVE_KEYS = {"module", "count", "hull_mass", "propellant_t", "dv_kms", "sized_g", "cruise_g", "notes"}
 G0 = 9.80665                      # m/s² in a g
@@ -227,6 +229,21 @@ def _row(label: str, value, unit: str = "", est: bool = False, note: str = "") -
     if isinstance(value, (int, float)):
         return {"label": label, "unit": unit, "q": Q(float(value), float(value), est=est, note=note).as_dict()}
     return {"label": label, "unit": unit, "text": value if value is not None else BLANK}
+
+
+def facing(x) -> list[tuple] | None:
+    """A battery's facing, as unit directions in her hull's frame (cone k looks along the k-th,
+    round again if there are more cones): one name of FACING or [forward, port, up], or a list of
+    them. None if it is not one."""
+    def one(d):
+        if isinstance(d, str):
+            return FACING.get(d)
+        if isinstance(d, list) and len(d) == 3 and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in d):
+            n = math.sqrt(sum(v * v for v in d))
+            return tuple(v / n for v in d) if n > 0 else None
+        return None
+    got = [one(d) for d in x] if isinstance(x, list) and x and not one(x) else [one(x)]
+    return None if None in got else got
 
 
 def _battery(sc: ShipClass, b: dict, arm: Armoury, rules: ShipRules, doc: dict, where: str,
@@ -755,6 +772,8 @@ def build_class(doc: dict, rules: ShipRules, arm: Armoury, source: str = "",
         seen.add(b.get("id"))
         if "focus" in b and not isinstance(b["focus"], bool):
             f.append(Finding("error", bw, "focus is true or false"))
+        if "facing" in b and facing(b["facing"]) is None:
+            f.append(Finding("error", bw, f"facing is one of {', '.join(FACING)} or [forward, port, up], or a list of them (one per cone)"))
         sc.batteries.append(_battery(sc, b, arm, rules, doc, bw, f))
     focused = [b for b in sc.batteries if b["raw"].get("focus") is True]
     if len(focused) > 1:
