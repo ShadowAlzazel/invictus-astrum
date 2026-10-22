@@ -2,16 +2,18 @@
 
     python tools/bench_flight.py              # the table, and the flight by its steps
     python tools/bench_flight.py --profile    # and the flight by function (cProfile)
-    python tools/bench_flight.py --live 15    # and the server's threads as they run (py-spy --gil)
+    python tools/bench_flight.py --live 15    # and the sim's process as serve.py runs it, thread by thread
+    python tools/bench_flight.py --live 15 --warp 86400     # ... at 1 d/s
 
 At 1 h/s, every wall second the process must fly an hour of the fleet, sweep that hour for every
 side, answer the map's pictures (30 a second here) and picture each side for the AI (4 a second at
 most). Each is timed apart, one thread, game hour by game hour, for: the fleet quiet; Task Force 3
 (44) to a point a million km off Mars (it starts, cruises, brakes and arrives within 12 h); and
 Task Force 3 toward the Sun (it burns all the way). Then 24 game hours of flight by its steps.
-With --live: the server's own threads (run-ahead, pictures and AI, arrivals, the map's requests)
-for that many wall seconds at 1 h/s, how far behind the pictures fell, and which thread held the
-interpreter in what (py-spy, nonblocking: a blocking sampler stalls the threads it samples).
+With --live: the simulation's own process as serve.py runs it, a map asking as the browser does,
+for that many wall seconds (at 1 h/s, or --warp): how fast its pictures came and how far behind,
+and each thread's share of a core and of the interpreter, in what (py-spy, nonblocking: a
+blocking sampler stalls the threads it samples).
 """
 import cProfile
 import math
@@ -28,7 +30,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from astrum.app import World, create_app  # noqa: E402
-World._prefill = lambda self: None          # the table is filled here, as far as the server fills it
 from astrum import kernels  # noqa: E402
 from astrum.simhost import SimHost  # noqa: E402
 
@@ -38,6 +39,7 @@ req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo", "view": "arcv
 
 
 def fresh(run_ahead=False):
+    World._prefill = lambda self: None          # the table is filled here, as far as the server fills it
     w = create_app().state.world
     s = w.systems["sol"]
     w.table("sol").prefill(w.start_time(s) - 3600, w.start_time(s) + 60 * 86400)
@@ -154,40 +156,63 @@ def profile_flight(case="sun", hours=HOURS):
     return pstats.Stats(pr)
 
 
-def live(seconds):
-    """The server's threads for `seconds` at 1 h/s, a map asking FPS pictures a second."""
-    w, sc, f, host = fresh(run_ahead=True)
-    t0 = f.t0 + 600
-    host.frame({**req, "t": t0}, conn=1)
-    order(w, host, f, t0, tf3_target(w, f, t0, False))
-    out = os.path.join(tempfile.gettempdir(), f"astrum-pyspy-{os.getpid()}.txt")
-    spy = shutil.which("py-spy") and subprocess.Popen(["py-spy", "record", "--pid", str(os.getpid()), "--threads", "--gil", "--nonblocking",
-                            "--format", "raw", "-r", "100", "-d", str(seconds), "-o", out],
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(1.0)
-    behind, took, start = [], [], time.monotonic()
-    while time.monotonic() - start < seconds:
-        a = time.monotonic()
-        m = host.frame({**req, "t": t0 + WARP * (a - start)}, conn=1)
-        took.append(time.monotonic() - a)
-        behind.append(float(m.partition('"behind_s": ')[2].partition(",")[0]))
-        time.sleep(max(0.0, 1 / FPS - (time.monotonic() - a)))
-    if spy:
-        spy.wait()
-    else:
-        print("\n(py-spy not found: python -m pip install py-spy, for which thread holds the interpreter)")
-    host.stop()
-    return behind, took, out
+def live(seconds, warp=WARP):
+    """The simulation's own process as serve.py runs it (ProcessSim: the pipe, the request pool, the
+    run-ahead, arrivals, the pictures and the AI), and a map asking as the browser does: one picture
+    in flight, the next as each arrives, at most 60 a second, a round trip or two ahead of a clock
+    at `warp`. Task Force 3 is ordered toward the Sun after a few seconds of warming up. py-spy
+    samples the process twice at once, nonblocking: every thread on the CPU, and the one holding the
+    interpreter (--gil). Returns (round trips, behind_s, the two sample files, or None)."""
+    import asyncio
+    import json
+    from astrum.config import load_config
+    from astrum.simhost import ProcessSim
+    sim = ProcessSim(load_config(), run_ahead=True)
+    files = {k: os.path.join(tempfile.gettempdir(), f"astrum-pyspy-{k}-{os.getpid()}.txt") for k in ("cpu", "gil")}
+
+    async def run():
+        first = json.loads(await sim.call("frame", ({k: v for k, v in req.items()}, 1)))
+        t0, rtt, start, took, behind, spies = first["t"] + 600, 0.05, time.monotonic(), [], [], []
+        ordered = False
+        while time.monotonic() - start < seconds + 4:
+            a = time.monotonic()
+            clock = t0 + warp * (a - start)
+            if not ordered and a - start > 3:           # warmed up: the order, then the samplers
+                ordered = await sim.call("order", {**req, "unit": "tf-3", "g": 0.3, "t": clock, "target": tf3_target(None, None, None, True)})
+                if shutil.which("py-spy"):
+                    spies = [subprocess.Popen(["py-spy", "record", "--pid", str(sim.proc.pid), "--threads", "--nonblocking", "-r", "100",
+                                               *(["--gil"] if k == "gil" else []), "--format", "raw", "-d", str(seconds), "-o", f],
+                                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for k, f in files.items()]
+                a = time.monotonic(); clock = t0 + warp * (a - start)
+            m = await sim.call("frame", ({**req, "t": clock + warp * min(0.25, 1.5 * rtt + 1 / 60)}, 1))
+            d = time.monotonic() - a
+            rtt = 0.8 * rtt + 0.2 * d
+            if ordered:
+                took.append(d)
+                behind.append(float(m.partition('"behind_s": ')[2].partition(",")[0]))
+            await asyncio.sleep(max(0.0, 1 / 60 - d))
+        for sp in spies:
+            await asyncio.to_thread(sp.wait)
+        return took, behind, spies
+    try:
+        took, behind, spies = asyncio.run(run())
+    finally:
+        sim.close()
+    return took, behind, (files if spies and all(os.path.exists(f) for f in files.values()) else None)
+
+
+POOL = "request pool"
 
 
 def threads_from(path, seconds, rate=100):
-    """py-spy's raw stacks (--gil: only the thread holding the interpreter) -> each thread's share
-    of the run, and of its samples, each function's (inclusive)."""
+    """py-spy's raw stacks -> {thread: (its samples as a share of the run, {function: samples,
+    inclusive})}. The request pool's threads are counted as one."""
     held, inc = Counter(), defaultdict(Counter)
     for line in open(path):
         stack, _, n = line.rstrip().rpartition(" ")
-        frames = stack.split(";")
+        frames = stack.replace("\\", "/").split(";")
         th = frames[0].partition("): ")[2] or frames[0]
+        th = POOL if th.startswith("ThreadPoolExecutor") else th
         held[th] += int(n)
         for fn in {fr.split(" (")[0] + " (" + fr.split(" (")[1].split(":")[0] + ")" for fr in frames[1:] if " (" in fr}:
             if "astrum/" in fn:
@@ -220,14 +245,22 @@ if __name__ == "__main__":
         profile_flight().sort_stats("tottime").print_stats(22)
     if "--live" in sys.argv:
         secs = int(sys.argv[sys.argv.index("--live") + 1])
-        behind, took, path = live(secs)
-        print(f"\nLive at 1 h/s for {secs} s, {FPS} pictures a second asked: picture median {ms(statistics.median(took))} ms, "
-              f"p99 {ms(sorted(took)[int(0.99 * len(took))])} ms; behind the clock median {statistics.median(behind):.0f} s, "
-              f"worst {max(behind):.0f} s (game seconds)")
-        if os.path.exists(path):
-            print("  who held the interpreter (py-spy --gil), and in what (inclusive):")
-            for th, (share, fns) in sorted(threads_from(path, secs).items(), key=lambda kv: -kv[1][0]):
-                print(f"  {100 * share:5.1f}%  {th}")
-                n = sum(fns.values()) and max(fns.values())
-                for fn, k in fns.most_common(9)[1:]:
-                    print(f"           {100 * k / n:5.1f}%  {fn}")
+        warp = float(sys.argv[sys.argv.index("--warp") + 1]) if "--warp" in sys.argv else WARP
+        took, behind, files = live(secs, warp)
+        print(f"\nLive: the sim's own process as serve.py runs it, a map asking as the browser does, {warp:g} s/s for {secs} s,"
+              f" TF-3 burning toward the Sun")
+        print(f"  {len(took) / secs:.0f} pictures a second; round trip median {ms(statistics.median(took))} ms, "
+              f"p99 {ms(sorted(took)[int(0.99 * len(took))])} ms, worst {ms(max(took))} ms; behind the clock at worst {max(behind):.0f} s")
+        if files is None:
+            print("  (no py-spy samples: python -m pip install py-spy; on Windows, from a terminal run as administrator)")
+        else:
+            cpu, gil = threads_from(files["cpu"], secs), threads_from(files["gil"], secs)
+            print(f"  each thread's share of one core, and of the time it held the interpreter "
+                  f"(in all: {100 * sum(v[0] for v in cpu.values()):.0f}% of a core; the interpreter held {100 * sum(v[0] for v in gil.values()):.0f}% of the time)")
+            for th, (share, fns) in sorted(cpu.items(), key=lambda kv: -kv[1][0]):
+                if share < 0.005:
+                    continue
+                print(f"  {100 * share:5.1f}% of a core  {100 * gil.get(th, (0, None))[0]:5.1f}% holding it   {th}")
+                top = max(fns.values(), default=1)
+                for fn, k in [x for x in fns.most_common(14) if not x[0].startswith(("_loop ", "answer ", "handle ", "_child "))][:7]:
+                    print(f"           {100 * k / top:5.1f}%  {fn}")
