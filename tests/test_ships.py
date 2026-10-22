@@ -71,8 +71,9 @@ def test_thrust_agrees_light_and_full(reg):
 
 def test_blanks_are_the_authors_list(reg):
     assert reg.classes["papilion"].blanks == []                  # her cycle now comes from the driver
-    assert {"drive", "acceleration", "protection", "complement"} <= set(reg.classes["salticidae"].blanks)
-    assert "rate" in reg.classes["salticidae"].blanks
+    assert {"drive", "acceleration", "protection", "complement"} <= set(reg.classes["carabidae"].blanks)
+    assert "rate" in reg.classes["carabidae"].blanks
+    assert reg.classes["salticidae"].blanks == []                # stated since
     assert "Missiles: count" in reg.classes["bacillus"].blanks
 
 

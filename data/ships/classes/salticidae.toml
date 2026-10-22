@@ -6,7 +6,8 @@ lineage = "garden"
 genus = { word = "SALTICIDAE", meaning = "jumping spiders" }
 epithet = { word = "VIGIL", meaning = "watchman: Rome's night watch" }
 designation = "AVC"
-terms = { sail = "repeating frigate", modern = "airborne early warning", arcvs = "VIGIL" }
+rate = "frigate"
+terms = { sail = "fifth rate; repeating frigate", modern = "airborne early warning", arcvs = "VIGIL" }
 body = "eight wings, fixed, in an X from both ends: the radiators"
 summary = "The eyes and voice of the fleet. She sees, relays, assays and controls the picture as Overlord or Overwatch. Not a frontline ship."
 symbol = "VIG"
@@ -15,7 +16,17 @@ successor_of = "holzweiber"
 
 [hull]
 length_m = { value = 150, approx = true }
-mass_t = { value = 22000, approx = true }
+mass_t = { value = 22000, approx = true }       # dry: her tanks empty
+acceleration_ms2 = { value = 5.4, est = true, note = "tanks empty; about 3.7 full" }
+protection_kgm2 = { citadel = 133, bumper = 12 }    # two-thirds of a frigate's (PHALAENA: 200, 18)
+complement = { value = 150, approx = true, note = "a frigate has about 180" }
+
+# Her drive: the frigate drive, 119 MN, with the fleet's 4,000 km/s budget: about 0.37 g with her
+# tanks full, 0.55 g with them empty.
+[drive]
+module = "frigate"
+hull_mass = "dry"
+dv_kms = 4000
 
 [[battery]]
 id = "domes"
