@@ -72,7 +72,7 @@ from . import kernels
 from .classis import COLUMNS, BURN_G, BURN_NONE, BURN_THROTTLE, DEAD, FREE, LEAD, SHIP, STATION, Classis, LeadView, ship_view
 from .entity import G0, Ship, ShipSpec, SpecError
 from .frames import from_aer
-from .orders import BURN, COAST, COLD, GOTO, KIND, SETG, WARM, Given, OrderBook
+from .orders import ACTIVE, BURN, COAST, COLD, GOTO, KIND, PASSIVE, SETG, WARM, Given, OrderBook
 from .detect import Sensors
 from .signature import Signature
 from .timeline import FIELDS, Timeline, Versions
@@ -156,7 +156,8 @@ class Order:
     unit: str
     at: float                      # TDB s
     kind: str                      # "burn", "goto", "setg" (a new g for the go-to she is flying), "coast",
-                                   # "cold" (fold her wings) or "warm" (spread them)
+                                   # "cold" (fold her wings) or "warm" (spread them), "active" (sweep
+                                   # her active sensors: ping) or "passive" (stop)
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s
     target: dict | None = None     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body}, and a label
     g: float | None = None         # goto: the acceleration to hold, capped at her most
@@ -351,6 +352,14 @@ class Fleet:
             now = now or self.picture(self.t)
             for name in out:
                 out[name][bad] = now[name][rows[bad]]
+        return out
+
+    def pinging(self, t: float) -> np.ndarray:
+        """Which rows sweep their active sensors at t: as each one's last active or passive order
+        before it says (none: passive). Read off the book, so nothing is flown for it."""
+        out = np.zeros(len(self.c.row), dtype=bool)
+        ships, last = self.book.last_of((ACTIVE, PASSIVE), t)
+        out[ships] = self.book.kind[last] == ACTIVE
         return out
 
     def past_sample(self, k: int) -> dict:

@@ -14,6 +14,7 @@ export const ACTIONS = {
   haid:     { key: 'q', label: 'Aim toward Haid' },
   stop:     { key: 'z', label: 'STOP: drop the order, cut the drive, fly on as she goes' },
   decel:    { key: 'x', label: 'DECELERATE: drop the order, turn and burn to rest on the bullseye' },
+  ping:     { key: 'p', label: 'Active sensors: ping, or go quiet (a ping shows the pinger)' },
   plane:    { key: 'b', label: "Orders: her own height or the bullseye's plane" },
   ranges:   { key: 'g', label: 'Weapon ranges (hold)' },
   sensing:  { key: 'r', label: 'Detection ranges (hold)' },

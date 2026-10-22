@@ -85,6 +85,7 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
   const statuses = (c.status ?? []).map((s) => style.status[s]).filter(Boolean);
   const alpha = dim * Math.min(1, ...statuses.map((s) => s.opacity ?? 1));
   const dash = statuses.find((s) => s.dash)?.dash ?? [];
+  h *= Math.min(1, ...statuses.map((s) => s.scale ?? 1));
   const col = hot ? style.palette.fuchsia : aff.color;
 
   if (statuses.some((s) => s.ellipse)) {                       // uncertainty: where it may be now
@@ -109,6 +110,7 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
     ctx.strokeStyle = rgba(ring, 0.9); ctx.lineWidth = 1.2; ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.arc(x, y, Math.max(ew, eh) + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
   }
+  if (statuses.some((s) => s.dot)) { ctx.fillStyle = rgba(col, 0.9 * alpha); ctx.beginPath(); ctx.arc(x, y, 1.6, 0, Math.PI * 2); ctx.fill(); }
   if (statuses.some((s) => s.cross)) {
     ctx.beginPath(); ctx.moveTo(x - ew, y - eh); ctx.lineTo(x + ew, y + eh); ctx.moveTo(x + ew, y - eh); ctx.lineTo(x - ew, y + eh); ctx.stroke();
   }

@@ -78,10 +78,13 @@ KNOWN = ("callsign", "name", "unit_type", "class_name", "ship_class", "hull_numb
 class Side:
     """One side's table of a scenario: what it calls each of the fleet's ships (its own by their
     ids; every other by a track id that says nothing of who she is), and how it knows each other
-    ship it has seen: by name and class once identified, else a bogey. MASTER holds everything,
-    by the ships' own ids."""
+    ship it has seen, by her track's stage (picture.STAGES): detected or tracked, a bogey; classified,
+    her class (if in its journal), still a bogey; identified, her name and faction. An old track
+    stays a point where she was last seen, until it expires or the side removes it (dismissed:
+    ship -> the minute she was last seen, kept by the host). MASTER holds everything, by the
+    ships' own ids."""
 
-    def __init__(self, world, sc, fleet, view: str):
+    def __init__(self, world, sc, fleet, view: str, dismissed: dict | None = None):
         n = len(fleet.c.row)
         ids = fleet.c.ids[:n]
         self.view, master = view, view == picture.MASTER
@@ -93,8 +96,11 @@ class Side:
         self.alias = {sid: nm for sid, nm in zip(ids, self.names) if nm != sid}     # ship -> track
         self.rows = {nm: sid for sid, nm in self.alias.items()}                     # track -> ship
         self.called: dict[str, str] = {}                 # what the side last called each track
+        self.last_k: dict[str, int] = {}                 # ... and the minute it last saw her
+        self.dismissed = {} if dismissed is None else dismissed
+        self.knows = picture.journal(fleet, world.factions, view)
         home, top, tree = world.home(sc), picture.root(world.factions, view), world.trees.get(sc.id)
-        self.known, self.bogey = {}, {}
+        self.known, self.classed, self.bogey = {}, {}, {}
         for sid, t_ in self.alias.items():
             c = sc.contacts[sid]
             d = contact_dict(world, c, tree)
@@ -105,20 +111,27 @@ class Side:
                               "affiliation": "friend" if friend else c.affiliation if view == home else "unknown"}
             self.bogey[t_] = {**base, "callsign": "Bogey", "name": "Bogey", "brevity": "bogey", "unit_type": "",
                               "class_name": "", "ship_class": "", "hull_number": "", "faction": None, "affiliation": "unknown"}
+            self.classed[t_] = {**self.bogey[t_], **{k: d.get(k) for k in ("unit_type", "class_name", "ship_class")},
+                                "callsign": d.get("class_name") or "Bogey", "name": d.get("class_name") or "Bogey"}
 
     def picture(self, seen: dict) -> tuple[list, dict]:
         """What the side calls each row in this picture (None: not in it), and its tracks as it
         knows them."""
-        shown = seen["shown"]
+        shown = seen["shown"].copy()
+        for i in np.flatnonzero(seen["old"]):            # an old track the side removed (seen again since: a new one)
+            if self.dismissed.get(self.rows.get(self.names[i])) == seen["seen_k"][i]:
+                shown[i] = False
         names = [nm if s else None for nm, s in zip(self.names, self.own | shown)]
         tracks = {}
         for i in np.flatnonzero(~self.own & shown):
-            t_ = self.names[i]
-            d = self.known[t_] if seen["identified"][i] else self.bogey[t_]
-            if seen["lost"][i]:
-                d = {**d, "status": ["track-lost"]}
+            t_, st = self.names[i], int(seen["stage"][i])
+            d = self.known[t_] if st == 4 else self.classed[t_] if st == 3 else self.bogey[t_]
+            if st == 4 and not self.knows[i]:            # who she is, but not her class: not in the journal
+                d = {**d, "unit_type": "", "class_name": "", "ship_class": ""}
+            d = {**d, "stage": picture.STAGES[st], "old": bool(seen["old"][i]), "class_known": bool(self.knows[i]),
+                 "status": ["old-track"] if seen["old"][i] else ["track-lost"] if seen["lost"][i] else []}
             tracks[t_] = d
-            self.called[t_] = d["name"]
+            self.called[t_], self.last_k[t_] = d["name"], int(seen["seen_k"][i])
         return names, tracks
 
     def place(self, contacts: dict, tracks: dict) -> dict:
@@ -191,14 +204,15 @@ def give_order(world, req: dict, side_of=None) -> dict:
     fleet = world.fleet(sc)
     side = (side_of or (lambda *a: Side(world, *a)))(sc, fleet, world.side(sc, req.get("view"), req.get("player")))
     unit, g, t = req.get("unit"), req.get("g"), req.get("t")
-    if isinstance(req.get("cold"), bool) and isinstance(t, (int, float)):
+    switch = next((k for k in ("cold", "active") if isinstance(req.get(k), bool)), None)
+    if switch and isinstance(t, (int, float)):       # wings folded or spread; active sensors swept (pinging) or not
         with fleet.lock:
             fleet.reach(float(t), ORDER_BUDGET_S)
         ships = order_ships(world, sc, fleet, unit)
         if not ships:
             raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
         ordering(side, fleet, ships)
-        kind = "cold" if req["cold"] else "warm"
+        kind = {"cold": ("warm", "cold"), "active": ("passive", "active")}[switch][req[switch]]
         return order_reply(fleet, float(t), unit, ships, [Order(sid, float(t), kind, source="map") for sid in ships], side)
     if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
         raise OrderRefused(400, "an order needs t, and g of 0 or more")
@@ -301,6 +315,7 @@ class SimHost:
         self.world = world
         self._encoders: dict = {}                       # connection -> what it has been sent
         self._sides: dict = {}                          # (scenario, fleet, data version, view) -> the side's table (Side)
+        self._dismissed: dict = {}                      # (scenario, view) -> old tracks it removed: ship -> minute last seen
         self.ahead = RunAhead(world) if run_ahead else None
         self.arrivals = Arrivals(world)
 
@@ -323,6 +338,17 @@ class SimHost:
             if side.view != picture.MASTER:              # a side cannot unmake what it ordered: it stops, or decelerates
                 return {"ok": False, "status": 403, "detail": "only MASTER takes an order back; stop (Z) or decelerate (X) instead"}
             return {"ok": bool(fleet.withdraw(payload.get("order_id") or ""))}
+        if kind == "dismiss":                          # an old track removed by its side, until she is seen again
+            sc = self.world.scenarios.get(payload.get("scenario") or "")
+            fleet = self.world.fleet(sc) if sc else None
+            if fleet is None:
+                return {"ok": False}
+            side = self._side(sc, fleet, self.world.side(sc, payload.get("view"), payload.get("player")))
+            sid = side.rows.get(payload.get("track") or "")
+            if sid is None or payload["track"] not in side.last_k:
+                return {"ok": False}
+            side.dismissed[sid] = side.last_k[payload["track"]]
+            return {"ok": True}
         if kind == "close":
             self._encoders.pop(payload, None)
             return None
@@ -370,8 +396,9 @@ class SimHost:
             if self.ahead is not None:
                 self.ahead.want(sc.id, fleet, t)
             side = self._side(sc, fleet, world.side(sc, req.get("view"), req.get("player")))
-            switches = {**world.config["picture"], **{k: bool(v) for k, v in (req.get("picture") or {}).items() if k in picture.SWITCHES}}
-            t, ids, cols, flown, seen = self._ships_at(fleet, t, side.own, side.view, side.friendly, switches)
+            switches = {**world.config["picture"], **{k: bool(v) if isinstance(world.config["picture"].get(k, True), bool) else float(v)
+                                                       for k, v in (req.get("picture") or {}).items() if k in picture.SWITCHES}}
+            t, ids, cols, flown, seen = self._ships_at(fleet, t, side.own, side.view, side.friendly, switches, side.knows)
             names, tracks = side.picture(seen)
             ships, full = enc.encode(fleet, cols, names, (sid, sc.id, world.version, id(fleet), side.view, *sorted(switches.items())),
                                      side.alias)
@@ -404,10 +431,10 @@ class SimHost:
         if got is None:
             if len(self._sides) > 32:
                 self._sides.clear()
-            got = self._sides[key] = Side(self.world, sc, fleet, view)
+            got = self._sides[key] = Side(self.world, sc, fleet, view, self._dismissed.setdefault((sc.id, view), {}))
         return got
 
-    def _ships_at(self, fleet, t: float, own, view: str = "", friendly=None, switches: dict | None = None):
+    def _ships_at(self, fleet, t: float, own, view: str = "", friendly=None, switches: dict | None = None, knows=None):
         """The ships at t (or as near as the fleet could be got), as the player is shown them
         (astrum/picture.py): (the moment, ids, their figures, {id: position}). Read off the
         timeline, the fleet got ready for it first (Fleet.reach). switches: config.toml [picture],
@@ -417,7 +444,7 @@ class SimHost:
             pic = fleet.picture(t)
             n = len(fleet.c.row)
             ids = fleet.c.ids[:n]
-            seen = picture.view(fleet, pic, t, own, switches or self.world.config["picture"], view, friendly)
+            seen = picture.view(fleet, pic, t, own, switches or self.world.config["picture"], view, friendly, knows)
             cols = ship_columns(fleet, pic, t, n, seen)
             flown = {ids[i]: pic["r"][i] for i in range(n) if np.isfinite(pic["r"][i]).all()}
         return t, ids, cols, flown, seen

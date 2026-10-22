@@ -130,7 +130,7 @@ def load_factions(path: str | Path) -> dict[str, dict]:
     out, problems = {}, []
     every = doc.get("faction") or {}
     for fid, spec in every.items():
-        for k in set(spec) - {"name", "prefix", "branch_of", "member_of", "notes"}:
+        for k in set(spec) - {"name", "prefix", "branch_of", "member_of", "knows", "notes"}:
             problems.append(f"faction {fid}: unknown key {k!r}")
         if not spec.get("name"):
             problems.append(f"faction {fid}: needs a name")
@@ -138,7 +138,10 @@ def load_factions(path: str | Path) -> dict[str, dict]:
             problems.append(f"faction {fid}: a branch of one faction, or a member's force: not both")
         out[fid] = {"id": fid, "name": spec.get("name", fid), "prefix": spec.get("prefix", ""),
                     "parent": spec.get("branch_of", ""),         # a branch's faction, by id: its ships are its players'
-                    "member": spec.get("member_of", "")}         # a member world's force: whose it answers to, by id
+                    "member": spec.get("member_of", ""),         # a member world's force: whose it answers to, by id
+                    "knows": spec.get("knows")}                  # its journal: the classes it can make out (None: all)
+        if "knows" in spec and not (isinstance(spec["knows"], list) and all(isinstance(x, str) for x in spec["knows"])):
+            problems.append(f"faction {fid}: knows is a list of ship classes")
         for key in ("branch_of", "member_of"):
             other = spec.get(key)
             if other is not None and (other not in every or other == fid):

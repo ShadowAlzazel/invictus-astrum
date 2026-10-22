@@ -18,6 +18,7 @@ export const api = {
   ship: (id) => get(`/ships/${id}`),
   order: (o) => post('/order', o),
   withdrawOrder: (scenario, id, view, player) => send('DELETE', `/order/${encodeURIComponent(scenario)}/${encodeURIComponent(id)}?${new URLSearchParams(Object.entries({ view, player }).filter(([, v]) => v != null))}`),
+  dismissTrack: (scenario, id, view, player) => send('DELETE', `/track/${encodeURIComponent(scenario)}/${encodeURIComponent(id)}?${new URLSearchParams(Object.entries({ view, player }).filter(([, v]) => v != null))}`),
   makeBullseye: (b) => post('/bullseyes', b),
   dropBullseye: (player, id) => send('DELETE', `/bullseyes/${encodeURIComponent(player)}/${encodeURIComponent(id)}`),
   workshop: {

@@ -20,6 +20,7 @@ import zlib
 import numpy as np
 
 from . import kernels
+from .armoury import num
 from .relay import relay
 
 SAMPLE_S = 60.0
@@ -55,12 +56,12 @@ SENSOR_KEYS = ("cone_deg", "reach_km", "ref_mw", "revisit_s")
 
 
 def mounts(registry, sc) -> list[tuple[str | None, int]]:
-    """A class's sensors, as (sensor, how many cones): the standard suite, and a cone for each of
-    her domes and strips (two to a pair) and sensor batteries."""
-    std = (getattr(getattr(registry, "rules", None), "detection", None) or {}).get("standard") or {}
+    """A class's sensors, as (sensor, how many cones): the standard suite and active scan, and a
+    cone for each of her domes and strips (two to a pair) and sensor batteries."""
+    rules = getattr(getattr(registry, "rules", None), "detection", None) or {}
     arm = getattr(registry, "armoury", None)
     asm = arm.assemblies if arm else {}
-    out = [(std.get("sensor"), int(std.get("cones", 1)))]
+    out = [(m.get("sensor"), int(m.get("cones", 1))) for m in (rules.get("standard") or {}, rules.get("active") or {})]
     for b in getattr(sc, "batteries", ()):
         kind, raw = b.get("kind"), b.get("raw", {})
         if kind in ("dome", "strip"):
@@ -81,20 +82,23 @@ def suite(registry, sc) -> list[dict]:
         p = parts.get(sid or "", {})
         if all(k in p for k in SENSOR_KEYS):
             d = out.setdefault(sid, {"id": sid, "name": p.get("name", sid), "km": float(p["reach_km"]), "ref_mw": float(p["ref_mw"]),
-                                     "cone_deg": float(p["cone_deg"]), "revisit_s": float(p["revisit_s"]), "cones": 0})
+                                     "cone_deg": float(p["cone_deg"]), "revisit_s": float(p["revisit_s"]), "cones": 0,
+                                     "active": bool(p.get("active"))})
             d["cones"] += count
     return sorted(out.values(), key=lambda d: d["km"] / math.sqrt(d["ref_mw"]))
 
 
 class Sensors:
-    """Every sensor of a fleet, one row each (its cone)."""
+    """Every sensor of a fleet, one row each (its cone); an active one (it sees any hull in its
+    reach, while its ship pings) says so, and what each ship's pings give off (emit, W)."""
 
     def __init__(self, fleet, registry):
         c = fleet.c
         rules = getattr(getattr(registry, "rules", None), "detection", None) or {}
         arm = getattr(registry, "armoury", None)
         parts = arm.parts.get("sensor", {}) if arm else {}
-        rows, body, cosr, thr, period, phase, what = [], [], [], [], [], [], []
+        rows, body, cosr, thr, period, phase, what, active, reach_m = [], [], [], [], [], [], [], [], []
+        self.emit = np.zeros(len(c.row))
         for i in range(len(c.row)):
             spec = c.spec[i]
             sc = registry.classes.get(spec.class_id) if spec is not None and hasattr(registry, "classes") else None
@@ -106,6 +110,7 @@ class Sensors:
                     continue                              # not a simulated sensor (yet)
                 T = max(SAMPLE_S, round(float(p["revisit_s"]) / SAMPLE_S) * SAMPLE_S)
                 reach = float(p["reach_km"]) * 1e3
+                self.emit[i] += (num(p, "emit_mw") or 0.0) * 1e6 if p.get("active") else 0.0
                 for k, d in enumerate(spread(count, turn=1.3 * m)):
                     rows.append(i)
                     body.append(d)
@@ -114,6 +119,8 @@ class Sensors:
                     period.append(T)
                     phase.append((zlib.crc32(f"{c.ids[i]}:{sid}:{k}".encode()) % int(T // SAMPLE_S)) * SAMPLE_S)
                     what.append(sid)
+                    active.append(bool(p.get("active")))
+                    reach_m.append(reach)
         self.row = np.array(rows, dtype=np.int64)
         self.body = np.array(body, dtype=float).reshape(-1, 3)
         self.cos = np.array(cosr, dtype=float)
@@ -121,7 +128,10 @@ class Sensors:
         self.period = np.array(period, dtype=float)
         self.phase = np.array(phase, dtype=float)
         self.what = what
+        self.active = np.array(active, dtype=bool)
+        self.reach = np.array(reach_m, dtype=float)
         self.identify = float(rules.get("identify", 25.0))
+        self.classify = float(rules.get("classify", 4.0))
         self.lost = float(rules.get("lost", 1.5))
         self.hold_s = float(rules.get("hold_s", 3600.0))
 
@@ -142,39 +152,59 @@ def hull_axes(dirn: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray, 
     return f, side, np.cross(f, side)
 
 
+C = 299_792_458.0           # m/s
+HIT = ("s", "j", "flux", "plume", "d", "arrive", "act", "r")
+
+
 def scan(fleet, k: int, view: str, own: np.ndarray) -> dict:
     """What the sensors of the view's own ships (own: by row) whose sweep comes round at whole
-    minute k see of every other ship: hits as arrays (sensor, ship, flux W/m², distance m, and when
-    the report reaches the view's flagship: astrum/relay.py). Kept on the fleet, by minute and view."""
+    minute k see of every other ship: hits as arrays (sensor, ship, flux W/m² and her plume's share
+    of it, distance m, when the report reaches the view's flagship (astrum/relay.py), whether an
+    active sensor saw her, and where she was when the light left her). Passive sensors see what is
+    bright enough toward them, pings included; an active one, of a ship pinging then, any hull in
+    its cone and reach. Kept on the fleet, by minute and view."""
     got = fleet._scans.get((k, view))
     if got is not None:
         return got
     S, c = fleet.sensors, fleet.c
-    due = S.due(k)
-    due = due[own[S.row[due]]]
-    tgt = np.flatnonzero(~own).astype(np.int64)
     n = len(c.row)
-    empty = {"s": np.zeros(0, dtype=np.int64), "j": np.zeros(0, dtype=np.int64), "flux": np.zeros(0), "d": np.zeros(0),
-             "arrive": np.zeros(0)}
+    ping = fleet.pinging(fleet.t0 + k * SAMPLE_S)
+    due = S.due(k)
+    due = due[own[S.row[due]] & (~S.active[due] | ping[S.row[due]])]
+    tgt = np.flatnonzero(~own).astype(np.int64)
+    got = {"s": np.zeros(0, dtype=np.int64), "j": np.zeros(0, dtype=np.int64), "flux": np.zeros(0), "plume": np.zeros(0),
+           "d": np.zeros(0), "arrive": np.zeros(0), "act": np.zeros(0, dtype=bool), "r": np.zeros((0, 3))}
     if len(due) and len(tgt):
         pic = fleet.past_sample(k)
         r = np.ascontiguousarray(pic["r"][:n])
         f, side, up = hull_axes(pic["dir"][:n], pic["v"][:n])
         o, b = S.row[due], S.body[due]
         axis = np.ascontiguousarray(b[:, 0:1] * f[o] + b[:, 1:2] * side[o] + b[:, 2:3] * up[o])
-        size = len(due) * len(tgt)
-        out = (np.zeros(size, dtype=np.int64), np.zeros(size, dtype=np.int64), np.zeros(size), np.zeros(size))
+        quiet = ~S.active[due]
+        size = int(quiet.sum()) * len(tgt)
+        out = (np.zeros(size, dtype=np.int64), np.zeros(size, dtype=np.int64), np.zeros(size), np.zeros(size), np.zeros(size))
         sig = fleet.signature
-        hits = kernels.detect(o, axis, S.cos[due], S.thr[due], tgt, r, np.ascontiguousarray(pic["thrust"][:n]), c.ve[:n],
-                              np.ascontiguousarray(pic["dir"][:n]), np.ascontiguousarray(pic["cold"][:n], dtype=float),
-                              np.ascontiguousarray(pic["heat"][:n]), c.quiet[:n], sig.aspect_deg, sig.aspect_share,
-                              sig.cold_share, sig.recover, *out)
-        s = due[out[0][:hits]]
-        late = relay(fleet, view, own).delays(r)[S.row[s]]
-        got = {"s": s, "j": out[1][:hits], "flux": out[2][:hits], "d": out[3][:hits],
-               "arrive": fleet.t0 + k * SAMPLE_S + np.nan_to_num(late)}
-    else:
-        got = empty
+        hits = kernels.detect(o[quiet], np.ascontiguousarray(axis[quiet]), S.cos[due[quiet]], S.thr[due[quiet]], tgt, r,
+                              np.ascontiguousarray(pic["thrust"][:n]), c.ve[:n], np.ascontiguousarray(pic["dir"][:n]),
+                              np.ascontiguousarray(pic["cold"][:n], dtype=float), np.ascontiguousarray(pic["heat"][:n]),
+                              c.quiet[:n], S.emit * ping, sig.aspect_deg, sig.aspect_share, sig.cold_share, sig.recover,
+                              out[0], out[1], out[2], out[3], out[4])
+        hs, hj = due[quiet][out[0][:hits]], out[1][:hits]
+        flux, d_, plume = out[2][:hits], out[3][:hits], out[4][:hits]
+        act = np.flatnonzero(~quiet)                     # active: any hull in the cone, within reach
+        if len(act):
+            D = r[tgt][None, :, :] - r[o[act]][:, None, :]
+            dist = np.linalg.norm(D, axis=2)
+            cos = np.einsum("aqc,ac->aq", D, axis[act]) / np.maximum(dist, 1e-9)
+            a_, q_ = np.nonzero((dist <= S.reach[due[act]][:, None]) & (cos >= S.cos[due[act]][:, None]) & (dist > 0)
+                                & np.isfinite(dist))
+            hs, hj = np.concatenate([hs, due[act][a_]]), np.concatenate([hj, tgt[q_]])
+            flux, plume, d_ = np.concatenate([flux, np.zeros(len(a_))]), np.concatenate([plume, np.zeros(len(a_))]), \
+                np.concatenate([d_, dist[a_, q_]])
+        late = relay(fleet, view, own).delays(r)[S.row[hs]]
+        got = {"s": hs, "j": hj, "flux": flux, "plume": plume, "d": d_,
+               "arrive": fleet.t0 + k * SAMPLE_S + np.nan_to_num(late), "act": S.active[hs],
+               "r": r[hj] - pic["v"][hj] * (d_ / C)[:, None]}          # where she was when that light left her
     if len(fleet._scans) >= 4096:
         fleet._scans.pop(next(iter(fleet._scans)))
     fleet._scans[(k, view)] = got
@@ -182,54 +212,75 @@ def scan(fleet, k: int, view: str, own: np.ndarray) -> dict:
 
 
 def latest(fleet, k: int, view: str, own: np.ndarray) -> dict:
-    """Per ship, the newest scan up to whole minute k in which the view's sensors saw her, as
-    arrays by row: the minute (-1: not seen within the hold), the sensor that saw her brightest
-    then, the flux, the distance, and when that report reaches the flagship. Each minute's is the
-    one before it with that minute's scan laid over, kept by minute and view."""
+    """Per ship, what the view's sensors have made of her up to whole minute k, as arrays by row:
+    the minute she was last seen (-1: never), the sensor that saw her brightest then, the flux, her
+    plume's share, the distance, when that report reaches the flagship, whether it was an active
+    sensor, where she was; and her track: how many sweeps have seen her since it began (seen again
+    within the hold a track goes on; not, a new one begins), whether her class has been made out
+    (her plume seen bright enough: her drive gives her away; or an active sensor's return) and
+    whether she has been identified (her hull and rads seen bright enough, the plume aside), both
+    kept for the track. Each minute's is the one before it
+    with that minute's scan laid over, kept by minute and view: a ship last seen long ago is
+    remembered as long as the minutes are (a jump of more than the hold skips the sweeps between)."""
     key = ("latest", k, view)
     got = fleet._scans.get(key)
     if got is not None:
         return got
     S, n = fleet.sensors, len(fleet.c.row)
     H = int(S.hold_s // SAMPLE_S)
-    base = next((m for m in range(k - 1, max(-1, k - H - 1), -1) if ("latest", m, view) in fleet._scans), None)
+    base = max((x[1] for x in fleet._scans if x[0] == "latest" and x[2] == view and x[1] < k), default=None)
     if base is None:
-        m0, cur = max(0, k - H), {"k": np.full(n, -1, dtype=np.int64), "s": np.zeros(n, dtype=np.int64),
-                                    "flux": np.zeros(n), "d": np.zeros(n), "arrive": np.zeros(n)}
+        cur = {"k": np.full(n, -1, dtype=np.int64), "s": np.zeros(n, dtype=np.int64), "flux": np.zeros(n),
+               "plume": np.zeros(n), "d": np.zeros(n), "arrive": np.zeros(n), "act": np.zeros(n, dtype=bool),
+               "r": np.full((n, 3), np.nan), "n": np.zeros(n, dtype=np.int64), "cls": np.zeros(n, dtype=bool),
+               "ident": np.zeros(n, dtype=bool)}
+        m0 = max(0, k - H)
     else:
-        m0, cur = base + 1, fleet._scans[("latest", base, view)]
+        cur, m0 = fleet._scans[("latest", base, view)], max(base + 1, k - H)
     for m in range(m0, k + 1):
         h = scan(fleet, m, view, own)
         cur = {name: a.copy() for name, a in cur.items()}
         if len(h["s"]):                                  # the brightest hit on each ship this minute
+            cls, ident = np.zeros(n, dtype=bool), np.zeros(n, dtype=bool)
+            np.logical_or.at(cls, h["j"], h["act"] | (h["plume"] >= S.classify * S.thr[h["s"]]))
+            np.logical_or.at(ident, h["j"], ~h["act"] & (h["flux"] - h["plume"] >= S.identify * S.thr[h["s"]]))   # her hull, not her plume
             order = np.argsort(h["flux"])[::-1]
             _, first = np.unique(h["j"][order], return_index=True)
             pick = order[first]
             j = h["j"][pick]
+            new = (cur["k"][j] < 0) | (cur["k"][j] < m - H)         # not held: a new track
+            cur["n"][j] = np.where(new, 1, cur["n"][j] + 1)
+            cur["cls"][j] = np.where(new, False, cur["cls"][j]) | cls[j]
+            cur["ident"][j] = np.where(new, False, cur["ident"][j]) | ident[j]
             cur["k"][j] = m
-            for name in ("s", "flux", "d", "arrive"):
+            for name in ("s", "flux", "plume", "d", "arrive", "act", "r"):
                 cur[name][j] = h[name][pick]
-        cur["k"][cur["k"] < m - H] = -1                    # held no longer
         if len(fleet._scans) >= 4096:
             fleet._scans.pop(next(iter(fleet._scans)))
         fleet._scans[("latest", m, view)] = cur
     return cur
 
 
-
 def arrived(fleet, t: float, view: str, own: np.ndarray) -> dict:
     """Per ship, what the view's flagship holds of her at t: the newest sighting whose report has
     reached it (latest, back a minute at a time while the newer ones are still on their way)."""
     k = int(np.floor((t - fleet.t0) / SAMPLE_S + 1e-9))
-    got = {name: a.copy() for name, a in latest(fleet, k, view, own).items()}
-    late = (got["k"] >= 0) & (got["arrive"] > t)
+    now = latest(fleet, k, view, own)
+    late = (now["k"] >= 0) & (now["arrive"] > t)
+    if not late.any():
+        return now
+    src = np.full(len(late), k)                          # the minute whose summary each row is read from
     H = int(fleet.sensors.hold_s // SAMPLE_S)
     m = k
     while late.any() and m > max(0, k - H):
         m -= 1
         back = latest(fleet, m, view, own)
+        src[late] = m
+        late &= (back["k"] >= 0) & (back["arrive"] > t)
+    got = {name: a.copy() for name, a in now.items()}
+    for m in np.unique(src[src != k]):
+        back, rows = latest(fleet, int(m), view, own), src == m
         for name in got:
-            got[name][late] = back[name][late]
-        late &= (got["k"] >= 0) & (got["arrive"] > t)
+            got[name][rows] = back[name][rows]
     got["k"][late] = -1
     return got

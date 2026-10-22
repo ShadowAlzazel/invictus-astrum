@@ -82,6 +82,39 @@ the angle off her tail and her rads. Scans are kept, by minute and side, and so 
 sighting of each ship as of each minute, so a picture reads one entry however long since she was
 seen: about half a millisecond a picture.
 
+**Active sensors and the ping.** Every ship also carries an active scan (`[detection] active`,
+`parts.toml [sensor.ranging]`: a cold hull by active scan, ~4,400 km, the VIGIL's figure), swept
+only while she pings: **P** with her selected, or Ping in her panel (orders `active` / `passive`;
+whether she pings at a moment is read off the order book, `Fleet.pinging`, so nothing is flown for
+it). An active scan sees any hull in its reach, however cold, and its return makes out her class.
+Every ping shows the pinger: she gives off `emit_mw` (300 MW, for now) to everyone's passive
+sensors while she pings, so a ship that pings beyond what she can see is seen from far beyond her
+own reach. GHOST 3, at 103% of what Task Force 3 sees, is seen the moment she pings.
+
+**How far a track is made out.** Each side's summary of a ship (`detect.latest`) keeps her track:
+how many sweeps have seen her since it began (seen again within the hold, it goes on; else a new
+track), and, kept for the track, whether her class has been made out and whether she has been
+identified. Its stage, shown in her panel:
+
+| stage | when |
+|---|---|
+| detected | seen once |
+| tracked | seen again: a track |
+| classified | her plume seen 4 times over the faintest the sensor sees (her drive gives her away: any burn, from far off), or an active return; and her class in the side's journal |
+| identified | her hull and rads (the plume aside) seen 25 times over it; a friend's ship, always |
+
+A side's journal (`data/factions.toml` `knows`, its faction's) lists the classes it can make out,
+like a bestiary: a class not in it stays a bogey until identified ("Her class is not in our
+journal"). Left out, as now, every class. Classified, a ship is a bogey of her class (PHALAENA
+SPECULATRIX); identified, her name and faction.
+
+**Old tracks.** A track not seen for longer than the hold is not forgotten: for `old_days` (config
+`[picture]`, 7; Settings, Game) it stays an **old track**, a small dotted point where she was last
+seen, with what was known of her then and nothing of her since. Her side can remove one (Remove old
+track in its panel); seen again, she is a new track. A jump of the clock longer than the hold
+skips the sweeps between (the map at its fastest warps): what was seen before it is kept, but a
+ship seen on both sides of it starts a new track.
+
 ## How it reaches the flagship
 
 What a ship sees is logged in the simulation at once; her side learns it when the report reaches
@@ -124,10 +157,11 @@ What the browser is sent is the side's table and nothing more (`Side`, `astrum/s
 - An order may aim at a track by its id; what the side is sent of its orders names it so.
 
 - **detection:** a ship not the view's own is shown once one of its ships' sensors has seen her,
-  where she was when that light left her (`Fleet.past`), for an hour after; not seen, she is not
-  in the picture at all, nor is a formation none of whose ships is seen. Seen 25 times brighter
-  than the faintest its sensor sees (within a fifth of its reach), or a friendly ship: known for
-  what she is. Else a **bogey**: no name, no class, an unknown frame, whoever she is. Not seen again within one
+  where she was when that light left her (`Fleet.past`), for an hour after, then as an old track;
+  not seen, she is not in the picture at all, nor is a formation none of whose ships is seen.
+  Identified (her hull seen 25 times brighter than the faintest its sensor sees, or a friendly
+  ship): known for who she is. Else a **bogey**: no name, an unknown frame, whoever she is; her
+  class shown once classified. Not seen again within one
   and a half of its sensor's sweeps, a lost track (drawn with its uncertainty). Known, a friend's
   ship is friendly; another's is as the scenario writes her to its own side, unknown to any other.
 - **relay:** ... once the report has reached its fleet flagship (off: the moment she is seen).

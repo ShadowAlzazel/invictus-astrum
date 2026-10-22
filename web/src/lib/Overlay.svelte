@@ -179,7 +179,7 @@
     // (hovered, it holds still; selected, that track stands out of it)
     const T = S.tracks ?? {};
     const tops = contacts.filter((c) => !c.parent).flatMap((c) => fold(c));
-    const loose = T.collapse ? tops.filter((b) => byId[b.id].track && b.id !== selId) : [];
+    const loose = T.collapse ? tops.filter((b) => byId[b.id].track && !byId[b.id].old && b.id !== selId) : [];
     for (const b of tops) if (!loose.includes(b)) symbol(byId[b.id], b.s);
     for (const g of clusters(loose, T.cluster_px)) {
       if (g.length < 2) { symbol(byId[g[0].id], g[0].s); continue; }

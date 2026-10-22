@@ -30,7 +30,7 @@ PART_KEYS = {
     "channel": {"name", "type", "current_ka", "spread_pct", "t_per_m", "aperture_mm", "trim_t", "notes"},
     "panel": {"name", "shape", "aperture_m", "emitters", "notes"},
     "cell": {"name", "notes"},
-    "sensor": {"name", "cone_deg", "reach_km", "ref_mw", "revisit_s", "notes"},
+    "sensor": {"name", "cone_deg", "reach_km", "ref_mw", "revisit_s", "active", "emit_mw", "notes"},
 }
 ASSEMBLY_KEYS = {
     "turret": {"name", "driver", "guns", "ring_m", "furniture_t", "handed", "notes"},

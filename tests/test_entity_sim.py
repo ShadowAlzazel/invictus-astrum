@@ -1293,3 +1293,98 @@ def test_an_order_flown_again_keeps_what_was_seen_before_it():
         f._past.clear(); f._scans.clear()
         b = json.loads(host.frame({"system": "sol", "t": T + 600, "scenario": "sol-demo", "view": v}, conn=v + "3"))
         assert (a["ships"], a.get("tracks"), a["contacts"]) == (b["ships"], b.get("tracks"), b["contacts"])
+
+
+def _side_frames(app, f, view, times, **pic):
+    """Pictures for a side at each moment in turn (as the map asks: no jump longer than a track is
+    held), through the app's own host; the last."""
+    import json
+    host, tracks, ships = app.state.sim.host, {}, {}
+    for T in times:
+        f.at(T + 1)
+        fr = json.loads(host.frame({"system": "sol", "t": T, "scenario": "sol-demo", "view": view, "picture": pic}, conn=(view, repr(pic))))
+        tracks = fr.setdefault("tracks", tracks)       # (sent when they change; ships, what changed)
+        for sid, d in fr["ships"].items():
+            ships[sid] = {**ships.get(sid, {}), **d}
+    fr["ships"] = ships
+    return fr
+
+
+def test_a_ping_shows_the_pinger_and_an_active_scan_sees_any_hull():
+    """GHOST 3 stands beyond what Task Force 3 sees; pinging, she is seen (a ping is bright). An
+    active scan sees a cold hull in its reach, and makes out her class."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    from astrum import picture
+    from astrum.detect import scan
+    app = create_app()
+    c, w = TestClient(app), app.state.world
+    f = _demo(w)
+    t0, sc = f.t0, w.scenarios["sol-demo"]
+    tid = app.state.sim.host._side(sc, f, "arcvs").alias["ghost-3"]
+    times = [t0 + 600 * i for i in range(1, 4)]
+    assert tid not in _side_frames(app, f, "arcvs", times)["tracks"]
+    assert c.post("/api/order", json={"scenario": "sol-demo", "unit": "ghost-3", "t": t0 + 600, "active": True, "view": "ghost"}).status_code == 200
+    assert c.post("/api/order", json={"scenario": "sol-demo", "unit": "ghost-3", "t": t0, "active": True}).status_code == 403
+    fr = _side_frames(app, f, "arcvs", times)
+    assert tid in fr["tracks"] and fr["ships"][tid]["active"] is True
+    # an active scan: Kiki pinging, a cold hull 3,000 km off her
+    f.command(Order("kiki-1", t0 + 600, "active", source="map"))
+    k, (i, j) = 30, (f.c.row["kiki-1"], f.c.row["ghost-1"])
+    f.at(t0 + k * 60 + 1)
+    pic = {name: np.copy(a) for name, a in f.past_sample(k).items()}
+    pic["r"][j], pic["thrust"][j], pic["cold"][j] = pic["r"][i] + [3e6, 0, 0], 0.0, 1.0
+    f._past[k] = pic
+    f._scans.clear()
+    h = scan(f, k, "arcvs", picture.own_rows(f, w.factions, "arcvs"))
+    hit = h["act"] & (h["j"] == j)
+    assert hit.any() and abs(h["d"][hit][0] - 3e6) < 1.0 and f.sensors.what[h["s"][hit][0]] == "ranging"
+
+
+def test_a_track_is_detected_tracked_classified_identified_by_its_journal():
+    """Seen once, detected; again, tracked; her plume seen bright enough (her drive gives her away),
+    classified, if her class is in the side's journal; her hull seen bright enough (or a friend's),
+    identified. A side whose journal does not hold her class does not make it out."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    for knows, want in ((None, "classified"), (["bacillus"], "tracked")):
+        app = create_app()
+        w = app.state.world
+        if knows is not None:
+            w.factions["arcvs"]["knows"] = knows
+        f = _demo(w)
+        t0, sc = f.t0, w.scenarios["sol-demo"]
+        side = app.state.sim.host._side(sc, f, "arcvs")
+        g1, g2, jove = side.alias["ghost-1"], side.alias["ghost-2"], side.alias["jove-1"]
+        f.command(Order("ghost-2", t0 + 2400, "burn", burn={"g": 0.005, "bullseye": "system", "bearing": 0, "elevation": 0,
+                                                             "duration_s": 7200}, source="map"))
+        fr = _side_frames(app, f, "arcvs", [t0 + 900 * i for i in range(1, 3)])
+        assert fr["tracks"][g1]["stage"] == "tracked" and fr["tracks"][g1]["name"] == "Bogey"
+        fr = _side_frames(app, f, "arcvs", [t0 + 900 * i for i in range(3, 7)])
+        d = fr["tracks"][g2]
+        assert d["stage"] == want and d["class_known"] is (knows is None) and d["brevity"] == "bogey"
+        assert (d["class_name"] == "PHALAENA SPECULATRIX") is (want == "classified")
+        assert fr["tracks"][jove]["stage"] == "identified" and fr["tracks"][jove]["name"] == "JADF Jove Vigil"
+
+
+def test_a_dropped_track_stays_an_old_track_until_it_expires_or_is_removed():
+    """GHOST 1 runs cold and is lost; past the hold she stays an old track, a point where she was
+    last seen and nothing of her since, for old_days; or until the side removes it."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, w = TestClient(app), app.state.world
+    f = _demo(w)
+    t0, sc = f.t0, w.scenarios["sol-demo"]
+    tid = app.state.sim.host._side(sc, f, "arcvs").alias["ghost-1"]
+    f.command(Order("ghost-1", t0 + 1200, "cold", source="map"))
+    times = [t0 + 1800 * i for i in range(1, 7)]
+    fr = _side_frames(app, f, "arcvs", times)
+    d, at = fr["tracks"][tid], fr["contacts"][tid]
+    assert d["old"] and d["status"] == ["old-track"] and fr["ships"][tid]["velocity_kms"] == [None] * 3 and fr["ships"][tid]["seen_s"] > 3600
+    fr = _side_frames(app, f, "arcvs", [t0 + 1800 * 7])
+    assert fr["contacts"][tid] == at                                   # she stays where she was last seen
+    assert tid not in _side_frames(app, f, "arcvs", [t0 + 1800 * 7], old_days=0.05)["tracks"]   # expired
+    assert c.delete(f"/api/track/sol-demo/{tid}?view=arcvs").status_code == 200
+    assert tid not in _side_frames(app, f, "arcvs", [t0 + 1800 * 8])["tracks"]
+    assert c.delete("/api/track/sol-demo/Tnope?view=arcvs").status_code == 404

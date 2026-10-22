@@ -6,6 +6,9 @@
 #   prefix     before a ship's name (leave it out for none)
 #   branch_of  the faction this is a branch of: its own service, name and prefix, the same state
 #   member_of  the faction a polity whose force this is belongs to: the force is its own, not a branch
+#   knows      its journal: the ship classes it can make out from a plume or an active return, like a
+#              bestiary (["phalaena", "bacillus"]); a class not in it stays a bogey until identified.
+#              Left out: every class. A branch or member reads its faction's.
 
 # ARCVS, the Imperium: the faction. Its two services are its branches.
 [faction.arcvs]

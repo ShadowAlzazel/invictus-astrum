@@ -20,8 +20,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-GOTO, BURN, SETG, COAST, COLD, WARM = 0, 1, 2, 3, 4, 5
-KIND = {"goto": GOTO, "burn": BURN, "setg": SETG, "coast": COAST, "cold": COLD, "warm": WARM}
+GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE = 0, 1, 2, 3, 4, 5, 6, 7
+KIND = {"goto": GOTO, "burn": BURN, "setg": SETG, "coast": COAST, "cold": COLD, "warm": WARM,
+        "active": ACTIVE, "passive": PASSIVE}
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,13 @@ class OrderBook:
         """How many events come before t (a checkpoint at t has given exactly these). Moments are
         seconds from J2000, ~1e9: a microsecond tells them apart where a nanosecond cannot."""
         return int(np.searchsorted(self._qat, t - 1e-6, side="right"))
+
+    def last_of(self, kinds: tuple[int, ...], t: float) -> tuple[np.ndarray, np.ndarray]:
+        """Of the events of these kinds before t, each ship's last: (ships, their events)."""
+        q = self.queue[: self.before(t)][::-1]
+        q = q[np.isin(self.kind[q], kinds)]
+        ships, first = np.unique(self.ship[q], return_index=True)
+        return ships, q[first]
 
     def events_of(self, oid: str) -> np.ndarray:
         """The events still in the queue of the order given with this id."""

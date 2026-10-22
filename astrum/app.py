@@ -130,6 +130,10 @@ class World:
         if problem:
             errors["bullseyes.toml"] = problem
         trees = {}
+        for fid, fac in factions.items():                    # a journal names classes there are
+            for cid in fac.get("knows") or ():
+                if ships and cid not in ships.classes:
+                    errors[f"factions.toml/{fid}"] = f"knows {cid!r}: no such ship class"
         for sc_ in scenarios.values():                       # a scenario's factions are factions.toml's
             for fid in sc_.factions:
                 if fid not in factions:
@@ -505,7 +509,7 @@ def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
     d.update((tree or {}).get(c.id, {}))
     d["has_position"] = bool(c.position)
     fac = world.factions.get(c.faction) if c.faction else None
-    d["faction"] = fac
+    d["faction"] = {k: v for k, v in fac.items() if k != "knows"} if fac else None
     # a ship's name reads with her faction's prefix: AVC Antwerp
     d["name"] = f"{fac['prefix']} {c.callsign}" if fac and fac.get("prefix") and c.echelon == "ship" else c.callsign
     if c.echelon != "ship":                    # a formation's role: as stated, else the first word of its callsign that names one
@@ -602,7 +606,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             "speed_of_light_kms": k.C * KM,
             "ship_classes": len(world.ships.classes) if world.ships else 0,
             "display": {"rules": world.display_rules, "settings": world.settings},
-            "picture": {k: {"label": label, "default": bool(config["picture"].get(k, True))} for k, label in picture.SWITCHES.items()},
+            "picture": {k: {"label": label, "default": config["picture"].get(k, True)} for k, label in picture.SWITCHES.items()},
         }
 
     @app.get("/api/status")
@@ -757,6 +761,13 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         got = await sim.call("withdraw", {"scenario": scenario, "order_id": order_id, "view": view, "player": player})
         if not got["ok"]:
             raise HTTPException(got.get("status", 404), got.get("detail") or f"no order {order_id!r} from the map in {scenario}")
+        return {"ok": True}
+
+    @app.delete("/api/track/{scenario}/{track}")
+    async def track_dismiss(scenario: str, track: str, view: str | None = None, player: str | None = None):
+        """Remove an old track from a side's picture (until she is seen again)."""
+        if not (await sim.call("dismiss", {"scenario": scenario, "track": track, "view": view, "player": player}))["ok"]:
+            raise HTTPException(404, f"no track {track!r} in {scenario}")
         return {"ok": True}
 
     @app.post("/api/order")

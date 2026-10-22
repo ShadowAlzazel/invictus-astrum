@@ -5,10 +5,14 @@ made from it for a view, a faction of the scenario's or MASTER, by functions, ea
 config.toml [picture]:
 
     detection      a ship not the view's own is shown only once one of its own ships' sensors has
-                   seen her (astrum/detect.py: cones that sweep), where she was when that light left
-                   her, for as long as the track is held; known for what she is (her class and
-                   name) only when seen bright enough, else a bogey; not seen again within its
-                   sweeps, a lost track, shown uncertain.
+                   seen her (astrum/detect.py: cones that sweep, and active scans while it pings),
+                   where she was when that light left her, for as long as the track is held; then
+                   for old_days more as an old track, a point where she was last seen. How far she
+                   is made out, her track's stage: detected (seen once), tracked (seen again),
+                   classified (her class made out: her plume seen bright enough, or an active
+                   return; and her class in the side's journal, data/factions.toml knows), identified
+                   (seen bright enough to know who she is; a friendly ship always). Not seen again
+                   within its sweeps, a lost track, shown uncertain.
     relay          ... and its faction knows what its ships see once the report has come up the
                    chain to its fleet flagship (astrum/relay.py); off, the moment they see it
     light_delay    without detection: every other ship, where she was when the light that reaches
@@ -32,7 +36,9 @@ SWITCHES = {                # config.toml [picture], each switched for one map's
     "relay": "Relay: ... once the report reaches our fleet flagship",
     "light_delay": "Light delay (without detection): others as their light reaches us",
     "hide_private": "Hide what only their ships know (tanks, orders, store)",
+    "old_days": "Old tracks kept, after a track is dropped (days)",
 }
+STAGES = ("", "detected", "tracked", "classified", "identified")
 PRIVATE = ("mass_t", "dry_t", "propellant_t", "propellant_share", "dv_left_kms", "dv_spent_kms",
            "max_accel_g", "accel_g", "thrust_mn", "jet_pw", "heat_share", "cold_left_h", "cold")
 
@@ -98,14 +104,26 @@ def friendly_rows(fleet, factions: dict, view: str | None) -> np.ndarray:
                      for i in range(len(c.row))], dtype=bool)
 
 
-def view(fleet, pic: dict, t: float, own: np.ndarray, settings: dict, view_id: str = "", friendly=None) -> dict:
+def journal(fleet, factions: dict, view: str | None) -> np.ndarray:
+    """Which rows' classes the view's side knows (data/factions.toml knows, its root faction's: a
+    list of classes; none listed, every class): only those can be classified."""
+    c = fleet.c
+    knows = factions.get(root(factions, view) or "", {}).get("knows")
+    return np.array([knows is None or (c.spec[i] is not None and c.spec[i].class_id in knows) for i in range(len(c.row))],
+                    dtype=bool)
+
+
+def view(fleet, pic: dict, t: float, own: np.ndarray, settings: dict, view_id: str = "", friendly=None, knows=None) -> dict:
     """The view's picture made from the truth (pic: Fleet.picture at t), in place, by the
     functions settings turn on. Returns, per row, what it adds for the map: how old what is shown
     is (seen_s), how bright she looks to the ship that saw her (sig_w), whether she is shown at all,
-    known for what she is, a lost track; and which rows are hidden (not the view's own)."""
+    her track's stage (STAGES) and whether known for what she is, a lost track, an old one (and the
+    minute she was last seen); and which rows are hidden (not the view's own). knows: the rows
+    whose class the side knows (journal; else all)."""
     n = len(own)
     seen = {"seen_s": np.full(n, np.nan), "sig_w": np.full(n, np.nan), "relay_s": np.full(n, np.nan), "shown": np.ones(n, dtype=bool),
-            "identified": np.ones(n, dtype=bool), "lost": np.zeros(n, dtype=bool),
+            "identified": np.ones(n, dtype=bool), "lost": np.zeros(n, dtype=bool), "old": np.zeros(n, dtype=bool),
+            "stage": np.full(n, 4, dtype=np.int8), "seen_k": np.full(n, -1, dtype=np.int64),
             "hidden": ~own if settings.get("hide_private", True) else np.zeros(n, dtype=bool)}
     if own.all():                                        # MASTER
         return seen
@@ -115,43 +133,55 @@ def view(fleet, pic: dict, t: float, own: np.ndarray, settings: dict, view_id: s
         return seen
     if settings.get("detection", True):
         detection(fleet, pic, t, own, seen, view_id, friendly if friendly is not None else np.zeros(n, dtype=bool),
-                  settings.get("relay", True))
+                  settings.get("relay", True), knows if knows is not None else np.ones(n, dtype=bool),
+                  float(settings.get("old_days", 7)) * 86400.0)
     elif settings.get("light_delay", True):
         light_delay(fleet, pic, t, own, seen)
     return seen
 
 
 def detection(fleet, pic: dict, t: float, own: np.ndarray, seen: dict, view_id: str, friendly: np.ndarray,
-              relayed: bool = True) -> None:
-    """Every ship not the view's own, as its own ships' sensors last saw her: the newest scan
-    (astrum/detect.py) that saw her whose report has reached the flagship, back as far as a track
-    is held; where she was when that light
-    left her (Fleet.past), and how bright she looked to the sensor that saw her. Not seen: not
-    shown. Seen bright enough (identify times the faintest it sees), or a friendly ship: known."""
+              relayed: bool = True, knows: np.ndarray | None = None, old_s: float = 7 * 86400.0) -> None:
+    """Every ship not the view's own, as its own ships' sensors last saw her: the newest sighting
+    (astrum/detect.py) whose report has reached the flagship. Within the hold, a track: where she
+    was when that light left her (Fleet.past), how bright she looked to the sensor that saw her,
+    her track's stage. After it, for old_s, an old track: a point where she was last seen, nothing
+    of her since. Not seen: not shown."""
     S = fleet.sensors
+    n = len(own)
+    knows = np.ones(n, dtype=bool) if knows is None else knows
     got = arrived(fleet, t, view_id, own) if relayed else \
         latest(fleet, int(np.floor((t - fleet.t0) / SAMPLE_S + 1e-9)), view_id, own)
     rows = np.flatnonzero(~own)
     seen["shown"][rows] = False
-    J = rows[got["k"][rows] >= 0]
-    if not len(J):
-        pic["r"][rows] = np.nan
-        return
-    k_, s_, fl_, d_ = got["k"][J], got["s"][J], got["flux"][J], got["d"][J]
-    tau = fleet.t0 + k_ * SAMPLE_S
-    te = tau - d_ / C
-    then = fleet.past(te, J)
-    gone = np.setdiff1d(rows, J)
-    pic["r"][gone] = np.nan
-    for name, val in then.items():
-        pic[name][J] = val
-    seen["shown"][J] = True
-    seen["seen_s"][J] = t - te
-    seen["sig_w"][J] = fl_ * 4 * np.pi * d_ * d_
-    seen["relay_s"][J] = got["arrive"][J] - tau if relayed else 0.0
     seen["identified"][rows] = False
-    seen["identified"][J] = (fl_ >= S.identify * S.thr[s_]) | friendly[J]
-    seen["lost"][J] = (t - (got["arrive"][J] if relayed else tau)) > S.lost * S.period[s_]
+    seen["stage"][rows] = 0
+    tau_all = fleet.t0 + got["k"] * SAMPLE_S
+    J = rows[(got["k"][rows] >= 0) & (t - tau_all[rows] <= S.hold_s)]
+    O = rows[(got["k"][rows] >= 0) & (t - tau_all[rows] > S.hold_s) & (t - tau_all[rows] <= S.hold_s + old_s)]
+    pic["r"][np.setdiff1d(rows, np.concatenate([J, O]))] = np.nan
+    for X in (J, O):
+        if not len(X):
+            continue
+        s_, fl_, d_, tau = got["s"][X], got["flux"][X], got["d"][X], tau_all[X]
+        te = tau - d_ / C
+        if X is J:
+            for name, val in fleet.past(te, X).items():
+                pic[name][X] = val
+            seen["lost"][X] = (t - (got["arrive"][X] if relayed else tau)) > S.lost * S.period[s_]
+        else:                                            # an old track: where she was last seen, and no more
+            pic["r"][X] = got["r"][X]
+            pic["v"][X], pic["dir"][X] = np.nan, np.nan
+            pic["thrust"][X], pic["heat"][X], pic["cold"][X] = 0.0, np.nan, np.nan
+            seen["old"][X] = True
+        seen["shown"][X] = True
+        seen["seen_s"][X] = t - te
+        seen["sig_w"][X] = fl_ * 4 * np.pi * d_ * d_
+        seen["relay_s"][X] = got["arrive"][X] - tau if relayed else 0.0
+        seen["seen_k"][X] = got["k"][X]
+        ident = got["ident"][X] | friendly[X]
+        seen["identified"][X] = ident
+        seen["stage"][X] = np.where(ident, 4, np.where(got["cls"][X] & knows[X], 3, np.where(got["n"][X] >= 2, 2, 1)))
 
 
 def light_delay(fleet, pic: dict, t: float, own: np.ndarray, seen: dict) -> None:
@@ -183,4 +213,5 @@ def light_delay(fleet, pic: dict, t: float, own: np.ndarray, seen: dict) -> None
     c, sig = fleet.c, fleet.signature
     seen["seen_s"][tgt] = t - te
     seen["sig_w"][tgt] = (sig.plume(then["thrust"], c.ve[tgt], then["dir"], toward)
-                          + sig.radiators(then["cold"], then["heat"], c.quiet[tgt]))
+                          + sig.radiators(then["cold"], then["heat"], c.quiet[tgt])
+                          + fleet.sensors.emit[tgt] * fleet.pinging(t)[tgt])

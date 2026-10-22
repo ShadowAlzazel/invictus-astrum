@@ -92,8 +92,15 @@
     <section>
       <h2>Picture</h2>
       {#each Object.entries(gameRules) as [k, spec]}
-        <button class="toggle" class:on={game[k] ?? spec.default} class:mod={(game[k] ?? spec.default) !== spec.default}
-          on:click={() => ongame(k, !(game[k] ?? spec.default))}><i></i>{spec.label}</button>
+        {#if typeof spec.default === 'number'}
+          <label class="f" class:mod={(game[k] ?? spec.default) !== spec.default}><span>{spec.label}</span>
+            <input type="range" min="0" max="30" step="0.5" value={game[k] ?? spec.default} on:input={(e) => ongame(k, Number(e.target.value))} />
+            <output>{game[k] ?? spec.default}</output>
+          </label>
+        {:else}
+          <button class="toggle" class:on={game[k] ?? spec.default} class:mod={(game[k] ?? spec.default) !== spec.default}
+            on:click={() => ongame(k, !(game[k] ?? spec.default))}><i></i>{spec.label}</button>
+        {/if}
       {/each}
     </section>
     <footer><button class="reset" on:click={() => Object.keys(gameRules).forEach((k) => ongame(k, null))}>Back to config.toml</button></footer>

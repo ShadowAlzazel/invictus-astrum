@@ -73,6 +73,7 @@ def ship_columns(fleet, pic: dict, t: float, n: int, seen: dict | None = None) -
         }
     cols = {k: sig6(v) for k, v in cols.items()}
     cols["burning"] = thrust > 0
+    cols["active"] = fleet.pinging(t)[:n]                # sweeping her active sensors: pinging
     cols["velocity_kms"] = sig6(pic["v"][:n] / 1e3)
     cols["mode"] = pic["mode"][:n]
     # how each order stands: a ship in formation reads her lead's, aiming at its aim plus her offset
@@ -95,6 +96,10 @@ def ship_columns(fleet, pic: dict, t: float, n: int, seen: dict | None = None) -
     cols["cold"] = np.where(c.coldt[:n] > 0, (pic["cold"][:n] > 0.5).astype(float), np.nan)
     for k in ("shown", "identified", "lost"):            # how the view knows her (astrum/picture.py)
         cols[k] = seen[k] if seen else np.full(n, k != "lost")
+    old = seen["old"] if seen else np.zeros(n, dtype=bool)
+    if old.any():                                      # an old track: where she was last seen, nothing of her now
+        cols["active"] = cols["active"] & ~old
+        cols["glow_mw"] = np.where(old, np.nan, cols["glow_mw"])
     hidden = seen["hidden"] if seen else np.zeros(n, dtype=bool)
     if hidden.any():                                   # what only she knows
         for k in PRIVATE:
@@ -149,6 +154,8 @@ class ShipEncoder:
                     d[k] = val[k][i]
             if changed["burning"][i]:
                 d["burning"] = bool(cols["burning"][i])
+            if changed["active"][i]:
+                d["active"] = bool(cols["active"][i])
             if changed["cold"][i]:
                 d["cold"] = None if np.isnan(cols["cold"][i]) else bool(cols["cold"][i])
             for k in ("shown", "identified", "lost"):

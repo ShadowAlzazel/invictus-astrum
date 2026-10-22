@@ -25,7 +25,7 @@ CONFIG_SCHEMA = {
     "server": {"host": str, "port": int},
     "live": {"check_seconds": float},
     "sim": {"start": str, "orbit_samples": int, "table_days": float, "run_ahead": bool},
-    "picture": {"detection": bool, "relay": bool, "light_delay": bool, "hide_private": bool},
+    "picture": {"detection": bool, "relay": bool, "old_days": (int, float), "light_delay": bool, "hide_private": bool},
 }
 
 
@@ -105,7 +105,7 @@ def load_style(path: str | Path) -> dict:
         if not 0 <= float(spec.get("fill", 0.0)) <= 1:
             problems.append(f"[affiliation.{a}] fill is an opacity, 0–1")
     for s, spec in doc["status"].items():
-        for key in set(spec) - {"label", "dash", "cross", "opacity", "ellipse"}:
+        for key in set(spec) - {"label", "dash", "cross", "opacity", "ellipse", "scale", "dot"}:
             problems.append(f"[status.{s}] unknown key {key!r}")
     for e, mark in doc["echelon"].items():
         if not isinstance(mark, str):

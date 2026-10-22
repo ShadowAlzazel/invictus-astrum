@@ -23,6 +23,12 @@
   export let onstop = () => {};     // (unit): STOP: the order and the drive cut
   export let ondecel = () => {};    // (unit): DECELERATE: turn and burn to rest on the bullseye
   export let oncold = () => {};     // (cold): fold her wings (run cold) or spread them
+  export let onping = () => {};     // (on): sweep her active sensors (ping) or go quiet
+  export let ondismiss = () => {};  // (track id): remove an old track
+  // how far a track has been made out (astrum/picture.py STAGES)
+  const STAGES = ['detected', 'tracked', 'classified', 'identified'];
+  const STAGE_NOTE = { detected: 'seen once', tracked: 'seen again: a track', classified: 'her class made out: her plume, or an active return',
+                       identified: 'who she is: her hull seen bright enough' };
   let withdrawing = null;           // the order asked about once: a second click takes it back
   const withdraw = (id) => { if (withdrawing !== id) { withdrawing = id; return; } withdrawing = null; onwithdraw(id); };
 
@@ -102,6 +108,12 @@
       {:else if contact}
         <h1>{contact.name ?? contact.callsign}{#if contact.hull_number}<span class="hull">{contact.hull_number}</span>{/if}</h1>
         <p class="kind">{contact.class_name || contact.unit_type || contact.echelon}{#if role}{` · ${role}`}{/if}{#if contact.brevity}{` · ${contact.brevity}`}{/if}{#if contact.pry}{` · Pry-${contact.pry}`}{/if}</p>
+        {#if contact.track}
+          <ol class="stages" title={STAGE_NOTE[contact.stage]}>
+            {#each STAGES as st, i}<li class:on={STAGES.indexOf(contact.stage) >= i} class:at={contact.stage === st}>{st}</li>{/each}
+          </ol>
+          {#if !contact.class_known}<p class="dim note">Her class is not in our journal</p>{/if}
+        {/if}
         <p class="aff" style="--aff:{affColor ?? 'var(--dim)'}">{contact.faction?.name ?? contact.affiliation}{#if contact.faction}<span>{contact.faction.branch_of ? `${contact.faction.branch_of} · ` : contact.faction.member_of ? `${contact.faction.member_of} member world · ` : ''}{contact.affiliation}</span>{/if}</p>
       {:else}
         <h1>Point</h1>
@@ -195,15 +207,18 @@
       <section class="ship">
         <h2>Ship <span class="dim">{doing}</span></h2>
         <dl class="tight">
-          {#if contact.brevity === 'bogey'}<dt title="Not yet seen bright enough to be known for what she is">Called</dt><dd>BOGEY</dd>{/if}
+          {#if contact.old}<dt title="Not seen for longer than a track is held: where she was last seen, and nothing of her since">Track</dt><dd class="hot">old</dd>{/if}
+          {#if contact.brevity === 'bogey'}<dt title="Not yet seen bright enough to be known for who she is">Called</dt><dd>BOGEY</dd>{/if}
           {#if ship.lost}<dt title="Not seen again within her sensors' sweeps: where she was last seen">Track</dt><dd class="hot">lost</dd>{/if}
           <dt title="How old the light is that showed her: its flight to the ship of ours that saw her, and the report's up to our flagship">Seen</dt><dd>{age(ship.seen_s)} ago</dd>
           {#if ship.relay_s > 0.5}<dt class="sub" title="How long the report took to come up the chain to our fleet flagship">relayed</dt><dd class="sub">{age(ship.relay_s)}</dd>{/if}
           <dt>Drive</dt><dd class:hot={ship.burning}>{ship.burning ? 'burning' : 'not burning'}</dd>
           <dt>Signature</dt><dd>{watts(ship.sig_w)}</dd>
-          <dt class="sub">her rads</dt><dd class="sub">{watts(ship.glow_mw * 1e6)}</dd>
-          {#if ship.velocity_kms}<dt>Speed</dt><dd>{n(Math.hypot(...ship.velocity_kms), 2)} km/s</dd>{/if}
+          {#if !contact.old}<dt class="sub">her rads</dt><dd class="sub">{watts(ship.glow_mw * 1e6)}</dd>{/if}
+          {#if ship.velocity_kms && !contact.old}<dt>Speed</dt><dd>{n(Math.hypot(...ship.velocity_kms), 2)} km/s</dd>{/if}
+          {#if ship.active}<dt title="Her active sensors sweep: each ping shows her">Active</dt><dd class="hot">pinging</dd>{/if}
         </dl>
+        {#if contact.old}<button class="act" on:click={() => ondismiss(contact.id)} title="Take this old track off the map (if she is seen again, a new track)">Remove old track</button>{/if}
       </section>
     {:else if ship}
       <section class="ship">
@@ -258,6 +273,9 @@
           {#if ship.cold != null}<button class="act" on:click={() => oncold(!ship.cold)}
             title={ship.cold ? 'Spread her wings: her rads shed her heat and empty her store, glowing the brighter for it' : 'Fold her wings: her rads shed little while her store fills'}>{ship.cold ? 'Spread wings' : 'Run cold'}</button>{/if}
         {/if}
+        <h3>Sensors <span class="dim">{ship.active ? 'pinging: seen pinging' : 'passive'}</span></h3>
+        <button class="act" on:click={() => onping(!ship.active)}
+          title={ship.active ? 'Stop the active sweep: passive only' : 'Sweep her active sensors: any hull in reach is seen and made out, and every ping shows her far beyond'}>{ship.active ? 'Go quiet' : 'Ping'} <kbd>{cap($keymap.ping)}</kbd></button>
         {#if spec?.ranges?.length}
           <h3><button class="fold" class:shut={shut.weapons} on:click={() => flip('weapons')}><i></i>Weapons</button>{#if shut.weapons} <span class="dim">{spec.ranges.map((r) => `${r.what} ${km(r.km)}`).join(' · ')}</span>{/if}</h3>
           {#if !shut.weapons}
@@ -284,7 +302,7 @@
         {/if}
       </section>
     {/if}
-    {#if contact.status?.length}<p class="dim">Status: {contact.status.join(', ')}</p>{/if}
+    {#if contact.status?.length}<p class="dim">Status: {contact.status.map((s) => style?.status?.[s]?.label ?? s).join(', ')}</p>{/if}
     {#if contact.notes}<p class="note">{contact.notes}</p>{/if}
   {:else if probe}
     <dl>
@@ -355,6 +373,11 @@
   .withdraw { background: none; border: 1px solid var(--rule); color: var(--dim); font: inherit; font-size: 10px; padding: 0 5px; margin-left: 6px; cursor: pointer; }
   .withdraw:hover, .withdraw.sure { color: var(--fuchsia); border-color: var(--fuchsia); }
   .acts { margin: 4px 0 0; display: flex; gap: 6px; }
+  .stages { display: flex; gap: 2px; list-style: none; padding: 0; margin: 6px 0 2px; font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .stages li { flex: 1; text-align: center; padding: 2px 0; border-top: 2px solid var(--rule); color: var(--dim); }
+  .stages li.on { border-top-color: var(--violet); color: var(--ink); }
+  .stages li.at { border-top-color: var(--fuchsia); color: var(--fuchsia); }
+  .note { margin: 0 0 4px; font-size: 10px; }
   .acts .withdraw { margin-left: 0; }
   .order .form { font-size: 10px; margin-top: 3px; }
   /* the chain of command, read upward: a ladder of rungs joined by a rail */

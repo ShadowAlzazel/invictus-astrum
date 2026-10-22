@@ -266,6 +266,20 @@
       say(`${map.contactName(unit)}: decelerate, ${Object.values(r.ships)[0]?.goal?.label ?? 'to rest'} at ${g.toFixed(2)} g`);
     } catch (err) { say(String(err.message ?? err)); }
   }
+  // active sensors: sweep (ping) or go quiet; a formation pings if none of its ships does, else goes quiet
+  async function setPing(on = null, unit = sel?.id) {
+    if (!scenario || !unit || sel?.kind !== 'contact') return say(`Select a ship or a formation: ${cap($keymap.ping)} pings`);
+    const ships = shipsUnder(contacts, state, unit);
+    on ??= !ships.some((id) => state?.ships?.[id]?.active);
+    try {
+      await api.order({ scenario: scenario.id, unit, t, active: on, player: playerId, view: side });
+      say(`${map.contactName(unit)}: ${on ? 'active sensors sweeping: pinging (and seen pinging)' : 'active sensors quiet'}`);
+    } catch (err) { say(String(err.message ?? err)); }
+  }
+  async function dismissTrack(id) {
+    try { await api.dismissTrack(scenario.id, id, side, playerId); select(null); say('Old track removed'); }
+    catch (err) { say(String(err.message ?? err)); }
+  }
   async function withdrawOrder(id) {
     try { await api.withdrawOrder(scenario.id, id, side, playerId); say('Order withdrawn: as if it had never been given'); }
     catch (err) { say(String(err.message ?? err)); }
@@ -327,6 +341,7 @@
     } else if (is(e, 'order') && mode === 'map') { startOrder(); return; }
     else if (is(e, 'stop') && mode === 'map') { stopOrder(); return; }
     else if (is(e, 'decel') && mode === 'map') { decelOrder(); return; }
+    else if (is(e, 'ping') && mode === 'map') { setPing(); return; }
     else if ((is(e, 'up') || is(e, 'down')) && mode === 'map') {
       const up = is(e, 'up'), ship = state?.ships?.[sel?.id];
       if (ship?.goal) {                                     // a ship: her own telegraph
@@ -533,7 +548,7 @@
 <InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold}
-  master={side === 'master'} onstop={stopOrder} ondecel={decelOrder} />
+  master={side === 'master'} onstop={stopOrder} ondecel={decelOrder} onping={setPing} ondismiss={dismissTrack} />
 {/if}
 {/if}
 

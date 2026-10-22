@@ -223,12 +223,13 @@ def predict(r, v, a, t0, R0, V0, moving, knots, knot_t0, knot_dt, standoff, node
 
 
 @jit
-def detect(srow, axis, cosr, thr, tgt, r, thrust, ve, dirn, cold, heat, quiet, aspect_deg, aspect_share,
-           cold_share, recover, out_s, out_j, out_flux, out_d):
+def detect(srow, axis, cosr, thr, tgt, r, thrust, ve, dirn, cold, heat, quiet, emit, aspect_deg, aspect_share,
+           cold_share, recover, out_s, out_j, out_flux, out_d, out_plume):
     """astrum/detect.py scan, compiled: every sensor given (its ship srow, its cone's axis and
     cos of its half-angle, the faintest flux it sees) against every ship in tgt: inside its cone, and
-    bright enough toward it (her plume at the angle off her tail, her rads). Writes the hits
-    (sensor, ship, flux W/m², distance m) and returns how many."""
+    bright enough toward it (her plume at the angle off her tail, her rads, and her pings: emit, W).
+    Writes the hits (sensor, ship, flux W/m², distance m, the plume's share of the flux) and
+    returns how many."""
     k = 0
     for s in range(srow.shape[0]):
         o = srow[s]
@@ -244,9 +245,12 @@ def detect(srow, axis, cosr, thr, tgt, r, thrust, ve, dirn, cold, heat, quiet, a
             if ux * axis[s, 0] + uy * axis[s, 1] + uz * axis[s, 2] < cosr[s]:
                 continue
             p = 0.0
+            plume = 0.0
             if thrust[j] > 0.0:                      # toward her: (-u); off her tail (-dir): cos = u · dir
                 c = min(max(ux * dirn[j, 0] + uy * dirn[j, 1] + uz * dirn[j, 2], -1.0), 1.0)
                 p = 0.5 * thrust[j] * ve[j] * np.interp(math.degrees(math.acos(c)), aspect_deg, aspect_share)
+                plume = p
+            p += emit[j]
             if cold[j] > 0.5:
                 p += cold_share * quiet[j]
             else:
@@ -254,6 +258,7 @@ def detect(srow, axis, cosr, thr, tgt, r, thrust, ve, dirn, cold, heat, quiet, a
             f = p / (4.0 * math.pi * d * d)
             if f >= thr[s]:
                 out_s[k], out_j[k], out_flux[k], out_d[k] = s, j, f, d
+                out_plume[k] = plume / (4.0 * math.pi * d * d)
                 k += 1
     return k
 
@@ -599,5 +604,5 @@ def warm_up() -> None:
             0.9, 2000.0, 10.0, 0.02, 1.0, 120.0, 1200.0, 10)
     i1, f1, f3 = np.zeros(1, dtype=np.int64), np.zeros(1), np.zeros((1, 3))
     detect(i1, f3, f1, f1, np.ones(1, dtype=np.int64), np.zeros((2, 3)), np.zeros(2), np.zeros(2), np.zeros((2, 3)),
-           np.zeros(2), np.zeros(2), np.zeros(2), np.array([0.0, 180.0]), np.array([1.0, 0.0]), 0.01, 4.0,
-           i1.copy(), i1.copy(), f1.copy(), f1.copy())
+           np.zeros(2), np.zeros(2), np.zeros(2), np.zeros(2), np.array([0.0, 180.0]), np.array([1.0, 0.0]), 0.01, 4.0,
+           i1.copy(), i1.copy(), f1.copy(), f1.copy(), f1.copy())

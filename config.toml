@@ -30,3 +30,4 @@ detection = true       # a ship not its own is shown once its own ships' sensors
 relay = true           # ... once the report has come up to its fleet flagship (off: the moment she is seen)
 light_delay = true     # (without detection) a ship not its own is shown as her light reached the nearest of its own
 hide_private = true    # ... and what only that ship knows (tanks, orders, store) is not shown
+old_days = 7           # a track dropped stays this long as an old track: a point where she was last seen

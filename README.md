@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 187 tests
+python -m pytest -q tests             # 192 tests
 ```
 
 The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
@@ -76,6 +76,7 @@ the author*. The format is in `data/ships/README.md`.
 | Others' ships | drawn as tracks; tracks close together on screen collapse into one symbol by count: a flight (up to 5), a group (up to 20), a task force (more), the map's own reading, set in Settings, Display, Others' ships. Click one to pull that track out; zoom in to resolve |
 | U | up the chain of command: select the formation the selected unit answers to |
 | Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
+| P | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond) |
 | X | DECELERATE the selection: a new order to turn and burn to rest on the active bullseye (on the star centre: by the body that pulls hardest) and hold there |
 | `,` | settings |
 | Double-click, or F | centre on the selection and ride with it |

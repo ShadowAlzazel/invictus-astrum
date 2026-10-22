@@ -138,7 +138,9 @@ recover = 4          # wings spread, her store empties this many times faster th
 # where she was when that light left her.
 [detection]
 standard = { sensor = "passive", cones = 6 }
-identify = 25        # seen this many times over the faintest a sensor sees: her class and name are known (within a fifth of its reach)
+active = { sensor = "ranging", cones = 1 }      # every ship's active scan: swept only while she pings (an order)
+classify = 4         # her plume seen this many times over the faintest a sensor sees (her drive gives her away): her class is known, if it is in the side's journal
+identify = 25        # her hull and rads (her plume aside) seen this many times over the faintest a sensor sees: who she is is known (within a fifth of its reach)
 lost = 1.5           # a track not seen again within this many of its sensor's sweeps is called lost: shown where it was, uncertain
 hold_s = 3600        # ... and after this long, dropped
 
