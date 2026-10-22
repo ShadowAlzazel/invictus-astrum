@@ -753,9 +753,10 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     @app.delete("/api/order/{scenario}/{order_id}")
     async def order_withdraw(scenario: str, order_id: str, view: str | None = None, player: str | None = None):
         """Take back an order given from the map: as if it had never been given (Fleet.withdraw);
-        only the view's own (MASTER: any)."""
-        if not (await sim.call("withdraw", {"scenario": scenario, "order_id": order_id, "view": view, "player": player}))["ok"]:
-            raise HTTPException(404, f"no order {order_id!r} from the map in {scenario}")
+        MASTER's alone (a side stops or decelerates instead)."""
+        got = await sim.call("withdraw", {"scenario": scenario, "order_id": order_id, "view": view, "player": player})
+        if not got["ok"]:
+            raise HTTPException(got.get("status", 404), got.get("detail") or f"no order {order_id!r} from the map in {scenario}")
         return {"ok": True}
 
     @app.post("/api/order")

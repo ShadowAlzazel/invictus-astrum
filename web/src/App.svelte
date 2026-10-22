@@ -247,6 +247,25 @@
       say(`${map.contactName(sel.id)}: ${cold ? 'wings folded, running cold' : 'wings spread'}`);
     } catch (err) { say(String(err.message ?? err)); }
   }
+  // STOP: the order and the drive cut; she flies on as she goes, under gravity alone
+  async function stopOrder(unit = sel?.id) {
+    if (!scenario || !unit || sel?.kind !== 'contact') return say(`Select a ship or a formation to stop: ${cap($keymap.stop)}`);
+    try {
+      await api.order({ scenario: scenario.id, unit, t, g: 0, player: playerId, view: side });
+      say(`${map.contactName(unit)}: STOP, drive cut, flying on as she goes`);
+    } catch (err) { say(String(err.message ?? err)); }
+  }
+  // DECELERATE: a new order, to turn and burn to rest in the active bullseye's frame, and hold there
+  async function decelOrder(unit = sel?.id) {
+    if (!scenario || !unit || sel?.kind !== 'contact') return say(`Select a ship or a formation to decelerate: ${cap($keymap.decel)}`);
+    const grp = group(state, contacts, shipsUnder(contacts, state, unit));
+    const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
+    if (!(g > 0)) return say('No ship there has a drive to brake with.');
+    try {
+      const r = await api.order({ scenario: scenario.id, unit, t, g, halt: { bullseye: bullseyeId }, player: playerId, view: side });
+      say(`${map.contactName(unit)}: decelerate, ${Object.values(r.ships)[0]?.goal?.label ?? 'to rest'} at ${g.toFixed(2)} g`);
+    } catch (err) { say(String(err.message ?? err)); }
+  }
   async function withdrawOrder(id) {
     try { await api.withdrawOrder(scenario.id, id, side, playerId); say('Order withdrawn: as if it had never been given'); }
     catch (err) { say(String(err.message ?? err)); }
@@ -306,6 +325,8 @@
       if (e.key === 'Escape' || is(e, 'order')) { ordering = null; return; }
       if (orderTool?.key(e)) { e.preventDefault(); return; }
     } else if (is(e, 'order') && mode === 'map') { startOrder(); return; }
+    else if (is(e, 'stop') && mode === 'map') { stopOrder(); return; }
+    else if (is(e, 'decel') && mode === 'map') { decelOrder(); return; }
     else if ((is(e, 'up') || is(e, 'down')) && mode === 'map') {
       const up = is(e, 'up'), ship = state?.ships?.[sel?.id];
       if (ship?.goal) {                                     // a ship: her own telegraph
@@ -511,7 +532,8 @@
 {#if !showSettings}
 <InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
-  onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold} />
+  onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold}
+  master={side === 'master'} onstop={stopOrder} ondecel={decelOrder} />
 {/if}
 {/if}
 

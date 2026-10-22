@@ -355,13 +355,23 @@ class Fleet:
 
     def past_sample(self, k: int) -> dict:
         """The fleet pictured at whole minute k from the scenario's start, kept: what was flown does
-        not change unless it is flown again (a setback forgets them all)."""
+        not change unless it is flown again (_forget; a setback forgets them all)."""
         got = self._past.get(k)
         if got is None:
             if len(self._past) >= 512:
                 self._past.pop(min(self._past))
             got = self._past[k] = self.picture(self.t0 + k * TIMELINE_S)
         return got
+
+    def _forget(self, t: float) -> None:
+        """What was pictured, and what was seen, from the whole minute before t on: flown again.
+        Before it, every row flies as it did (the replay gives the same orders), so it stands: the
+        next picture scans the minutes since, not the hour a track is held."""
+        k0 = math.floor((t - self.t0) / TIMELINE_S)
+        for k in [k for k in self._past if k >= k0]:
+            del self._past[k]
+        for key in [key for key in self._scans if key[key[0] == "latest"] >= k0]:
+            del self._scans[key]
 
     def _touch(self, i: int) -> None:
         """What she was given (her order, her place, her burn) changed at _now: a new version, with
@@ -465,12 +475,11 @@ class Fleet:
         once up to t_end and the rest of the way after (Mend). Returns the given events' ships as
         they stand once given."""
         B = self.book
-        self._past.clear()                                # what was pictured (and seen) from t_o on is flown again
-        self._scans.clear()
         rows = self._affected(ships, set())
         if self.mending is not None:                      # an earlier order's rows still on their way: with these
             rows |= self.mending.rows
             t_o = min(t_o, self.mending.t)
+        self._forget(t_o)
         k = max(bisect.bisect_right([c[0] for c in self._checkpoints], t_o) - 1, 0)
         t_k, snap, st_t = self._checkpoints[k]
         while True:                                       # the rows they touch, then and now
@@ -940,7 +949,7 @@ class Fleet:
                         keys[key] = -1
                         continue
                     kinds.append(0); trow.append(-1); knots.append(np.array(pts))
-                hold.append("bullseye" not in spec)
+                hold.append("bullseye" not in spec and "at_m" not in spec)     # a point: flown to, not stood off
                 keys[key] = len(kinds) - 1
             of_given[gid] = keys[key]
             if keys[key] < 0:
@@ -1133,8 +1142,8 @@ class Fleet:
 
     def _point(self, spec: dict, t: float, placed: dict | None = None, depth: int = 0) -> np.ndarray | None:
         """Where a target or a station is at t (system frame, m): an AER from a bullseye, a unit,
-        or a body, each with an optional fixed offset."""
-        off = np.asarray(spec.get("offset_m", (0.0, 0.0, 0.0)), dtype=float)
+        or a body (or a point carried with it: at_m off its centre), each with an optional fixed offset."""
+        off = np.asarray(spec.get("offset_m", (0.0, 0.0, 0.0)), dtype=float) + np.asarray(spec.get("at_m", (0.0, 0.0, 0.0)), dtype=float)
         if "bullseye" in spec or "body" in spec:      # the same for every ship that asks: worked out once a moment
             key = (spec.get("player"), spec.get("bullseye"), tuple(spec.get("aer") or ()), spec.get("body"), t)
             p = self._point_cache.get(key)
@@ -1185,7 +1194,7 @@ class Fleet:
                 if len(cache) + len(miss) > 50000:
                     cache.clear()
                 cache.update(zip((key + (t,) for t in miss), P))
-        off = np.asarray(spec.get("offset_m", (0.0, 0.0, 0.0)), dtype=float)
+        off = np.asarray(spec.get("offset_m", (0.0, 0.0, 0.0)), dtype=float) + np.asarray(spec.get("at_m", (0.0, 0.0, 0.0)), dtype=float)
         return [p + off if (p := cache.get(key + (t,))) is not None else self._point(spec, t) for t in ts]
 
     def _station_pos(self, i: int, t: float, placed: dict | None = None, depth: int = 0) -> np.ndarray | None:
@@ -1302,6 +1311,7 @@ class Fleet:
         self._now = t
         tg = c.target_of(i)
         if "bullseye" not in tg:                      # stand off the unit or body where she stopped, her place in the formation kept
+            tg.pop("at_m", None)                      # (a point carried with a body: held off its centre, as any is)
             R = self._point({k: v for k, v in tg.items() if k != "offset_m"}, t)
             tg["offset_m"] = (aim - R).tolist() if R is not None else [0.0, 0.0, 0.0]
         tg["label"] = self.book.of(c.order[i]).label
@@ -1342,7 +1352,7 @@ class Fleet:
             tg, stand = g.target, 0.0
             if "unit" in tg:
                 stand = STANDOFF_UNIT_M
-            elif "body" in tg:
+            elif "body" in tg and "at_m" not in tg:
                 b = next((b for b in self.system.massive() if b.id == tg["body"]), None)
                 a = min(g.g * G0, c.max_accel(i))
                 stand = max(STANDOFF_BODY_R * (getattr(b, "radius_eq", 0.0) or 0.0), 1e6,

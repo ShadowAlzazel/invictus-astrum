@@ -98,7 +98,7 @@ export function orderGroups(state, contacts, ships) {
     const s = state?.ships?.[id];
     if (!s?.goal) continue;
     const key = s.goal.order_id ?? id;
-    if (!out.has(key)) out.set(key, { id: key, label: s.goal.label, by: s.goal.by ?? id, source: s.goal.source, ships: [], here: 0 });
+    if (!out.has(key)) out.set(key, { id: key, label: s.goal.label, halt: !!s.goal.target?.halt, by: s.goal.by ?? id, source: s.goal.source, ships: [], here: 0 });
     out.get(key).here += 1;
   }
   for (const [id, s] of Object.entries(state?.ships ?? {})) {

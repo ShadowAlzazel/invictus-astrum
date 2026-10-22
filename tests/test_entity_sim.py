@@ -937,6 +937,8 @@ def test_orders_are_withdrawn_from_the_map():
     assert goal["source"] == "map"
     from urllib.parse import quote
     url = f"/api/order/sol-demo/{quote(goal['order_id'], safe='')}"         # ids carry a '#': the map encodes it
+    assert c.delete(url).status_code == 403                                   # a side cannot: only MASTER
+    url += "?view=master"
     assert c.delete(url).status_code == 200
     assert f.at(f.t0 + 3600)["kiki-1"].state.goal is None
     assert c.delete(url).status_code == 404
@@ -1219,3 +1221,75 @@ def test_each_side_plays_and_each_map_switches_its_own_picture():
     assert now["ships"][tid]["seen_s"] < late["seen_s"] - 600              # seen as her sensors saw her, not as reported
     truth = json.loads(host.frame({**req, "picture": {"detection": False, "light_delay": False, "hide_private": False}}, conn=1))
     assert len(truth["tracks"]) == len(f.c.ids) - 106 and truth["ships"][tid]["mass_t"] > 0
+
+
+def test_stop_flies_on_and_decelerate_comes_to_rest_on_the_bullseye():
+    """STOP: the order and the drive cut, she flies on as she goes. DECELERATE: a new order, to turn
+    and burn to rest in the bullseye's frame where she would come to rest, and hold station there."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, w = TestClient(app), app.state.world
+    f = _demo(w)
+    t = f.t0 + 600
+    req = {"scenario": "sol-demo", "player": "arcvs"}
+    assert c.post("/api/order", json={**req, "unit": "kiki", "t": t, "g": 0.3, "target": {"body": "mars"}}).status_code == 200
+    T = t + 3600
+    f.at(T)
+    i, j = f.c.row["kiki-1"], f.c.row["kiki-2"]
+    r = c.post("/api/order", json={**req, "unit": "kiki-2", "t": T, "g": 0})                 # STOP
+    assert r.status_code == 200 and r.json()["ship"]["goal"] is None
+    v = f.picture(T)["v"][j].copy()
+    f.at(T + 600)
+    assert f.picture(T + 600)["thrust"][j] == 0 and np.linalg.norm(f.picture(T + 600)["v"][j] - v) < 0.01 * np.linalg.norm(v)
+    r = c.post("/api/order", json={**req, "unit": "kiki-1", "t": T, "g": 0.3, "halt": {"bullseye": "burn"}})
+    goal = r.json()["ship"]["goal"]
+    assert r.status_code == 200 and goal["target"]["halt"] and goal["label"].startswith("hold ") and goal["source"] == "map"
+    tb = w.table("sol")
+    B = lambda ts: w.resolved("sol", "arcvs", tb.positions(ts), only="burn")["burn"]
+    f.at(T + 3 * 3600 + 1)
+    p0, p1 = f.picture(T + 3 * 3600), f.picture(T + 3 * 3600 + 1)
+    drift = p1["r"][i] - B(T + 3 * 3600 + 1).point(*B(T + 3 * 3600).aer(p0["r"][i]))
+    assert np.linalg.norm(drift) < 1.0 and f.c.ship(i).as_dict()["mode"] == "station"   # at rest on the bullseye, held
+    aim = np.array(goal["target"]["aer"][2]) if "aer" in goal["target"] else None
+    assert aim is not None and abs(B(T + 3 * 3600).aer(p0["r"][i])[2] - aim) < 0.05 * aim
+    assert c.post("/api/order", json={**req, "unit": "kiki-1", "t": T, "g": 0.3, "halt": {"bullseye": "nope"}}).status_code == 400
+    # on the star centre: no frame to stop in (she would shed her orbit); the body that pulls on her hardest instead
+    T2 = T + 3 * 3600
+    r = c.post("/api/order", json={**req, "unit": "kiki-3", "t": T2, "g": 0.3, "halt": {"bullseye": "system"}})
+    goal, k = r.json()["ship"]["goal"], f.c.row["kiki-3"]
+    assert r.status_code == 200 and goal["target"]["body"] in ("earth", "moon") and goal["label"].endswith(("Earth", "Moon"))
+    E = lambda ts: w.table("sol").positions(ts)[goal["target"]["body"]]
+    f.at(T2 + 6 * 3600 + 1)
+    p0, p1 = f.picture(T2 + 6 * 3600), f.picture(T2 + 6 * 3600 + 1)
+    assert np.linalg.norm((p1["r"][k] - E(T2 + 6 * 3600 + 1)) - (p0["r"][k] - E(T2 + 6 * 3600))) < 1.0     # at rest by it
+
+
+def test_an_order_flown_again_keeps_what_was_seen_before_it():
+    """A telegraph moved in the past flies again only from its moment: what was pictured and seen
+    before it stands (the next picture scans the minutes since, not the hour a track is held), and
+    the picture is the one forgetting everything would give."""
+    import json
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    from astrum.simhost import SimHost
+    app = create_app()
+    c, w = TestClient(app), app.state.world
+    f = _demo(w)
+    t = f.t0 + 600
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.1, "player": "arcvs", "target": {"body": "mars"}})
+    oid = r.json()["ships"]["kiki-1"]["goal"]["order_id"]
+    host, T = SimHost(w), t + 2 * 3600
+    f.at(T + 3600)
+    for v in ("arcvs", "ghost"):
+        host.frame({"system": "sol", "t": T, "scenario": "sol-demo", "view": v}, conn=v)
+    c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": T - 1800, "g": 0.2, "keep_target": True,
+                               "order_id": oid, "player": "arcvs"})
+    k0 = int((T - 1800 - f.t0) // 60)
+    assert f._past and max(f._past) < k0 and all(k[k[0] == "latest"] < k0 for k in f._scans)
+    f.at(T + 600)
+    for v in ("arcvs", "ghost"):
+        a = json.loads(host.frame({"system": "sol", "t": T + 600, "scenario": "sol-demo", "view": v}, conn=v + "2"))
+        f._past.clear(); f._scans.clear()
+        b = json.loads(host.frame({"system": "sol", "t": T + 600, "scenario": "sol-demo", "view": v}, conn=v + "3"))
+        assert (a["ships"], a.get("tracks"), a["contacts"]) == (b["ships"], b.get("tracks"), b["contacts"])

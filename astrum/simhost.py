@@ -38,6 +38,7 @@ from .app import contact_dict
 from .encode import ShipEncoder, ship_columns
 from .loader import contact_positions
 from .placement import plan
+from .entity import G0
 from .sim import BLOCK_S, Order
 from .timescale import iso
 from .zones import magnetopause
@@ -49,6 +50,8 @@ LOOKAHEAD_WALL_S = 3.0        # the run-ahead keeps this much of the clock's wal
 LOOKAHEAD_S = (600.0, 12 * 3600.0)   # ... within these (sim seconds); the timeline holds a day and a half
 IDLE_S = 60.0                 # a fleet nobody has asked about for this long is left alone
 ARRIVALS_POLL_S = 0.005       # how often the arrivals thread looks for questions
+BRAKE_SHARE = 0.9             # of what she holds, what guidance brakes with (kernels._guide): where a halt comes to rest
+DRIFT_S = 60.0                # how a bullseye's frame moves, read over this
 _order_n = itertools.count(1)   # order ids stay unique however many are given in one second
 
 
@@ -172,7 +175,10 @@ def ordering(side: Side, fleet, ships: list[str]) -> None:
 def give_order(world, req: dict, side_of=None) -> dict:
     """An order at the map's clock, for one ship or for every ship under a formation.
     target: {bullseye, aer: [deg, deg, km]} (the ordering player's bullseye, so the point moves
-    with its frame), {unit} (one of the side's units, or one of its tracks), or {body}. side_of
+    with its frame), {unit} (one of the side's units, or one of its tracks), or {body}; or halt:
+    {bullseye} in place of a target, DECELERATE: turn and burn at g to rest in that bullseye's
+    frame, where she would come to rest, and hold there (a go-to, so it is an order like any
+    other). g of 0 (STOP): the order and the drive cut, she flies on as she goes. side_of
     (scenario, fleet, view): the side's table (Side), kept (else made). g is the acceleration held, each ship capped at her most;
     0 cuts the drive. keep_target: only the g of the order they are flying changes. cold: true
     folds their wings (they run cold, as long as their stores last), false spreads them.
@@ -210,7 +216,12 @@ def give_order(world, req: dict, side_of=None) -> dict:
         return order_reply(fleet, t, unit, ships, [Order(sid, t, "coast", source="map") for sid in ships], side)
     s, _ = world.system(sc.system)
     tg, player = req.get("target") or {}, req.get("player") or sc.player
-    if "bullseye" in tg:
+    halt = req.get("halt")
+    if halt is not None:
+        tg = halt_target(world, sc, fleet, player, ships, tp, float(g), (halt or {}).get("bullseye", "system"))
+    if "at_m" in tg:                                 # a point carried with a body (a halt)
+        target = tg
+    elif "bullseye" in tg:
         listed = world.bullseyes(sc.system, player, listed=True)        # not a deleted one
         if tg["bullseye"] not in listed:
             raise OrderRefused(400, f"no bullseye {tg['bullseye']!r} for {player!r}")
@@ -219,6 +230,8 @@ def give_order(world, req: dict, side_of=None) -> dict:
         tilt = "level" if abs(el) < 0.5 else f"{'Eve' if el > 0 else 'Haid'} {abs(el):.0f}°"
         target = {"bullseye": tg["bullseye"], "player": player, "aer": [brg, el, rng * 1e3],
                   "label": tg.get("label") or f"{round(brg) % 360:03d}° {tilt}, {rng:,.0f} km from {bname}"}
+        if halt is not None:
+            target.update(halt=True, label=f"hold {target['label']}")
     elif "unit" in tg:                               # one of the side's units, or one of its tracks
         cid = side.rows.get(tg["unit"]) or (tg["unit"] if tg["unit"] in side.units else None)
         c = sc.contacts.get(cid or "")
@@ -246,6 +259,42 @@ def give_order(world, req: dict, side_of=None) -> dict:
     return order_reply(fleet, t, unit, ships, orders, side)
 
 
+def halt_target(world, sc, fleet, player: str, ships: list[str], t: float, g: float, bid: str) -> dict:
+    """DECELERATE: where ships flying as one come to rest in a frame, braking at g (the slowest's
+    most, if less) from how they move in it at t, held there. The frame is the bullseye's (a point
+    fixed in it moves as it does: its origin carried, its axes turned); the star centre's is no
+    frame to stop in (she would shed her orbit), so then it is the body that pulls on her hardest,
+    the star aside, and the point is carried with it. As a target: {bullseye, aer [deg, deg, km]},
+    or {body, at_m}."""
+    if bid not in world.bullseyes(sc.system, player, listed=True):
+        raise OrderRefused(400, f"no bullseye {bid!r} for {player!r}")
+    table = world.table(sc.system)
+    rows = [fleet.c.row[sid] for sid in ships]
+    with fleet.lock:
+        pic = fleet.picture(t)
+    r, v = pic["r"][rows].mean(axis=0), pic["v"][rows].mean(axis=0)
+    a = min(min(g * G0, fleet.c.max_accel(i)) for i in rows)
+    pos, later = table.positions(t), table.positions(t + DRIFT_S)
+    if bid == "system":
+        s, _ = world.system(sc.system)
+        body = max((b for b in s.massive() if b.kind != "star" and b.id in pos),
+                   key=lambda b: b.gm / max(float(np.sum((pos[b.id] - r) ** 2)), 1.0), default=None)
+    if bid != "system" or body is None:
+        frame = lambda P: world.resolved(sc.system, player, P, only=bid)[bid]
+        b0, b1 = frame(pos), frame(later)
+        drift = (b1.point(*b0.aer(r)) - r) / DRIFT_S
+    else:
+        drift = (later[body.id] - pos[body.id]) / DRIFT_S
+    rel = v - drift
+    speed = float(np.linalg.norm(rel))
+    stop = r + rel * speed / (2 * BRAKE_SHARE * a) if speed > 0 and a > 0 else r
+    if bid != "system" or body is None:
+        az, el, rng = b0.aer(stop)
+        return {"bullseye": bid, "aer": [math.degrees(az) % 360, math.degrees(el), rng * KM]}
+    at = stop - pos[body.id]
+    return {"body": body.id, "at_m": at.tolist(), "halt": True, "label": f"hold {np.linalg.norm(at) * KM:,.0f} km off {body.name}"}
+
+
 # ---- the host ------------------------------------------------------------------------------------
 class SimHost:
     def __init__(self, world, run_ahead: bool = False):
@@ -270,11 +319,9 @@ class SimHost:
             if fleet is None:
                 return {"ok": False}
             B = fleet.book
-            ships = sorted({fleet.c.ids[B.ship[e]] for e in B.events_of(payload.get("order_id") or "")})
-            try:
-                ordering(self._side(sc, fleet, self.world.side(sc, payload.get("view"), payload.get("player"))), fleet, ships)
-            except OrderRefused:
-                return {"ok": False}
+            side = self._side(sc, fleet, self.world.side(sc, payload.get("view"), payload.get("player")))
+            if side.view != picture.MASTER:              # a side cannot unmake what it ordered: it stops, or decelerates
+                return {"ok": False, "status": 403, "detail": "only MASTER takes an order back; stop (Z) or decelerate (X) instead"}
             return {"ok": bool(fleet.withdraw(payload.get("order_id") or ""))}
         if kind == "close":
             self._encoders.pop(payload, None)

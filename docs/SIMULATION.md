@@ -242,6 +242,14 @@ telegraph, in the light blue of the order vectors on the map. Moving one retunes
 its ships (those outside the selected formation too), and no other; **W** / **S** do the same when
 the formation flies one order. Stop cuts the drive.
 
+**STOP and DECELERATE.** With a ship or a formation selected (or from an order's block in its
+panel), **Z** stops it: the order dropped and the drive cut, it flies on as it goes, under gravity
+alone (a coast order). **X** decelerates it: the order dropped for a new one, to turn and burn at
+the g it flew (else its cruise) and come to rest in the active bullseye's frame, at the point it
+would come to rest at (where braking at 0.9 of that g from its speed in the frame ends), and hold
+station there (`simhost.halt_target`). The star centre is no frame to stop in (she would shed her
+orbit), so on it a ship comes to rest by the body that pulls on her hardest, the star aside, at a
+point carried with it. In the panel it reads "Decelerate, hold 1,201,078 km off Earth".
 **Weapon ranges.** A class's ranges are where each kind of weapon it carries starts to matter,
 read optimistically, and worked out once per class in the registry (`astrum/ships.py` `_ranges`);
 every ship of the class shares them:
@@ -355,10 +363,13 @@ them; a burn, at its event. So everything a ship was given is numbers in her row
 a copy of arrays (0.03 ms for the demo's 110 rows, where copying each ship's order as a dictionary
 took 1 ms), and what a checkpoint has given is simply every event before its moment: nothing is
 counted, so an order given into the past cannot shift it. Targets are made into tracks once for
-each order as given, which all its ships share. An order from the map can be taken back
-(`Fleet.withdraw`, **Withdraw** in its panel, twice): struck from the book, and if the fleet has
-flown past it, the ships it went to fly again from before it, as if it had never been given. The
-scenario's own orders stay.
+each order as given, which all its ships share. An order from the map can be taken back by
+MASTER alone (`Fleet.withdraw`, **Withdraw** in its panel, twice; a side stops or decelerates
+instead): struck from the book, and if the fleet has flown past it, the ships it went to fly again
+from before it, as if it had never been given. The scenario's own orders stay. What was pictured
+and seen before an order flown again stands (`Fleet._forget`): the next picture scans the minutes
+since it, not the hour a track is held (the first picture after a telegraph moved: 60–150 ms
+before, 9–12 ms now).
 
 **An order flies again only what it touches, and only as fast as it is needed.** An order given
 at a moment the fleet has already flown past sets back only the rows it touches (the unit ordered,

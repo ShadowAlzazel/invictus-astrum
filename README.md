@@ -75,6 +75,8 @@ the author*. The format is in `data/ships/README.md`.
 | Hold R | detection ranges: a ring for each of a ship's sensors, how far it sees a ship giving off 30 MW (warm; Settings, Display, Detection ranges: 0.3 MW cold to 30,000 MW burning) |
 | Others' ships | drawn as tracks; tracks close together on screen collapse into one symbol by count: a flight (up to 5), a group (up to 20), a task force (more), the map's own reading, set in Settings, Display, Others' ships. Click one to pull that track out; zoom in to resolve |
 | U | up the chain of command: select the formation the selected unit answers to |
+| Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
+| X | DECELERATE the selection: a new order to turn and burn to rest on the active bullseye (on the star centre: by the body that pulls hardest) and hold there |
 | `,` | settings |
 | Double-click, or F | centre on the selection and ride with it |
 | H | frame the whole system |

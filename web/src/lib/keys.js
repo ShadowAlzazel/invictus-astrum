@@ -12,6 +12,8 @@ export const ACTIONS = {
   down:     { key: 's', label: 'Telegraph down' },
   eve:      { key: 'e', label: 'Aim toward Eve' },
   haid:     { key: 'q', label: 'Aim toward Haid' },
+  stop:     { key: 'z', label: 'STOP: drop the order, cut the drive, fly on as she goes' },
+  decel:    { key: 'x', label: 'DECELERATE: drop the order, turn and burn to rest on the bullseye' },
   plane:    { key: 'b', label: "Orders: her own height or the bullseye's plane" },
   ranges:   { key: 'g', label: 'Weapon ranges (hold)' },
   sensing:  { key: 'r', label: 'Detection ranges (hold)' },
