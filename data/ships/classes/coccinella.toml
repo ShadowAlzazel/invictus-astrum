@@ -16,6 +16,16 @@ length_m = 210
 width_m = { closed = 180, expanded = 350 }
 mass_t = { base = 20000, loaded = 50000 }
 
+# TEMPORARY, for the simulation only: her acceleration and drive are not yet stated (class document,
+# Appendix B). The line drive, sized to 0.45 g fully loaded (the top of the cruise band, so she
+# keeps up with a line formation at cruise), with 6,000 t of propellant inside the stated masses.
+# Replace when her pattern states them.
+[drive]
+module = "line"
+hull_mass = "wet"
+propellant_t = { value = 6000, est = true }
+sized_g = { value = 0.45, est = true }
+
 [[battery]]
 id = "optical"
 label = "Point defence"

@@ -39,7 +39,7 @@ def test_spec_keeps_only_what_flies(reg):
     assert s.mass_kg / 1e3 == pytest.approx(70340, abs=1)
     assert s.dv_left_ms / 1e3 == pytest.approx(4000, abs=0.5)
     assert s.max_accel_ms2 / G0 == pytest.approx(0.55, abs=1e-4)
-    noddy = ShipSpec.from_class(reg.classes["coccinella"])                     # no drive: she still exists
+    noddy = ShipSpec.from_class(reg.classes["tarantulae"])                     # no drive: she still exists
     assert not noddy.has_drive and noddy.hull_kg
 
 
@@ -165,7 +165,7 @@ def test_sol_demo_fleet(reg):
     world = app.state.world
     sc = world.scenarios["sol-demo"]
     f = world.fleet(sc)
-    assert len(f.ships) == 100 and not f.findings
+    assert len(f.ships) == 106 and not f.findings
     c = TestClient(app)
     meta = c.get("/api/meta").json()
     kiki = next(u for u in meta["scenarios"][0]["contacts"] if u["id"] == "kiki-1")
@@ -572,7 +572,7 @@ def test_the_map_is_sent_changes_that_add_up():
         ws.send_json({**req, "t": t + 60})
         first = ws.receive_json()
         ships = first["ships"]
-        assert first["full"] and len(ships) == 100
+        assert first["full"] and len(ships) == 106
         for k in range(1, 6):
             ws.send_json({**req, "t": t + 60 + 30 * k})
             m = ws.receive_json()
@@ -761,7 +761,7 @@ def test_the_simulation_runs_in_a_process_of_its_own(run_ahead):
         with c.websocket_connect("/ws") as ws:
             ws.send_json({**req, "t": sol + 60})
             first = ws.receive_json()
-            assert first["full"] and len(first["ships"]) == 100 and "kiki" in first["contacts"]
+            assert first["full"] and len(first["ships"]) == 106 and "kiki" in first["contacts"]
             r = c.post("/api/order", json={**req, "unit": "kiki-1", "t": sol + 60, "g": 0.4,
                                            "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
             assert r.status_code == 200 and r.json()["ship"]["goal"]["eta_s"] > 0

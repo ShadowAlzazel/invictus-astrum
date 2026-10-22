@@ -11,7 +11,7 @@
 # Any unit takes its affiliation and its faction (data/factions.toml) from the formation above it,
 # unless it states its own.
 # A formation may say  role = "battle"  (style.toml [formation_role]: battle, line, picket, strike,
-# vanguard, escort, point-defence, scout, relay, supply, forward-scout, forward-escort, each made of
+# vanguard, escort, point-defence, scout, relay, supply, patrol, forward-scout, forward-escort, each made of
 # blocks); if it does not, a word of its callsign gives it ("Line Flotilla 1", "Forward Scout 2").
 # Holding station is not free: she follows her place in the bullseye's frame and her tanks pay
 # for every bit of it that is not an orbit. Orders ([[order]], at the end) make her fly.
@@ -1271,6 +1271,76 @@ class = "papilion"
 position = { body = "jupiter", offset_km = [-2032867, 2205936, 36240] }
 
 # <<< task force 3
+
+# ---- the Classis's own: its tenders, in reserve by the Classis, and its cutters, patrolling Earth's well
+# Placeholder callsigns.
+[[contact]]
+id = "luna-tenders"
+callsign = "Tender Squadron"
+affiliation = "friend"
+echelon = "squadron"
+formation = "luna-classis-1"
+
+[[contact]]
+id = "luna-tenders-1"
+callsign = "Tender 1"
+affiliation = "friend"
+echelon = "ship"
+formation = "luna-tenders"
+class = "coccinella"
+position = { bullseye = "burn", aer = [0, 0, 1005000] }
+
+[[contact]]
+id = "luna-tenders-2"
+callsign = "Tender 2"
+affiliation = "friend"
+echelon = "ship"
+formation = "luna-tenders"
+class = "coccinella"
+position = { bullseye = "burn", aer = [0.1, 0, 1005000] }
+
+[[contact]]
+id = "luna-tenders-3"
+callsign = "Tender 3"
+affiliation = "friend"
+echelon = "ship"
+formation = "luna-tenders"
+class = "coccinella"
+position = { bullseye = "burn", aer = [359.9, 0, 1005000] }
+
+[[contact]]
+id = "luna-patrol"
+callsign = "Patrol Squadron"
+affiliation = "friend"
+echelon = "squadron"
+formation = "luna-classis-1"
+
+[[contact]]
+id = "luna-patrol-1"
+callsign = "Patrol 1"
+affiliation = "friend"
+echelon = "ship"
+formation = "luna-patrol"
+class = "bacillus"
+position = { body = "earth", offset_km = [60000, 0, 0] }
+
+[[contact]]
+id = "luna-patrol-2"
+callsign = "Patrol 2"
+affiliation = "friend"
+echelon = "ship"
+formation = "luna-patrol"
+class = "bacillus"
+position = { body = "earth", offset_km = [-30000, 51962, 0] }
+
+[[contact]]
+id = "luna-patrol-3"
+callsign = "Patrol 3"
+affiliation = "friend"
+echelon = "ship"
+formation = "luna-patrol"
+class = "bacillus"
+position = { body = "earth", offset_km = [-30000, -51962, 0] }
 
 # ---- the local picture --------------------------------------------------------------------------------
 [[contact]]

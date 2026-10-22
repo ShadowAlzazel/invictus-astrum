@@ -144,6 +144,11 @@ label = "Supply, Tender"
 blocks = ["supply"]
 words = ["Supply", "Tender"]
 
+[formation_role.patrol]
+label = "Patrol"
+blocks = ["supply", "picket"]
+words = ["Patrol"]
+
 [formation_role.forward-scout]
 label = "Forward Scout"
 blocks = ["forward", "escort", "picket"]
