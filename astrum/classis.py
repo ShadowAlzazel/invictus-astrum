@@ -1,5 +1,9 @@
 """The Classis: every entity of a scenario's fleet, as columns.
 
+Every ship of the scenario, whatever her faction and whatever formation she is under (a Classis,
+a world's Home Force, a lone flight): the arrays are the entity book, not the order of battle,
+which is the scenario's formations and is only drawn and named.
+
 A row per hull, and a row per formation lead flying an order. Everything is numbers in arrays:
 position, velocity, propellant, thrust and its direction, and the order she flies and where it
 stands, as a row of the fleet's order book (astrum/orders.py: what was given, its target and

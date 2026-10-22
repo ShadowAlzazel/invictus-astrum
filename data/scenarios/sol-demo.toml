@@ -1345,14 +1345,22 @@ formation = "luna-patrol"
 class = "bacillus"
 position = { body = "earth", offset_km = [-30000, -51962, 0] }
 
-# ---- the Jupiter Astrum Defence Force (AAG): a branch of the same service, not of the Classis ----
-# A watch flight around Jupiter, a million km out: her VIGIL and two cutters. Placeholder callsigns.
+# ---- the Jupiter Astrum Defence Force (JADF): the Jovian moons' own police, an ARCVS member world's ---
+# Its few hulls are under its Home Force, not a Classis. A watch flight a million km off Jupiter:
+# a VIGIL and two cutters. Placeholder callsigns.
+[[contact]]
+id = "jupiter-home"
+callsign = "Jupiter Home Force"
+affiliation = "friend"
+faction = "jadf"
+echelon = "task-force"
+
 [[contact]]
 id = "jove"
 callsign = "Jove flight"
 affiliation = "friend"
-faction = "aag"
 echelon = "flight"
+formation = "jupiter-home"
 
 [[contact]]
 id = "jove-1"

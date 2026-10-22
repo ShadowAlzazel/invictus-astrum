@@ -348,8 +348,9 @@ position = { body = "earth" }
     assert (k["ship-a"].faction, k["ship-a"].hull_number, k["ship-a"].own_faction) == ("avc", "BBC-382", False)
     assert k["ship-b"].faction == "other" and k["ship-b"].own_faction
     factions = load_factions(ROOT / "data" / "factions.toml")
-    assert factions["avc"]["prefix"] == "AVC" and not factions["avc"]["branch_of"]
-    assert factions["aag"]["prefix"] == "AAG" and factions["aag"]["branch_of"] == "ARCVS Void Command"
+    assert factions["avc"]["prefix"] == "AVC" and factions["avc"]["branch_of"] == "ARCVS"
+    assert factions["aag"]["prefix"] == "AAG" and factions["aag"]["branch_of"] == "ARCVS"
+    assert factions["jadf"]["member_of"] == "ARCVS" and not factions["jadf"]["branch_of"]   # a member world's own
     (tmp_path / "bad.toml").write_text('[scenario]\nid = "b"\nsystem = "sol"\n[[contact]]\nid = "x"\nposition = { body = "earth" }\n')
     with pytest.raises(ValueError, match="needs an affiliation"):
         load_scenario(tmp_path / "bad.toml")

@@ -1,21 +1,31 @@
 # Factions: who a unit belongs to. A scenario names one on a formation (faction = "avc") and every
 # unit under it takes it, down to the ships; any unit may name its own instead. A ship's name reads
-# with her faction's prefix: AVC Antwerp.
+# with her faction's prefix: AVC Antwerp. (docs/canon/DE_CVSTODIBVS.md: the services.)
 #
 #   name       the faction, as the unit panel shows it
 #   prefix     before a ship's name (leave it out for none)
-#   branch_of  another faction this one is a branch of: the same service, its own name and prefix
+#   branch_of  the faction this is a branch of: its own service, name and prefix, the same state
+#   member_of  the faction a polity whose force this is belongs to: the force is its own, not a branch
+
+# ARCVS, the Imperium: the faction. Its two services are its branches.
+[faction.arcvs]
+name = "ARCVS"
 
 [faction.avc]
 name = "ARCVS Void Command"
 prefix = "AVC"
+branch_of = "arcvs"
+notes = "The navy: the Void, and every system a fleet passes through. Its fleets are the Classis."
 
 [faction.aag]
-name = "Jupiter Astrum Defence Force"
+name = "ARCVS Astrum Guard"
 prefix = "AAG"
-branch_of = "avc"
+branch_of = "arcvs"
+notes = "The Imperial Astrum Police: the Astrum of the sparse systems. Cutters and Vigils."
 
-# Another faction is another table:
-# [faction.xyz]
-# name = "..."
-# prefix = "XYZ"
+# A member world's own police: its polity's, defending its own system and nothing beyond it.
+[faction.jadf]
+name = "Jupiter Astrum Defence Force"
+prefix = "JADF"
+member_of = "arcvs"
+notes = "The Jovian moons' own police."

@@ -95,7 +95,7 @@
       {:else if contact}
         <h1>{contact.name ?? contact.callsign}{#if contact.hull_number}<span class="hull">{contact.hull_number}</span>{/if}</h1>
         <p class="kind">{contact.class_name || contact.unit_type || contact.echelon}{#if role}{` · ${role}`}{/if}{#if contact.brevity}{` · ${contact.brevity}`}{/if}{#if contact.pry}{` · Pry-${contact.pry}`}{/if}</p>
-        <p class="aff" style="--aff:{affColor ?? 'var(--dim)'}">{contact.faction?.name ?? contact.affiliation}{#if contact.faction}<span>{contact.faction.branch_of ? `${contact.faction.branch_of} · ` : ''}{contact.affiliation}</span>{/if}</p>
+        <p class="aff" style="--aff:{affColor ?? 'var(--dim)'}">{contact.faction?.name ?? contact.affiliation}{#if contact.faction}<span>{contact.faction.branch_of ? `${contact.faction.branch_of} · ` : contact.faction.member_of ? `${contact.faction.member_of} member world · ` : ''}{contact.affiliation}</span>{/if}</p>
       {:else}
         <h1>Point</h1>
         <p class="kind">{probe ? `${REGION[probe.zone.region]} of ${map.bodies[probe.zone.dominant]?.name}` : 'probing…'}</p>
