@@ -245,7 +245,12 @@ class Mind:
                     home = g.target.get("resume", {}).get("target") if mode == "guard" else None
                     leash = fleet._point(home, t) if home else None
                     if j is None or not want[a, j] or (leash is not None and np.linalg.norm(K["r"][j] - leash) > reach[a]):
-                        self._end(fleet, i, t, g)
+                        nxt = np.flatnonzero(near[a] & (np.arange(n) != (j if j is not None else -1)))
+                        if len(nxt):                      # another in range: straight on to it, no turn back between
+                            j = int(nxt[np.argmin(D[a][nxt])])
+                            self._engage(fleet, i, t, j, mode, "engage hostile" if ident[a, j] else "engage bogey", g.target.get("resume"), g)
+                        else:
+                            self._end(fleet, i, t, g)
                     continue
                 if not near[a].any():
                     continue
@@ -256,7 +261,9 @@ class Mind:
                         c.dir[i] = u / max(np.linalg.norm(u), 1.0)
                     continue
                 back = None
-                if g is not None:                         # the attack-move or the patrol leg, on after
+                if g is not None and "then" in g.target:  # braking on the way back: back to that, after
+                    back = g.target["then"]
+                elif g is not None and (g.target.get("attack") or g.target.get("patrol")):   # on with it, after
                     back = {"target": dict(g.target), "g": g.g, "by": g.by, "slot": B.slot[e].tolist()}
                 elif mode == "guard":
                     back = self._home(fleet, i, t, frame[i], v)
@@ -298,13 +305,38 @@ class Mind:
         fleet._derive(i, t, target, gg, f"{c.ids[i]}:ai@{t:.0f}", c.ids[i], (0.0, 0.0, 0.0))
 
     def _end(self, fleet, i: int, t: float, g) -> None:
-        """An engagement over: back to what she was doing, or her post; else the drive cut."""
+        """An engagement over: back to what she was doing, or her post; else the drive cut. If she
+        cannot stop there from how she moves now (closing too fast, or going away), she first brakes
+        to rest in its frame; an attack-move she would pass while braking is done once she rests."""
         c, back = fleet.c, g.target.get("resume")
         oid = f"{c.ids[i]}:ai@{t:.0f}"
-        if back:
-            fleet._derive(i, t, back["target"], back["g"], oid, back.get("by", c.ids[i]), back.get("slot", (0.0, 0.0, 0.0)))
-        else:
+        if not back:
             fleet._derive(i, t, {"label": "engagement over"}, 0.0, oid, c.ids[i], (0.0, 0.0, 0.0), kind=COAST)
+            return
+        tg, slot = back["target"], np.asarray(back.get("slot", (0.0, 0.0, 0.0)), dtype=float)
+        pic = fleet.past_sample(round((t - fleet.t0) / SAMPLE_S))
+        P0, P1 = fleet._point(tg, t), fleet._point(tg, t + 60.0)
+        a = 0.9 * min(back["g"] * G0, c.max_accel(i))
+        if P0 is None or P1 is None or a <= 0 or not ("bullseye" in tg or "body" in tg):
+            fleet._derive(i, t, tg, back["g"], oid, back.get("by", c.ids[i]), slot)
+            return
+        d, w = P0 + slot - pic["r"][i], pic["v"][i] - (P1 - P0) / 60.0       # where it is, how she moves in its frame
+        dist, speed = float(np.linalg.norm(d)), float(np.linalg.norm(w))
+        brake = speed * speed / (2 * a)
+        if float(w @ d) > 0 and brake <= dist:                     # closing, and she can stop there: straight back to it
+            fleet._derive(i, t, tg, back["g"], oid, back.get("by", c.ids[i]), slot)
+            return
+        stop = pic["r"][i] + w * speed / (2 * a) - slot            # where braking in its frame brings her to rest
+        if "bullseye" in tg:
+            az, el, rng = fleet._bull(tg.get("player"), tg["bullseye"], t).aer(stop)
+            rest = {"bullseye": tg["bullseye"], "player": tg.get("player"), "aer": [math.degrees(az) % 360, math.degrees(el), rng]}
+        else:
+            rest = {"body": tg["body"], "at_m": (stop - fleet._bodies(t)[tg["body"]]).tolist()}
+        done = tg.get("attack") and dist <= brake                  # the attack-move's point: she is there
+        rest.update(halt=True, label="brake to rest: attack-move done" if done else f"brake, then {tg.get('label') or 'back'}")
+        if not done:
+            rest["then"] = back
+        fleet._derive(i, t, rest, back["g"], oid, c.ids[i], slot)
 
     def _home(self, fleet, i: int, t: float, bid: str, v: str) -> dict:
         """Her post, to come back to: the place she holds, else where she is, in the frame her stance

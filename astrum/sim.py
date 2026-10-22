@@ -91,6 +91,7 @@ PROBE_S = 60.0                 # the station velocity's finite difference
 BRAKE_MARGIN = 0.9             # a go-to plans to brake on this share of the ordered acceleration
 ARRIVE_M = 2000.0              # arrived: inside this of the aim point ...
 ARRIVE_MS = 10.0               # ... and moving with it to within this
+WHERE = ("unit", "bullseye", "player", "aer", "body", "at_m", "offset_m")   # what of a target says where it is
 STANDOFF_UNIT_M = 50e3         # how far short of a unit a go-to stops (engaging: her engagement range, if she has one)
 STANDOFF_BODY_R = 3.0          # ... and of a body, in its radii (at least 1,000 km) ...
 STANDOFF_PULL = 0.5            # ... and where its pull is at most this share of what she holds
@@ -257,6 +258,7 @@ class Fleet:
         self._bull_cache: dict[tuple, object] = {}
         self._point_cache: dict[tuple, np.ndarray] = {}   # where bullseye and body points are, by moment
         self._place_cache: dict[float, tuple] = {}
+        self._base_cache: dict[float, np.ndarray] = {}
         self._plans: dict[tuple, tuple] = {}    # how station ships are placed, by the versions they are on
         self._plan_rows = None                  # (the scenario's placement plan, contact -> its row, rows -> theirs)
         self._pulls = [b for b in system.massive() if b.gm > 0]
@@ -968,8 +970,8 @@ class Fleet:
                 else:
                     c.track[i] = of_given[gid]
                 continue
-            spec = {k: v for k, v in B.given[gid].target.items() if k != "label"}
-            key = repr(sorted(spec.items()))
+            spec = {k: v for k, v in B.given[gid].target.items() if k in WHERE}
+            key = repr(sorted(spec.items()))           # (where it is, alone: chasers of one ship share her track)
             if key not in keys:
                 j = c.row.get(spec.get("unit")) if "unit" in spec else None
                 if j is not None and c.mode[j] == FREE:
@@ -1127,8 +1129,11 @@ class Fleet:
         ok = ks >= 0
         if not ok.any():
             return out
-        bulls = {bid: b for bid in pl.by_bull if (b := self._bull(None, bid, t)) is not None}
-        base = pl.base_positions(bulls, self._bodies(t))
+        base = self._base_cache.get(t)                   # (what the plan rests on at t: kept, every row asked at t shares it)
+        if base is None:
+            _room(self._base_cache, 64)
+            bulls = {bid: b for bid in pl.by_bull if (b := self._bull(None, bid, t)) is not None}
+            base = self._base_cache[t] = pl.base_positions(bulls, self._bodies(t))
         unplaced = np.isnan(base).any(axis=1)
         W = pl.W[ks[ok]]
         X = W @ np.where(unplaced[:, None], 0.0, base)
@@ -1260,6 +1265,9 @@ class Fleet:
         sa = self.c.place_of(i)
         if sa:
             return self._point(sa, t, placed, depth)
+        if placed is None and self.bullseyes is not None:   # her scenario place: her row of the plan, no other
+            p = self._scenario_places(t, np.array([i]))[0]
+            return None if np.isnan(p).any() else p
         if placed is None:
             placed = self._placed(t)[1]
         p = placed.get(self.c.ids[i])
@@ -1385,10 +1393,14 @@ class Fleet:
 
     # ---- orders the fleet gives itself ----------------------------------------------------------
     def _chain(self, i: int, t: float, e: int) -> None:
-        """What follows an order she has carried out: a patrol's turn back, else the order queued
-        after it. Given at the block's end after she arrived (_derive)."""
+        """What follows an order she has carried out: the leg it names to fly next (then), a patrol's
+        turn back, else the order queued after it. Given at the block's end after she arrived (_derive)."""
         B = self.book
         g = B.of(e)
+        if "then" in g.target:                        # (the AI's: brake, then back to what she was doing)
+            then = g.target["then"]
+            self._derive(i, t, then["target"], then["g"], _leg(g.oid), then.get("by", g.by), then.get("slot", B.slot[e]))
+            return
         if "patrol" in g.target:
             back = {k: v for k, v in g.target.items() if k != "patrol"}
             self._derive(i, t, {**g.target["patrol"], "patrol": back}, g.g, _leg(g.oid), g.by, B.slot[e])

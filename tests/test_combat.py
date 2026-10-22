@@ -162,7 +162,7 @@ def test_guards_go_back_to_their_post(tmp_path):
     ev = [e for e in B.queue[B.auto[B.queue]] if fleet.c.ids[B.ship[e]] == "tf3-es-1"]
     first = B.of(ev[0])
     assert first.target["engage"] and first.target["resume"]["target"]["label"].startswith("back to")
-    assert any(B.of(e).label.startswith("back to") for e in ev[1:])
+    assert any("back to" in B.of(e).label for e in ev[1:]) and not any("brake, then brake" in B.of(e).label for e in ev)
 
 
 def test_return_fire_answers_an_engage_order_within_range(tmp_path):
