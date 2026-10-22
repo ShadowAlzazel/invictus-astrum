@@ -159,6 +159,29 @@ def solve_kepler_many(m: np.ndarray, e) -> np.ndarray:
     return E
 
 
+def drift_many(r0: np.ndarray, v0: np.ndarray, mu: float, dt: np.ndarray) -> np.ndarray:
+    """Where a body on an elliptic orbit about a point mass mu is, dt after it was at r0 moving at
+    v0 (relative to it), for many orbits and moments at once: r0, v0 broadcast against dt[..., None].
+    Kepler's equation in the change of eccentric anomaly (Lagrange's f and g): no elements, so a
+    circular orbit is as well put as any."""
+    r0, v0, dt = np.asarray(r0, float), np.asarray(v0, float), np.asarray(dt, float)
+    rn = np.linalg.norm(r0, axis=-1)
+    a = 1.0 / (2.0 / rn - np.sum(v0 * v0, axis=-1) / mu)
+    n = np.sqrt(mu / a ** 3)
+    s0 = np.sum(r0 * v0, axis=-1) / math.sqrt(mu)
+    m = (n * dt) % TAU                                 # a whole number of turns later: where it started
+    k, c = 1.0 - rn / a, s0 / np.sqrt(a)
+    x = np.broadcast_to(m, np.broadcast(m, k).shape).copy()
+    for _ in range(50):
+        d = (x - k * np.sin(x) + c * (1 - np.cos(x)) - m) / (1 - k * np.cos(x) + c * np.sin(x))
+        x = x - d
+        if np.all(np.abs(d) < 1e-14):
+            break
+    f = 1.0 - a / rn * (1 - np.cos(x))
+    g = m / n + np.sqrt(a ** 3 / mu) * (np.sin(x) - x)
+    return f[..., None] * r0 + g[..., None] * v0
+
+
 def mean_motion(mu: float, a: float) -> float:
     return math.sqrt(mu / a ** 3)
 

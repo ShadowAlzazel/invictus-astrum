@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 216 tests
+python -m pytest -q tests             # 220 tests
 ```
 
 `serve.py` says at start whether the simulation's hot loops are compiled (`kernels compiled
@@ -84,6 +84,7 @@ the author*. The format is in `data/ships/README.md`.
 | Hold R | detection ranges: a ring for each of a ship's sensors, how far it sees a ship giving off 30 MW (warm; Settings, Display, Detection ranges: 0.3 MW cold to 30,000 MW burning); sensors that leave most of the sphere unseen (the infrared telescopes, the strip optics) as their cones along her hull. Rings of one kind that all but share a centre on screen (a formation from far off) are drawn as one about them all |
 | Others' ships | drawn as tracks; tracks close together on screen collapse into one symbol by count: a flight (up to 5), a group (up to 20), a task force (more), the map's own reading, set in Settings, Display, Others' ships. Click one to pull that track out; zoom in to resolve |
 | U | up the chain of command: select the formation the selected unit answers to |
+| 1 – 9 | down it: the selected formation's first, second… unit (a ship: her formation's) |
 | M | move: aim an order for the selection (a ship, or every ship under a formation); a click gives it. Onto another side's track it is an engage: she holds at her focus battery's range |
 | A | attack-move: as M, aggressive the whole way; after each engagement she flies on |
 | P | patrol: to the point and back to where it stands now, over and over, on guard |
@@ -92,6 +93,7 @@ the author*. The format is in `data/ships/README.md`.
 | Shift-click | (aiming) queue the order after what the selection flies; aiming goes on |
 | Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
 | V | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond); a formation: every ship under it |
+| K | station or free: a ship (or every ship under a formation) holding station goes free, onto an orbit of the body whose well she is in (paying only the burn onto it), else coasting; a free one takes station (decelerate, as X). Aiming a move: once there, free (at a body, an orbit of it) or holding station |
 | C | show sensors: the selection's drawn on the map always (a formation: every ship under it); again: hide |
 | X | DECELERATE the selection: a new order to turn and burn to rest on the active bullseye (on the star centre: by the body that pulls hardest) and hold there |
 | `,` | settings |
@@ -110,6 +112,14 @@ under it. Settings, Combat, keeps your profiles on the server: the ranges each s
 sensors' reach, half of it, her dazzle range, her weapons' or a number of km) and whom it engages
 (identified hostiles; bogeys too). The root profile is everyone's start and is not changed there.
 No weapon is fired yet: an engagement is where she goes and what she faces.
+
+**Station or free.** A ship on **station** holds her place (her scenario's, or where an order
+left her) and pays for it every five minutes, whatever of following it is not free fall: hovering
+20,000 km off Mars costs her some 9 km/s a day. **Free**, she holds nothing: in a body's well, on a
+circular orbit of it at her height (the burn onto it paid once, nothing after; the orbit is worked
+out by Kepler, as cheaply as a station), else coasting as she goes. The top of her panel says
+which, with her orbit's height and period; the map draws every free ship's path (Display, Free
+paths): her conic about the body whose well she is in, read off the picture.
 
 A ship's **Show sensors** (in her panel, under Sensors; C) draws her sensors on the map always, R held
 or not, and a formation's does so for every ship under it (its panel's Fleet: its lowest tanks and

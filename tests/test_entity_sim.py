@@ -1480,3 +1480,93 @@ def test_the_picture_s_switches_are_one_table():
     assert switches.resolve({"detection": False}) == {**switches.resolve({}), "detection": False}   # a partial dict
     game = switches.described(base)
     assert game["old_days"]["max"] == 30.0 and game["detection"]["label"].startswith("Detection")
+
+
+def test_free_onto_an_orbit_pays_once():
+    """FREE: a ship holding station off Mars goes onto a circular orbit of it at her height, paying
+    the burn onto it (from rest by Mars, the circular speed), and nothing after; her sister ship,
+    holding her place against Mars's pull, pays all along."""
+    from astrum.app import create_app
+    from astrum.simhost import give_order
+    world = create_app().state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    f.at(t)
+    i, j = f.c.row["tf3-lf4-bs-1"], f.c.row["tf3-lf4-bs-2"]
+    R, held = np.linalg.norm(f.c.r[i] - f.eph.positions(t)["mars"]), f.c.dvs[i]
+    r = give_order(world, {"scenario": "sol-demo", "unit": "tf3-lf4-bs-1", "t": t, "free": True})
+    assert r["ship"]["mode"] == "station" and r["ship"]["station_at"].startswith("orbit of Mars")
+    burn, prop = f.c.dvs[i], f.c.prop[i]
+    assert burn - held == pytest.approx(math.sqrt(f.system["mars"].gm / R), rel=1e-3)
+    for h in (3, 11, 30):
+        f.at(t + h * 3600)
+        assert np.linalg.norm(f.c.r[i] - f.eph.positions(f.t)["mars"]) == pytest.approx(R, rel=1e-6)
+    assert f.c.prop[i] == prop and f.c.dvs[i] == burn
+    assert f.c.dvs[j] > 10e3                               # 30 h against 0.1 m/s²
+
+
+def test_a_move_given_free_ends_on_an_orbit_or_coasting():
+    """A move given free: at a body, onto an orbit of it; out of every well, coasting as she goes."""
+    from astrum.app import create_app
+    from astrum.simhost import give_order
+    world = create_app().state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    f.at(t)
+    r = give_order(world, {"scenario": "sol-demo", "unit": "kiki-1", "player": "arcvs", "t": t, "g": 0.3, "target": {"body": "moon"}, "free": True})
+    assert r["ship"]["goal"]["label"] == "Moon, then free"
+    give_order(world, {"scenario": "sol-demo", "unit": "paris-1", "player": "arcvs", "t": t, "g": 0.3, "free": True,
+                       "target": {"bullseye": "burn", "aer": [90, 0, 3e6]}})
+    f.at(t + 30 * 3600)
+    k, p = f.c.row["kiki-1"], f.c.row["paris-1"]
+    assert f.c.place_of(k)["label"].startswith("orbit of Moon")
+    d = [np.linalg.norm(f.at(t + h * 3600)["kiki-1"].state.r - f.eph.positions(t + h * 3600)["moon"]) for h in (30, 40)]
+    assert d[0] == pytest.approx(d[1], rel=1e-6)
+    assert f.c.mode[p] == 1 and not f.c.goal[p] and f.c.place_of(p) is None     # FREE, holding nothing
+
+
+def test_station_charges_summed_as_stepped():
+    """What station ships pay, summed over the grid at once (the rocket equation's integral), is
+    what they pay step by step."""
+    from astrum.app import create_app
+    from astrum.sim import Fleet
+
+    def flown(stepped):
+        world = create_app().state.world
+        f = world.fleet(world.scenarios["sol-demo"])
+        if stepped:                                   # every step charged by itself
+            ahead = Fleet._station_ahead
+
+            def no_sums(self, kept, *a):
+                ahead(self, kept, *a)
+                for n, (P1, P2, V1, dv) in kept.items():
+                    kept[n] = (P1, P2, V1, np.full_like(dv, np.nan))
+            f._station_ahead = no_sums.__get__(f)
+        f.at(f.t0 + 26 * 3600)
+        return f.c.prop[: f.c.n].copy(), f.c.dvs[: f.c.n].copy()
+
+    (p1, d1), (p2, d2) = flown(False), flown(True)
+    assert np.allclose(p1, p2, rtol=1e-12, atol=1e-6) and np.allclose(d1, d2, rtol=1e-12, atol=1e-9)
+    assert (d1 > 0).sum() > 20                         # (they do pay)
+
+
+def test_taking_station_from_an_orbit_leaves_it_where_she_is():
+    """Off an orbit (decelerate, to take station), she leaves from where the orbit has carried her,
+    at its speed: not from the body's centre."""
+    from astrum.app import create_app
+    from astrum.simhost import give_order
+    world = create_app().state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    f.at(t)
+    i = f.c.row["tf3-lf4-bs-1"]
+    give_order(world, {"scenario": "sol-demo", "unit": "tf3-lf4-bs-1", "t": t, "free": True})
+    f.at(t + 3 * 3600)
+    mars = lambda T: f.eph.positions(T)["mars"]
+    R = np.linalg.norm(f.c.r[i] - mars(f.t))
+    give_order(world, {"scenario": "sol-demo", "unit": "tf3-lf4-bs-1", "t": f.t, "g": 0.2, "halt": {"bullseye": "system"}})
+    s = f.at(f.t + 60)["tf3-lf4-bs-1"].state
+    assert np.linalg.norm(s.r - mars(f.t)) == pytest.approx(R, rel=0.01)
+    assert np.linalg.norm(s.v) < 40e3                     # Mars's speed and her orbit's, no more
+    s = f.at(f.t + 6 * 3600)["tf3-lf4-bs-1"].state
+    assert np.isfinite(s.r).all() and np.linalg.norm(s.r - mars(f.t)) < 5e8

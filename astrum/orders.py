@@ -20,9 +20,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE, STANCE, QUEUE, FACE = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE, STANCE, QUEUE, FACE, FREE = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
 KIND = {"goto": GOTO, "burn": BURN, "setg": SETG, "coast": COAST, "cold": COLD, "warm": WARM,
-        "active": ACTIVE, "passive": PASSIVE, "stance": STANCE, "queue": QUEUE, "face": FACE}
+        "active": ACTIVE, "passive": PASSIVE, "stance": STANCE, "queue": QUEUE, "face": FACE, "free": FREE}
 
 
 @dataclass(frozen=True)

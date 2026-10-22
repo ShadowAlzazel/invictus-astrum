@@ -6,6 +6,7 @@
   import HudCursor from './lib/HudCursor.svelte';
   import Ruler from './lib/Ruler.svelte';
   import Adjutant from './lib/Adjutant.svelte';
+  import Paths from './lib/Paths.svelte';
   import { config as adjutantConfig } from './lib/adjutant.js';
   import Orders from './lib/Orders.svelte';
   import Bullseyes from './lib/Bullseyes.svelte';
@@ -287,7 +288,23 @@
     if (!able.length) return say('No ship there has a drive stated; they cannot be ordered to move.');
     const grp = group(state, contacts, able);
     const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
-    ordering = { unit: sel.id, ships: able, g, tilt: 0, plane: orderPlane, mode };
+    ordering = { unit: sel.id, ships: able, g, tilt: 0, plane: orderPlane, mode, free: freeMoves };
+  }
+  // how a move ends: on station (paying to hold the place), or free (an orbit in a well, else
+  // coasting); K while aiming, kept for the next move
+  let freeMoves = false;
+  $: if (ordering) freeMoves = !!ordering.free;
+  // K: the selection goes free if any of its ships holds station, else takes station (decelerate: to
+  // rest on the active bullseye, held there)
+  async function toggleFree(unit = sel?.id) {
+    if (!scenario || !unit || sel?.kind !== 'contact') return say(`Select a ship or a formation: ${cap($keymap.free)} takes station or goes free`);
+    const ships = shipsUnder(contacts, state, unit), held = ships.filter((id) => state?.ships?.[id]?.mode === 'station');
+    if (!held.length) return decelOrder(unit);
+    try {
+      const r = await api.order({ scenario: scenario.id, unit, t, free: true, player: playerId, view: side });
+      const orbit = Object.values(r.ships).map((x) => x.station_at).find((a) => a?.startsWith('orbit of'));
+      say(`${map.contactName(unit)}: free${orbit ? `, ${orbit}` : ', coasting'}`);
+    } catch (err) { say(String(err.message ?? err)); }
   }
   // a telegraph moved for orders already being flown: only their g changes. With an order
   // ({id, by}) only that order's ships, all of them; without, the selected ship
@@ -355,7 +372,7 @@
     const o = ordering;
     try {
       const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId, view: side,
-                                  target: aim.target, mode: o.mode, queue });
+                                  target: aim.target, mode: o.mode, queue, free: o.mode === 'move' && o.free ? true : undefined });
       const goal = Object.values(r.ships)[0]?.goal;
       const who = `${map.contactName(o.unit)}${o.ships.length > 1 ? ` (${o.ships.length} ships)` : ''}`;
       say(o.mode === 'turn' ? `${who}: turned to ${aim.kind === 'point' ? 'the point' : aim.label}` : o.g <= 0 ? `${who}: drive cut`
@@ -407,12 +424,20 @@
       const m = Object.keys(MODES).find((a) => is(e, a));
       if (e.key === 'Escape' || (m && MODES[m] === ordering.mode)) { ordering = null; return; }
       if (m) { ordering = { ...ordering, mode: MODES[m] }; return; }      // another kind of order, aimed the same
+      if (is(e, 'free') && ordering.mode === 'move') { ordering = { ...ordering, free: !ordering.free }; return; }
       if (orderTool?.key(e)) { e.preventDefault(); return; }
     } else if (Object.keys(MODES).some((a) => is(e, a)) && mode === 'map') { startOrder(MODES[Object.keys(MODES).find((a) => is(e, a))]); return; }
     else if (is(e, 'stop') && mode === 'map') { stopOrder(); return; }
     else if (is(e, 'decel') && mode === 'map') { decelOrder(); return; }
     else if (is(e, 'ping') && mode === 'map') { setPing(); return; }
     else if (is(e, 'watch') && mode === 'map') { toggleWatch(); return; }
+    else if (is(e, 'free') && mode === 'map') { toggleFree(); return; }
+    else if (/^[1-9]$/.test(e.key) && mode === 'map' && sel?.kind === 'contact') {    // a formation's n-th unit (a ship: her n-th sister)
+      const c = contacts.find((x) => x.id === sel.id), under = c?.children?.length ? c.children : contacts.find((x) => x.id === c?.parent)?.children ?? [];
+      const pick = under[Number(e.key) - 1];
+      if (pick) select({ kind: 'contact', id: pick });
+      return;
+    }
     else if ((is(e, 'up') || is(e, 'down')) && mode === 'map') {
       const up = is(e, 'up'), ship = state?.ships?.[sel?.id];
       if (ship?.goal) {                                     // a ship: her own telegraph
@@ -514,6 +539,7 @@
 <Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} sensing={sensing && mode === 'map'}
   watched={mode === 'map' ? watched : new Set()} />
 <HudCursor {map} {style} {settings} {overUI} />
+{#if mode === 'map' && scenarioOn && scenario}<Paths {map} {style} on={settings?.layers.paths ?? true} contacts={scenario.contacts} {sel} />{/if}
 {#if ruler && mode === 'map'}<Ruler {map} {style} {ruler} {markAt} />{/if}
 {#if mode === 'map'}
   <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />
@@ -625,7 +651,7 @@
 <InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold}
-  {watched} onwatch={toggleWatch}
+  {watched} onwatch={toggleWatch} onfree={toggleFree}
   master={side === 'master'} onstop={stopOrder} ondecel={decelOrder} onping={setPing} ondismiss={dismissTrack}
   {profiles} stances={profileRules.stances ?? {}} {engagement} onstance={setStance} />
 {/if}

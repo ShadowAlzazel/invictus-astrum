@@ -203,7 +203,8 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
     frame, where she would come to rest, and hold there (a go-to, so it is an order like any
     other). g of 0 (STOP): the order and the drive cut, she flies on as she goes. side_of
     (scenario, fleet, view): the side's table (Side), kept (else made). g is the acceleration held, each ship capped at her most;
-    0 cuts the drive. keep_target: only the g of the order they are flying changes. cold: true
+    0 cuts the drive. free (no target): each gives up her place, onto an orbit of the body whose well
+    she is in, else coasting; free with a move: so once there. keep_target: only the g of the order they are flying changes. cold: true
     folds their wings (they run cold, as long as their stores last), false spreads them.
     A formation's ships each keep their offset from the formation as it stands now, so they
     arrive laid out as they left, not on one point."""
@@ -236,6 +237,20 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
         oid = f"{unit}:{kind}@{t:.0f}#{next(_order_n)}"
         return order_reply(fleet, float(t), unit, ships, [Order(sid, float(t), kind, target=dict(stance) or None, source="map",
                                                                 order_id=oid, by=unit) for sid in ships], side)
+    if req.get("free") is True and not req.get("target") and req.get("halt") is None and isinstance(t, (int, float)):
+        # FREE: each ship gives up her place, onto an orbit of the body whose well she is in, else coasting
+        t = float(t)
+        with fleet.lock:
+            fleet.reach(t, ORDER_BUDGET_S)
+        ships = order_ships(world, sc, fleet, unit)
+        if not ships:
+            raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
+        ordering(side, fleet, ships)
+        if overrule is not None:
+            overrule(sc, fleet, ships, t)
+        oid = f"{unit}:free@{t:.0f}#{next(_order_n)}"
+        return order_reply(fleet, t, unit, ships, [Order(sid, t, "free", source="map", order_id=oid, by=unit)
+                                                   for sid in ships], side)
     if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
         raise OrderRefused(400, "an order needs t, and g of 0 or more")
     t = float(t)
@@ -299,6 +314,8 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
         anchor = contact_positions(sc, world.resolved(sc.system, sc.player, pos), pos, flown).get(unit)
         if formation and anchor is not None:         # a formation: each ship keeps her place in it, as it stands
             offsets = {sid: flown[sid] - anchor for sid in ships}
+    if req.get("free") is True and mode == "move" and halt is None:    # there, free: an orbit in a well, else coasting
+        target.update(free=True, label=f"{target['label']}, then free")
     if mode == "attack":                             # aggressive the whole way (astrum/ai.py)
         target.update(attack=True, label=f"attack-move to {target['label']}")
     elif mode == "patrol" and anchor is not None:    # to the point and back to where it is now, over and over
@@ -544,7 +561,8 @@ class SimHost:
         else:
             enc.key = None
         table = world.table(sid)
-        pos = table.positions(t)                         # the table: what the fleet flew among
+        states = table.states(t) if hasattr(table, "states") else None    # the table: what the fleet flew among
+        pos = {k: p for k, (p, _) in states.items()} if states else table.positions(t)
         bulls = world.resolved(sid, req.get("player"), pos)
         contacts, out = {}, {}
         if fleet is not None:
@@ -558,6 +576,7 @@ class SimHost:
         return json.dumps({
             "t": t, "utc": iso(t), "behind_s": asked - t, "system": sid, "version": world.version, "source": eph.source(t),
             "bodies": _km_all(list(pos), np.array(list(pos.values()))),
+            **({"bodies_kms": {k: np.round(v * KM, 6).tolist() for k, (_, v) in states.items()}} if states else {}),
             "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
             "contacts": contacts, "ships": ships, "full": full, **out,
             "magnetopause_km": {b.id: round(m * KM, 1) for b in s if (m := magnetopause(s, pos, b))},

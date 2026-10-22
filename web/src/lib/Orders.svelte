@@ -119,7 +119,8 @@
           ? [`turn to ${aimed.kind === 'point' ? `${bearing(hd.bearing)} ${elev(hd.elevation)}` : aimed.label}`, 'her hull pointed there, nothing flown']
           : [aimed.kind === 'point' ? `to ${bearing(hd.bearing)} ${elev(hd.elevation)}` : `to ${aimed.label}`,
              `${km(est.distance)}${aimed.standoff ? `, stopping ${km(aimed.standoff)} short` : ''}`,
-             shown > 0 ? `ETA ≈ ${hms(est.eta)} at ${shown.toFixed(2)} g · Δv ≈ ${est.dv.toFixed(1)} km/s` : 'stop: cut her drive'],
+             shown > 0 ? `ETA ≈ ${hms(est.eta)} at ${shown.toFixed(2)} g · Δv ≈ ${est.dv.toFixed(1)} km/s` : 'stop: cut her drive',
+             ...(ordering.mode === 'move' && shown > 0 ? [ordering.free ? (aimed.kind === 'body' ? `then free: an orbit of ${aimed.label}` : 'then free: coasting, or an orbit in a well') : 'then holds station there'] : [])],
               b.x, b.y, F);
       }
     }
@@ -154,6 +155,12 @@
     <button class="plane" class:on={onBull} on:click={togglePlane} title="B: Eve and Haid from her own height, or from the bullseye's plane">
       <i></i>{onBull ? "Bullseye's plane" : 'Her own height'}<kbd>{cap($keymap.plane)}</kbd>
     </button>
+    {#if ordering.mode === 'move'}
+      <button class="plane" class:on={ordering.free} on:click={() => (ordering = { ...ordering, free: !ordering.free })}
+        title="Once there: hold station (paying to hold her place), or go free (an orbit in a body's well, paying only the burn onto it; else coasting)">
+        <i></i>{ordering.free ? 'Then free: orbit or coast' : 'Then hold station'}<kbd>{cap($keymap.free)}</kbd>
+      </button>
+    {/if}
     <p class="keys"><kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>{cap($keymap.eve)}</kbd><kbd>{cap($keymap.haid)}</kbd> Eve / Haid · <kbd>{cap($keymap.plane)}</kbd> plane · click to order, <kbd>⇧</kbd>-click to queue · <kbd>{cap($keymap.order)}</kbd><kbd>{cap($keymap.attack)}</kbd><kbd>{cap($keymap.patrol)}</kbd><kbd>{cap($keymap.turn)}</kbd> move, attack, patrol, turn · <kbd>Esc</kbd> cancel</p>
     {#if message}<p class="msg">{message}</p>{/if}
   </aside>

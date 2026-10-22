@@ -312,6 +312,17 @@ sensors and her plume's aspect turn with it). A ship flying an order drops it fi
 cut, she flies on as she goes); one holding station turns where she holds. Her panel shows where
 her hull points, bearing and elevation in the active bullseye's axes.
 
+**FREE.** K (or a move given free, K while aiming it): a ship gives up her place. In a body's well
+(zones.classify: the innermost sphere of influence; in a binary, the component that pulls harder)
+she goes onto a circular orbit of it at the height she is at, prograde about the system's up,
+paying the burn onto it from her velocity relative to it (from rest by the body: its circular
+speed); out of every well, or short of the Δv, she coasts. An orbit is a place like a station's
+(`{body, orbit: {r0, v0, t0}}`), worked out ahead on the station grid by Kepler's equation in the
+change of eccentric anomaly (`orbits.drift_many`: two bodies, no elements), and costs nothing to
+hold: it is free fall. Off it (a move, decelerate) she leaves from where it has carried her, at its
+speed. The map draws every free ship's conic about the body whose well she is in, off its picture
+(the bodies' velocities ride in it, `bodies_kms`): nothing is asked of the server.
+
 **STOP and DECELERATE.** With a ship or a formation selected (or from an order's block in its
 panel), **Z** stops it: the order dropped and the drive cut, it flies on as it goes, under gravity
 alone (a coast order). **X** decelerates it: the order dropped for a new one, to turn and burn at
@@ -667,7 +678,10 @@ step itself 9–12%.
 Since: station ships' places are worked out two hours of their grid at a time (every moment and its
 probe at once: each bullseye resolved once for all of them, `resolve_many`; the bodies off the
 table's `positions_many`), and kept while the same ships hold the same places; a ship holding on a
-unit is worked out as she goes, the unit may be flying. To the bit what one moment at a time gives
+unit is worked out as she goes, the unit may be flying. What a step of the grid costs a ship that rode
+her place through the step before is the place's alone, so it is worked out ahead too, and each
+block's steps are paid summed, once (the rocket equation's integral); the first step on a place,
+and a step off the grid, step by step. To the bit what one moment at a time gives
 (`unit` is written out so a bullseye resolved alone and among many rounds alike). Station-keeping:
 221 → 121 ms a game day here, the flight as a whole 494 → 392 ms.
 

@@ -167,13 +167,14 @@ class ShipEncoder:
                 d["velocity_kms"] = val["velocity_kms"][i]
             if changed["dir"][i]:                       # (none for a ship not hers)
                 d["dir"] = None if None in val["dir"][i] else val["dir"][i]
-            if changed["mode"][i]:
-                d["mode"] = "station" if cols["mode"][i] == STATION else "free"
             st = said[int(cols["mver"][i])] or {}
+            if changed["mode"][i] or static_new[i]:        # on an orbit she is free, though no step flies her
+                d["mode"] = "free" if cols["mode"][i] != STATION else "orbit" if st.get("orbit_of") else "station"
             if static_new[i] or changed["goal_on"][i]:
                 d["load"] = st.get("load")
                 d["burn"] = st.get("burn") if cols["burning"][i] else None
                 d["station_at"] = st.get("station_at")
+                d["orbit_of"] = st.get("orbit_of")
             elif changed["burning"][i]:
                 d["burn"] = st.get("burn") if cols["burning"][i] else None
             g = st.get("goal") if cols["goal_on"][i] else None

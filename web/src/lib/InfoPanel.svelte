@@ -26,6 +26,7 @@
   export let onping = () => {};     // (on): sweep her active sensors (ping) or go quiet
   export let watched = new Set();   // ships whose sensors the map draws always
   export let onwatch = () => {};    // (unit): draw her sensors always, or not (a formation: every ship under it)
+  export let onfree = () => {};     // (unit): take station, or go free
   export let ondismiss = () => {};  // (track id): remove an old track
   export let profiles = [];         // the commander's combat profiles (the shared ones first)
   export let stances = {};          // stance -> what it does ("Guard: ...")
@@ -53,7 +54,7 @@
   $: spec = contact?.ship ?? null;
   // another's ship is shown as seen: where she was when her light reached one of ours, none of what only she knows
   $: seenOnly = ship ? ship.mass_t == null : false;
-  $: arrives = ship?.goal?.eta_s != null && state?.utc && isFinite(ship.goal.eta_s)
+  $: arrives = ship?.goal?.eta_s != null && state?.utc && isFinite(ship.goal.eta_s) && ship.goal.eta_s < 3e9
     ? new Date(Date.parse(state.utc) + ship.goal.eta_s * 1000).toISOString().slice(11, 16) + ' UTC' : null;
   // the ships under this formation, and the orders they fly: each order its own telegraph
   $: under = contact ? shipsUnder(contacts, state, contact.id) : [];
@@ -64,6 +65,22 @@
   $: pinging = fuelled.filter((id) => state.ships[id].active).length;
   $: sensed = fuelled.filter((id) => byId[id]?.ship?.sensors?.length);
   $: allShown = sensed.length > 0 && sensed.every((id) => watched.has(id));
+  // how her side's ships under it hold: on station (paying to hold the place), free on an orbit,
+  // free coasting, or flying an order
+  $: mine = contact ? (ship ? [contact.id] : under).filter((id) => state?.ships?.[id]?.propellant_share != null) : [];
+  $: holds = mine.map((id) => state.ships[id]);
+  $: held = { station: holds.filter((s) => s.mode === 'station').length, orbit: holds.filter((s) => s.mode === 'orbit').length,
+              flying: holds.filter((s) => s.mode === 'free' && s.goal).length, coasting: holds.filter((s) => s.mode === 'free' && !s.goal).length };
+  // her orbit, read off the picture: its period and how high she is above the body
+  $: orbit = ship?.mode === 'orbit' && ship.orbit_of && state?.bodies_kms ? orbitOf(ship, ship.orbit_of) : null;
+  function orbitOf(s, bid) {
+    const b = map.bodies[bid], P = state.bodies[bid], V = state.bodies_kms[bid], r = state.contacts?.[sel.id];   // (all of one picture's moment)
+    if (!b || !P || !V || !r || !s.velocity_kms) return null;
+    const mu = G * b.mass_kg, d = Math.hypot(r[0] - P[0], r[1] - P[1], r[2] - P[2]);
+    const v2 = (s.velocity_kms[0] - V[0]) ** 2 + (s.velocity_kms[1] - V[1]) ** 2 + (s.velocity_kms[2] - V[2]) ** 2;
+    const a = 1 / (2 / d - v2 / mu);
+    return a > 0 ? { period_s: 2 * Math.PI * Math.sqrt(a ** 3 / mu), alt_km: d - (b.radius_km ?? 0), body: b.name } : null;
+  }
   $: flying = grp?.flying ?? [];
   $: orders = !ship && flying.length ? orderGroups(state, contacts, under) : [];
   // a telegraph shows where it was set until the server's g moves (the order took it, or another did)
@@ -166,6 +183,22 @@
       {#if !shut.aer}
         <p class="big">{bearing(a.bearing)} for {km(a.range)}</p>
         <p class="dim">{elev(a.elevation)} · light {lightTime(a.range)}</p>
+        {#if mine.length}
+          <p class="hold">
+            {#if ship}
+              {#if ship.mode === 'station'}<b>Stationed</b> <span class="dim">holds her place, paying to</span>
+              {:else if ship.mode === 'orbit'}<b class="free">Free</b> <span class="dim">{orbit ? `orbit of ${orbit.body}, ${km(orbit.alt_km)} up, ${hms(orbit.period_s)} a turn` : ship.station_at}</span>
+              {:else if ship.goal}<b>Flying</b> <span class="dim">her order</span>
+              {:else}<b class="free">Free</b> <span class="dim">coasting</span>{/if}
+            {:else}
+              <span class="dim">{[['station', 'stationed'], ['orbit', 'in orbit'], ['coasting', 'coasting'], ['flying', 'flying']].filter(([k]) => held[k]).map(([k, w]) => `${held[k]} ${w}`).join(' · ')}</span>
+            {/if}
+            {#if held.station || held.orbit || held.coasting}
+              <button class="act inline" on:click={() => onfree(contact.id)}
+                title={held.station ? 'Go free: onto an orbit of the body whose well she is in (paying only the burn onto it), else coasting' : 'Take station: decelerate to rest on the active bullseye, and hold there'}>{held.station ? 'Go free' : 'Take station'} <kbd>{cap($keymap.free)}</kbd></button>
+            {/if}
+          </p>
+        {/if}
       {/if}
     </section>
   {/if}
@@ -219,7 +252,7 @@
     {/if}
     {#if fuelled.length}
       <section>
-        <h2>Fleet <span class="dim">{fuelled.length} ship{fuelled.length > 1 ? 's' : ''}</span></h2>
+        <h2>Formation <span class="dim">{fuelled.length} ship{fuelled.length > 1 ? 's' : ''}</span></h2>
         {#if lowest}
           {@const low = state.ships[lowest]}
           <p class="low">Lowest fuel <b class:short={low.propellant_share <= 0.1}>{n(low.propellant_share * 100, 1)}%</b>
@@ -431,6 +464,10 @@
   .act { margin-top: 10px; font-size: 11px; color: var(--violet); filter: brightness(1.5); }
   .act:hover { color: var(--fuchsia); filter: none; }
   .act + .act { margin-left: 14px; }
+  .hold { margin: 4px 0 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .hold b { font-weight: 500; color: var(--ink); }
+  .hold b.free { color: var(--cyan, #9ff0ff); }
+  .act.inline { margin: 0 0 0 auto; }
   .low { margin: 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .low b.short { color: #ffd27a; }
   .unit.inline { display: inline; padding: 0; width: auto; }

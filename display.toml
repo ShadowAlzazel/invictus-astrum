@@ -71,6 +71,7 @@ display  = { default = true, label = "Body display" }
 labels   = { default = true, label = "Labels" }
 contacts = { default = true, label = "Units" }
 zones    = { default = true, label = "Zones" }
+paths    = { default = true, label = "Free paths" }
 
 # ---- cursor --------------------------------------------------------------------------------------
 [cursor]

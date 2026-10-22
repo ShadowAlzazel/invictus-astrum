@@ -72,8 +72,10 @@ from . import kernels
 from .classis import COLUMNS, BURN_G, BURN_NONE, BURN_THROTTLE, DEAD, FREE, LEAD, SHIP, STATION, Classis, LeadView, ship_view
 from .entity import G0, Ship, ShipSpec, SpecError
 from .frames import from_aer
+from .orbits import drift_many
 from .placement import plan
-from .orders import ACTIVE, BURN, COAST, COLD, FACE, GOTO, KIND, PASSIVE, SETG, WARM, Given, OrderBook
+from .orders import ACTIVE, BURN, COAST, COLD, FACE, FREE as GO_FREE, GOTO, KIND, PASSIVE, SETG, WARM, Given, OrderBook
+from .zones import classify
 from .detect import Sensors, Sweeper
 from .signature import Signature
 from .timeline import FIELDS, MAX_SAMPLES, Timeline, Versions
@@ -163,7 +165,8 @@ class Order:
                                    # her active sensors: ping) or "passive" (stop), "stance" (her stance
                                    # or combat profile: target {stance, profile}; read by astrum/ai.py),
                                    # "queue" (a go-to given once she has carried out the order target.after),
-                                   # "face" (her hull on target.dir while she does not burn)
+                                   # "face" (her hull on target.dir while she does not burn), "free"
+                                   # (no place held: an orbit of the body whose well she is in, else coasting)
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s
     target: dict | None = None     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body}, and a label
     g: float | None = None         # goto: the acceleration to hold, capped at her most
@@ -261,7 +264,7 @@ class Fleet:
         self._point_cache: dict[tuple, np.ndarray] = {}   # where bullseye and body points are, by moment
         self._place_cache: dict[float, tuple] = {}
         self._base_cache: dict[float, np.ndarray] = {}
-        self._st_ahead: tuple = (None, {})            # station ships' places ahead: (who holds what, {t: (P, P a probe after)})
+        self._st_ahead: tuple = (None, {})            # station ships' places ahead: (who holds what, {grid moment: ...})
         self._plans: dict[tuple, tuple] = {}    # how station ships are placed, by the versions they are on
         self._plan_rows = None                  # (the scenario's placement plan, contact -> its row, rows -> theirs)
         self._pulls = [b for b in system.massive() if b.gm > 0]
@@ -401,7 +404,8 @@ class Fleet:
         if c.burn[i] in (BURN_G, BURN_THROTTLE):
             burn = {k: v for k, v in c.burn_dict(i).items() if k != "until"}
         place = c.place_of(i)
-        said = {"load": c.load[i], "burn": burn, "station_at": (place or {}).get("label"), "goal": goal, "place": place}
+        said = {"load": c.load[i], "burn": burn, "station_at": (place or {}).get("label"), "goal": goal, "place": place,
+                "orbit_of": place["body"] if place and "orbit" in place else None}
         c.mver[i] = self.versions.new(i, self._now, said, ts=c.t[i], r=c.r[i], v=c.v[i], prop=c.prop[i], dvs=c.dvs[i],
                                       gg=c.gg[i], goal=c.goal[i], lead=c.lead[i] if not c.solo[i] else -1,
                                       off=c.off[i], mode=c.mode[i])
@@ -1073,6 +1077,8 @@ class Fleet:
         for k, sa in enumerate(places):
             if sa is None:
                 scen.append(k)
+            elif "orbit" in sa:                        # free: on an orbit about a body (Kepler), not held
+                held.setdefault(("k", sa["body"]), []).append(k)
             elif "bullseye" in sa:
                 held.setdefault(("b", sa.get("player"), sa["bullseye"]), []).append(k)
             elif "body" in sa:
@@ -1082,10 +1088,15 @@ class Fleet:
         groups = []
         for how, ks in held.items():
             off = np.array([places[k].get("offset_m", (0.0, 0.0, 0.0)) for k in ks], dtype=float)
-            aer = [places[k].get("aer") for k in ks]
-            L = np.array([from_aer(math.radians(a[0]), math.radians(a[1]), a[2]) for a in aer]) if how[0] == "b" else None
+            if how[0] == "k":                          # each orbit as it was at its start: (r0, v0, t0) off the body
+                o = [places[k]["orbit"] for k in ks]
+                L = (np.array([x["r0"] for x in o]), np.array([x["v0"] for x in o]), np.array([x["t0"] for x in o]))
+            else:
+                aer = [places[k].get("aer") for k in ks]
+                L = np.array([from_aer(math.radians(a[0]), math.radians(a[1]), a[2]) for a in aer]) if how[0] == "b" else None
             groups.append((how, np.array(ks), L, off))
-        plan = self._plans[key] = (scen, groups, units)
+        free = np.array([bool(sa and "orbit" in sa) for sa in places], dtype=bool)   # pays nothing: free fall
+        plan = self._plans[key] = (scen, groups, units, free)
         return plan
 
     def _station_positions(self, t: float, only: np.ndarray | None = None, ver: np.ndarray | None = None) -> tuple:
@@ -1110,7 +1121,7 @@ class Fleet:
         P = np.full((len(ts), len(rows), 3), np.nan)
         if not len(rows):
             return rows, P
-        scen, groups, units = self._station_plan(ver[rows])
+        scen, groups, units, _ = self._station_plan(ver[rows])
         if scen and self.bullseyes is not None:       # placed by the scenario's plan: only these rows
             P[:, scen] = self._scenario_places_many(ts, rows[scen])
         elif scen:                                     # placed by a place() of its own (tools, tests)
@@ -1126,6 +1137,10 @@ class Fleet:
                 if got is not None:
                     for j, (O, A) in enumerate(zip(*got)):
                         P[j, ks] = O + L @ A.T + off
+            elif key[0] == "k":
+                R0, V0, T0 = L
+                P[:, ks] = self._bodies_at(ts)[key[1]][:, None, :] + drift_many(R0[None], V0[None], self.system[key[1]].gm,
+                                                                               np.asarray(ts, float)[:, None] - T0[None])
             else:
                 P[:, ks] = self._bodies_at(ts)[key[1]][:, None, :] + off
         for k, sa in units:
@@ -1180,16 +1195,21 @@ class Fleet:
         returns the time they are paid up to. Where they stand at each moment of the grid (and a
         probe after it) is worked out STATION_AHEAD_S at a time, and kept while the same ships hold
         the same places (an order or an arrival changes that): charging moves no ship off her place,
-        and a place moves by the clock alone. Unless one holds on a unit, which may be flying."""
-        steps = []
+        and a place moves by the clock alone. Unless one holds on a unit, which may be flying. So is
+        what each step of the grid costs a ship that rode her place through the step before: what
+        she pays from one grid moment to the next is the place's alone. Those she pays summed, once
+        (the rocket equation's integral: what each step takes off her mass, it takes as a factor);
+        the first step on a place, and a step off the grid, step by step (_charge)."""
+        steps = []                                     # (t1, from, its grid moment's number or None)
         while True:
-            nxt = self.t0 + (math.floor((st_t - self.t0) / STATION_S + 1e-9) + 1) * STATION_S
+            n = math.floor((st_t - self.t0) / STATION_S + 1e-9) + 1
+            nxt = self._grid(n)
             if nxt <= t_end + 1e-9:
-                steps.append((nxt, st_t))
+                steps.append((nxt, st_t, n))
                 st_t = nxt
             else:
                 if partial and t_end > st_t + 1e-9:
-                    steps.append((t_end, st_t))
+                    steps.append((t_end, st_t, None))
                     st_t = t_end
                 break
         c = self.c
@@ -1202,40 +1222,78 @@ class Fleet:
         key = (on.tobytes(), ver[on].tobytes())
         if self._st_ahead[0] != key:
             self._st_ahead = (key, {})
-        kept, ahead = self._st_ahead[1], not self._station_plan(ver[on])[2]
-        for t1, t_prev in steps:
-            if t1 not in kept:
-                on_grid = abs((t1 - self.t0) / STATION_S - round((t1 - self.t0) / STATION_S)) < 1e-9
-                ts = [t1 + k * STATION_S for k in range(int(STATION_AHEAD_S / STATION_S))] if ahead and on_grid else [t1]
-                if len(kept) > 4 * len(ts):
-                    kept.clear()
-                _, P = self._station_positions_many([t for x in ts for t in (x, x + PROBE_S)], on, ver)
-                kept.update((x, (P[2 * k], P[2 * k + 1])) for k, x in enumerate(ts))
-            self._charge(t1, t_prev, on, *kept[t1])
+        _, _, units, free = self._station_plan(ver[on])
+        kept, owed = self._st_ahead[1], np.zeros(len(on))
+        for t1, t_prev, n in steps:
+            if n is None:                              # off the grid (an order's moment): worked out alone
+                _, P = self._station_positions_many([t1, t1 + PROBE_S], on, ver)
+                self._charge(t1, t_prev, on, P[0], P[1], free)
+                continue
+            if n not in kept:
+                self._station_ahead(kept, on, ver, free, n, len(units) == 0)
+            P1, P2, V1, dv = kept[n]
+            before = kept.get(n - 1)                   # rode her place through the step before: the place's cost alone
+            rode = np.zeros(len(on), dtype=bool)
+            if before is not None and t_prev == self._grid(n - 1):
+                rode = (c.t[on] == t_prev) & np.isfinite(dv) & (c.v[on] == before[2]).all(axis=1)
+            if rode.any():
+                owed[rode] += dv[rode]
+                c.r[on[rode]], c.v[on[rode]], c.t[on[rode]] = P1[rode], V1[rode], t1
+            if not rode.all():
+                self._charge(t1, t_prev, on[~rode], P1[~rode], P2[~rode], free[~rode])
+        pay = (owed > 0) & (c.ve[on] > 0)
+        if pay.any():                                  # the rocket equation, every ship at once
+            self._pay(on[pay], owed[pay])
         return st_t
 
-    def _charge(self, t1: float, t_prev: float, rows: np.ndarray, P1: np.ndarray, P2: np.ndarray) -> None:
+    def _grid(self, n: int) -> float:
+        """The station grid's n-th moment from the scenario's start."""
+        return self.t0 + n * STATION_S
+
+    def _station_ahead(self, kept: dict, on: np.ndarray, ver: np.ndarray, free: np.ndarray, n1: int, ahead: bool) -> None:
+        """The grid's moments from its n1-th (STATION_AHEAD_S of them if ahead, else that one alone),
+        into kept by number: where each ship rides her place then and a probe after (P1, P2), its
+        velocity (V1), and what a ship riding it from the grid moment before pays to get there (dv,
+        as _charge works it out: NaN where the place was not there, 0 on an orbit)."""
+        ns = list(range(n1, n1 + int(STATION_AHEAD_S / STATION_S))) if ahead else [n1]
+        if len(kept) > 4 * len(ns):
+            kept.clear()
+        _, P = self._station_positions_many([t for n in ns for t in (self._grid(n), self._grid(n) + PROBE_S)], on, ver)
+        for k, n in enumerate(ns):
+            P1, P2 = P[2 * k], P[2 * k + 1]
+            V1 = (P2 - P1) / PROBE_S
+            prev, dv = kept.get(n - 1), np.full(len(on), np.nan)
+            if prev is not None:
+                mid = P1 - prev[2] * STATION_S / 2
+                g = gravity_many(self.system, self.eph, self._bodies(0.5 * (self._grid(n - 1) + self._grid(n))), np.nan_to_num(mid))
+                dv = np.where(free, 0.0, np.linalg.norm(V1 - prev[2] - g * STATION_S, axis=1))
+            kept[n] = (P1, P2, V1, dv)
+
+    def _pay(self, rows: np.ndarray, dv: np.ndarray) -> None:
+        """What holding her place cost each of rows (dv, m/s), off her tanks by the rocket equation."""
+        c = self.c
+        ve, m0 = c.ve[rows], c.dry[rows] + c.prop[rows]
+        d = np.minimum(dv, ve * np.log(m0 / c.dry[rows]))
+        c.prop[rows] = np.maximum(0.0, c.prop[rows] - m0 * (1 - np.exp(-d / ve)))
+        c.dvs[rows] += d
+
+    def _charge(self, t1: float, t_prev: float, rows: np.ndarray, P1: np.ndarray, P2: np.ndarray, free: np.ndarray) -> None:
         """Bring the station ships among rows up to t1: she rides her place (P1 at t1, P2 a probe
         after: NaN where it is not there) and pays what it cost against gravity since she was last
-        brought up to date, |Δv_place − g·Δt|, all of them at once."""
+        brought up to date, |Δv_place − g·Δt|, all of them at once; on an orbit (free), nothing."""
         c = self.c
         ok = ~(np.isnan(P1).any(axis=1) | np.isnan(P2).any(axis=1))
-        rows, P1, P2 = rows[ok], P1[ok], P2[ok]
+        rows, P1, P2, free = rows[ok], P1[ok], P2[ok], free[ok]
         if not len(rows):
             return
         V1 = (P2 - P1) / PROBE_S
         dt = np.where(c.t[rows] < t1, t1 - np.maximum(c.t[rows], t_prev), 0.0)
         mid = P1 - c.v[rows] * dt[:, None] / 2
         g = gravity_many(self.system, self.eph, self._bodies(0.5 * (t_prev + t1)), mid)
-        dv = np.where(dt > 0, np.linalg.norm(V1 - c.v[rows] - g * dt[:, None], axis=1), 0.0)
-        ve = c.ve[rows]
-        pay = (dv > 0) & (ve > 0)
-        if pay.any():                                    # the rocket equation, every ship at once
-            r_, ve_, m0 = rows[pay], ve[pay], c.dry[rows[pay]] + c.prop[rows[pay]]
-            left = ve_ * np.log(m0 / c.dry[r_])
-            d = np.minimum(dv[pay], left)
-            c.prop[r_] = np.maximum(0.0, c.prop[r_] - m0 * (1 - np.exp(-d / ve_)))
-            c.dvs[r_] += d
+        dv = np.where((dt > 0) & ~free, np.linalg.norm(V1 - c.v[rows] - g * dt[:, None], axis=1), 0.0)
+        pay = (dv > 0) & (c.ve[rows] > 0)
+        if pay.any():
+            self._pay(rows[pay], dv[pay])
         c.r[rows], c.v[rows], c.t[rows] = P1, V1, t1
 
     # ---- where things are ---------------------------------------------------------------------
@@ -1327,6 +1385,9 @@ class Fleet:
 
     def _station_pos(self, i: int, t: float, placed: dict | None = None, depth: int = 0) -> np.ndarray | None:
         sa = self.c.place_of(i)
+        if sa and "orbit" in sa:                       # on an orbit: where it has carried her by t
+            o, bid = sa["orbit"], sa["body"]
+            return self._bodies(t)[bid] + drift_many(np.asarray(o["r0"]), np.asarray(o["v0"]), self.system[bid].gm, t - o["t0"])
         if sa:
             return self._point(sa, t, placed, depth)
         if placed is None and self.bullseyes is not None:   # her scenario place: her row of the plan, no other
@@ -1441,6 +1502,13 @@ class Fleet:
         c = self.c
         self._now = t
         tg = c.target_of(i)
+        if tg.get("free"):                            # given free: there, she holds nothing (from where she is)
+            e = int(c.order[i])
+            c.mode[i], c.r[i], c.t[i] = FREE, aim, t
+            self._go_free(i, t)
+            if c.kind[i] == SHIP:
+                self._chain(i, t, e)
+            return
         if "bullseye" not in tg:                      # stand off the unit or body where she stopped, her place in the formation kept
             tg.pop("at_m", None)                      # (a point carried with a body: held off its centre, as any is)
             R = self._point({k: v for k, v in tg.items() if k != "offset_m"}, t)
@@ -1570,6 +1638,8 @@ class Fleet:
         elif kind == COAST:
             self._leave_station(i, at)
             self._coast(i)
+        elif kind == GO_FREE:
+            self._go_free(i, at)
         elif kind == COLD:
             if c.coldt[i] <= 0:
                 self.findings.append(f"{c.ids[i]}: her rads do not fold; she cannot run cold")
@@ -1582,6 +1652,42 @@ class Fleet:
         elif kind == FACE and c.thrust[i] <= 0:      # her hull on a target, while she does not burn
             c.dir[i] = g.target["dir"]
             self._touch(i)
+
+    def _well(self, r: np.ndarray, t: float):
+        """The body whose well she is in (zones.classify: the innermost sphere of influence; in a
+        binary, the one that pulls harder): None out in a star's own space."""
+        b = self.system[classify(self.system, self._bodies(t), r)["dominant"]]
+        return None if b.kind == "star" or b.gm <= 0 else b
+
+    def _go_free(self, i: int, t: float) -> None:
+        """Free: she gives up her place (or her order) and holds nothing. In a body's well she goes
+        onto a circular orbit about it at the height she is at, prograde about the system's up,
+        paying the burn onto it (if she has it); an orbit is free fall, and costs nothing after.
+        Out of every well, or short of the burn, she coasts as she goes."""
+        c = self.c
+        self._leave_station(i, t)
+        b = self._well(c.r[i], t)
+        if b is None or c.kind[i] != SHIP:
+            self._coast(i)
+            return
+        P, V = self._bodies(t)[b.id], (self._bodies(t + PROBE_S)[b.id] - self._bodies(t)[b.id]) / PROBE_S
+        rel = c.r[i] - P
+        R = float(np.linalg.norm(rel))
+        up = np.array([0.0, 0.0, 1.0]) if abs(rel[2]) < 0.95 * R else np.array([1.0, 0.0, 0.0])
+        along = np.cross(up, rel)
+        v0 = math.sqrt(b.gm / R) * along / np.linalg.norm(along)
+        burn = float(np.linalg.norm(v0 - (c.v[i] - V)))
+        if c.ve[i] <= 0 or c.ve[i] * math.log(c.mass(i) / c.dry[i]) < burn:
+            self.findings.append(f"{c.ids[i]}: not the Δv to go onto an orbit of {b.name}; she coasts")
+            self._coast(i)
+            return
+        self._pay(np.array([i]), np.array([burn]))
+        c.places.append({"body": b.id, "orbit": {"r0": rel.tolist(), "v0": v0.tolist(), "t0": t},
+                         "label": f"orbit of {b.name}, {R / 1e3:,.0f} km"})
+        c.place[i] = len(c.places) - 1
+        c.mode[i], c.goal[i], c.order[i], c.burn[i], c.thrust[i], c.burn_ev[i] = STATION, False, -1, BURN_NONE, 0.0, -1
+        c.v[i], c.t[i] = V + v0, t
+        self._touch(i)
 
     def _leave_station(self, i: int, t: float) -> None:
         """A station ship leaves her place at the speed it was moving."""
