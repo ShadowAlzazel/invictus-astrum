@@ -1,7 +1,7 @@
 <script>
   // The ship registry: every class in data/ships/classes, as the server reads and derives it.
   // Read-only; the server is the authority on every figure, and this screen only lays them out.
-  // Laid out in tabs down a right-hand rail: Overview, Drive, Armament, Systems, Lore, Open.
+  // Laid out in tabs down a right-hand rail: Overview, Drive, Armament, Systems, Sensors, Lore, Open.
   import { onMount } from 'svelte';
   import { api } from './api.js';
   import { unitSymbol } from './symbols.js';
@@ -16,6 +16,7 @@
     { id: 'drive', label: 'Drive', icon: 'drive' },
     { id: 'armament', label: 'Armament', icon: 'armament' },
     { id: 'systems', label: 'Systems', icon: 'systems' },
+    { id: 'sensors', label: 'Sensors', icon: 'sensors' },
     { id: 'lore', label: 'Lore', icon: 'lore' },
     { id: 'open', label: 'Open', icon: 'open' },
   ];
@@ -89,6 +90,12 @@
   const tierLabel = (t) => reg?.rules.crew[t]?.label ?? t;
   const v = (x) => (x && x.lo != null ? (x.lo + x.hi) / 2 : null);
   const num = (x, d = 0) => (x == null || Number.isNaN(x) ? '—' : Number(x).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d }));
+  // the Sensors tab: how far each sees a ship giving off P (reach goes as √P), a long way in AU
+  const AU_KM = 149597870.7;
+  const far = (km) => (km >= 0.1 * AU_KM ? `${num(km / AU_KM, km >= 10 * AU_KM ? 0 : 2)} AU` : `${num(km)} km`);
+  const reachAt = (s, mw) => far(s.km * Math.sqrt(mw / s.ref_mw));
+  const sweep = (s) => (s.revisit_s >= 120 ? `${num(s.revisit_s / 60)} min` : `${num(s.revisit_s)} s`);
+  const AGAINST = [['A cold hull', 0.3], ['Warm', 30], ['Burning', 30000]];
   const g3 = (x) => (x && x.lo != null ? (x.lo === x.hi ? x.lo.toFixed(3) : `${x.lo.toFixed(3)}–${x.hi.toFixed(3)}`) : '—');
   const scale = (x, k) => (x && x.lo != null ? { ...x, lo: x.lo * k, hi: x.hi * k } : x);
   const loadName = (r) => `${r.load || 'hull'}, tanks ${r.tanks}`;
@@ -220,6 +227,7 @@
     armament: 'M4 20L18 6M14 4l6 6M6 14l4 4M4 4l4 4',
     systems: 'M12 3v3M12 18v3M3 12h3M18 12h3M7 7l2 2M15 15l2 2M7 17l2-2M15 9l2-2M12 9a3 3 0 100 6 3 3 0 000-6z',
     lore: 'M5 4h10l4 4v12H5zM15 4v4h4M8 12h8M8 16h6',
+    sensors: 'M2 12c3-5 17-5 20 0-3 5-17 5-20 0zM12 9a3 3 0 100 6 3 3 0 000-6z',
     open: 'M12 4l9 16H3zM12 10v4M12 17v.5',
     length: 'M3 9h18v6H3zM7 9v3M11 9v3M15 9v3M19 9v3',
     mass: 'M8 8h8l3 12H5zM10 8a2 2 0 114 0',
@@ -259,7 +267,7 @@
         </button>
       {/each}
     {/each}
-    <p class="keys"><kbd>Q</kbd><kbd>E</kbd> class · <kbd>1</kbd>–<kbd>6</kbd> tab · <kbd>Esc</kbd> back</p>
+    <p class="keys"><kbd>Q</kbd><kbd>E</kbd> class · <kbd>1</kbd>–<kbd>7</kbd> tab · <kbd>Esc</kbd> back</p>
   </aside>
 
   <nav class="rail">
@@ -538,8 +546,65 @@
                 <dl class="rows">{#each rows as r}<dt>{r.label}</dt><dd class:blank={r.blank}>{row(r)}</dd>{/each}</dl>
               {/if}
             {/each}
+          </section>
+        </div>
+
+      <!-- ============================== SENSORS ============================== -->
+      {:else if tab === 'sensors'}
+        {@const S = cls.sensing}
+        <h2 class="caps">Suite <span class="sub">as the simulation fits and sweeps it · parts.toml [sensor.*], assemblies.toml, rules.toml [detection] · reach goes as the square root of what she gives off</span></h2>
+        {#if S?.suite.length}
+          <table>
+            <thead><tr><th>Sensor</th><th>Mounted as</th><th class="r">Cones</th><th class="r">Sweep</th>
+              {#each AGAINST as [what, mw]}<th class="r">{what} · {mw >= 1000 ? `${num(mw / 1000)} GW` : `${mw} MW`}</th>{/each}</tr></thead>
+            <tbody>
+              {#each S.suite as s, i}
+                <tr class:band={i % 2} title={s.notes}>
+                  <td class="strong">{s.name}{#if s.active}<span class="act">active</span>{/if}</td>
+                  <td>{#each s.mounted as m, k}{k ? ' · ' : ''}{m.as}{s.mounted.length > 1 ? ` (${m.cones})` : ''}{/each}</td>
+                  <td class="r">{s.cones} × {num(s.cone_deg)}°</td>
+                  <td class="r">{sweep(s)}</td>
+                  {#if s.active}
+                    <td class="r" colspan="3">any hull to {far(s.km)} · each ping gives off {num(s.emit_mw)} MW{s.emit_est ? ' (est.)' : ''}</td>
+                  {:else}
+                    {#each AGAINST as [, mw]}<td class="r">{reachAt(s, mw)}</td>{/each}
+                  {/if}
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          {#each S.suite.filter((s) => s.notes) as s}<p class="note"><b>{s.name}</b>: {s.notes}</p>{/each}
+        {:else}<p class="empty">No sensors the simulation sweeps.</p>{/if}
+        {#if S?.unsimulated.length}
+          <p class="note">Not swept yet (their part states no cone, reach or sweep): {S.unsimulated.map((u) => `${u.as} (${u.name})`).join(', ')}</p>
+        {/if}
+        <div class="two">
+          <section>
+            <h2 class="caps">What she gives off <span class="sub">to others' passive sensors · astrum/signature.py</span></h2>
+            {#if S?.gives_off}
+              <dl class="rows">
+                <dt>Rads, spread</dt><dd>{num(S.gives_off.warm_mw, 1)} MW</dd>
+                <dt>... her store emptying</dt><dd>{num(S.gives_off.store_emptying_mw, 1)} MW</dd>
+                {#if S.gives_off.cold_mw != null}<dt>Wings folded, running cold</dt><dd>{num(S.gives_off.cold_mw, 2)} MW · up to {num(S.gives_off.cold_h)} h</dd>
+                {:else}<dt>Wings</dt><dd>fixed: always radiating</dd>{/if}
+                <dt>Her plume</dt><dd>{d ? simValue(d.jet_pw, 'PW', 2) : '—'} <span class="dimmed">at her most, seen astern</span></dd>
+                {#each S.suite.filter((s) => s.active) as s}<dt>Pinging ({s.name})</dt><dd>{num(s.emit_mw)} MW{s.emit_est ? ' (est.)' : ''}</dd>{/each}
+              </dl>
+            {:else}<p class="empty">Not yet stated.</p>{/if}
+          </section>
+          <section>
+            <h2 class="caps">How a track is made out <span class="sub">rules.toml [detection], [relay]</span></h2>
+            <dl class="rows">
+              <dt>Detected</dt><dd>seen once</dd>
+              <dt>Tracked</dt><dd>seen again within {num(S.rules.hold_s / 60)} min</dd>
+              <dt>Classified</dt><dd>her plume {S.rules.classify}× the faintest seen, or an active return; her class in the journal</dd>
+              <dt>Identified</dt><dd>her hull and rads {S.rules.identify}× the faintest seen; a friend's always</dd>
+              <dt>Lost</dt><dd>not seen in {S.rules.lost} sweeps</dd>
+              <dt>Old track</dt><dd>not seen in {num(S.rules.hold_s / 60)} min: where she was last seen</dd>
+              <dt>Her reports</dt><dd>{S.relay.vigil ? `a Vigil: straight to the flagship at ${S.relay.fast} c` : `to her leader at ${S.relay.slow} c (leaders on at ${S.relay.fast} c), or through a Vigil if sooner`}</dd>
+            </dl>
             {#if cls.sensors.length}
-              <h2 class="caps">Sensors</h2>
+              <h2 class="caps">Stated <span class="sub">the class documents' own words</span></h2>
               <dl class="rows">{#each cls.sensors as s}<dt>{s.what}</dt><dd>{s.reach}</dd>{/each}</dl>
             {/if}
           </section>
@@ -687,6 +752,8 @@
   h2.uline::after { content: ''; position: absolute; left: -2px; bottom: -6px; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--t); background: #111; }
   .note { margin: 8px 0 0; color: var(--t2); font-size: 12px; line-height: 1.45; }
   .empty { color: var(--t2); margin: 24px 0; }
+  .act { margin-left: 8px; padding: 0 5px; border: 1px solid var(--c); color: var(--c); font-size: 9px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
+  .dimmed { color: var(--t2); font-weight: 400; font-size: 11px; }
   .link { color: var(--c); }
   .link:hover { text-decoration: underline; }
   dl.rows { display: grid; grid-template-columns: auto 1fr; margin: 0; }

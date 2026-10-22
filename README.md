@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 192 tests
+python -m pytest -q tests             # 193 tests
 ```
 
 The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
@@ -62,7 +62,10 @@ Every class in `data/ships/classes/`: the Garden's fleet and auxiliaries, its sh
 and the Old Forest. Each shows the three readers' words (sail, modern, ARCVS), rate and command,
 particulars, batteries, point defence and endurance, and reach by crew tier: pick green, rated,
 veteran or exceptional and the table shows how far each effect reaches and whether the beam or
-the aim sets it (DE COLLINEATIONE). Figures the canon has not stated yet are listed as *left for
+the aim sets it (DE COLLINEATIONE). Its Sensors tab shows the suite as the simulation fits it
+(each sensor part, what it is mounted as, its cones and sweep, how far it sees a cold, warm and
+burning ship; an active scan's reach and what each ping gives off), what she gives off herself,
+and the rules a track is made out by. Figures the canon has not stated yet are listed as *left for
 the author*. The format is in `data/ships/README.md`.
 
 ## Using the map

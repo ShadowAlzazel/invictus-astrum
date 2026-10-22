@@ -56,21 +56,30 @@ def spread(n: int, turn: float = 0.0) -> np.ndarray:
 SENSOR_KEYS = ("cone_deg", "reach_km", "ref_mw", "revisit_s")
 
 
-def mounts(registry, sc) -> list[tuple[str | None, int]]:
-    """A class's sensors, as (sensor, how many cones): the standard suite and active scan, and a
-    cone for each of her domes and strips (two to a pair) and sensor batteries."""
+def mounts(registry, sc) -> list[tuple[str | None, int, str]]:
+    """A class's sensors, as (sensor, how many cones, what it is mounted as): the standard suite
+    and active scan, and a cone for each of her domes and strips (two to a pair) and sensor
+    batteries."""
     rules = getattr(getattr(registry, "rules", None), "detection", None) or {}
     arm = getattr(registry, "armoury", None)
     asm = arm.assemblies if arm else {}
-    out = [(m.get("sensor"), int(m.get("cones", 1))) for m in (rules.get("standard") or {}, rules.get("active") or {})]
+    out = [(m.get("sensor"), int(m.get("cones", 1)), what) for m, what in
+           ((rules.get("standard") or {}, "Standard suite"), (rules.get("active") or {}, "Active scan"))]
     for b in getattr(sc, "batteries", ()):
         kind, raw = b.get("kind"), b.get("raw", {})
+        label = raw.get("label") or raw.get("id") or kind
         if kind in ("dome", "strip"):
-            count = int(raw.get("count") or 2 * int(raw.get("pairs") or 0) or 1)
-            out.append((asm.get(kind, {}).get(raw.get(kind), {}).get("sensor"), count))
+            count = _count(raw.get("count")) or 2 * _count(raw.get("pairs")) or 1
+            a = asm.get(kind, {}).get(raw.get(kind), {})
+            out.append((a.get("sensor"), count, f"{label} · {a.get('name', raw.get(kind))}"))
         elif kind == "sensor":
-            out.append((raw.get("sensor"), int(raw.get("count") or 1)))
+            out.append((raw.get("sensor"), _count(raw.get("count")) or 1, label))
     return out
+
+
+def _count(x) -> int:
+    """A stated count; not stated ("—", or none): 0."""
+    return int(x) if isinstance(x, (int, float)) and not isinstance(x, bool) else 0
 
 
 def suite(registry, sc) -> list[dict]:
@@ -79,14 +88,26 @@ def suite(registry, sc) -> list[dict]:
     arm = getattr(registry, "armoury", None)
     parts = arm.parts.get("sensor", {}) if arm else {}
     out: dict[str, dict] = {}
-    for sid, count in mounts(registry, sc):
+    for sid, count, what in mounts(registry, sc):
         p = parts.get(sid or "", {})
         if all(k in p for k in SENSOR_KEYS):
             d = out.setdefault(sid, {"id": sid, "name": p.get("name", sid), "km": float(p["reach_km"]), "ref_mw": float(p["ref_mw"]),
                                      "cone_deg": float(p["cone_deg"]), "revisit_s": float(p["revisit_s"]), "cones": 0,
-                                     "active": bool(p.get("active"))})
+                                     "active": bool(p.get("active")), "emit_mw": num(p, "emit_mw") if p.get("active") else None,
+                                     "emit_est": bool(isinstance(p.get("emit_mw"), dict) and p["emit_mw"].get("est")),
+                                     "notes": p.get("notes", ""), "mounted": []})
             d["cones"] += count
+            d["mounted"].append({"as": what, "cones": count})
     return sorted(out.values(), key=lambda d: d["km"] / math.sqrt(d["ref_mw"]))
+
+
+def unsimulated(registry, sc) -> list[dict]:
+    """A class's sensor mounts the simulation does not sweep (yet): their part states no cone,
+    reach or sweep (the Holzweiber's blisters), or names none."""
+    arm = getattr(registry, "armoury", None)
+    parts = arm.parts.get("sensor", {}) if arm else {}
+    return [{"as": what, "sensor": sid, "name": parts.get(sid or "", {}).get("name", sid)} for sid, count, what in mounts(registry, sc)
+            if sid and not all(k in parts.get(sid, {}) for k in SENSOR_KEYS)]
 
 
 class Sensors:
@@ -105,7 +126,7 @@ class Sensors:
             sc = registry.classes.get(spec.class_id) if spec is not None and hasattr(registry, "classes") else None
             if sc is None:
                 continue
-            for m, (sid, count) in enumerate(mounts(registry, sc)):
+            for m, (sid, count, _) in enumerate(mounts(registry, sc)):
                 p = parts.get(sid or "", {})
                 if not all(k in p for k in SENSOR_KEYS):
                     continue                              # not a simulated sensor (yet)

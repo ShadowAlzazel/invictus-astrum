@@ -1388,3 +1388,20 @@ def test_a_dropped_track_stays_an_old_track_until_it_expires_or_is_removed():
     assert c.delete(f"/api/track/sol-demo/{tid}?view=arcvs").status_code == 200
     assert tid not in _side_frames(app, f, "arcvs", [t0 + 1800 * 8])["tracks"]
     assert c.delete("/api/track/sol-demo/Tnope?view=arcvs").status_code == 404
+
+
+def test_the_registry_shows_each_class_s_sensors():
+    """A class's sensors as the simulation fits them (where each is mounted, its cones and sweep,
+    how far it sees), what she gives off, the rules a track is made out by; and the mounts not
+    swept yet (a part with no figures, a count not stated)."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    c = TestClient(create_app())
+    s = c.get("/api/ships/salticidae").json()["sensing"]
+    by = {x["id"]: x for x in s["suite"]}
+    assert by["passive"]["cones"] == 6 and by["passive"]["mounted"] == [{"as": "Standard suite", "cones": 6}]
+    assert by["ranging"]["active"] and by["ranging"]["emit_mw"] == 300 and by["ranging"]["emit_est"]
+    assert by["watch-optic"]["mounted"][0]["as"].startswith("Domes · ") and by["ir-telescope"]["ref_mw"] == 0.3
+    assert s["relay"]["vigil"] and s["rules"]["identify"] == 25 and s["gives_off"]["warm_mw"] == 20
+    h = c.get("/api/ships/holzweiber").json()["sensing"]
+    assert [u["sensor"] for u in h["unsimulated"]] == ["blister"]

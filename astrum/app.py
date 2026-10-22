@@ -46,7 +46,7 @@ from .entity import ShipSpec, SpecError
 from .sim import Fleet, Order
 from . import display
 from . import picture
-from .detect import suite
+from .detect import suite, unsimulated
 
 KM = 1e-3
 _conn_n = itertools.count(1)    # the map's connections, for the simulation's side to tell apart
@@ -542,6 +542,21 @@ def side_contacts(world: "World", sc, view: str) -> list[dict]:
     return out
 
 
+def sensing(world: "World", cid: str) -> dict:
+    """A class's sensors as the simulation fits and sweeps them (astrum/detect.py), what she gives
+    off to others' (her rads; astrum/signature.py), and the rules a track is made out by."""
+    reg = world.ships
+    rules, sig = reg.rules, reg.rules.signature or {}
+    spec = world.spec(cid)
+    sd = spec.as_dict() if spec else {}
+    quiet = sd.get("quiet_mw") or 0.0
+    return {"suite": suite(reg, reg.classes[cid]), "unsimulated": unsimulated(reg, reg.classes[cid]),
+            "rules": rules.detection, "relay": {**rules.relay, "vigil": cid in rules.relay.get("vigils", ())},
+            "gives_off": {"warm_mw": quiet, "store_emptying_mw": quiet * (1 + float(sig.get("recover", 4))),
+                          "cold_mw": quiet * float(sig.get("cold_share", 0.01)) if sd.get("cold_h") else None,
+                          "cold_h": sd.get("cold_h") or None} if spec else None}
+
+
 def level_dict(world: "World", s) -> dict:
     """A system as the level selector shows it."""
     kinds: dict[str, int] = {}
@@ -692,7 +707,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         reg = world.ships
         if reg is None or cid not in reg.classes:
             raise HTTPException(404, f"no ship class {cid!r}")
-        return class_detail(reg, reg.classes[cid])
+        return {**class_detail(reg, reg.classes[cid]), "sensing": sensing(world, cid)}
 
     # ---- the workshop: build systems from the map --------------------------------------------
     presets = Path(config["paths"]["systems"]).parent / "presets.toml"
