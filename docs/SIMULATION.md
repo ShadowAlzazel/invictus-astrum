@@ -105,19 +105,32 @@ Strike Squadron behind Jupiter, some 47. Where her own ships are, a side knows a
 ## What a view is shown
 
 The simulation knows everything; a view is shown a picture made from it by functions
-(`astrum/picture.py`), each on or off in `config.toml [picture]`. A view is one of the scenario's
-factions (`[scenario] factions`: Sol holds ARCVS, the JADF, the Bandits and GHOST) or MASTER,
-which owns everything: it sees the truth and orders every ship. A view's own ships are its
-faction's and its branches' (ARCVS: AVC and AAG), shown as they are, and only they take its
-orders.
+(`astrum/picture.py`), each on or off in `config.toml [picture]`, and switched for one map's
+pictures from its Settings (Game: sent with each picture asked for). A view is a side: one of the
+scenario's factions (`[scenario] factions`: Sol holds ARCVS, the JADF, the Bandits and GHOST; each
+plays as its player in `players.toml`, else as itself) or MASTER, which owns everything: it sees
+the truth and orders every ship. A side's own ships are its faction's and its branches' (ARCVS:
+AVC and AAG), shown as they are, and only they take its orders.
 
-- **detection:** a ship not the view's own is shown once one of its ships' sensors has seen her
-  and the report has reached its flagship, where she was when that light left her (`Fleet.past`), for an hour after; not seen, she is not
+What the browser is sent is the side's table and nothing more (`Side`, `astrum/simhost.py`):
+
+- `/api/meta?view=` gives each scenario's units the side holds: its own (its friends, to it,
+  whichever side the scenario was written for), and for the scenario's own side the units it
+  was given that are no ships and hold none (what it knows of the others before it sees them).
+- A picture gives its own ships by their ids, and every other ship it has seen as a **track**:
+  an id made from a secret of the simulation's, which says nothing of who she is, with how the
+  side knows her (`tracks`: a bogey, or her name and class once identified; lost). A ship not
+  seen is not sent at all, nor is another side's formation.
+- An order may aim at a track by its id; what the side is sent of its orders names it so.
+
+- **detection:** a ship not the view's own is shown once one of its ships' sensors has seen her,
+  where she was when that light left her (`Fleet.past`), for an hour after; not seen, she is not
   in the picture at all, nor is a formation none of whose ships is seen. Seen 25 times brighter
   than the faintest its sensor sees (within a fifth of its reach), or a friendly ship: known for
-  what she is. Else a **bogey**: no name, no class, an unknown frame. Not seen again within one
-  and a half of its sensor's sweeps, a lost track (drawn with its uncertainty). Seen from any
-  side but the scenario's own, the others' forces are of unknown affiliation.
+  what she is. Else a **bogey**: no name, no class, an unknown frame, whoever she is. Not seen again within one
+  and a half of its sensor's sweeps, a lost track (drawn with its uncertainty). Known, a friend's
+  ship is friendly; another's is as the scenario writes her to its own side, unknown to any other.
+- **relay:** ... once the report has reached its fleet flagship (off: the moment she is seen).
 - **light_delay** (without detection): every other ship where she was when the light reaching the
   nearest of the view's own ships left her.
 - **hide_private:** of a ship not the view's own, what only she knows (her tanks, her mass, her

@@ -7,6 +7,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { aimAt, estimate, heading, hms, group, stepG, shipsUnder } from './orders.js';
   import Telegraph from './Telegraph.svelte';
+  import { cap, keymap } from './keys.js';
   import { km, bearing, elev } from './format.js';
 
   export let map = null;
@@ -33,22 +34,21 @@
   $: note = onBull ? (ordering.tilt ? `${elev(ordering.tilt)} of the bullseye` : 'level with the bullseye')
                    : (ordering?.tilt ? `${elev(ordering.tilt)} from her` : 'level with her, along the bullseye');
 
-  // keys while aiming: W/S step the telegraph (Shift: by 0.01 g), E/Q tilt toward Eve or Haid,
-  // B: Eve and Haid from her own height or from the bullseye's plane
+  // keys while aiming (lib/keys.js): the telegraph up and down (Shift: by 0.01 g), tilt toward Eve
+  // or Haid, and Eve and Haid from her own height or from the bullseye's plane
   export function key(e) {
     if (!ordering || !grp) return false;
-    const k = e.key.toLowerCase();
-    if (k === 'w' || k === 's') {
-      ordering.g = stepG(ordering.g, grp.maxG, grp.cruise, k === 'w', e.shiftKey);
+    if (is(e, 'up') || is(e, 'down')) {
+      ordering.g = stepG(ordering.g, grp.maxG, grp.cruise, is(e, 'up'), e.shiftKey);
       ordering = ordering;
       return true;
     }
-    if (k === 'b') {
+    if (is(e, 'plane')) {
       togglePlane();
       return true;
     }
-    if (k === 'e' || k === 'q') {
-      ordering.tilt = Math.max(-80, Math.min(80, ordering.tilt + (k === 'e' ? 5 : -5)));
+    if (is(e, 'eve') || is(e, 'haid')) {
+      ordering.tilt = Math.max(-80, Math.min(80, ordering.tilt + (is(e, 'eve') ? 5 : -5)));
       ordering = ordering;
       return true;
     }
@@ -150,9 +150,9 @@
       </Telegraph>
     </div>
     <button class="plane" class:on={onBull} on:click={togglePlane} title="B: Eve and Haid from her own height, or from the bullseye's plane">
-      <i></i>{onBull ? "Bullseye's plane" : 'Her own height'}<kbd>B</kbd>
+      <i></i>{onBull ? "Bullseye's plane" : 'Her own height'}<kbd>{cap($keymap.plane)}</kbd>
     </button>
-    <p class="keys"><kbd>W</kbd><kbd>S</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>E</kbd><kbd>Q</kbd> Eve / Haid · <kbd>B</kbd> plane · click to order · <kbd>Esc</kbd> cancel</p>
+    <p class="keys"><kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>{cap($keymap.eve)}</kbd><kbd>{cap($keymap.haid)}</kbd> Eve / Haid · <kbd>{cap($keymap.plane)}</kbd> plane · click to order · <kbd>Esc</kbd> cancel</p>
     {#if message}<p class="msg">{message}</p>{/if}
   </aside>
 {:else if message}

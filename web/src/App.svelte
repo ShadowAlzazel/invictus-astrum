@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { SystemMap } from './lib/SystemMap.js';
   import { api, StateStream } from './lib/api.js';
-  import { asSeen } from './lib/seen.js';
+  import { cap, is, keymap } from './lib/keys.js';
   import HudCursor from './lib/HudCursor.svelte';
   import Orders from './lib/Orders.svelte';
   import Bullseyes from './lib/Bullseyes.svelte';
@@ -20,11 +20,18 @@
                  [7200, '2 h/s'], [21600, '6 h/s'], [86400, '1 d/s'], [604800, '1 wk/s'], [2629800, '1 mo/s'], [31557600, '1 yr/s']];
 
   let canvas, map = null, stream, meta = null, style = null, def = null, state = null;
-  let systemId = null, playerId = 'arcvs', bullseyeId = 'system', scenarioOn = true;
-  let viewId = null;                // whose picture: one of the scenario's factions, or MASTER (null: the player's faction)
+  let systemId = null, pickedPlayer = 'arcvs', bullseyeId = 'system', scenarioOn = true;
+  // whose side the map plays: one of the scenario's factions, or MASTER (null: the scenario's own),
+  // kept in this browser by scenario. The server sends that side's table, and nothing more
+  let sides = {};
+  try { sides = JSON.parse(localStorage.getItem('astrum.sides') ?? '{}'); } catch { /* not kept */ }
+  // the picture's switches (Settings, Game), kept in this browser and sent with every picture asked for
+  let game = {};
+  try { game = JSON.parse(localStorage.getItem('astrum.game') ?? '{}'); } catch { /* not kept */ }
+  let settingsTab = 'display';
   let t = 0, warp = WARPS.findIndex(([s]) => s === 3600), paused = false, last = 0, raf;
   let orbitsT = null, orbitsBusy = false;
-  let drules = {}, settings = null, showSettings = false, settingsStatus = '', saveTimer, pendingSave = false;
+  let drules = {}, settings = null, showSettings = false, settingsStatus = '';
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
   let showFindings = false, down = null, poll;
   let ordering = null, orderTool, orderMsg = '', msgTimer;   // an order being aimed: { unit, g, tilt, plane }
@@ -42,42 +49,58 @@
   $: inMap = mode === 'map' || mode === 'workshop';   // the screens that use the map's controls
   let schema = null, wdoc = null, lastLevel = null;
 
+  // a scenario on the map: its side picks the player (bullseyes are a player's); else picked here
+  $: side = scenario?.view ?? null;
+  $: views = scenario ? [...(scenario.factions ?? []), { id: 'master', label: 'MASTER', player: scenario.player }] : [];
+  $: playerId = scenarioOn && scenario ? views.find((v) => v.id === side)?.player ?? scenario.player : pickedPlayer;
   $: player = meta?.players.find((p) => p.id === playerId);
-  $: view = viewId ?? player?.faction ?? null;
-  $: views = scenario ? [...(scenario.factions ?? []), { id: 'master', name: 'MASTER' }] : [];
-  // every unit as the view knows it: unseen ones out, unknown ones bogeys (lib/seen.js)
-  $: seenContacts = contacts.map((c) => asSeen(c, state?.seen_as?.[c.id])).filter(Boolean);
   $: bullseyes = [{ id: 'system', name: `${def?.name ?? ''} centre` }, ...(player?.bullseyes.filter((b) => b.system === systemId) ?? [])];   // the star centre always first
   $: scenario = meta?.scenarios.find((s) => s.system === systemId);
-  $: contacts = scenarioOn && scenario ? scenario.contacts : [];
+  // the side's units (meta), and the others' ships it has seen, as tracks (each picture's)
+  $: tracks = Object.values(state?.tracks ?? {}).map((c) => ({ ...c, ship: c.ship_class ? meta?.specs[c.ship_class] ?? null : null }));
+  $: contacts = scenarioOn && scenario ? [...scenario.contacts, ...tracks] : [];
   $: warnings = def?.findings.filter((f) => f.level === 'warning') ?? [];
   $: if (map) { map.bullseyeId = bullseyeId; map.contactName = (id) => { const c = contacts.find((c) => c.id === id); return c?.name ?? c?.callsign ?? id; }; }
 
-  // ---- settings: display.toml defaults, the player's settings.toml on top -----------------------
+  // ---- settings: display.toml defaults, settings.toml on top, this browser's on top of that -------
   function applySettings() {
     if (!settings) return;
     document.documentElement.style.setProperty('--ui-scale', settings.text.panel_scale);
     if (map) for (const [k, v] of Object.entries(settings.layers)) map.setLayer(k, v);
   }
+  function keepSettings() {
+    try { localStorage.setItem('astrum.display', JSON.stringify(settings)); settingsStatus = 'Kept in this browser'; }
+    catch { settingsStatus = 'This browser keeps nothing: for this visit only'; }
+  }
+  function localSettings(server) {               // this browser's, over the server's, only for settings it has
+    let mine = {};
+    try { mine = JSON.parse(localStorage.getItem('astrum.display') ?? '{}'); } catch { /* none */ }
+    return Object.fromEntries(Object.entries(server).map(([sec, v]) => [sec, { ...v,
+      ...Object.fromEntries(Object.entries(mine[sec] ?? {}).filter(([k]) => k in v)) }]));
+  }
   function setSetting(sec, k, v) {
     settings = { ...settings, [sec]: { ...settings[sec], [k]: v } };
     applySettings();
-    settingsStatus = '';
-    pendingSave = true;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(saveSettings, 500);
-  }
-  async function saveSettings() {
-    try { settings = (await api.saveSettings(settings)).settings; settingsStatus = 'Saved'; applySettings(); }
-    catch (e) { settingsStatus = e.message; }
-    pendingSave = false;
+    keepSettings();
   }
   function resetSettings(sec) {
     const d = (s) => Object.fromEntries(Object.entries(drules[s].settings).map(([k, v]) => [k, v.default]));
     settings = sec ? { ...settings, [sec]: d(sec) } : Object.fromEntries(Object.keys(drules).map((s) => [s, d(s)]));
     applySettings();
-    clearTimeout(saveTimer);
-    saveSettings();
+    keepSettings();
+  }
+  function setGame(k, v) {
+    const g = { ...game };
+    if (v == null) delete g[k]; else g[k] = v;
+    game = g;
+    try { localStorage.setItem('astrum.game', JSON.stringify(game)); } catch { /* for this visit only */ }
+  }
+  async function setSide(id) {
+    sides = { ...sides, [scenario.id]: id };
+    try { localStorage.setItem('astrum.sides', JSON.stringify(sides)); } catch { /* for this visit only */ }
+    select(null);
+    ordering = null;
+    await loadMeta();
   }
 
   function applyStyle(s) {
@@ -87,13 +110,18 @@
     map?.setStyle(s);
   }
 
+  // the side kept for the scenario on the map (before any map: the one kept last)
+  function wantedSide() {
+    const sc = meta?.scenarios.find((s) => s.system === systemId);
+    return sc ? sides[sc.id] ?? null : Object.values(sides)[0] ?? null;
+  }
   async function loadMeta() {
-    meta = await api.meta();
+    meta = await api.meta(wantedSide());
     // what the simulation reads of a ship class comes once per class; every ship of it shares that one
     for (const sc of meta.scenarios) for (const c of sc.contacts) c.ship = c.ship_class ? meta.specs[c.ship_class] ?? null : null;
     applyStyle(meta.style);
     drules = meta.display.rules;
-    if (!pendingSave) settings = meta.display.settings;   // unsaved changes here win over the file
+    settings = localSettings(meta.display.settings);
     applySettings();
     version = meta.version;
   }
@@ -103,6 +131,8 @@
   async function openSystem(id, keepTime = false, keepView = false) {
     const before = def?.bodies.length;
     systemId = id;
+    const sc = meta?.scenarios.find((s) => s.system === id);
+    if (sc && (sides[sc.id] ?? sc.view) !== sc.view) await loadMeta();   // a scenario played as another side
     def = await api.system(id);
     const same = keepView && def.bodies.length === before;
     if (!keepTime) t = def.start;
@@ -135,6 +165,7 @@
     if (s.error) { error = s.error; return; }
     if (s.system !== systemId) return;
     s.ships = mergeShips(state?.system === s.system ? state.ships : null, s.ships ?? {}, s.full);
+    if (!s.tracks) s.tracks = s.full ? {} : state?.tracks ?? {};     // sent when they change
     state = s;
     map.setState(s);
     if (orbitsT == null || Math.abs(s.t - orbitsT) > 2 * 86400) refreshOrbits();   // orbits precess: redraw now and then
@@ -148,7 +179,7 @@
     map.setClock(t);
     // running, ask for a moment a round trip or two ahead, so the picture after the clock is there
     const ahead = paused ? 0 : WARPS[warp][0] * Math.min(0.25, 1.5 * stream.rtt + 1 / 60);
-    if (systemId) stream.request({ system: systemId, t: t + ahead, player: playerId, view, scenario: scenarioOn ? scenario?.id : null });
+    if (systemId) stream.request({ system: systemId, t: t + ahead, player: playerId, view: side, scenario: scenarioOn ? scenario?.id : null, picture: game });
   }
 
   // ---- pointer ----------------------------------------------------------------------------------
@@ -186,7 +217,8 @@
   // the ships an order from the selection goes to: the ship, or every ship under the formation
   $: selShips = sel?.kind === 'contact' ? shipsUnder(contacts, state, sel.id) : [];
   function startOrder() {
-    if (sel?.kind !== 'contact' || !selShips.length) return say('Select a ship or a formation to order: A');
+    if (sel?.kind !== 'contact' || !selShips.length) return say(`Select a ship or a formation to order: ${cap($keymap.order)}`);
+    if (contacts.find((c) => c.id === sel.id)?.track) return say('A track: not ours to order.');
     const able = selShips.filter((id) => contacts.find((c) => c.id === id)?.ship?.has_drive);
     if (!able.length) return say('No ship there has a drive stated; they cannot be ordered to move.');
     const grp = group(state, contacts, able);
@@ -202,7 +234,7 @@
     clearTimeout(retuneTimer);
     const send = async () => {
       try {
-        await api.order({ scenario: scenario.id, unit, t, g, keep_target: true, order_id: orderId, player: playerId, view });
+        await api.order({ scenario: scenario.id, unit, t, g, keep_target: true, order_id: orderId, player: playerId, view: side });
         say(`${map.contactName(unit)}${order ? `, to ${order.label}` : ''}: ${g > 0 ? `${g.toFixed(2)} g` : 'drive cut'}`);
       } catch (err) { say(String(err.message ?? err)); }
     };
@@ -211,12 +243,12 @@
   async function setCold(cold) {
     if (!scenario || sel?.kind !== 'contact') return;
     try {
-      await api.order({ scenario: scenario.id, unit: sel.id, t, cold, player: playerId, view });
+      await api.order({ scenario: scenario.id, unit: sel.id, t, cold, player: playerId, view: side });
       say(`${map.contactName(sel.id)}: ${cold ? 'wings folded, running cold' : 'wings spread'}`);
     } catch (err) { say(String(err.message ?? err)); }
   }
   async function withdrawOrder(id) {
-    try { await api.withdrawOrder(scenario.id, id, view, playerId); say('Order withdrawn: as if it had never been given'); }
+    try { await api.withdrawOrder(scenario.id, id, side, playerId); say('Order withdrawn: as if it had never been given'); }
     catch (err) { say(String(err.message ?? err)); }
   }
   async function giveOrder() {
@@ -224,7 +256,7 @@
     if (!aim || !scenario) return say('Nothing to aim at there.');
     const o = ordering;
     try {
-      const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId, view,
+      const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId, view: side,
                                   target: aim.target });
       const goal = Object.values(r.ships)[0]?.goal;
       const who = `${map.contactName(o.unit)}${o.ships.length > 1 ? ` (${o.ships.length} ships)` : ''}`;
@@ -256,23 +288,23 @@
     legendPinned = !legendPinned;
     try { localStorage.setItem('astrum.legend.pinned', legendPinned ? '1' : '0'); } catch { /* not remembered */ }
   }
-  function keyUp(e) { if (e.key === 'g' || e.key === 'G') ranges = false; }
+  function keyUp(e) { if (is(e, 'ranges')) ranges = false; }
 
   function key(e) {
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'range') return;
-    if ((e.key === 'g' || e.key === 'G') && mode === 'map') { ranges = true; return; }
-    if (e.key === ' ') { e.preventDefault(); paused = !paused; }
-    if (e.key === ']') warp = Math.min(warp + 1, WARPS.length - 1);
-    if (e.key === '[') warp = Math.max(warp - 1, 0);
-    if (e.key === ',') { showSettings = !showSettings; return; }
+    if (is(e, 'ranges') && mode === 'map') { ranges = true; return; }
+    if (is(e, 'pause')) { e.preventDefault(); paused = !paused; }
+    if (is(e, 'faster')) warp = Math.min(warp + 1, WARPS.length - 1);
+    if (is(e, 'slower')) warp = Math.max(warp - 1, 0);
+    if (is(e, 'settings')) { showSettings = !showSettings; return; }
     if (e.key === 'Escape' && showSettings) { showSettings = false; return; }
     if (!inMap) return;                                  // menus have their own keys
     if (ordering) {                                      // aiming an order: its own keys first
-      if (e.key === 'Escape' || e.key === 'a' || e.key === 'A') { ordering = null; return; }
+      if (e.key === 'Escape' || is(e, 'order')) { ordering = null; return; }
       if (orderTool?.key(e)) { e.preventDefault(); return; }
-    } else if ((e.key === 'a' || e.key === 'A') && mode === 'map') { startOrder(); return; }
-    else if ((e.key === 'w' || e.key === 'W' || e.key === 's' || e.key === 'S') && mode === 'map') {
-      const up = e.key.toLowerCase() === 'w', ship = state?.ships?.[sel?.id];
+    } else if (is(e, 'order') && mode === 'map') { startOrder(); return; }
+    else if ((is(e, 'up') || is(e, 'down')) && mode === 'map') {
+      const up = is(e, 'up'), ship = state?.ships?.[sel?.id];
       if (ship?.goal) {                                     // a ship: her own telegraph
         const grp = group(state, contacts, [sel.id]);
         retune(stepG(ship.goal.g, grp.maxG, grp.cruise, up, e.shiftKey));
@@ -283,10 +315,10 @@
       if (orders.length > 1) { say(`${orders.length} orders under ${map.contactName(sel.id)}: use each order's telegraph in the panel`); return; }
     }
     if (e.key === 'Escape') select(null);
-    if (e.key === 'f' || e.key === 'F') focusOn(sel);
-    if (e.key === 'h' || e.key === 'H') map.frameAll();
-    if ((e.key === 'l' || e.key === 'L') && mode === 'map') toLevels();
-    if ((e.key === 'u' || e.key === 'U') && sel?.kind === 'contact') {          // up the chain of command
+    if (is(e, 'focus')) focusOn(sel);
+    if (is(e, 'home')) map.frameAll();
+    if (is(e, 'levels') && mode === 'map') toLevels();
+    if (is(e, 'chain') && sel?.kind === 'contact') {          // up the chain of command
       const parent = contacts.find((c) => c.id === sel.id)?.parent;
       if (parent) select({ kind: 'contact', id: parent });
     }
@@ -368,10 +400,10 @@
 <svelte:window on:keydown={key} on:keyup={keyUp} on:blur={() => (ranges = false)} on:pointermove={trackUI} />
 
 <canvas class="map" bind:this={canvas}></canvas>
-<Overlay {map} {style} {settings} {drules} contacts={seenContacts} ranges={ranges && mode === 'map'} />
+<Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} />
 <HudCursor {map} {style} {settings} {overUI} />
 {#if mode === 'map'}
-  <Orders bind:this={orderTool} bind:ordering {map} {style} {state} contacts={seenContacts} {sel} message={orderMsg} />
+  <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />
 {/if}
 
 {#if mode === 'menu'}
@@ -386,7 +418,7 @@
   <div class="bar" data-ui>
     <button on:click={toMenu}>◂ Menu</button>
     <button on:click={toLevels} title="L">Levels</button>
-    <button on:click={() => (showSettings = !showSettings)} title=",">Settings</button>
+    <button on:click={() => (showSettings = !showSettings)} title={cap($keymap.settings)}>Settings</button>
     <span class="brand">INVICTUS <b>ASTRUM</b></span>
     <span class="here">{def?.name ?? ''}</span>
   </div>
@@ -425,17 +457,18 @@
 <div class="leftcol">
 <Bullseyes {bullseyes} bind:bullseyeId {def} {sel} {map} {t} {playerId} onchange={loadMeta} {orderPlane} onplane={setPlane} />
 <div class="panel left" data-ui>
-  <div class="row">
-    <span class="lbl">Player</span>
-    <select bind:value={playerId}>
-      {#each meta?.players ?? [] as p}<option value={p.id}>{p.name}</option>{/each}
-    </select>
-  </div>
-  {#if views.length}
-    <div class="row" title="Whose picture: what that side's ships have seen. MASTER sees and orders everything.">
-      <span class="lbl">View</span>
-      <select value={view} on:change={(e) => (viewId = e.target.value)}>
-        {#each views as v}<option value={v.id}>{v.name}</option>{/each}
+  {#if scenarioOn && views.length}
+    <div class="row" title="Whose side: its own units, and what its ships have seen and reported to its flagship. MASTER sees and orders everything.">
+      <span class="lbl">Player</span>
+      <select value={side} on:change={(e) => setSide(e.target.value)}>
+        {#each views as v}<option value={v.id} title={v.name}>{v.label}</option>{/each}
+      </select>
+    </div>
+  {:else}
+    <div class="row">
+      <span class="lbl">Player</span>
+      <select bind:value={pickedPlayer}>
+        {#each meta?.players ?? [] as p}<option value={p.id}>{p.name}</option>{/each}
       </select>
     </div>
   {/if}
@@ -468,19 +501,20 @@
         <output>{settings[sec][k]}</output>
       </label>
     {/each}
-    <button class="more" on:click={() => (showSettings = true)}>All settings ,</button>
+    <button class="more" on:click={() => (showSettings = true)}>All settings {cap($keymap.settings)}</button>
   </div>
 </div>
 
 {#if !showSettings}
-<InfoPanel {map} {style} {sel} {state} contacts={seenContacts} {probe} findings={def?.findings ?? []}
+<InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold} />
 {/if}
 {/if}
 
 {#if showSettings && settings}
-  <Settings rules={drules} values={settings} status={settingsStatus} onchange={setSetting} onreset={resetSettings} onclose={() => (showSettings = false)} />
+  <Settings rules={drules} values={settings} status={settingsStatus} onchange={setSetting} onreset={resetSettings}
+    {game} gameRules={meta?.picture ?? {}} ongame={setGame} bind:tab={settingsTab} onclose={() => (showSettings = false)} />
 {/if}
 
 <style>

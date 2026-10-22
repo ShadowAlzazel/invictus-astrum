@@ -22,6 +22,8 @@ server's (InlineSim, for tests and tools): the same SimHost either way.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import itertools
 import json
 import math
@@ -32,6 +34,7 @@ import traceback
 import numpy as np
 
 from . import picture
+from .app import contact_dict
 from .encode import ShipEncoder, ship_columns
 from .loader import contact_positions
 from .placement import plan
@@ -65,6 +68,71 @@ class OrderRefused(Exception):
         self.status, self.detail = status, detail
 
 
+# ---- a side's table ------------------------------------------------------------------------------
+KNOWN = ("callsign", "name", "unit_type", "class_name", "ship_class", "hull_number", "faction")   # of a ship known for what she is
+
+
+class Side:
+    """One side's table of a scenario: what it calls each of the fleet's ships (its own by their
+    ids; every other by a track id that says nothing of who she is), and how it knows each other
+    ship it has seen: by name and class once identified, else a bogey. MASTER holds everything,
+    by the ships' own ids."""
+
+    def __init__(self, world, sc, fleet, view: str):
+        n = len(fleet.c.row)
+        ids = fleet.c.ids[:n]
+        self.view, master = view, view == picture.MASTER
+        self.own = picture.own_rows(fleet, world.factions, view)
+        self.friendly = picture.friendly_rows(fleet, world.factions, view)
+        self.units = picture.known_units(sc, world.factions, view, world.home(sc))
+        tid = lambda sid: "T" + hmac.new(world.salt, f"{sc.id}:{view}:{sid}".encode(), hashlib.sha256).hexdigest()[:10]
+        self.names = [sid if master or self.own[i] else tid(sid) for i, sid in enumerate(ids)]
+        self.alias = {sid: nm for sid, nm in zip(ids, self.names) if nm != sid}     # ship -> track
+        self.rows = {nm: sid for sid, nm in self.alias.items()}                     # track -> ship
+        self.called: dict[str, str] = {}                 # what the side last called each track
+        home, top, tree = world.home(sc), picture.root(world.factions, view), world.trees.get(sc.id)
+        self.known, self.bogey = {}, {}
+        for sid, t_ in self.alias.items():
+            c = sc.contacts[sid]
+            d = contact_dict(world, c, tree)
+            friend = picture.root(world.factions, c.faction) == top
+            base = {"id": t_, "echelon": "ship", "status": [], "has_position": True, "parent": None, "children": [],
+                    "ancestors": [], "depth": 0, "role": "", "pry": None, "brevity": "", "track": True}
+            self.known[t_] = {**base, **{k: d.get(k) for k in KNOWN},
+                              "affiliation": "friend" if friend else c.affiliation if view == home else "unknown"}
+            self.bogey[t_] = {**base, "callsign": "Bogey", "name": "Bogey", "brevity": "bogey", "unit_type": "",
+                              "class_name": "", "ship_class": "", "hull_number": "", "faction": None, "affiliation": "unknown"}
+
+    def picture(self, seen: dict) -> tuple[list, dict]:
+        """What the side calls each row in this picture (None: not in it), and its tracks as it
+        knows them."""
+        shown = seen["shown"]
+        names = [nm if s else None for nm, s in zip(self.names, self.own | shown)]
+        tracks = {}
+        for i in np.flatnonzero(~self.own & shown):
+            t_ = self.names[i]
+            d = self.known[t_] if seen["identified"][i] else self.bogey[t_]
+            if seen["lost"][i]:
+                d = {**d, "status": ["track-lost"]}
+            tracks[t_] = d
+            self.called[t_] = d["name"]
+        return names, tracks
+
+    def place(self, contacts: dict, tracks: dict) -> dict:
+        """Where its units and its tracks stand (contacts: every unit's, by the scenario's ids)."""
+        out = {cid: p for cid, p in contacts.items() if cid in self.units}
+        out.update((t_, contacts[self.rows[t_]]) for t_ in tracks if self.rows[t_] in contacts)
+        return out
+
+    def told(self, ship: dict) -> dict:
+        """A ship's figures as the side may read them: the ship an order of hers aims at, by the
+        side's name for her."""
+        tg = (ship.get("goal") or {}).get("target")
+        if isinstance(tg, dict) and tg.get("unit") in self.alias:
+            ship = {**ship, "goal": {**ship["goal"], "target": {**tg, "unit": self.alias[tg["unit"]]}}}
+        return ship
+
+
 # ---- orders --------------------------------------------------------------------------------------
 def order_ships(world, sc, fleet, unit) -> list[str]:
     """The ships an order goes to: the unit itself if she is a ship, else every ship under it."""
@@ -82,36 +150,30 @@ def order_ships(world, sc, fleet, unit) -> list[str]:
     return out
 
 
-def order_reply(fleet, t: float, unit: str, ships: list[str], orders: list) -> dict:
+def order_reply(fleet, t: float, unit: str, ships: list[str], orders: list, side: Side) -> dict:
     """Give the orders (all at once: one formation, one lead, one flight again) and say how the
     ships stand once they are given. If the fleet has not got to them yet, they wait for it
     (queued), and nothing waits for them."""
     flown = fleet.command(*orders)
     out = {"ok": True, "unit": unit, "queued": flown is None,
-           "ships": {sid: flown[sid].as_dict() for sid in ships if sid in flown} if flown else {}}
+           "ships": {sid: side.told(flown[sid].as_dict()) for sid in ships if sid in flown} if flown else {}}
     if len(ships) == 1 and ships[0] in out["ships"]:
         out["ship"] = out["ships"][ships[0]]
     return out
 
 
-def ordering(world, sc, fleet, req: dict, ships: list[str]) -> None:
-    """A view may order only its own ships (MASTER, every ship): refused otherwise."""
-    view = req.get("view")
-    if view == picture.MASTER:
-        return
-    if not view:
-        p = world.players.get(req.get("player") or sc.player)
-        view = p.faction if p else None
-    own = picture.own_rows(fleet, world.factions, view)
-    theirs = [sid for sid in ships if not own[fleet.c.row[sid]]]
+def ordering(side: Side, fleet, ships: list[str]) -> None:
+    """A side may order only its own ships (MASTER, every ship): refused otherwise."""
+    theirs = [side.alias.get(sid, sid) for sid in ships if not side.own[fleet.c.row[sid]]]
     if theirs:
-        raise OrderRefused(403, f"{', '.join(theirs[:3])}{'…' if len(theirs) > 3 else ''}: not {view or 'yours'} to order")
+        raise OrderRefused(403, f"{', '.join(theirs[:3])}{'…' if len(theirs) > 3 else ''}: not {side.view or 'yours'} to order")
 
 
-def give_order(world, req: dict) -> dict:
+def give_order(world, req: dict, side_of=None) -> dict:
     """An order at the map's clock, for one ship or for every ship under a formation.
     target: {bullseye, aer: [deg, deg, km]} (the ordering player's bullseye, so the point moves
-    with its frame), {unit}, or {body}. g is the acceleration held, each ship capped at her most;
+    with its frame), {unit} (one of the side's units, or one of its tracks), or {body}. side_of
+    (scenario, fleet, view): the side's table (Side), kept (else made). g is the acceleration held, each ship capped at her most;
     0 cuts the drive. keep_target: only the g of the order they are flying changes. cold: true
     folds their wings (they run cold, as long as their stores last), false spreads them.
     A formation's ships each keep their offset from the formation as it stands now, so they
@@ -121,6 +183,7 @@ def give_order(world, req: dict) -> dict:
     if sc is None:
         raise OrderRefused(404, f"no scenario {req.get('scenario')!r}")
     fleet = world.fleet(sc)
+    side = (side_of or (lambda *a: Side(world, *a)))(sc, fleet, world.side(sc, req.get("view"), req.get("player")))
     unit, g, t = req.get("unit"), req.get("g"), req.get("t")
     if isinstance(req.get("cold"), bool) and isinstance(t, (int, float)):
         with fleet.lock:
@@ -128,9 +191,9 @@ def give_order(world, req: dict) -> dict:
         ships = order_ships(world, sc, fleet, unit)
         if not ships:
             raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
-        ordering(world, sc, fleet, req, ships)
+        ordering(side, fleet, ships)
         kind = "cold" if req["cold"] else "warm"
-        return order_reply(fleet, float(t), unit, ships, [Order(sid, float(t), kind, source="map") for sid in ships])
+        return order_reply(fleet, float(t), unit, ships, [Order(sid, float(t), kind, source="map") for sid in ships], side)
     if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
         raise OrderRefused(400, "an order needs t, and g of 0 or more")
     t = float(t)
@@ -139,12 +202,12 @@ def give_order(world, req: dict) -> dict:
     ships = order_ships(world, sc, fleet, unit)
     if not ships:
         raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
-    ordering(world, sc, fleet, req, ships)
+    ordering(side, fleet, ships)
     if req.get("keep_target"):                      # the telegraph: one order's g, or every order under the unit
         return order_reply(fleet, t, unit, ships, [Order(sid, t, "setg", g=float(g), source="map",
-                                                         order_id=req.get("order_id")) for sid in ships])
+                                                         order_id=req.get("order_id")) for sid in ships], side)
     if g == 0:
-        return order_reply(fleet, t, unit, ships, [Order(sid, t, "coast", source="map") for sid in ships])
+        return order_reply(fleet, t, unit, ships, [Order(sid, t, "coast", source="map") for sid in ships], side)
     s, _ = world.system(sc.system)
     tg, player = req.get("target") or {}, req.get("player") or sc.player
     if "bullseye" in tg:
@@ -156,11 +219,12 @@ def give_order(world, req: dict) -> dict:
         tilt = "level" if abs(el) < 0.5 else f"{'Eve' if el > 0 else 'Haid'} {abs(el):.0f}°"
         target = {"bullseye": tg["bullseye"], "player": player, "aer": [brg, el, rng * 1e3],
                   "label": tg.get("label") or f"{round(brg) % 360:03d}° {tilt}, {rng:,.0f} km from {bname}"}
-    elif "unit" in tg:
-        c = sc.contacts.get(tg["unit"])
-        if c is None or tg["unit"] == unit or tg["unit"] in ships:
-            raise OrderRefused(400, f"{tg['unit']!r} is not another unit in {sc.id}")
-        target = {"unit": c.id, "label": c.callsign}
+    elif "unit" in tg:                               # one of the side's units, or one of its tracks
+        cid = side.rows.get(tg["unit"]) or (tg["unit"] if tg["unit"] in side.units else None)
+        c = sc.contacts.get(cid or "")
+        if c is None or cid == unit or cid in ships:
+            raise OrderRefused(400, f"{tg['unit']!r} is not another unit {side.view or 'you'} hold in {sc.id}")
+        target = {"unit": c.id, "label": side.called.get(tg["unit"], "Bogey") if tg["unit"] in side.rows else c.callsign}
     elif "body" in tg:
         b = next((b for b in s if b.id == tg["body"]), None)
         if b is None:
@@ -179,7 +243,7 @@ def give_order(world, req: dict) -> dict:
     oid = f"{unit}@{t:.0f}#{next(_order_n)}"
     orders = [Order(sid, t, "goto", target=dict(target, offset_m=offsets[sid].tolist()) if np.any(offsets[sid]) else target,
                     g=float(g), source="map", order_id=oid, by=unit) for sid in ships]
-    return order_reply(fleet, t, unit, ships, orders)
+    return order_reply(fleet, t, unit, ships, orders, side)
 
 
 # ---- the host ------------------------------------------------------------------------------------
@@ -187,7 +251,7 @@ class SimHost:
     def __init__(self, world, run_ahead: bool = False):
         self.world = world
         self._encoders: dict = {}                       # connection -> what it has been sent
-        self._owns: dict = {}                           # (fleet, player, data version) -> which rows are the player's own
+        self._sides: dict = {}                          # (scenario, fleet, data version, view) -> the side's table (Side)
         self.ahead = RunAhead(world) if run_ahead else None
         self.arrivals = Arrivals(world)
 
@@ -197,7 +261,7 @@ class SimHost:
             return self.frame(req, conn)
         if kind == "order":
             try:
-                return {"ok": True, "reply": give_order(self.world, payload)}
+                return {"ok": True, "reply": give_order(self.world, payload, self._side)}
             except OrderRefused as e:
                 return {"ok": False, "status": e.status, "detail": e.detail}
         if kind == "withdraw":                         # an order from the map taken back (Fleet.withdraw)
@@ -208,7 +272,7 @@ class SimHost:
             B = fleet.book
             ships = sorted({fleet.c.ids[B.ship[e]] for e in B.events_of(payload.get("order_id") or "")})
             try:
-                ordering(self.world, sc, fleet, payload, ships)
+                ordering(self._side(sc, fleet, self.world.side(sc, payload.get("view"), payload.get("player"))), fleet, ships)
             except OrderRefused:
                 return {"ok": False}
             return {"ok": bool(fleet.withdraw(payload.get("order_id") or ""))}
@@ -258,118 +322,55 @@ class SimHost:
         if fleet is not None:
             if self.ahead is not None:
                 self.ahead.want(sc.id, fleet, t)
-            view = self._view(sc, req)
-            own, friendly = self._own(sc, fleet, view)
-            t, ids, cols, flown, seen = self._ships_at(fleet, t, own, view, friendly)
-            ships, full = enc.encode(fleet, cols, ids, (sid, sc.id, world.version, id(fleet), view))
+            side = self._side(sc, fleet, world.side(sc, req.get("view"), req.get("player")))
+            switches = {**world.config["picture"], **{k: bool(v) for k, v in (req.get("picture") or {}).items() if k in picture.SWITCHES}}
+            t, ids, cols, flown, seen = self._ships_at(fleet, t, side.own, side.view, side.friendly, switches)
+            names, tracks = side.picture(seen)
+            ships, full = enc.encode(fleet, cols, names, (sid, sc.id, world.version, id(fleet), side.view, *sorted(switches.items())),
+                                     side.alias)
         else:
             enc.key = None
         table = world.table(sid)
         pos = table.positions(t)                         # the table: what the fleet flew among
         bulls = world.resolved(sid, req.get("player"), pos)
-        contacts, seen_as = {}, {}
+        contacts, out = {}, {}
         if fleet is not None:
             # units are placed from their scenario's own bullseyes, whoever is watching;
-            # ships stand where the simulation has flown them (as the view is shown them), formations follow
+            # ships stand where the simulation has flown them (as the view is shown them), formations follow;
+            # the side is sent its own table's, and its tracks', and nothing else
             placed = world.resolved(sid, sc.player, pos)
-            contacts = _km_all(*plan(sc).arrays(placed, pos, flown))
-            seen_as = self._seen_as(sc, fleet, ids, seen, own, view, contacts)
+            contacts = side.place(_km_all(*plan(sc).arrays(placed, pos, flown)), tracks)
+            if full or tracks != enc.tracks:             # its tracks as it knows them: when that changes
+                out["tracks"] = enc.tracks = tracks
         return json.dumps({
             "t": t, "utc": iso(t), "behind_s": asked - t, "system": sid, "version": world.version, "source": eph.source(t),
             "bodies": _km_all(list(pos), np.array(list(pos.values()))),
             "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
-            "contacts": contacts, "ships": ships, "full": full, "seen_as": seen_as,
+            "contacts": contacts, "ships": ships, "full": full, **out,
             "magnetopause_km": {b.id: round(m * KM, 1) for b in s if (m := magnetopause(s, pos, b))},
         })
 
-    def _view(self, sc, req: dict) -> str:
-        """Whose picture: the view asked for (one of the scenario's factions, or MASTER), else the
-        player's faction."""
-        v = req.get("view")
-        if v == picture.MASTER or (v and (v in sc.factions or v in self.world.factions)):
-            return v
-        p = self.world.players.get(req.get("player") or sc.player)
-        return (p.faction if p else None) or ""
-
-    def _own(self, sc, fleet, view: str):
-        """Which of the fleet's ships are the view's own, and which answer where its faction does
-        (astrum/picture.py), kept."""
-        world = self.world
-        key = (id(fleet), view, world.version, len(fleet.c.row))
-        got = self._owns.get(key)
+    def _side(self, sc, fleet, view: str) -> Side:
+        """The side's table of the scenario (Side), kept while the data and the fleet stand."""
+        key = (sc.id, id(fleet), self.world.version, len(fleet.c.row), view)
+        got = self._sides.get(key)
         if got is None:
-            if len(self._owns) > 32:
-                self._owns.clear()
-            got = self._owns[key] = (picture.own_rows(fleet, world.factions, view),
-                                     picture.friendly_rows(fleet, world.factions, view))
+            if len(self._sides) > 32:
+                self._sides.clear()
+            got = self._sides[key] = Side(self.world, sc, fleet, view)
         return got
 
-    def _members(self, sc, fleet, ids) -> tuple:
-        """Which ships each of the scenario's units holds (itself, for a ship), as a matrix, kept."""
-        world = self.world
-        key = (sc.id, world.version, id(fleet), len(ids))
-        got = self._owns.get(("members",) + key)
-        if got is None:
-            tree, rows = world.trees.get(sc.id, {}), {sid: k for k, sid in enumerate(ids)}
-            cids = list(sc.contacts)
-            M = np.zeros((len(cids), len(ids)))
-            for a, cid in enumerate(cids):
-                stack = [cid]
-                while stack:
-                    x = stack.pop()
-                    kids = tree.get(x, {}).get("children", [])
-                    stack.extend(kids)
-                    if not kids and x in rows:
-                        M[a, rows[x]] = 1.0
-            got = self._owns[("members",) + key] = (cids, M)
-        return got
-
-    def _seen_as(self, sc, fleet, ids, seen: dict, own, view: str, contacts: dict) -> dict:
-        """How the view knows the scenario's units that are not its own: a ship or a formation not
-        yet seen leaves the picture (contacts, in place); one seen but not known for what it is, a
-        bogey; one whose track is lost, uncertain. Seen from another side than the scenario's own,
-        its other forces are of unknown affiliation, and the view's friends friendly."""
-        if view == picture.MASTER:
-            return {}
-        world = self.world
-        cids, M = self._members(sc, fleet, ids)
-        key = ("theirs", sc.id, world.version, id(fleet), view)
-        theirs = self._owns.get(key)
-        if theirs is None:                                # which units can be another's, and as which side: by view
-            top = picture.root(world.factions, view)
-            home = world.players.get(sc.player).faction if sc.player in world.players else None
-            n_mem, n_own = M.sum(axis=1), M @ own.astype(float)
-            theirs = self._owns[key] = [
-                (a, cids[a], bool(n_mem[a]), "friend" if picture.root(world.factions, sc.contacts[cids[a]].faction) == top
-                 else None if view == home else "unknown")
-                for a in range(len(cids)) if not (n_mem[a] and n_own[a] == n_mem[a])]
-        shown = seen["shown"].astype(float)
-        n_shown = M @ shown
-        known = M @ (shown * seen["identified"]) > 0
-        held = M @ (shown * ~seen["lost"]) > 0
-        out = {}
-        for a, cid, ships, side in theirs:
-            if ships and not n_shown[a]:
-                contacts.pop(cid, None)
-                out[cid] = {"shown": False}
-                continue
-            d = {"identified": bool(known[a]), "lost": not held[a]} if ships else {}
-            if side:
-                d["affiliation"] = side
-            if d:
-                out[cid] = d
-        return out
-
-    def _ships_at(self, fleet, t: float, own, view: str = "", friendly=None):
+    def _ships_at(self, fleet, t: float, own, view: str = "", friendly=None, switches: dict | None = None):
         """The ships at t (or as near as the fleet could be got), as the player is shown them
         (astrum/picture.py): (the moment, ids, their figures, {id: position}). Read off the
-        timeline, the fleet got ready for it first (Fleet.reach)."""
+        timeline, the fleet got ready for it first (Fleet.reach). switches: config.toml [picture],
+        as the map asked for it."""
         with fleet.lock:
             t = fleet.reach(t, FRAME_BUDGET_S)
             pic = fleet.picture(t)
             n = len(fleet.c.row)
             ids = fleet.c.ids[:n]
-            seen = picture.view(fleet, pic, t, own, self.world.config["picture"], view, friendly)
+            seen = picture.view(fleet, pic, t, own, switches or self.world.config["picture"], view, friendly)
             cols = ship_columns(fleet, pic, t, n, seen)
             flown = {ids[i]: pic["r"][i] for i in range(n) if np.isfinite(pic["r"][i]).all()}
         return t, ids, cols, flown, seen

@@ -17,6 +17,7 @@ Positions on the wire are kilometres in the system frame, as float64 JSON number
 from __future__ import annotations
 
 import itertools
+import secrets
 from contextlib import asynccontextmanager
 import math
 import threading
@@ -36,7 +37,7 @@ from .config import ROOT, ConfigError, load_config, load_style
 from .ephemeris import Ephemeris, Tabled
 from .fields import gravity, magnetic, potential
 from .frames import to_spherical
-from .loader import contact_positions, load_factions, load_players, load_scenarios, load_systems
+from .loader import Player, contact_positions, load_factions, load_players, load_scenarios, load_systems
 from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify
 from . import workshop
@@ -44,6 +45,7 @@ from .ships import ShipRegistry, class_detail, class_summary, rules_dict
 from .entity import ShipSpec, SpecError
 from .sim import Fleet, Order
 from . import display
+from . import picture
 
 KM = 1e-3
 _conn_n = itertools.count(1)    # the map's connections, for the simulation's side to tell apart
@@ -72,6 +74,7 @@ class World:
         self._stamp = None
         self._specs: dict[str, ShipSpec | None] = {}
         self._checked = 0.0
+        self.salt = secrets.token_bytes(16)      # what a side's track ids are made from: never the same twice
         self.reload()
 
     def _files(self) -> list[Path]:
@@ -156,6 +159,9 @@ class World:
                 b = (o.get("burn") or {}).get("bullseye", "system")
                 if "burn" in o and b not in own:
                     errors[f"scenarios/{sc_.id}/order {i + 1}"] = f"bullseye {b!r} is not one of player {sc_.player!r}'s"
+            for fid in sc_.factions:                         # every side plays: as its player, else as itself
+                if fid in factions and fid not in players and not any(pl.faction == fid for pl in players.values()):
+                    players[fid] = Player(fid, factions[fid].get("name", fid), {}, fid)
             trees[sc_.id], problems = display.tree([c.__dict__ for c in sc_.contacts.values()], list(style.get("echelon", {})))
             for msg in problems:
                 errors[f"scenarios/{sc_.id}/{msg.split(':')[0]}"] = msg.split(": ", 1)[1]
@@ -330,6 +336,23 @@ class World:
             bid = f"{base}-{n}"
         return bid
 
+    def home(self, sc) -> str | None:
+        """The scenario's own side: its player's faction."""
+        p = self.players.get(sc.player)
+        return p.faction if p else None
+
+    def side(self, sc, view: str | None, player: str | None = None) -> str:
+        """Whose picture: the view asked for (one of the scenario's factions, or MASTER), else the
+        player's faction, else the scenario's own side."""
+        if view == picture.MASTER or (view and (view in sc.factions or view in self.factions)):
+            return view
+        p = self.players.get(player or sc.player)
+        return (p.faction if p else None) or self.home(sc) or ""
+
+    def side_player(self, sc, view: str) -> str:
+        """The player a side reads its bullseyes as: the one of its faction (MASTER: the scenario's)."""
+        return next((p.id for p in self.players.values() if p.faction == view), sc.player)
+
     def bullseyes(self, sid: str, player: str | None, listed: bool = False) -> dict[str, Bullseye]:
         """A player's bullseyes in a system: the star centre, players.toml's, those made on the map
         (listed: only those the map lists; else those deleted too, which orders still fly to)."""
@@ -494,6 +517,26 @@ def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
     return d
 
 
+def side_contacts(world: "World", sc, view: str) -> list[dict]:
+    """The scenario's units in the view's own table (picture.known_units), for the map. Its own
+    are its friends, whichever side the scenario was written for; the tree reaches no further than
+    the table does. Others' ships come in the pictures, as tracks, once seen."""
+    home, tree = world.home(sc), world.trees.get(sc.id)
+    keep = picture.known_units(sc, world.factions, view, home)
+    out = []
+    for cid in (x for x in sc.contacts if x in keep):
+        d = contact_dict(world, sc.contacts[cid], tree)
+        if view not in (home, picture.MASTER) and sc.contacts[cid].faction in picture.mine(world.factions, view):
+            d["affiliation"] = "friend"
+        if view != picture.MASTER:
+            d["children"] = [x for x in d.get("children", []) if x in keep]
+            d["ancestors"] = [x for x in d.get("ancestors", []) if x in keep]
+            if d.get("parent") not in keep:
+                d["parent"] = None
+        out.append(d)
+    return out
+
+
 def level_dict(world: "World", s) -> dict:
     """A system as the level selector shows it."""
     kinds: dict[str, int] = {}
@@ -534,7 +577,9 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     app.state.world, app.state.sim = world, sim
 
     @app.get("/api/meta")
-    def meta():
+    def meta(view: str | None = None, player: str | None = None):
+        """Everything the map needs to start, each scenario's units as the side asked for holds
+        them (view: one of its factions, or MASTER; else the player's)."""
         world.check()
         return {
             "version": world.version,
@@ -543,9 +588,12 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
                          "bullseyes": [{"id": b.id, "name": b.name, "system": b.system, "made": b.id in world.made.get(p.id, {})}
                                        for b in [*p.bullseyes.values(), *world.made.get(p.id, {}).values()]]}
                         for p in world.players.values()],
-            "scenarios": [{"id": sc.id, "name": sc.name, "system": sc.system, "player": sc.player,
-                           "factions": [{"id": f, "name": world.factions.get(f, {}).get("name", f)} for f in sc.factions],
-                           "contacts": [contact_dict(world, c, world.trees.get(sc.id)) for c in sc.contacts.values()]}
+            "scenarios": [{"id": sc.id, "name": sc.name, "system": sc.system, "player": sc.player, "home": world.home(sc),
+                           "view": (side := world.side(sc, view, player)),
+                           "factions": [{"id": f, "name": world.factions.get(f, {}).get("name", f),
+                                         "label": picture.side_label(world.factions, f), "player": world.side_player(sc, f)}
+                                        for f in sc.factions],
+                           "contacts": side_contacts(world, sc, side)}
                           for sc in world.scenarios.values()],
             "specs": {cid: spec.as_dict() for cid in (world.ships.classes if world.ships else {})
                       if (spec := world.spec(cid)) is not None},
@@ -553,6 +601,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             "speed_of_light_kms": k.C * KM,
             "ship_classes": len(world.ships.classes) if world.ships else 0,
             "display": {"rules": world.display_rules, "settings": world.settings},
+            "picture": {k: {"label": label, "default": bool(config["picture"].get(k, True))} for k, label in picture.SWITCHES.items()},
         }
 
     @app.get("/api/status")

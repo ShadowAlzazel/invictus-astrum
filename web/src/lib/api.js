@@ -7,7 +7,7 @@ async function get(path, params) {
 }
 
 export const api = {
-  meta: () => get('/meta'),
+  meta: (view) => get('/meta', view ? { view } : undefined),
   status: () => get('/status'),
   system: (id) => get(`/system/${id}`),
   orbits: (id, t) => get(`/system/${id}/orbits`, { t }),

@@ -116,14 +116,23 @@ class ShipEncoder:
     def __init__(self):
         self.key = None
         self.prev: dict | None = None
+        self.names: list | None = None
+        self.tracks: dict | None = None                # the side's tracks, as last sent (astrum/simhost.py)
 
-    def encode(self, fleet, cols: dict, ids: list[str], key) -> tuple[dict, bool]:
-        """{ship id: figures} to send, and whether it is everything (full)."""
+    def encode(self, fleet, cols: dict, ids: list, key, alias: dict | None = None) -> tuple[dict, bool]:
+        """{ship id: figures} to send, and whether it is everything (full). ids: what the side calls
+        each row (None: a row it does not hold, never sent); alias: the side's names for the ships
+        an order aims at."""
         full = key != self.key or self.prev is None or len(self.prev["mode"]) != len(ids)
-        prev, self.key, self.prev = self.prev, key, cols
+        prev, prev_ids, self.key, self.prev, self.names = self.prev, self.names, key, cols, list(ids)
         n = len(ids)
         changed = {k: np.ones(n, dtype=bool) for k in cols} if full else \
             {k: ~_same(np.asarray(cols[k]), np.asarray(prev[k])) for k in cols}
+        if not full:                                   # a row the side has only now come to hold: all of it
+            new = np.array([a is not None and a != b for a, b in zip(ids, prev_ids)], dtype=bool)
+            if new.any():
+                for k in changed:
+                    changed[k] |= new
         static_new = changed["mver"]
         out = {}
         said = fleet.versions.said
@@ -132,6 +141,8 @@ class ShipEncoder:
             return out, full
         val = {k: _values(cols[k]) for k in (*SCALARS, *GOAL_SCALARS, "velocity_kms", "aim_km")}
         for i in rows:
+            if ids[i] is None:
+                continue
             d = {}
             for k in SCALARS:
                 if changed[k][i]:
@@ -155,6 +166,9 @@ class ShipEncoder:
             elif changed["burning"][i]:
                 d["burn"] = st.get("burn") if cols["burning"][i] else None
             g = st.get("goal") if cols["goal_on"][i] else None
+            tg = (g or {}).get("target")
+            if alias and isinstance(tg, dict) and tg.get("unit") in alias:    # aimed at a ship the side knows as a track
+                g = {**g, "target": {**tg, "unit": alias[tg["unit"]]}}
             if static_new[i] or changed["goal_on"][i]:
                 d["goal"] = None if g is None else {**g, **self._goal_now(cols, val, i)}
             elif g is not None:

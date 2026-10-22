@@ -4,6 +4,7 @@
   import { hms, group, shipsUnder, orderGroups } from './orders.js';
   import { unitSymbol } from './symbols.js';
   import Telegraph from './Telegraph.svelte';
+  import { cap, keymap } from './keys.js';
 
   export let map = null;
   export let style = null;
@@ -182,7 +183,7 @@
           </div>
         {/each}
         {/if}
-        <p class="dim hint">{#if orders.length === 1}<kbd>W</kbd><kbd>S</kbd> telegraph · {/if}<kbd>A</kbd> a new order for all of them</p>
+        <p class="dim hint">{#if orders.length === 1}<kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · {/if}<kbd>{cap($keymap.order)}</kbd> a new order for all of them</p>
       </section>
     {/if}
     {#if ship && seenOnly}
@@ -258,7 +259,7 @@
           </dl>
           {/if}
         {/if}
-        {#if spec?.has_drive}<p class="dim hint"><kbd>A</kbd> order her{#if ship.goal} · <kbd>W</kbd><kbd>S</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>G</kbd> weapon ranges{/if}</p>{/if}
+        {#if spec?.has_drive}<p class="dim hint"><kbd>{cap($keymap.order)}</kbd> order her{#if ship.goal} · <kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>{cap($keymap.ranges)}</kbd> weapon ranges{/if}</p>{/if}
       </section>
     {:else if spec && !spec.has_drive}
       <section><h2>Ship</h2><p class="dim">No drive stated for her class; she holds station.</p></section>

@@ -13,16 +13,20 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 185 tests
+python -m pytest -q tests             # 187 tests
 ```
 
 The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
 `run_ahead = false` under `[sim]` in `config.toml` turns it off (each picture then flies the fleet
 there itself; everything else works the same). What a player is shown is made from the
-simulation's truth by functions, each a switch under `[picture]`: other factions' ships shown only
-once the view's sensors see them, as their light left them (`detection`, else `light_delay`), and
-what only they know kept back (`hide_private`); all off shows everything. The map's View picks
-whose picture: one of the scenario's factions, or MASTER (everything, every order).
+simulation's truth by functions, each a switch under `[picture]` (and in the map's Settings, Game):
+other factions' ships shown only once the side's sensors see them, as their light left them
+(`detection`, else `light_delay`), and once the report has come up to its fleet flagship
+(`relay`), and what only they know kept back (`hide_private`); all off shows everything. The map's
+Player picks the side: one of the scenario's factions (ARCVS, JADF, Bandits, GHOST), or MASTER
+(everything, every order). The browser is sent that side's table and nothing more: its own units,
+and the others' ships it has seen as tracks, by ids that say nothing of who they are, bogeys until
+known.
 
 Frontend work: `python serve.py` in one terminal, `cd web && npm run dev` in another (live
 reload on :5173, proxied to the server).
@@ -35,7 +39,9 @@ The map opens on the main menu, over a live system:
 2. **System workshop**: build a system, or copy one and change it.
 3. **Ship registry**: the classes of the fleet.
 4. **Ship workshop**: next.
-5. **Settings**: text and icon sizes, folding, what a selection shows (also `,` anywhere).
+5. **Settings** (also `,` anywhere), kept in this browser: Display (text and icon sizes, folding,
+   what a selection shows), Hotkeys (every key below, rebound by clicking it and pressing another),
+   Game (the picture's switches).
 
 ## Levels and the workshop
 
@@ -74,8 +80,10 @@ the author*. The format is in `data/ships/README.md`.
 | L | back to the level selector |
 | Esc | clear the selection |
 
-The cursor reads bearing, range, Eve/Haid and light time from the **active bullseye**: pick a
-player and one of their bullseyes at the bottom left. **+ New** there makes a bullseye of your own
+Every key but Esc and Shift can be rebound in Settings, Hotkeys.
+
+The cursor reads bearing, range, Eve/Haid and light time from the **active bullseye**: one of the
+player's, at the bottom left (with a scenario on the map, the player is its side's). **+ New** there makes a bullseye of your own
 at what is selected (a body, a unit's place, a point picked on the map); ✕ deletes one of your own
 (orders already given off it keep flying). The star centre is always there. The switch under the
 list (B while aiming an order) aims orders level with the chosen bullseye's plane: a formation
@@ -94,7 +102,7 @@ above it comes down to it.
 | `data/scenarios/*.toml` | units placed in a system (symbols only; no engagement is simulated yet) |
 | `style.toml` | colours, affiliation frames, echelon marks, formation roles (built from blocks, each an APP-6 mark: battle, line, picket, supply, forward, point defence, escort, signal), body display sizes by role |
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |
-| `settings.toml` | your settings, written by the map; overrides `display.toml`; not committed (delete to reset) |
+| `settings.toml` | display settings over `display.toml`, if you keep one (the map keeps yours in the browser); not committed |
 | `config.toml` | paths, port, clock start, orbit sampling, the run-ahead, and what a player is shown ([picture]) |
 | `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server; the fleet (`classis.py`, `sim.py`), its order book (`orders.py`), timeline (`timeline.py`) |
 | `web/` | the map (Svelte + Three.js) |

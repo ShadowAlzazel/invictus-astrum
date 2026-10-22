@@ -575,7 +575,7 @@ def test_the_map_is_sent_changes_that_add_up():
         ws.send_json({**req, "t": t + 60})
         first = ws.receive_json()
         ships = first["ships"]
-        assert first["full"] and len(ships) == 112
+        assert first["full"] and len(ships) == 106 + len(first["tracks"])      # ARCVS's own, and what it has seen
         for k in range(1, 6):
             ws.send_json({**req, "t": t + 60 + 30 * k})
             m = ws.receive_json()
@@ -764,7 +764,7 @@ def test_the_simulation_runs_in_a_process_of_its_own(run_ahead):
         with c.websocket_connect("/ws") as ws:
             ws.send_json({**req, "t": sol + 60})
             first = ws.receive_json()
-            assert first["full"] and len(first["ships"]) == 112 and "kiki" in first["contacts"]
+            assert first["full"] and len(first["ships"]) == 106 + len(first["tracks"]) and "kiki" in first["contacts"]
             r = c.post("/api/order", json={**req, "unit": "kiki-1", "t": sol + 60, "g": 0.4,
                                            "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
             assert r.status_code == 200 and r.json()["ship"]["goal"]["eta_s"] > 0
@@ -1016,21 +1016,23 @@ def test_others_are_seen_as_their_light_left_them():
     t = f.t0 + 2 * 3600
     f.reach(t + 600)
     fr = json.loads(host.frame({"system": "sol", "t": t, "player": "arcvs", "scenario": "sol-demo"}, conn=1))
-    seen, ours = fr["ships"]["jove-1"], fr["ships"]["kiki-1"]
+    side = host._side(w.scenarios["sol-demo"], f, "arcvs")
+    tid = side.alias["jove-1"]                                    # a track to ARCVS: by a name of its own
+    assert tid.startswith("T") and "jove-1" not in fr["ships"] and fr["tracks"][tid]["name"] == "JADF Jove Vigil"
+    seen, ours = fr["ships"][tid], fr["ships"]["kiki-1"]
     i = f.c.row["jove-1"]
     then = f.picture(t - seen["seen_s"])["r"][i]
-    own, _ = host._own(w.scenarios["sol-demo"], f, "arcvs")
-    nearest = np.min(np.linalg.norm(f.picture(t)["r"][own] - then, axis=1))
+    nearest = np.min(np.linalg.norm(f.picture(t)["r"][side.own] - then, axis=1))
     assert seen["seen_s"] == pytest.approx(nearest / 299792458.0, rel=1e-4)
-    assert np.linalg.norm(np.array(fr["contacts"]["jove-1"]) * 1e3 - then) < 10.0
+    assert np.linalg.norm(np.array(fr["contacts"][tid]) * 1e3 - then) < 10.0
     assert np.linalg.norm(f.picture(t)["r"][i] - then) > 100e3                 # she has moved on since
     assert seen["burning"] and seen["sig_w"] > 1e13
     assert seen["mass_t"] is None and seen["goal"] is None and seen["cold"] is None
     assert ours["seen_s"] is None and ours["mass_t"] > 0 and ours["cold"] is True
     w.config["picture"] = {"detection": False, "light_delay": False, "hide_private": False}   # all off: the truth
     fr = json.loads(host.frame({"system": "sol", "t": t, "player": "arcvs", "scenario": "sol-demo"}, conn=2))
-    assert np.allclose(np.array(fr["contacts"]["jove-1"]) * 1e3, f.picture(t)["r"][i], atol=10.0)
-    assert fr["ships"]["jove-1"]["mass_t"] > 0
+    assert np.allclose(np.array(fr["contacts"][tid]) * 1e3, f.picture(t)["r"][i], atol=10.0)
+    assert fr["ships"][tid]["mass_t"] > 0
 
 
 def test_wings_are_folded_from_the_map():
@@ -1121,8 +1123,9 @@ def test_a_cold_ship_drops_out_of_sight_and_a_burning_one_is_seen_across_the_sys
 
 
 def test_a_view_orders_only_its_own():
-    """The ARCVS view cannot order GHOST's ships; MASTER orders anyone's. What a view is shown leaves
-    out what its ships have not seen."""
+    """The ARCVS view cannot order GHOST's ships; MASTER orders anyone's. A side is sent its own
+    table and nothing else: its own units by name; another's ship only once seen and reported, as a
+    track by an id that says nothing of her, a bogey until known; another's formations never."""
     import json
     from fastapi.testclient import TestClient
     from astrum.app import create_app
@@ -1135,15 +1138,28 @@ def test_a_view_orders_only_its_own():
     assert c.post("/api/order", json={**o, "view": "ghost"}).status_code == 200
     assert c.post("/api/order", json={**o, "unit": "kiki", "view": "master"}).status_code == 200
     host = SimHost(w)
-    fr = json.loads(host.frame({"system": "sol", "t": f.t0 + 1800, "player": "arcvs", "view": "arcvs", "scenario": "sol-demo"}, conn=1))
-    assert fr["seen_as"]["ghost-3"] == {"shown": False} and "ghost-3" not in fr["contacts"]
-    assert fr["seen_as"]["ghost-2"] == {"identified": False, "lost": True}         # a bogey, gone cold: a lost track
-    assert fr["seen_as"]["ghost"]["identified"] is False                         # and so its flight
-    fr = json.loads(host.frame({"system": "sol", "t": f.t0 + 1800, "player": "arcvs", "view": "ghost", "scenario": "sol-demo"}, conn=3))
-    assert fr["seen_as"]["jove"] == {"shown": False}                             # far beyond GHOST's sight
-    assert fr["seen_as"]["g1"]["affiliation"] == "unknown"                       # another side's: unknown to it
-    fr = json.loads(host.frame({"system": "sol", "t": f.t0 + 1800, "player": "arcvs", "view": "master", "scenario": "sol-demo"}, conn=2))
-    assert fr["seen_as"] == {} and "ghost-3" in fr["contacts"]
+    t = f.t0 + 1800
+    fr = json.loads(host.frame({"system": "sol", "t": t, "player": "arcvs", "view": "arcvs", "scenario": "sol-demo"}, conn=1))
+    side = host._side(w.scenarios["sol-demo"], f, "arcvs")
+    g = [side.alias[f"ghost-{k}"] for k in (1, 2, 3)]
+    assert not any(x.startswith("ghost") or x.startswith("jove") for x in [*fr["ships"], *fr["contacts"]])
+    assert g[0] in fr["tracks"] and g[2] not in fr["tracks"] and g[2] not in fr["ships"]
+    assert fr["tracks"][g[1]]["name"] == "Bogey" and fr["tracks"][g[1]]["status"] == ["track-lost"]   # gone cold
+    assert fr["ships"][g[0]]["mass_t"] is None and "g1" in fr["contacts"]          # the scenario's own side's intel
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-1", "t": t, "g": 0.3, "player": "arcvs",
+                                   "target": {"unit": g[0]}})
+    assert r.status_code == 200 and r.json()["ship"]["goal"]["target"]["unit"] == g[0] and r.json()["ship"]["goal"]["label"] == "Bogey"
+    assert c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-1", "t": t, "g": 0.3, "player": "arcvs",
+                                      "target": {"unit": "ghost-1"}}).status_code == 400   # not by her own id
+    meta = c.get("/api/meta", params={"view": "ghost"}).json()
+    sc = next(x for x in meta["scenarios"] if x["id"] == "sol-demo")
+    assert sc["view"] == "ghost" and {x["id"] for x in sc["contacts"]} == {"ghost", "ghost-1", "ghost-2", "ghost-3"}
+    assert all(x["affiliation"] == "friend" for x in sc["contacts"])               # its own, to it
+    assert [x["label"] for x in sc["factions"]] == ["ARCVS", "JADF", "Bandits", "GHOST"]
+    fr = json.loads(host.frame({"system": "sol", "t": t, "view": "ghost", "scenario": "sol-demo"}, conn=3))
+    assert set(fr["contacts"]) >= {"ghost", "ghost-1"} and "g1" not in fr["contacts"] and "kiki" not in fr["contacts"]
+    fr = json.loads(host.frame({"system": "sol", "t": t, "player": "arcvs", "view": "master", "scenario": "sol-demo"}, conn=2))
+    assert fr["tracks"] == {} and "ghost-3" in fr["contacts"] and len(fr["ships"]) == len(f.c.ids)
 
 
 def test_reports_come_up_the_leaders_to_the_fleet_flagship():
@@ -1176,3 +1192,28 @@ def test_reports_come_up_the_leaders_to_the_fleet_flagship():
     now, held = latest(f, k, "arcvs", own), arrived(f, t, "arcvs", own)
     g = row["ghost-1"]
     assert now["arrive"][g] > t >= held["arrive"][g] and held["k"][g] < now["k"][g]    # the newest is on its way
+
+
+def test_each_side_plays_and_each_map_switches_its_own_picture():
+    """Every faction of a scenario plays (as its player in players.toml, else as itself, with no
+    bullseyes of its own yet); the map switches the picture's functions for its own pictures."""
+    import json
+    from astrum.app import create_app
+    from astrum.simhost import SimHost
+    w = create_app().state.world
+    assert w.players["jadf"].faction == "jadf" and w.players["arcvs"].name == "ARCVS Vanguard"
+    sc = w.scenarios["sol-demo"]
+    assert w.side_player(sc, "arcvs") == "arcvs" and w.side_player(sc, "ghost") == "ghost"
+    assert w.side(sc, None) == "arcvs" and w.side(sc, "nobody") == "arcvs" and w.side(sc, "master") == "master"
+    host = SimHost(w)
+    f = _demo(w)
+    t = f.t0 + 1800
+    f.reach(t)
+    req = {"system": "sol", "t": t, "view": "arcvs", "scenario": "sol-demo"}
+    tid = host._side(sc, f, "arcvs").alias["ghost-1"]
+    late = json.loads(host.frame(req, conn=1))["ships"][tid]
+    now = json.loads(host.frame({**req, "picture": {"relay": False}}, conn=1))
+    assert now["full"] and late["relay_s"] > 700 and now["ships"][tid]["relay_s"] == 0
+    assert now["ships"][tid]["seen_s"] < late["seen_s"] - 600              # seen as her sensors saw her, not as reported
+    truth = json.loads(host.frame({**req, "picture": {"detection": False, "light_delay": False, "hide_private": False}}, conn=1))
+    assert len(truth["tracks"]) == len(f.c.ids) - 106 and truth["ships"][tid]["mass_t"] > 0

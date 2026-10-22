@@ -7,6 +7,7 @@
   // orders aim level with the chosen bullseye's plane (a formation above it comes down to it) or
   // keep the ship's own height; B while aiming switches it too.
   import { api } from './api.js';
+  import { cap, keymap } from './keys.js';
 
   export let bullseyes = [];        // [{ id, name, made }]
   export let bullseyeId = 'system';
@@ -72,7 +73,7 @@
   </ol>
   <button class="plane" class:on={orderPlane === 'bullseye'} title="Orders aimed level with this bullseye's plane, or at the ship's own height (B while aiming)"
           on:click={() => onplane(orderPlane === 'bullseye' ? 'her' : 'bullseye')}>
-    <i></i><span>{orderPlane === 'bullseye' ? `Orders level with ${bullseyes.find((b) => b.id === bullseyeId)?.name ?? 'the bullseye'}` : 'Orders keep their own height'}</span><kbd>B</kbd>
+    <i></i><span>{orderPlane === 'bullseye' ? `Orders level with ${bullseyes.find((b) => b.id === bullseyeId)?.name ?? 'the bullseye'}` : 'Orders keep their own height'}</span><kbd>{cap($keymap.plane)}</kbd>
   </button>
   {#if making}
     <form class="maker" on:submit|preventDefault={make}>
