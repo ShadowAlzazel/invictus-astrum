@@ -111,7 +111,7 @@
   const engagement = (unit) => api.engagement(scenario.id, unit, { t, view: side, player: playerId });
   async function setStance(unit, change) {
     try {
-      await api.order({ scenario: scenario.id, unit, t, ...change, player: playerId, view: side });
+      await api.order({ scenario: scenario.id, unit, t, ...change, frame: change.stance ? bullseyeId : undefined, player: playerId, view: side });
       const what = change.stance ? profileRules.stances?.[change.stance]?.split(':')[0] : profiles.find((p) => p.id === change.profile)?.name;
       say(`${map.contactName(unit)}: ${change.stance ? 'stance' : 'profile'} ${what}`);
     } catch (err) { say(String(err.message ?? err)); }

@@ -1,4 +1,5 @@
 """Combat: veterancy, combat profiles, stances and the order ledger."""
+import numpy as np
 import pytest
 
 from astrum.config import ROOT, load_config
@@ -118,3 +119,72 @@ def test_an_order_onto_another_sides_ship_engages_at_her_focus_range(tmp_path):
     assert r["ship"]["goal"]["label"].startswith("engage") and r["ship"]["goal"]["target"]["engage"]
     i = fleet.c.row["kiki-1"]
     assert fleet.c.stand[i] == fleet.c.spec[i].engage_km * 1e3
+
+
+def _auto(fleet):
+    B = fleet.book
+    return [(float(B.at[e]), fleet.c.ids[B.ship[e]], B.of(e).label, B.of(e).target.get("unit"))
+            for e in B.queue[B.auto[B.queue]]]
+
+
+def _hunt(c, t, stance="aggressive", unit="tf-3", **range_km):
+    c.post("/api/profiles", json={"player": "arcvs", "name": "Hunters", "stance": stance,
+                                  "targets": ["hostile", "unknown"], "range": range_km})
+    return c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": unit, "t": t,
+                                      "profile": "hunters", "stance": stance}).status_code
+
+
+def test_aggressive_ships_engage_what_they_see_the_same_however_flown(tmp_path):
+    c, world = _app(tmp_path)
+    fleet = world.fleet(world.scenarios["sol-demo"])
+    t = fleet.t0 + 600
+    assert _hunt(c, t) == 200
+    fleet.reach(t + 86400 * 1.5)
+    got = _auto(fleet)
+    engaged = {(sid, u) for _, sid, label, u in got if label == "engage bogey"}
+    assert ("tf3-es-1", "ghost-1") in engaged and all(sid.startswith("tf3") for sid, _ in engaged)
+    assert all(abs((a - fleet.t0) / 600 - round((a - fleet.t0) / 600)) < 1e-6 for a, *_ in got)    # on the grid
+    fleet.advance(t + 3600)                           # set back: decided again, the same
+    fleet.reach(t + 86400 * 1.5)
+    assert _auto(fleet) == got
+    c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": "tf3-es-2", "t": t + 7200, "cold": True})
+    fleet.reach(t + 86400 * 1.5)                      # one of them flown again from then: the rest stands
+    assert [x for x in _auto(fleet) if x[1] != "tf3-es-2"] == [x for x in got if x[1] != "tf3-es-2"]
+
+
+def test_guards_go_back_to_their_post(tmp_path):
+    c, world = _app(tmp_path)
+    fleet = world.fleet(world.scenarios["sol-demo"])
+    t = fleet.t0 + 600
+    assert _hunt(c, t, "guard", guard="sensor") == 200
+    fleet.reach(t + 86400 * 1.5)
+    B = fleet.book
+    ev = [e for e in B.queue[B.auto[B.queue]] if fleet.c.ids[B.ship[e]] == "tf3-es-1"]
+    first = B.of(ev[0])
+    assert first.target["engage"] and first.target["resume"]["target"]["label"].startswith("back to")
+    assert any(B.of(e).label.startswith("back to") for e in ev[1:])
+
+
+def test_return_fire_answers_an_engage_order_within_range(tmp_path):
+    c, world = _app(tmp_path)
+    fleet = world.fleet(world.scenarios["sol-demo"])
+    t = fleet.t0 + 600
+    assert _hunt(c, t, "return-fire", **{"return-fire": 60e6}) == 200
+    r = c.post("/api/order", json={"scenario": "sol-demo", "view": "master", "unit": "ghost-1", "t": t, "g": 0.2,
+                                   "target": {"unit": "tf3-es-1"}})
+    assert r.json()["ship"]["goal"]["target"]["engage"]
+    fleet.reach(t + 3600)
+    assert ("tf3-es-1", "engage attacker", "ghost-1") in {x[1:] for x in _auto(fleet)}
+    assert not any(x[1] == "tf3-es-2" for x in _auto(fleet))     # not named: holds her fire
+
+
+def test_hold_faces_its_target_and_never_moves(tmp_path):
+    c, world = _app(tmp_path)
+    fleet = world.fleet(world.scenarios["sol-demo"])
+    t = fleet.t0 + 600
+    assert _hunt(c, t, "hold", hold="sensor") == 200
+    fleet.reach(t + 3600)
+    assert not [x for x in _auto(fleet) if x[1].startswith("tf3")]
+    i, j = fleet.c.row["tf3-es-1"], fleet.c.row["ghost-1"]
+    u = fleet.c.r[j] - fleet.c.r[i]
+    assert float(fleet.c.dir[i] @ (u / np.linalg.norm(u))) > 0.99

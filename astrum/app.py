@@ -47,7 +47,7 @@ from .entity import ShipSpec, SpecError
 from .sim import Fleet, Order
 from . import display
 from . import picture
-from . import profiles
+from . import ai, profiles
 from .profiles import Profile
 from . import switches
 from .detect import suite, unsimulated
@@ -504,6 +504,7 @@ class World:
         f = self.fleets[sc.id] = Fleet(sc, s, eph, self.ships, place, t0, orders,
                                        bullseyes=lambda player, pos, only=None: self.resolved(sc.system, player, pos, only),
                                        bullseyes_many=lambda player, bid, ts: self.resolved_many(sc.system, player, bid, ts))
+        f.ai = ai.Mind(self, sc, f)                      # standing orders, carried out as it flies
         return f
 
     def start_time(self, s) -> float:

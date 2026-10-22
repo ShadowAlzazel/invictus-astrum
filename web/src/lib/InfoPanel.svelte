@@ -102,9 +102,10 @@
   const whence = (f) => !f ? '' : f.from === 'ordered' ? `ordered to ${nameOf(f.by)}` : f.from === 'written' ? `written for ${nameOf(f.by)}`
     : f.from === 'profile' ? "the profile's" : f.gone ? `the root (${f.gone} deleted)` : 'the root';
   const SAID = { coast: 'Stop: drive cut', cold: 'Run cold', warm: 'Spread wings', active: 'Ping', passive: 'Go quiet' };
-  const goes = (label) => /^(engage|patrol|attack|hold)/.test(label ?? '') ? label[0].toUpperCase() + label.slice(1) : `To ${label}`;
+  const upper = (s) => s[0].toUpperCase() + s.slice(1);
+  const goes = (label) => /^(engage|patrol|attack|hold|back)/.test(label ?? '') ? upper(label) : `To ${label}`;
   const said = (o) => o.kind === 'setg' ? `Telegraph ${o.g ? `${o.g.toFixed(2)} g` : 'cut'}` : o.kind === 'goto' ? goes(o.label)
-    : o.kind === 'queue' ? `Then ${o.label}`
+    : o.kind === 'queue' ? `Then ${o.label}` : o.kind === 'coast' && o.label ? upper(o.label)
     : o.kind === 'stance' ? o.label.replace(/(stance|profile) (\S+)/g, (_, k, v) => k === 'stance' ? short(stances[v]) || v
       : `profile ${profiles.find((p) => p.id === v)?.name ?? v}`) : SAID[o.kind] ?? o.label ?? o.kind;
   $: affColor = contact && style ? (style.affiliation[contact.affiliation] ?? style.affiliation.unknown).color : null;

@@ -208,10 +208,14 @@ def give_order(world, req: dict, side_of=None) -> dict:
     unit, g, t = req.get("unit"), req.get("g"), req.get("t")
     switch = next((k for k in ("cold", "active") if isinstance(req.get(k), bool)), None)
     stance = {k: req[k] for k in ("stance", "profile") if k in req}
+    if "stance" in stance and req.get("frame"):      # guard: her post held in this bullseye's frame
+        stance["frame"] = req["frame"]
     if (switch or stance) and isinstance(t, (int, float)):
         # wings folded or spread; active sensors swept (pinging) or not; a stance or combat profile
         if stance.get("stance", "hold-fire") not in STANCES:
             raise OrderRefused(400, f"stance is one of {list(STANCES)}")
+        if stance.get("frame", "system") not in world.bullseyes(sc.system, req.get("player") or sc.player, listed=True):
+            raise OrderRefused(400, f"no bullseye {stance['frame']!r} to hold a post in")
         with fleet.lock:
             fleet.reach(float(t), ORDER_BUDGET_S)
         ships = order_ships(world, sc, fleet, unit)

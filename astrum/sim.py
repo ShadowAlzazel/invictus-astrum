@@ -280,6 +280,8 @@ class Fleet:
         self._enter(orders or [])
         self._checkpoints: list[tuple] = [(t0, self._snapshot(), t0)]    # (t, the rows then, station ships paid to)
         self.sensors = Sensors(self, registry)              # every ship's sensors, a cone each (astrum/detect.py)
+        self.ai = None                                      # standing orders carried out (astrum/ai.py Mind), if given
+        self._thinking = False
 
     # ---- the timeline: what the map reads ----------------------------------------------------
     def keep_timeline(self) -> Timeline:
@@ -296,7 +298,7 @@ class Fleet:
         """Every row at t, for the map: off the timeline (Timeline.at), or as the rows stand at the
         fleet's own moment (or one the timeline does not hold: before the scenario starts). What
         each row was given is the version she was on at t; station ships stand at their places then."""
-        if self.mending is not None:                     # an order's rows flying again: up to the sample after t
+        if self.mending is not None and not self._thinking:   # an order's rows flying again: up to the sample after t
             self._mend(self.t0 + (math.floor((t - self.t0) / TIMELINE_S + 1e-9) + 1) * TIMELINE_S)
         c, n, tl, V = self.c, self.c.n, self.timeline, self.versions
         if tl is not None and tl.covers(t) and abs(t - self.t) > 1e-6:
@@ -383,7 +385,7 @@ class Fleet:
         k0 = math.floor((t - self.t0) / TIMELINE_S)
         for k in [k for k in self._past if k >= k0]:
             del self._past[k]
-        for key in [key for key in self._scans if key[key[0] == "latest"] >= k0]:
+        for key in [key for key in self._scans if key[isinstance(key[0], str)] >= k0]:   # (k, ...) or ("latest" | "ai", k, ...)
             del self._scans[key]
 
     def _touch(self, i: int) -> None:
@@ -629,6 +631,7 @@ class Fleet:
             m.st_t = self._station_grid(m.st_t, T1, m.scope)
             self._record(slots, m.scope, flown)
             self._heat(m.t, T1, m.scope, slots)
+            self._think(T1, m.scope)
             for cp in [cp for cp in self._checkpoints if m.t + 1e-9 < cp[0] <= T1 + 1e-9]:
                 if abs(cp[0] - T1) < 1e-6:
                     self._patch(cp[1], m.scope)
@@ -765,11 +768,24 @@ class Fleet:
             self._stations_to(t1)
             self._record(slots, np.arange(c.n), flown)
             self._heat(T0, t1, np.arange(c.n), slots)
+            self._think(t1)
             cps = self._checkpoints
             if self.t - cps[-1][0] >= CHECKPOINT_S - 1e-6:
                 cps.append((self.t, self._snapshot(), self._station_t))
                 while len(cps) > 2 and cps[1][0] < self.t - CHECKPOINT_KEEP_S:
                     del cps[1]                          # the scenario's start stays: further back flies from there
+
+    def _think(self, t: float, rows: np.ndarray | None = None) -> None:
+        """At a block's end on the grid, the ships (these rows) carry out their standing orders
+        (Fleet.ai, astrum/ai.py Mind): what they decide is given as orders at that moment. The
+        fleet's pictures are read as they stand (an order's rows flying again are already here)."""
+        if self.ai is None or abs(self._grid_next(t - 1e-6) - t) > 1e-6:
+            return
+        self._thinking = True
+        try:
+            self.ai.tick(self, t, rows)
+        finally:
+            self._thinking = False
 
     def _grid_next(self, t: float) -> float:
         """The next block boundary after t: blocks lie on a grid from the scenario's start, so
@@ -1382,12 +1398,12 @@ class Fleet:
             G = B.of(q)
             self._derive(i, t, {k: v for k, v in G.target.items() if k != "after"}, G.g, G.oid, G.by, B.slot[q])
 
-    def _derive(self, i: int, t: float, target: dict, g: float, oid: str, by: str, slot) -> int:
-        """A go-to the fleet gives itself (source "auto"), at the first block end from t: the grid's,
-        so it falls at the same moment however the fleet is flown there. Struck when the fleet is set
-        back before it, and given again as it flies past (_strike_auto)."""
+    def _derive(self, i: int, t: float, target: dict, g: float, oid: str, by: str, slot, kind: int = GOTO) -> int:
+        """An order the fleet gives itself (source "auto": a go-to, or a coast), at the first block
+        end from t: the grid's, so it falls at the same moment however the fleet is flown there.
+        Struck when the fleet is set back before it, and given again as it flies past (_strike_auto)."""
         B, at = self.book, self._grid_next(t - 1e-6)
-        e = B.add(Given(oid=oid, by=by, kind=GOTO, at=at, target=target, label=target.get("label"), g=g, source="auto"), i, slot)
+        e = B.add(Given(oid=oid, by=by, kind=kind, at=at, target=target, label=target.get("label"), g=g, source="auto"), i, slot)
         m = self.mending
         if at < self.t - 1e-6 and m is not None:   # flown again (an order's rows on their way): given in the past
             self._qi += 1
