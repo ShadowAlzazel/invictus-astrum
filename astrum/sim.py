@@ -933,6 +933,29 @@ class Fleet:
             c.eta[i] = self._eta(i, t, min(c.gg[i] * G0, a))
             at = c.arrive_at[i]
             c.arrive[i] = at if math.isfinite(at) else math.nan
+        self._bingo(t, scope)
+
+    def _bingo(self, t: float, scope: np.ndarray | None = None) -> None:
+        """Bingo: a ship flying an order with less Δv left than she closes on its target at (her
+        formation's lead's, in formation) can no longer stop there: she drops it and goes free,
+        keeping what she has (an orbit only if that is enough to go onto one; else coasting). So
+        does one whose tanks are dry."""
+        c, n = self.c, self.c.n
+        fly = c.goal[:n] & (c.kind[:n] == SHIP) & (c.mode[:n] == FREE) & (c.fmax[:n] > 0) & (c.ve[:n] > 0)
+        if scope is not None:
+            fly &= np.isin(np.arange(n), scope)
+        rows = np.flatnonzero(fly)
+        if not len(rows):
+            return
+        lead = c.lead[rows]
+        kept = (lead >= 0) & ~c.solo[rows]
+        src = np.where(kept & (c.mode[np.maximum(lead, 0)] == FREE), lead, rows)
+        left = c.ve[rows] * np.log((c.dry[rows] + c.prop[rows]) / c.dry[rows])
+        closing = np.nan_to_num(c.clos[src])
+        for i in rows[(c.prop[rows] <= 0) | (left < closing)]:
+            self.findings.append(f"{c.ids[i]}: bingo fuel, {left[rows == i][0] / 1e3:,.1f} km/s left, closing at "
+                                 f"{closing[rows == i][0] / 1e3:,.1f}: she drops her order and goes free")
+            self._go_free(int(i), t)
 
     # ---- her heat: a stamina bar ------------------------------------------------------------------
     def _heat(self, T0: float, T1: float, rows: np.ndarray, slots: np.ndarray) -> None:

@@ -323,6 +323,12 @@ hold: it is free fall. Off it (a move, decelerate) she leaves from where it has 
 speed. The map draws every free ship's conic about the body whose well she is in, off its picture
 (the bodies' velocities ride in it, `bodies_kms`): nothing is asked of the server.
 
+**BINGO.** After every block, a ship flying an order whose Δv left (by the rocket equation) is
+less than the speed she closes on its target at (her formation's lead's, in formation) can no
+longer stop there: she drops it and goes free (an orbit only if she still has the Δv for it),
+keeping what she has; so does one whose tanks are dry. Without it a dry ship flew on with her order,
+stepped as if under thrust, and her time to target was flown ahead to its horizon again and again.
+
 **STOP and DECELERATE.** With a ship or a formation selected (or from an order's block in its
 panel), **Z** stops it: the order dropped and the drive cut, it flies on as it goes, under gravity
 alone (a coast order). **X** decelerates it: the order dropped for a new one, to turn and burn at

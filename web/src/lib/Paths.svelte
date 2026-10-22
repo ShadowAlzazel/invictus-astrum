@@ -5,6 +5,11 @@
   // star): two bodies only, her state read off the picture and the body's, an estimate like Eva's.
   // An ellipse whole; a hyperbola from where she is, outward. Worked out once a picture, drawn
   // every frame about where the body is drawn. Nothing of it is asked of the server.
+  // Folded as the units are: a ship drawn inside her formation's mark has her formation's one path
+  // drawn for all of them (its first ship's). And in fuchsia, dotted, what K would give: for the
+  // selection's ships on station, the orbit they would go onto (circular at their height,
+  // prograde about the system's up, as the simulation puts them on one; out of every well, their
+  // coast); aiming a move given free at a body, the orbit she would be on there.
   import { onMount, onDestroy } from 'svelte';
   import { rgba } from './symbols.js';
 
@@ -13,10 +18,12 @@
   export let on = true;                 // [layers] paths
   export let contacts = [];
   export let sel = null;
+  export let ordering = null;           // an order being aimed (Orders), and where it is aimed: aim()
+  export let aim = () => null;
 
   const G = 6.6743e-20;                 // km³/(kg·s²)
   const N = 120;
-  let canvas, ctx, unhook, W = 0, H = 0, kept = null, keptFor = null;
+  let canvas, ctx, unhook, W = 0, H = 0, kept = null, keptFor = null, keptSel = null;
 
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -56,19 +63,26 @@
     return { pts: Array.from({ length: N + 1 }, (_, k) => at(now + ((end - now) * k) / N)), closed: false };
   }
 
-  function work() {
+  // the orbit she goes onto, going free at rel off a body of mu: circular, prograde about the system's up
+  function onto(rel, mu) {
+    const R = len(rel), up = Math.abs(rel[2]) < 0.95 * R ? [0, 0, 1] : [1, 0, 0], along = cross(up, rel);
+    return conic(rel, scale(along, Math.sqrt(mu / R) / len(along)), mu, 3 * R);
+  }
+
+  function work(under) {
     const st = map.state, out = [];
     for (const c of contacts) {
       const s = st.ships?.[c.id];
       if (!s || s.propellant_share == null || !s.velocity_kms) continue;          // the side's own, with what she moves at
       const free = s.mode === 'orbit' || (s.mode === 'free' && !s.goal && !s.burning);
-      if (!free) continue;
+      if (!free && (s.mode !== 'station' || !under.has(c.id))) continue;          // on station: the selection's alone
       const p = st.contacts?.[c.id];
       const b = p && (s.orbit_of ? map.bodies[s.orbit_of] : dominant(p));
       const bp = b && st.bodies[b.id], bv = b && st.bodies_kms?.[b.id];
       if (!bp || !bv || !(b.mass_kg > 0)) continue;
-      const r = sub(p, bp), path = conic(r, sub(s.velocity_kms, bv), G * b.mass_kg, Math.max(3 * len(r), b.zones?.soi_km ?? 0));
-      if (path) out.push({ id: c.id, body: b.id, ...path });
+      const r = sub(p, bp), mu = G * b.mass_kg, path = free || b.parent == null   // on station: what K would give
+        ? conic(r, sub(s.velocity_kms, bv), mu, Math.max(3 * len(r), b.zones?.soi_km ?? 0)) : onto(r, mu);
+      if (path) out.push({ id: c.id, body: b.id, k: !free, ...path });
     }
     return out;
   }
@@ -79,27 +93,47 @@
     canvas.width = W * dpr; canvas.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
+  // the unit a ship's path is drawn for: herself if she has a mark of her own, else the nearest
+  // formation over her that has one (folded into it)
+  function drawnAs(id, marked, byId) {
+    for (let u = id; u; u = byId[u]?.parent) if (marked.has(u)) return u;
+    return id;
+  }
+  function stroke(pts, o, color, dash) {
+    ctx.strokeStyle = color; ctx.setLineDash(dash);
+    ctx.beginPath();
+    let pen = false;
+    for (const q of pts) {
+      const s = map.project([o[0] + q[0], o[1] + q[1], o[2] + q[2]]);
+      if (!s) { pen = false; continue; }
+      if (pen) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y);
+      pen = true;
+    }
+    ctx.stroke();
+  }
   function draw() {
     ctx.clearRect(0, 0, W, H);
-    if (!on || !map?.state || !map.def || !style) return;
-    if (keptFor !== map.state) { kept = work(); keptFor = map.state; }
-    const picked = new Set(sel?.kind === 'contact' ? [sel.id, ...(contacts.find((c) => c.id === sel.id)?.children ?? [])] : []);
-    const color = (style.affiliation.friend ?? style.affiliation.unknown).color;
+    if (!map?.state || !map.def || !style) return;
+    const byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
+    const under = new Set(), walk = (u) => { under.add(u); (byId[u]?.children ?? []).forEach(walk); };
+    if (sel?.kind === 'contact') walk(sel.id);
+    if (keptFor !== map.state || keptSel !== sel) { kept = work(under); keptFor = map.state; keptSel = sel; }
+    const marked = new Set((map.marks ?? []).map((m) => m.id)), seen = new Set();
+    const friend = (style.affiliation.friend ?? style.affiliation.unknown).color, fuchsia = style.palette.fuchsia;
     ctx.lineWidth = 1;
-    ctx.setLineDash([3, 4]);
     for (const k of kept) {
+      if (k.k ? !under.has(k.id) || ordering : !on) continue;          // what K would give: only the selection's
+      const as = `${k.k ? 'k' : ''}${drawnAs(k.id, marked, byId)}`;
+      if (seen.has(as)) continue;                                      // one path for a folded formation
+      seen.add(as);
       const o = map.position({ kind: 'body', id: k.body });
-      if (!o) continue;
-      ctx.strokeStyle = rgba(color, picked.has(k.id) ? 0.75 : 0.28);
-      ctx.beginPath();
-      let pen = false;
-      for (const q of k.pts) {
-        const s = map.project([o[0] + q[0], o[1] + q[1], o[2] + q[2]]);
-        if (!s) { pen = false; continue; }
-        if (pen) ctx.lineTo(s.x, s.y); else ctx.moveTo(s.x, s.y);
-        pen = true;
-      }
-      ctx.stroke();
+      if (o) stroke(k.pts, o, k.k ? rgba(fuchsia, 0.8) : rgba(friend, under.has(k.id) ? 0.75 : 0.28), k.k ? [1, 4] : [3, 4]);
+    }
+    const a = ordering?.mode === 'move' && ordering.free ? aim() : null;        // a free move at a body: there, her orbit
+    const b = a?.kind === 'body' && map.bodies[a.id];
+    if (b?.mass_kg > 0 && a.standoff > 0) {
+      const d = sub(a.from, a.to), path = onto(scale(d, a.standoff / len(d)), G * b.mass_kg);
+      if (path) stroke(path.pts, a.to, rgba(fuchsia, 0.8), [1, 4]);
     }
     ctx.setLineDash([]);
   }

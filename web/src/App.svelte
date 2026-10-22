@@ -539,7 +539,7 @@
 <Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} sensing={sensing && mode === 'map'}
   watched={mode === 'map' ? watched : new Set()} />
 <HudCursor {map} {style} {settings} {overUI} />
-{#if mode === 'map' && scenarioOn && scenario}<Paths {map} {style} on={settings?.layers.paths ?? true} contacts={scenario.contacts} {sel} />{/if}
+{#if mode === 'map' && scenarioOn && scenario}<Paths {map} {style} on={settings?.layers.paths ?? true} contacts={scenario.contacts} {sel} {ordering} aim={() => orderTool?.aim()} />{/if}
 {#if ruler && mode === 'map'}<Ruler {map} {style} {ruler} {markAt} />{/if}
 {#if mode === 'map'}
   <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />

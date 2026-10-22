@@ -1570,3 +1570,23 @@ def test_taking_station_from_an_orbit_leaves_it_where_she_is():
     assert np.linalg.norm(s.v) < 40e3                     # Mars's speed and her orbit's, no more
     s = f.at(f.t + 6 * 3600)["tf3-lf4-bs-1"].state
     assert np.isfinite(s.r).all() and np.linalg.norm(s.r - mars(f.t)) < 5e8
+
+
+def test_bingo_fuel_drops_the_order_and_goes_free():
+    """Too little Δv left to stop where she goes: she drops the order and coasts, keeping the rest,
+    rather than burning her tanks dry and flying on with an order she cannot carry out."""
+    from astrum.app import create_app
+    from astrum.simhost import give_order
+    world = create_app().state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    f.at(t)
+    i = f.c.row["kiki-1"]
+    with f.lock:                                       # her tanks as a long campaign left them
+        f.c.prop[i] = 0.02 * f.c.pmax[i]
+        f._touch(i)
+        f._checkpoints = [(f.t, f._snapshot(), f._station_t)]
+    give_order(world, {"scenario": "sol-demo", "unit": "kiki-1", "player": "arcvs", "t": t, "g": 0.3, "target": {"body": "mars"}})
+    f.at(t + 24 * 3600)
+    assert not f.c.goal[i] and f.c.mode[i] == 1 and f.c.prop[i] > 0.005 * f.c.pmax[i]
+    assert any("kiki-1: bingo fuel" in x for x in f.findings)

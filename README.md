@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 220 tests
+python -m pytest -q tests             # 221 tests
 ```
 
 `serve.py` says at start whether the simulation's hot loops are compiled (`kernels compiled
@@ -119,7 +119,12 @@ left her) and pays for it every five minutes, whatever of following it is not fr
 circular orbit of it at her height (the burn onto it paid once, nothing after; the orbit is worked
 out by Kepler, as cheaply as a station), else coasting as she goes. The top of her panel says
 which, with her orbit's height and period; the map draws every free ship's path (Display, Free
-paths): her conic about the body whose well she is in, read off the picture.
+paths): her conic about the body whose well she is in, read off the picture, one for a formation
+drawn folded into its mark. Dotted fuchsia, what K would give: for the selection's ships on
+station, the orbit they would go onto (or their coast, out of every well); aiming a move given free
+at a body, the orbit she would be on there. **Bingo:** a ship flying an order with less Δv left than
+she closes on its target at can no longer stop there; she drops it and goes free, keeping the rest
+(the findings say so).
 
 A ship's **Show sensors** (in her panel, under Sensors; C) draws her sensors on the map always, R held
 or not, and a formation's does so for every ship under it (its panel's Fleet: its lowest tanks and
