@@ -6,7 +6,9 @@
   //   Game     the picture's switches (config.toml [picture]), sent with every picture asked for
   //   Combat   the commander's combat profiles (astrum/profiles.py), kept by the server: the root
   //            read-only, a copy of any made their own
+  //   Adjutant what the tactical adjutant calls, and how (lib/adjutant.js), kept in this browser
   import { ACTIONS, bind, cap, keymap, resetKeys } from './keys.js';
+  import { CALLS, DEFAULTS, TOKENS } from './adjutant.js';
 
   export let rules = {};
   export let values = {};
@@ -22,8 +24,12 @@
   export let profileRules = {};        // { stances: {id: label}, ranges: {id: what}, targets: [...] }
   export let onprofile = async () => {};      // (profile): saved (a new one has no id); resolves to the saved one
   export let ondropprofile = async () => {};  // (id)
+  export let adjutant = DEFAULTS;      // lib/adjutant.js config()
+  export let onadjutant = () => {};    // (config)
+  const adj = (k, v) => onadjutant({ ...adjutant, [k]: v });
+  const call = (k, change) => onadjutant({ ...adjutant, calls: { ...adjutant.calls, [k]: { ...adjutant.calls[k], ...change } } });
 
-  const TABS = [['display', 'Display'], ['hotkeys', 'Hotkeys'], ['game', 'Game'], ['combat', 'Combat']];
+  const TABS = [['display', 'Display'], ['hotkeys', 'Hotkeys'], ['game', 'Game'], ['combat', 'Combat'], ['adjutant', 'Adjutant']];
   const short = (label) => label?.split(':')[0] ?? '';
 
   // the profile shown, and the draft of it being edited (a shared one is copied first)
@@ -160,6 +166,30 @@
     {/if}
     <p class="hint">Kept by the server, for this commander. {shown?.root ? 'The root is every unit\'s fallback and is not changed here. ' : ''}A
       range is read off each ship's own figures (sensor: her passive reach on a warm ship; dazzle; weapons: her focus battery's reach), or set in km.</p>
+  {:else if tab === 'adjutant'}
+    <section>
+      <h2>Adjutant</h2>
+      {#each [['on', 'On: she reads the picture and calls what changes'], ['voice', 'Say her calls aloud'], ['estimates', 'Her heading estimates on the tracks']] as [k, label]}
+        <button class="toggle" class:on={adjutant[k]} on:click={() => adj(k, !adjutant[k])}><i></i>{label}</button>
+      {/each}
+      <label class="f"><span>Her name</span><input class="name" value={adjutant.name} on:change={(e) => adj('name', e.target.value)} /></label>
+      <label class="f"><span>She calls you</span><input class="name" value={adjutant.role} on:change={(e) => adj('role', e.target.value)} /></label>
+      <label class="f" class:mod={adjutant.low_fuel_pct !== DEFAULTS.low_fuel_pct}><span>Low fuel at</span>
+        <input type="range" min="1" max="50" step="1" value={adjutant.low_fuel_pct} on:input={(e) => adj('low_fuel_pct', Number(e.target.value))} />
+        <output>{adjutant.low_fuel_pct}%</output></label>
+      <label class="f" class:mod={adjutant.group_km !== DEFAULTS.group_km}><span title="New tracks this close together are called as one group">One group within</span>
+        <input class="km" type="number" min="0" step="10000" value={adjutant.group_km} on:change={(e) => adj('group_km', Number(e.target.value))} /><output>km</output></label>
+    </section>
+    {#each Object.entries(CALLS) as [k, c]}
+      <section>
+        <button class="toggle" class:on={adjutant.calls[k].on} on:click={() => call(k, { on: !adjutant.calls[k].on })}><i></i>{c.label} <span class="dim">[{k}]</span></button>
+        <textarea rows="2" value={adjutant.calls[k].text} on:change={(e) => call(k, { text: e.target.value })}></textarea>
+        {#if adjutant.calls[k].text !== c.text}<button class="reset" on:click={() => call(k, { text: c.text })}>back to the default</button>{/if}
+      </section>
+    {/each}
+    <footer><button class="reset" on:click={() => onadjutant(DEFAULTS)}>Reset the adjutant</button></footer>
+    <p class="hint">Kept in this browser. She reads only what this map is sent, in a worker of her own: nothing of hers reaches the
+      server. Her heading estimates are positions as seen, differenced off the active bullseye. Tokens: {TOKENS.map((t) => `[${t}]`).join(' ')}</p>
   {:else}
     <section>
       <h2>Picture</h2>
@@ -221,6 +251,7 @@
   .checks { display: flex; gap: 14px; grid-column: span 2; }
   input.name, input.km { background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: inherit; padding: 1px 4px; min-width: 0; }
   input.name { grid-column: span 2; }
+  textarea { background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: 11px var(--mono); padding: 4px 6px; resize: vertical; }
   input.km { width: 100%; }
   .f.rng { grid-template-columns: 1fr 150px 6em; }
   .f.rng select { grid-column: auto; }

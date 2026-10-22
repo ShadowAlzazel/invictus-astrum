@@ -24,6 +24,8 @@
   export let ondecel = () => {};    // (unit): DECELERATE: turn and burn to rest on the bullseye
   export let oncold = () => {};     // (cold): fold her wings (run cold) or spread them
   export let onping = () => {};     // (on): sweep her active sensors (ping) or go quiet
+  export let watched = new Set();   // ships whose sensors the map draws always
+  export let onwatch = () => {};    // (id): draw her sensors always, or not
   export let ondismiss = () => {};  // (track id): remove an old track
   export let profiles = [];         // the commander's combat profiles (the shared ones first)
   export let stances = {};          // stance -> what it does ("Guard: ...")
@@ -306,6 +308,8 @@
         <h3>Sensors <span class="dim">{ship.active ? 'pinging: seen pinging' : 'passive'}</span></h3>
         <button class="act" on:click={() => onping(!ship.active)}
           title={ship.active ? 'Stop the active sweep: passive only' : 'Sweep her active sensors: any hull in reach is seen and made out, and every ping shows her far beyond'}>{ship.active ? 'Go quiet' : 'Ping'} <kbd>{cap($keymap.ping)}</kbd></button>
+        {#if spec?.sensors?.length}<button class="act" class:on={watched.has(sel.id)} on:click={() => onwatch(sel.id)}
+          title="Draw her sensors on the map always: each one's reach, and the narrow ones as cones along her hull">{watched.has(sel.id) ? 'Hide sensors' : 'Show sensors'}</button>{/if}
         {#if spec?.ranges?.length}
           <h3><button class="fold" class:shut={shut.weapons} on:click={() => flip('weapons')}><i></i>Weapons</button>{#if shut.weapons} <span class="dim">{spec.ranges.map((r) => `${r.what} ${km(r.km)}`).join(' · ')}</span>{/if}</h3>
           {#if !shut.weapons}
@@ -403,6 +407,8 @@
   .close:hover { color: var(--fuchsia); }
   .act { margin-top: 10px; font-size: 11px; color: var(--violet); filter: brightness(1.5); }
   .act:hover { color: var(--fuchsia); filter: none; }
+  .act + .act { margin-left: 14px; }
+  .act.on { color: var(--ink); filter: none; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--rule); }
   dt { color: var(--dim); }
   dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }

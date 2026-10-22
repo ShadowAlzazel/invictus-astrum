@@ -32,6 +32,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import constants as k
+from . import kernels
 from .bullseye import Bullseye, BullseyeError, from_dict, resolve, resolve_many
 from .config import ROOT, ConfigError, load_config, load_style
 from .ephemeris import Ephemeris, Tabled
@@ -693,7 +694,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     @app.get("/api/status")
     def status():
         world.check()
-        return {"version": world.version, "errors": world.errors}
+        return {"version": world.version, "errors": world.errors, "compiled": kernels.HAVE_NUMBA, "kernels": kernels.status()}
 
     @app.get("/api/system/{sid}")
     def system(sid: str):

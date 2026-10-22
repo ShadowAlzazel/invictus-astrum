@@ -19,13 +19,22 @@ import numpy as np
 
 try:
     import numba
-    HAVE_NUMBA = True
+    HAVE_NUMBA = not numba.config.DISABLE_JIT
+    WHY_NOT = "" if HAVE_NUMBA else "NUMBA_DISABLE_JIT is set"
     jit = numba.njit(cache=True, error_model="numpy", nogil=True)    # nogil: other threads run while a kernel does
-except ImportError:                                  # optional: the numpy paths stand in
-    HAVE_NUMBA = False
+except ImportError as e:                             # optional: the numpy paths stand in
+    HAVE_NUMBA, WHY_NOT = False, f"{type(e).__name__}: {e}"
 
     def jit(f):
         return f
+
+
+def status() -> str:
+    """Whether the hot loops are compiled, in a line for the server's start and the benches."""
+    if HAVE_NUMBA:
+        return f"kernels compiled (Numba {numba.__version__})"
+    fix = "" if "DISABLE_JIT" in WHY_NOT else ". Install Numba for this Python: python -m pip install numba"
+    return f"kernels NOT compiled: they run as plain Python, some 100x slower ({WHY_NOT}){fix}"
 
 
 @jit

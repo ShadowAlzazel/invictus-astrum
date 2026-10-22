@@ -17,8 +17,10 @@ import cProfile
 import math
 import os
 import pstats
+import shutil
 import statistics
 import subprocess
+import tempfile
 import sys
 import time
 from collections import Counter, defaultdict
@@ -158,8 +160,8 @@ def live(seconds):
     t0 = f.t0 + 600
     host.frame({**req, "t": t0}, conn=1)
     order(w, host, f, t0, tf3_target(w, f, t0, False))
-    out = f"/tmp/astrum-pyspy-{os.getpid()}.txt"
-    spy = subprocess.Popen(["py-spy", "record", "--pid", str(os.getpid()), "--threads", "--gil", "--nonblocking",
+    out = os.path.join(tempfile.gettempdir(), f"astrum-pyspy-{os.getpid()}.txt")
+    spy = shutil.which("py-spy") and subprocess.Popen(["py-spy", "record", "--pid", str(os.getpid()), "--threads", "--gil", "--nonblocking",
                             "--format", "raw", "-r", "100", "-d", str(seconds), "-o", out],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1.0)
@@ -170,7 +172,10 @@ def live(seconds):
         took.append(time.monotonic() - a)
         behind.append(float(m.partition('"behind_s": ')[2].partition(",")[0]))
         time.sleep(max(0.0, 1 / FPS - (time.monotonic() - a)))
-    spy.wait()
+    if spy:
+        spy.wait()
+    else:
+        print("\n(py-spy not found: python -m pip install py-spy, for which thread holds the interpreter)")
     host.stop()
     return behind, took, out
 
@@ -191,7 +196,8 @@ def threads_from(path, seconds, rate=100):
 
 
 if __name__ == "__main__":
-    print("A wall second at 1 h/s, game hour by game hour (ms of one thread; 1000 = a whole core):\n")
+    print(kernels.status())
+    print("\nA wall second at 1 h/s, game hour by game hour (ms of one thread; 1000 = a whole core):\n")
     parts = ["flight", "time to target", "sweeps", "map pictures", "AI pictures"]
     print(f"  {'case':38s}" + "".join(f"{p:>16s}" for p in parts) + f"{'in all':>12s}{'worst hour':>12s}")
     for case, name in (("quiet", "fleet quiet (the scenario's own orders)"), ("near", "TF-3 (44) 1M km off Mars, arrives"),

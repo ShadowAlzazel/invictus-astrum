@@ -51,6 +51,7 @@ export class StateStream {
     this.want = null;
     this.busy = false;
     this.rtt = 0;                    // a picture's round trip, seconds (smoothed)
+    this.tap = null;                 // (text): another reader of every picture as it came (the adjutant)
     this._open();
   }
   _open() {
@@ -60,7 +61,7 @@ export class StateStream {
     this.ws.onmessage = (e) => {
       const dt = (performance.now() - this._sent) / 1000;
       this.rtt = this.rtt ? 0.8 * this.rtt + 0.2 * dt : dt;
-      this.busy = false; this.onstate(JSON.parse(e.data)); this._send();
+      this.busy = false; this.tap?.(e.data); this.onstate(JSON.parse(e.data)); this._send();
     };
     this.ws.onclose = () => { this.busy = false; setTimeout(() => this._open(), 1000); };
   }

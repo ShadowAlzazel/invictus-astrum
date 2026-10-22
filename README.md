@@ -13,8 +13,13 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 211 tests
+python -m pytest -q tests             # 214 tests
 ```
+
+`serve.py` says at start whether the simulation's hot loops are compiled (`kernels compiled
+(Numba …)`). If not, it says why: Numba could not be imported for this Python (often a Python too
+new for the Numba release), and the flight runs as plain Python, some 100× slower; the map's clock
+reads "flight not compiled". `python -m pip install numba` for the Python that runs the server.
 
 The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
 `run_ahead = false` under `[sim]` in `config.toml` turns it off (each picture then flies the fleet
@@ -105,6 +110,22 @@ sensors' reach, half of it, her dazzle range, her weapons' or a number of km) an
 (identified hostiles; bogeys too). The root profile is everyone's start and is not changed there.
 No weapon is fired yet: an engagement is where she goes and what she faces.
 
+A ship's **Show sensors** (in her panel, under Sensors) draws her sensors on the map always, R held
+or not: each one's reach, and the narrow ones (the VIGIL's telescopes) as cones along her hull, so
+you see where she looks as she turns. Kept in this browser, by scenario.
+
+The **Adjutant** (bottom left, over the bullseyes) reads the side's picture as the map is sent it,
+in a worker of her own in the browser, and calls what changes: the picture when she takes over, a
+new track or group (bullseye, azimuth and range, Eve or Haid, where it seems to head: "Commander,
+Eva. Single group, Burn Bullseye, zero-niner-zero for three-hundred thousand. Eve zero-six-zero.
+Track east. Bogey."), a track identified, a track lost, a ship or a whole formation at 10% fuel or
+less. Her heading estimates are positions as seen, differenced off the active bullseye, and drawn
+as a short dashed arrow on each track shown alone. Click her title for her whole log; *voice* says
+her calls aloud. Settings, Adjutant, turns her or any call off and rewrites each call's template
+(`[role]`, `[name]`, `[contact-type]`, `[bullseye]`, `[azimuth]`, `[range]`, `[eve]`, `[elevation]`,
+`[direction]`, `[declare]`, `[track]`, `[class]`, `[unit]`, `[fuel]`, …); kept in this browser. She
+knows nothing the map was not sent, and asks the server for nothing.
+
 Under each unit's name: its faction's designation (AVC, AAG, JADF), or, for one without a prefix
 or not yet known, what its frame says (HOSTILE, UNKNOWN, CIVIL); then Pry and brevity.
 
@@ -127,6 +148,7 @@ above it comes down to it.
 | `data/profiles.toml` | the shared combat profiles: the root, every unit's fallback, states each stance's range |
 | `profiles.toml` | combat profiles commanders made on the map (written by the map; not committed) |
 | `data/factions.toml` | factions: a name, the prefix a ship's name reads with, and whose branch (AVC, AAG of ARCVS) or member world's force (JADF) it is; units take theirs from the formation above |
+| `web/src/lib/adjutant.js` | the adjutant: her calls, their templates, her heading estimates (run in `adjutant.worker.js`) |
 | `data/scenarios/*.toml` | units placed in a system, with their stance, combat profile and crew (veterancy) if not the formation's; no weapon is simulated yet |
 | `style.toml` | colours, affiliation frames, echelon marks, formation roles (built from blocks, each an APP-6 mark: battle, line, picket, supply, forward, point defence, escort, signal), body display sizes by role |
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |

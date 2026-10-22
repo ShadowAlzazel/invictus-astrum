@@ -5,6 +5,8 @@
   import { cap, is, keymap } from './lib/keys.js';
   import HudCursor from './lib/HudCursor.svelte';
   import Ruler from './lib/Ruler.svelte';
+  import Adjutant from './lib/Adjutant.svelte';
+  import { config as adjutantConfig } from './lib/adjutant.js';
   import Orders from './lib/Orders.svelte';
   import Bullseyes from './lib/Bullseyes.svelte';
   import { group, hms, orderGroups, shipsUnder, stepG } from './lib/orders.js';
@@ -30,11 +32,33 @@
   let game = {};
   try { game = JSON.parse(localStorage.getItem('astrum.game') ?? '{}'); } catch { /* not kept */ }
   let settingsTab = 'display';
+  // the adjutant's settings (Settings, Adjutant), kept in this browser; she reads the side's pictures
+  let adjutant = adjutantConfig();
+  try { adjutant = adjutantConfig(JSON.parse(localStorage.getItem('astrum.adjutant') ?? 'null')); } catch { /* not kept */ }
+  function setAdjutant(cfg) {
+    adjutant = adjutantConfig(cfg);
+    try { localStorage.setItem('astrum.adjutant', JSON.stringify(adjutant)); } catch { /* for this visit only */ }
+  }
+  // ships whose sensors are drawn always (her panel's Show sensors), kept in this browser by scenario
+  let watchedBy = {};
+  try { watchedBy = JSON.parse(localStorage.getItem('astrum.watched') ?? '{}'); } catch { /* not kept */ }
+  $: watched = new Set(scenario ? watchedBy[scenario.id] ?? [] : []);
+  function toggleWatch(id) {
+    const now = new Set(watched);
+    if (now.has(id)) now.delete(id); else now.add(id);
+    watchedBy = { ...watchedBy, [scenario.id]: [...now] };
+    try { localStorage.setItem('astrum.watched', JSON.stringify(watchedBy)); } catch { /* for this visit only */ }
+  }
+  // whom she serves: the side's own units (a formation's ships are under it), by scenario and side
+  $: adjContext = mode === 'map' && scenarioOn && scenario ? {
+    key: `${scenario.id}:${side}:${playerId}`,
+    units: scenario.contacts.map((c) => ({ id: c.id, callsign: c.callsign ?? c.name ?? c.id, parent: c.parent ?? null, ship: c.echelon === 'ship' })),
+  } : null;
   let t = 0, warp = WARPS.findIndex(([s]) => s === 3600), paused = false, last = 0, raf;
   let orbitsT = null, orbitsBusy = false;
   let drules = {}, settings = null, showSettings = false, settingsStatus = '';
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
-  let showFindings = false, down = null, poll;
+  let showFindings = false, down = null, poll, kernels = '';   // kernels: why the flight is not compiled, if it is not
   let ordering = null, orderTool, orderMsg = '', msgTimer;   // an order being aimed: { unit, g, tilt, plane }
   // where orders measure Eve and Haid from: 'her' own height, or the active 'bullseye''s plane (level:
   // on it, so a formation above comes down to it). B while aiming, or the switch under the bullseyes
@@ -447,6 +471,7 @@
     try {
       const s = await api.status();
       errors = s.errors;
+      kernels = s.compiled === false ? s.kernels : '';
       if (s.version !== version) {
         await loadMeta();
         if (systemId) await openSystem(systemId, true, true);
@@ -480,7 +505,8 @@
 <svelte:window on:keydown={key} on:keyup={keyUp} on:blur={() => (ranges = sensing = false)} on:pointermove={trackUI} />
 
 <canvas class="map" bind:this={canvas}></canvas>
-<Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} sensing={sensing && mode === 'map'} />
+<Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} sensing={sensing && mode === 'map'}
+  watched={mode === 'map' ? watched : new Set()} />
 <HudCursor {map} {style} {settings} {overUI} />
 {#if ruler && mode === 'map'}<Ruler {map} {style} {ruler} {markAt} />{/if}
 {#if mode === 'map'}
@@ -508,6 +534,7 @@
 {#if inMap || mode === 'levels'}
 <div class="clock" data-ui>
   <span class="utc">{state?.utc?.replace('T', ' ').replace('Z', ' UTC') ?? '—'}</span>
+  {#if kernels}<span class="lag" title={kernels}>flight not compiled</span>{/if}
   {#if state?.behind_s > 30}<span class="lag" title="The simulation is catching up with the clock: the map shows the moment it has reached">sim {hms(state.behind_s)} behind</span>{/if}
   <button on:click={() => (paused = !paused)} title="Space">{paused ? '▶' : '❚❚'}</button>
   <button on:click={() => (warp = Math.max(warp - 1, 0))} title="[">◀</button>
@@ -536,6 +563,8 @@
 
 {#if mode === 'map'}
 <div class="leftcol">
+<Adjutant {map} {style} {stream} {state} cfg={adjutant} context={adjContext} onchange={setAdjutant}
+  bullseye={{ id: bullseyeId, name: bullseyes.find((b) => b.id === bullseyeId)?.name ?? bullseyeId }} />
 <Bullseyes {bullseyes} bind:bullseyeId {def} {sel} {map} {t} {playerId} onchange={loadMeta} {orderPlane} onplane={setPlane} />
 <div class="panel left" data-ui>
   {#if scenarioOn && views.length}
@@ -590,6 +619,7 @@
 <InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold}
+  {watched} onwatch={toggleWatch}
   master={side === 'master'} onstop={stopOrder} ondecel={decelOrder} onping={setPing} ondismiss={dismissTrack}
   {profiles} stances={profileRules.stances ?? {}} {engagement} onstance={setStance} />
 {/if}
@@ -598,7 +628,7 @@
 {#if showSettings && settings}
   <Settings rules={drules} values={settings} status={settingsStatus} onchange={setSetting} onreset={resetSettings}
     {game} gameRules={meta?.picture ?? {}} ongame={setGame} bind:tab={settingsTab} onclose={() => (showSettings = false)}
-    {profiles} {profileRules} onprofile={saveProfile} ondropprofile={dropProfile} />
+    {profiles} {profileRules} onprofile={saveProfile} ondropprofile={dropProfile} {adjutant} onadjutant={setAdjutant} />
 {/if}
 
 <style>

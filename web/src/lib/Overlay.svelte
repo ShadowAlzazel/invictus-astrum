@@ -19,6 +19,7 @@
   export let contacts = [];          // scenario contacts (static definitions, with their tree)
   export let ranges = false;         // G held: where every armed ship's weapons start to matter
   export let sensing = false;        // R held: how far every ship's sensors see
+  export let watched = new Set();    // ships whose sensors are drawn always (her panel's Show sensors)
 
 
   let canvas, ctx, unhook, W = 0, H = 0, dpr = 1;
@@ -244,7 +245,8 @@
   // R held: the same, for each of a ship's sensors (her class's suite), where it sees a ship giving
   // off display.toml [detection] vs_mw; dotted finer, and fainter. Sensors whose cones leave most of
   // the sphere unseen (the infrared telescopes, the strip optics) are drawn as their cones along her
-  // hull, for a ship of the side's own drawn alone; otherwise, and for a formation, a ring.
+  // hull, for a ship of the side's own drawn alone; otherwise, and for a formation, a ring. A ship
+  // her panel set to show her sensors has them drawn so always, R held or not.
   const weapons = (c) => c.ship?.ranges ?? [];
   const sensors = (c) => {
     const vs = Number(settings.detection?.vs_mw ?? 30);
@@ -291,7 +293,7 @@
     for (const k of [0, 8, 16, 24]) { ctx.moveTo(s.x, s.y); ctx.lineTo(rim[k].x, rim[k].y); }
     ctx.stroke(); ctx.setLineDash([]);
   }
-  function drawRanges(ringsOf = weapons, R = settings.ranges ?? {}) {
+  function drawRanges(ringsOf = weapons, R = settings.ranges ?? {}, pick = null) {
     const pos = map.state.contacts ?? {}, sel = map.selected?.kind === 'contact' ? map.selected.id : null;
     const ships = map.state.ships ?? {};
     const byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
@@ -302,7 +304,7 @@
     for (const c of contacts) {
       const p = pos[c.id], on = focus.has(c.id);
       const rings = ringsOf(c);
-      if (!rings.length || !p || (only && !on)) continue;
+      if (!rings.length || !p || (pick ? !pick.has(c.id) : only && !on)) continue;
       const s = map.project(p);
       if (!s) continue;
       const col = on ? (c.id === sel ? style.palette.fuchsia : childCol) : (style.affiliation[c.affiliation] ?? style.affiliation.unknown).color;
@@ -357,6 +359,7 @@
     drawBodies(marks);
     if (ranges && settings.layers.contacts) drawRanges();
     if (sensing && settings.layers.contacts) drawRanges(sensors, settings.detection ?? {});
+    else if (watched.size && settings.layers.contacts) drawRanges(sensors, settings.detection ?? {}, watched);
     if (settings.layers.contacts) drawContacts(marks);
     map.marks = marks;
   }
