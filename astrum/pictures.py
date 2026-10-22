@@ -10,8 +10,8 @@ The clock is the map's: the moment its last picture was asked for (SimHost.frame
 sides are pictured when its clock has moved PICTURE_STEP_S of game time since the last, at most
 every PICTURE_WALL_S of wall time (at the fastest warps the subscribers see coarser moments, as a
 player would), nor more than PICTURE_SHARE of the time, and again soon after orders are given
-(poke). A side the map is shown costs little more here: its sweeps are the map's, kept (astrum/
-detect.py latest); another side's are its own. Run in a thread of its own beside
+(poke). Every side is swept as the fleet flies (astrum/detect.py Sweeper): a picture only reads
+what it has made. Run in a thread of its own beside
 the run-ahead (threaded), or stepped by hand (publish: tests and tools).
 """
 from __future__ import annotations

@@ -504,6 +504,8 @@ class World:
         f = self.fleets[sc.id] = Fleet(sc, s, eph, self.ships, place, t0, orders,
                                        bullseyes=lambda player, pos, only=None: self.resolved(sc.system, player, pos, only),
                                        bullseyes_many=lambda player, bid, ts: self.resolved_many(sc.system, player, bid, ts))
+        for fid in sc.factions:                          # every side is swept as the fleet is flown, watched or not
+            f.sweeper.watch(fid, picture.own_rows(f, self.factions, fid))
         return f
 
     def start_time(self, s) -> float:

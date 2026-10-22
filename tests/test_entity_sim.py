@@ -1126,7 +1126,9 @@ def test_a_cold_ship_drops_out_of_sight_and_a_burning_one_is_seen_across_the_sys
     f.reach(t)
     own = picture.own_rows(f, w.factions, "arcvs")
     seen = picture.view(f, f.picture(t), t, own, w.config["picture"], "arcvs")
-    assert not seen["shown"][f.c.row["ghost-1"]] and seen["shown"][f.c.row["ghost-3"]]
+    g1, g3 = f.c.row["ghost-1"], f.c.row["ghost-3"]
+    assert seen["old"][g1] and seen["seen_k"][g1] < 30                      # only where she was last seen, cold
+    assert seen["shown"][g3] and not seen["old"][g3]
 
 
 def test_a_view_orders_only_its_own():
@@ -1146,6 +1148,7 @@ def test_a_view_orders_only_its_own():
     assert c.post("/api/order", json={**o, "unit": "kiki", "view": "master"}).status_code == 200
     host = SimHost(w)
     t = f.t0 + 1800
+    f.reach(t)                                       # (flown there first: a picture waits on the fleet only so long)
     fr = json.loads(host.frame({"system": "sol", "t": t, "player": "arcvs", "view": "arcvs", "scenario": "sol-demo"}, conn=1))
     side = host._side(w.scenarios["sol-demo"], f, "arcvs")
     g = [side.alias[f"ghost-{k}"] for k in (1, 2, 3)]
@@ -1177,7 +1180,7 @@ def test_reports_come_up_the_leaders_to_the_fleet_flagship():
     flagship at c; what the flagship holds at t is only what has reached it."""
     from astrum.app import create_app
     from astrum import picture
-    from astrum.detect import arrived, latest, SAMPLE_S
+    from astrum.detect import SAMPLE_S
     from astrum.relay import C, Relay, relay
     w = create_app().state.world
     f = _demo(w)
@@ -1198,7 +1201,7 @@ def test_reports_come_up_the_leaders_to_the_fleet_flagship():
     assert jadf.flagship == row["jove-1"] and list(jadf.vigils) == [row["jove-1"]]
     assert np.isclose(dj[row["jove-2"]], far("jove-2", "jove-1") / C)                   # through the Vigil: at c
     k = int((t - f.t0) // SAMPLE_S)
-    now, held = latest(f, k, "arcvs", own), arrived(f, t, "arcvs", own)
+    now, held = f.sweeper.latest(k, "arcvs", own), f.sweeper.arrived(t, "arcvs", own)
     g = row["ghost-1"]
     assert now["arrive"][g] > t >= held["arrive"][g] and held["k"][g] < now["k"][g]    # the newest is on its way
 
@@ -1291,11 +1294,11 @@ def test_an_order_flown_again_keeps_what_was_seen_before_it():
     c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": T - 1800, "g": 0.2, "keep_target": True,
                                "order_id": oid, "player": "arcvs"})
     k0 = int((T - 1800 - f.t0) // 60)
-    assert f._past and max(f._past) < k0 and all(k[k[0] == "latest"] < k0 for k in f._scans)
+    assert all(s.frontier < k0 for s in f.sweeper.sides.values())       # swept again from the order on
     f.at(T + 600)
     for v in ("arcvs", "ghost"):
         a = json.loads(host.frame({"system": "sol", "t": T + 600, "scenario": "sol-demo", "view": v}, conn=v + "2"))
-        f._past.clear(); f._scans.clear()
+        f.sweeper.forget(0)                                              # every minute swept again: the same picture
         b = json.loads(host.frame({"system": "sol", "t": T + 600, "scenario": "sol-demo", "view": v}, conn=v + "3"))
         assert (a["ships"], a.get("tracks"), a["contacts"]) == (b["ships"], b.get("tracks"), b["contacts"])
 
@@ -1321,7 +1324,6 @@ def test_a_ping_shows_the_pinger_and_an_active_scan_sees_any_hull():
     from fastapi.testclient import TestClient
     from astrum.app import create_app
     from astrum import picture
-    from astrum.detect import scan
     app = create_app()
     c, w = TestClient(app), app.state.world
     f = _demo(w)
@@ -1337,13 +1339,14 @@ def test_a_ping_shows_the_pinger_and_an_active_scan_sees_any_hull():
     f.command(Order("kiki-1", t0 + 600, "active", source="map"))
     k, (i, j) = 30, (f.c.row["kiki-1"], f.c.row["ghost-1"])
     f.at(t0 + k * 60 + 1)
-    pic = {name: np.copy(a) for name, a in f.past_sample(k).items()}
-    pic["r"][j], pic["thrust"][j], pic["cold"][j] = pic["r"][i] + [3e6, 0, 0], 0.0, 1.0
-    f._past[k] = pic
-    f._scans.clear()
-    h = scan(f, k, "arcvs", picture.own_rows(f, w.factions, "arcvs"))
-    hit = h["act"] & (h["j"] == j)
-    assert hit.any() and abs(h["d"][hit][0] - 3e6) < 1.0 and f.sensors.what[h["s"][hit][0]] == "ranging"
+    tl, sw = f.timeline, f.sweeper
+    s = tl.slot(k)
+    tl.r[s, j], tl.thrust[s, j], tl.cold[s, j] = tl.r[s, i] + [3e6, 0, 0], 0.0, 1.0   # (put there, at that minute)
+    sw.forget(k)
+    sw.catch_up(k)
+    got = sw.sides["arcvs"].sightings(k, k)                 # (minute, ship, sensor, flux, plume, d, arrive, act, r, cls, ...)
+    hit = got[1] == j
+    assert hit.any() and abs(got[5][hit][0] - 3e6) < 1.0 and got[9][hit][0]   # seen, and her class made out: the ping
 
 
 def test_a_track_is_detected_tracked_classified_identified_by_its_journal():

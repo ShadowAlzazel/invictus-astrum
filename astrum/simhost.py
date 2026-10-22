@@ -604,6 +604,8 @@ class RunAhead:
                     f.keep_timeline()
                     f.advance(max(target, f.t), budget_s=0.02, view=lambda _: None)
                     busy = True
+                with f.lock:                             # what every side saw of what was just flown
+                    f.sweeper.catch_up()
             if busy:
                 time.sleep(0.001)                         # let a picture or an order waiting on the fleet in first
             else:

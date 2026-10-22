@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .detect import SAMPLE_S, arrived, latest
+from .detect import SAMPLE_S
 from .factions import Factions
 from .switches import resolve
 
@@ -120,15 +120,15 @@ def view(fleet, pic: dict, t: float, own: np.ndarray, settings: dict, view_id: s
 def detection(fleet, pic: dict, t: float, own: np.ndarray, seen: dict, view_id: str, friendly: np.ndarray,
               relayed: bool = True, knows: np.ndarray | None = None, old_s: float = 7 * 86400.0) -> None:
     """Every ship not the view's own, as its own ships' sensors last saw her: the newest sighting
-    (astrum/detect.py) whose report has reached the flagship. Within the hold, a track: where she
+    (the fleet's sweeper, astrum/detect.py, swept as it was flown) whose report has reached the flagship. Within the hold, a track: where she
     was when that light left her (Fleet.past), how bright she looked to the sensor that saw her,
     her track's stage. After it, for old_s, an old track: a point where she was last seen, nothing
     of her since. Not seen: not shown."""
     S = fleet.sensors
     n = len(own)
     knows = np.ones(n, dtype=bool) if knows is None else knows
-    got = arrived(fleet, t, view_id, own) if relayed else \
-        latest(fleet, int(np.floor((t - fleet.t0) / SAMPLE_S + 1e-9)), view_id, own)
+    got = fleet.sweeper.arrived(t, view_id, own) if relayed else \
+        fleet.sweeper.latest(int(np.floor((t - fleet.t0) / SAMPLE_S + 1e-9)), view_id, own)
     rows = np.flatnonzero(~own)
     seen["shown"][rows] = False
     seen["identified"][rows] = False

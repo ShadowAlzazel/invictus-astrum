@@ -75,12 +75,36 @@ points, up the system's.
 | dome optics / wide (AESHNA) / watch (VIGIL) | 60° / 55° / 70° | 20 / 30 / 60 million km | 5 min |
 | infrared telescope (VIGIL) | the sphere, swept | a cold hull (0.3 MW) at 1 AU: a warm one at 10 AU | 30 min |
 
-A cold frigate (0.3 MW) is seen a tenth as far; any drive burning, across the system. A scan is
-every sensor whose sweep comes round at a minute, against every ship that is not its side's, in
-one compiled call (`kernels.detect`): inside the cone, and bright enough toward it, her plume at
-the angle off her tail and her rads. Scans are kept, by minute and side, and so is the newest
-sighting of each ship as of each minute, so a picture reads one entry however long since she was
-seen: about half a millisecond a picture.
+A cold frigate (0.3 MW) is seen a tenth as far; any drive burning, across the system. A sweep is
+every sensor of a side whose sweep comes round at a minute, against every ship that is not its
+side's: inside the cone, and bright enough toward it, her plume at the angle off her tail and her
+rads.
+
+**The sweeper** (`detect.Sweeper`, one per fleet) sweeps every side of the scenario, every minute,
+as the fleet is flown: the run-ahead calls it after each stretch it flies, and a picture asking for
+a minute not swept yet sweeps up to it first. It is one unit with one way in (the timeline's minute
+samples, the book's pings, the relay) and one way out (each side's summaries), so it could as well
+run in a process of its own. It reads only the timeline: the flight writes every row's state at
+every whole minute, station ships included (by cubic Hermite between where their places have them
+at each block's ends: within 20 m of placing them, the sweep needs nothing else). Many minutes go
+in one compiled call (`kernels.sweep`, up to two hours), and the work is culled before any cone is
+looked at:
+
+- a target is only as bright as her brightest this minute (her plume straight off her tail, her
+  rads, her pings), so the farthest a sensor with flux floor F sees her is sqrt(P / 4 pi F);
+- the side's ships stand in groups, its formations (kept as the scenario has them), each in a
+  sphere about its ships, made fresh each minute (linear in the ships): a group whose sphere is
+  farther from her than its most sensitive sensor (or its pings) could reach is passed over whole;
+- then each ship of a group that is near, by her own most sensitive sensor; then her cones, each
+  only on the minute its sweep comes round.
+
+The kernel keeps, for each minute and each ship, the brightest sighting and whether any sighting
+then made out her class or who she is; nothing culled is ever a sighting lost (a test sweeps every
+sensor against every ship and finds the same). ARCVS's 106 ships against six: 4 µs a minute culled,
+80 µs without. What each side has made of every ship is its summary: each minute's sightings, kept
+in runs; the summary whole every hour; and as of the newest minute swept. Any minute's is the
+hour's with the minutes since laid over (`kernels.fold`). An order flown again, or a setback,
+forgets from its minute on (`Fleet._forget`), and it is swept again as it is flown again.
 
 **Active sensors and the ping.** Every ship also carries an active scan (`[detection] active`,
 `parts.toml [sensor.ranging]`: a cold hull by active scan, ~4,400 km, the VIGIL's figure), swept
@@ -91,7 +115,7 @@ Every ping shows the pinger: she gives off `emit_mw` (300 MW, for now) to everyo
 sensors while she pings, so a ship that pings beyond what she can see is seen from far beyond her
 own reach. GHOST 3, at 103% of what Task Force 3 sees, is seen the moment she pings.
 
-**How far a track is made out.** Each side's summary of a ship (`detect.latest`) keeps her track:
+**How far a track is made out.** Each side's summary of a ship (`Sweeper.latest`) keeps her track:
 how many sweeps have seen her since it began (seen again within the hold, it goes on; else a new
 track), and, kept for the track, whether her class has been made out and whether she has been
 identified. Its stage, shown in her panel:
@@ -112,9 +136,10 @@ SPECULATRIX); identified, her name and faction.
 `[picture]`, 7; Settings, Game) it stays an **old track**, an empty frame where she was last seen
 (an unknown's, a circle; so too a lost track's), with what was known of her then and nothing of
 her since; old tracks near each other fold into one, as live ones do. Her side can remove one
-(Remove old track in its panel); seen again, she is a new track. A jump of the clock longer than the hold
-skips the sweeps between (the map at its fastest warps): what was seen before it is kept, but a
-ship seen on both sides of it starts a new track.
+(Remove old track in its panel); seen again, she is a new track. Every minute is swept, at any warp:
+what a side knows does not depend on how fast pictures come. A side is swept back to the oldest
+minute the timeline holds (a day and a half) when it is first watched; every side of the scenario
+is watched from the start.
 
 ## How it reaches the flagship
 
@@ -393,9 +418,9 @@ side, if it is the own side's and that side holds it hostile (`Side.hostile`); e
 with only ships on return fire is pictured without its tracks (no sweep is read), and only once an
 engage order has been given anywhere; a side holding fire not at all.
 
-**What it costs.** A side the map is shown costs little more: its sweeps are the map's, kept
-(TF-3 attack-moving on GHOST with ARCVS shown: 7.5 ms a picture at 1 h/s, 20 ms at 1 d/s, its orders
-included). Another side's are its own (30–110 ms a picture), which is what the 15% bounds. The map's
+**What it costs.** Every side is swept as the fleet flies (the sweeper, above); a picture only
+reads it. TF-3 attack-moving on GHOST: 7.8 ms an AI picture at 1 h/s, 14.5 ms at 1 d/s, its orders
+included, whether the map shows that side or not. The map's
 pictures in the server, ARCVS aggressive and GHOST on guard: 5.3 a second at 1 h/s and 4.8 at 1 d/s,
 the same as with the AI off (5.4, 4.9; the browser here renders in software).
 
@@ -478,9 +503,8 @@ each order as given, which all its ships share. An order from the map can be tak
 MASTER alone (`Fleet.withdraw`, **Withdraw** in its panel, twice; a side stops or decelerates
 instead): struck from the book, and if the fleet has flown past it, the ships it went to fly again
 from before it, as if it had never been given. The scenario's own orders stay. What was pictured
-and seen before an order flown again stands (`Fleet._forget`): the next picture scans the minutes
-since it, not the hour a track is held (the first picture after a telegraph moved: 60–150 ms
-before, 9–12 ms now).
+and seen before an order flown again stands (`Fleet._forget`): the sweeper sweeps again only the
+minutes since it.
 
 **An order flies again only what it touches, and only as fast as it is needed.** An order given
 at a moment the fleet has already flown past sets back only the rows it touches (the unit ordered,
@@ -603,16 +627,21 @@ a client asking for the next picture as each arrives):
 |---|---|---|---|
 | 1 min/s – 2 h/s | 150 pictures/s, 6 ms | 110–140/s, 6–8 ms | the picture itself |
 | 6 h/s | 115/s | 30–85/s | a few minutes swept a picture |
-| 12 h/s – 1 d/s | 70–100/s | 14–25/s (was 6–10) | sweeps: at most 12 a picture, on a stride beyond |
+| 12 h/s – 1 d/s | 70–100/s | 14–25/s | sweeps: at most 12 a picture, on a stride beyond |
 
-Each new minute a side sees is a sweep: the fleet pictured at that minute (the timeline read,
-station ships placed from the placement plan's own rows, not every contact), and the compiled
-scan. A sweep now costs about 1.3 ms (it was 2.6): the scan's out arrays are kept between sweeps,
-the sensors due are worked out in whole minutes, hull frames only for the ships that sweep, and
-`Versions.at` reads every row at once. Past 12 minutes since the last picture
-(`detect.SWEEP_BUDGET`) the minutes are swept on a stride, each sweep taking every sensor whose
-sweep came round since the last, so a slow picture no longer makes the next one slower. The
-browser spends about 2.5 ms of a frame (the overlay, 2 ms; a picture parsed, 0.2 ms).
+(Before the sweeper.) Now, what one picture of ARCVS costs, the clock at a warp and five pictures a
+wall second (the fleet flown half a second ahead, every side swept, the picture made), against
+the per-picture sweeps it replaced:
+
+| warp | flight | sweeps (4 sides, every minute) | the picture | in all | before |
+|---|---|---|---|---|---|
+| 1 h/s | 5–7 ms | 2.4–3.5 ms | 10 ms | 20 ms | 58 ms (the picture's own sweeps, 52) |
+| 1 d/s | 110–125 ms | 25 ms | 8.5 ms | 155 ms | 149 ms (12 strided minutes of one side) |
+
+At a day a second the flight is what costs; the sweeps are about 22 µs a side a minute, every
+minute of every side, where before a picture swept at most twelve minutes of its own side on a
+stride. The AI's picture of a side nobody is shown reads the sweeper too: 8–15 ms (it was 30–110).
+The browser spends about 2.5 ms of a frame (the overlay, 2 ms; a picture parsed, 0.2 ms).
 
 ## On the wire
 

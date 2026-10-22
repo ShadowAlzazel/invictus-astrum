@@ -74,9 +74,9 @@ from .entity import G0, Ship, ShipSpec, SpecError
 from .frames import from_aer
 from .placement import plan
 from .orders import ACTIVE, BURN, COAST, COLD, FACE, GOTO, KIND, PASSIVE, SETG, WARM, Given, OrderBook
-from .detect import Sensors
+from .detect import Sensors, Sweeper
 from .signature import Signature
-from .timeline import FIELDS, Timeline, Versions
+from .timeline import FIELDS, MAX_SAMPLES, Timeline, Versions
 
 STATION_S = 300.0              # station ships pay for their places on a grid this fine (finer changes the bill by < 0.2%)
 TRACK_DT = 60.0                # a target is worked out this often across a block, and drawn straight between
@@ -272,8 +272,6 @@ class Fleet:
         self.mending: Mend | None = None           # an order's rows flying again, partway (command)
         self._spare: list[int] = []                # leads' rows an order set back for good: the next leads take them
         self._now = t0                             # the moment what is being changed changes
-        self._past: dict[int, dict] = {}           # the fleet at past samples, as pictured (past_sample)
-        self._scans: dict[int, dict] = {}          # what the sensors saw at past samples (astrum/detect.py scan)
         self._relays: dict[str, object] = {}       # each view's chain of command for its reports (astrum/relay.py)
         self.registry = registry
         self.asked: dict[int, tuple] = {}         # row -> her time to target, to be flown ahead (arrivals): the newest
@@ -283,6 +281,7 @@ class Fleet:
         self._enter(orders or [])
         self._checkpoints: list[tuple] = [(t0, self._snapshot(), t0)]    # (t, the rows then, station ships paid to)
         self.sensors = Sensors(self, registry)              # every ship's sensors, a cone each (astrum/detect.py)
+        self.sweeper = Sweeper(self)                        # ... and every side's sweeps, as it is flown
 
     # ---- the timeline: what the map reads ----------------------------------------------------
     def keep_timeline(self) -> Timeline:
@@ -327,36 +326,37 @@ class Fleet:
 
     def past(self, ts: np.ndarray, rows: np.ndarray) -> dict:
         """The given rows each at her own moment ts (none after the fleet's own moment), as the
-        fleet flew them: its pictures at the whole minutes either side (kept, past_sample), her
-        position and velocity by cubic Hermite between them, the rest as at the minute before.
+        fleet flew them: off the timeline's samples either side (every ship's, station ships' too),
+        her position and velocity by cubic Hermite between them, the rest as at the minute before.
         Moments older than the timeline are read at its oldest."""
-        tl = self.timeline
-        oldest = max(tl.time(tl.lo) if tl is not None and tl.lo is not None else self.t, self.t0)
-        ts = np.clip(np.asarray(ts, dtype=float), oldest, self.t)
-        k = np.floor((ts - self.t0) / TIMELINE_S + 1e-9).astype(np.int64)
+        tl, n = self.timeline, len(self.c.row)
+        rows = np.asarray(rows, dtype=np.int64)
+        if tl is None or tl.lo is None:
+            now = self.picture(self.t)
+            return {name: now[name][rows] for name in ("thrust", "dir", "heat", "cold", "mode", "r", "v")}
+        ts = np.clip(np.asarray(ts, dtype=float), max(tl.time(tl.lo), self.t0), self.t)
+        k = np.minimum(np.floor((ts - self.t0) / TIMELINE_S + 1e-9).astype(np.int64), tl.hi)
         ta = self.t0 + k * TIMELINE_S
-        tb = np.minimum(ta + TIMELINE_S, self.t)
-        now = None
-        A, B = {}, {}
-        for kk in np.unique(k):
-            A[kk] = self.past_sample(int(kk))
-            if self.t0 + (kk + 1) * TIMELINE_S <= self.t + 1e-6:
-                B[kk] = self.past_sample(int(kk) + 1)
-            else:                                        # the minute after is not flown yet: the fleet now
-                B[kk] = now = now or self.picture(self.t)
-        pick = lambda P, name: np.array([P[kk][name][i] for kk, i in zip(k, rows)])
-        out = {name: pick(A, name) for name in ("thrust", "dir", "heat", "cold", "mode")}
-        r0, v0, r1, v1 = pick(A, "r"), pick(A, "v"), pick(B, "r"), pick(B, "v")
+        kb = np.minimum(k + 1, tl.hi)
+        tb = np.where(kb > k, ta + TIMELINE_S, ta)
+        sa, sb = k % MAX_SAMPLES, kb % MAX_SAMPLES
+        out = {name: getattr(tl, name)[sa, rows].copy() for name in ("thrust", "dir", "heat", "cold")}
+        out["mode"] = np.zeros(len(rows), dtype=np.int8)
+        for kk in np.unique(k):                          # as she was given then
+            pick = k == kk
+            out["mode"][pick] = self.versions.mode[self.versions.at(self.t0 + kk * TIMELINE_S, n)][rows[pick]]
+        r0, v0, r1, v1 = tl.r[sa, rows], tl.v[sa, rows], tl.r[sb, rows], tl.v[sb, rows]
         h = (tb - ta)[:, None]
         u = np.where(h > 1e-9, (ts[:, None] - ta[:, None]) / np.where(h > 1e-9, h, 1.0), 0.0)
         u2, u3 = u * u, u * u * u
-        out["r"] = (2 * u3 - 3 * u2 + 1) * r0 + (u3 - 2 * u2 + u) * h * v0 + (3 * u2 - 2 * u3) * r1 + (u3 - u2) * h * v1
+        out["r"] = np.where(h > 1e-9, (2 * u3 - 3 * u2 + 1) * r0 + (u3 - 2 * u2 + u) * h * v0 + (3 * u2 - 2 * u3) * r1
+                            + (u3 - u2) * h * v1, r0 + v0 * (ts - ta)[:, None])    # (past the newest sample: on from it)
         with np.errstate(invalid="ignore", divide="ignore"):
             out["v"] = np.where(h > 1e-9, ((6 * u2 - 6 * u) * r0 + (6 * u - 6 * u2) * r1) / np.where(h > 1e-9, h, 1.0)
                                 + (3 * u2 - 4 * u + 1) * v0 + (3 * u2 - 2 * u) * v1, v0)
         bad = ~np.isfinite(out["r"]).all(axis=1)        # not there then (no sample): as she is now
         if bad.any():
-            now = now or self.picture(self.t)
+            now = self.picture(self.t)
             for name in out:
                 out[name][bad] = now[name][rows[bad]]
         return out
@@ -369,25 +369,21 @@ class Fleet:
         out[ships] = self.book.kind[last] == ACTIVE
         return out
 
-    def past_sample(self, k: int) -> dict:
-        """The fleet pictured at whole minute k from the scenario's start, kept: what was flown does
-        not change unless it is flown again (_forget; a setback forgets them all)."""
-        got = self._past.get(k)
-        if got is None:
-            if len(self._past) >= 512:
-                self._past.pop(min(self._past))
-            got = self._past[k] = self.picture(self.t0 + k * TIMELINE_S)
-        return got
+    def pinging_many(self, ts: np.ndarray) -> np.ndarray:
+        """pinging at many moments at once (ascending) -> len(ts) x rows: as at the first, then each
+        active or passive order between taken from its moment on."""
+        out = np.repeat(self.pinging(float(ts[0]))[None], len(ts), axis=0)
+        B = self.book
+        q = B.queue[B.before(float(ts[0])):B.before(float(ts[-1]) + 1e-6)]
+        for e in q[np.isin(B.kind[q], (ACTIVE, PASSIVE))]:
+            out[np.searchsorted(ts, B.at[e] + 1e-6):, B.ship[e]] = B.kind[e] == ACTIVE
+        return out
 
     def _forget(self, t: float) -> None:
-        """What was pictured, and what was seen, from the whole minute before t on: flown again.
-        Before it, every row flies as it did (the replay gives the same orders), so it stands: the
-        next picture scans the minutes since, not the hour a track is held."""
+        """What was seen from the whole minute before t on: swept again as it is flown again. Before
+        it, every row flies as it did (the replay gives the same orders), so it stands."""
         k0 = math.floor((t - self.t0) / TIMELINE_S)
-        for k in [k for k in self._past if k >= k0]:
-            del self._past[k]
-        for key in [key for key in self._scans if key[isinstance(key[0], str)] >= k0]:   # (k, ...) or ("latest" | "ai", k, ...)
-            del self._scans[key]
+        self.sweeper.forget(k0)
 
     def _touch(self, i: int) -> None:
         """What she was given (her order, her place, her burn) changed at _now: a new version, with
@@ -408,10 +404,14 @@ class Fleet:
                                       gg=c.gg[i], goal=c.goal[i], lead=c.lead[i] if not c.solo[i] else -1,
                                       off=c.off[i], mode=c.mode[i])
 
-    def _record(self, slots: np.ndarray, scope: np.ndarray, flown: np.ndarray, whole: bool = False) -> None:
+    def _record(self, slots: np.ndarray, scope: np.ndarray, flown: np.ndarray, whole: bool = False,
+                T0: float | None = None) -> None:
         """What the compiled step does not write at the block's sample times: for the rows in
         scope, when their orders get them there; for those not flown in the block (station ships,
-        gone leads), their state as it stands (whole: every row's, from the rows)."""
+        gone leads), their state as it stands (whole: every row's, from the rows). A station ship
+        stands at each sample where she was then: by cubic Hermite between the sample before the
+        block (T0's) and where her place has her now (exact at both ends, metres between), so the
+        samples alone say where every ship was each minute (the sensor sweep reads only them)."""
         tl, c = self.timeline, self.c
         if tl is None or not len(slots) or not len(scope):
             return
@@ -421,6 +421,22 @@ class Fleet:
         if len(still):                                   # (her heat through the block is _heat's)
             tl.put(slots, still, **{name: getattr(c, name)[still] for name in FIELDS
                                     if name != "arrive" and (whole or name not in ("heat", "cold"))})
+        held = still[c.mode[still] == STATION] if T0 is not None else still[:0]
+        if len(held):
+            k1 = math.floor(tl.k_of(T0) + 1e-9) + 1
+            ts = tl.time(k1) + tl.dt * np.arange(len(slots))
+            tb, rb, vb = c.t[held], c.r[held], c.v[held]
+            r = rb[None] + vb[None] * (ts[:, None] - tb[None])[..., None]          # (on from her last place, if past it)
+            if tl.lo is not None and tl.lo <= k1 - 1 <= tl.hi:
+                ta = tl.time(k1 - 1)
+                ra, va = tl.r[tl.slot(k1 - 1), held], tl.v[tl.slot(k1 - 1), held]
+                h = (tb - ta)[None, :, None]
+                ok = (np.isfinite(ra).all(axis=1) & (tb > ta + 1e-6))[None, :, None] & (ts[:, None, None] <= tb[None, :, None] + 1e-6)
+                u = np.clip((ts[:, None, None] - ta) / np.where(h > 1e-6, h, 1.0), 0.0, 1.0)
+                u2, u3 = u * u, u * u * u
+                herm = (2 * u3 - 3 * u2 + 1) * ra[None] + (u3 - 2 * u2 + u) * h * va[None] + (3 * u2 - 2 * u3) * rb[None] + (u3 - u2) * h * vb[None]
+                r = np.where(ok, herm, r)
+            tl.r[np.ix_(slots, held)] = r
 
     # ---- checkpoints --------------------------------------------------------------------------
     def _snapshot(self) -> tuple:
@@ -436,8 +452,7 @@ class Fleet:
         self._qi = self.book.before(t)                 # a checkpoint at t has given every order before t
         self.mending, self._spare = None, []
         self.asked.clear()
-        self._past.clear()
-        self._scans.clear()
+        self.sweeper.forget(math.floor((t - self.t0) / TIMELINE_S))
         self._setback[-1] = self._setback.get(-1, 0) + 1
         unanswered = np.isnan(self.c.arrive_at[: self.c.n])    # asked before the checkpoint, answered after: ask again
         self.c.predicted[: self.c.n][unanswered] = math.nan
@@ -640,7 +655,7 @@ class Fleet:
             T1 = min(self._grid_next(m.t), m.F, nxt, *ends)
             slots, flown = self._fly(m.t, T1, scope=m.scope)
             m.st_t = self._station_grid(m.st_t, T1, m.scope)
-            self._record(slots, m.scope, flown)
+            self._record(slots, m.scope, flown, T0=m.t)
             self._heat(m.t, T1, m.scope, slots)
             for cp in [cp for cp in self._checkpoints if m.t + 1e-9 < cp[0] <= T1 + 1e-9]:
                 if abs(cp[0] - T1) < 1e-6:
@@ -776,7 +791,7 @@ class Fleet:
             slots, flown = self._fly(self.t, t1)
             self.t = t1
             self._stations_to(t1)
-            self._record(slots, np.arange(c.n), flown)
+            self._record(slots, np.arange(c.n), flown, T0=T0)
             self._heat(T0, t1, np.arange(c.n), slots)
             cps = self._checkpoints
             if self.t - cps[-1][0] >= CHECKPOINT_S - 1e-6:

@@ -116,6 +116,34 @@ class Relay:
         return out
 
 
+def _delays_many(self, R: np.ndarray, rows: np.ndarray | None = None) -> np.ndarray:
+    """delays at many moments at once (R: every row at each, T x n x 3) -> T x n; only for the
+    given rows of the side (the rest NaN), if given: the ships whose reports are asked about."""
+    T = R.shape[0]
+    out = np.full((T, self.n), np.nan)
+    mine = self.mine if rows is None else np.intersect1d(self.mine, rows)
+    out[:, mine] = 0.0
+    if self.flagship is None or not len(mine):
+        return out
+    hops = np.flatnonzero(np.isin(self.owner, mine)) if rows is not None else np.arange(len(self.src))
+    if len(hops):
+        hop = np.linalg.norm(R[:, self.src[hops]] - R[:, self.dst[hops]], axis=2) / (C * self.speed[hops])
+        M = np.zeros((len(hops), self.n))
+        M[np.arange(len(hops)), self.owner[hops]] = 1.0
+        out[:, mine] = (hop @ M)[:, mine]
+    if len(self.vigils):
+        F = R[:, self.flagship]
+        to_v = np.linalg.norm(R[:, mine][:, :, None, :] - R[:, self.vigils][:, None, :, :], axis=3)
+        v_to_f = np.linalg.norm(R[:, self.vigils] - F[:, None], axis=2)
+        out[:, mine] = np.minimum(out[:, mine], np.min(to_v + v_to_f[:, None, :], axis=2) / (C * self.fast))
+    if self.flagship in mine:
+        out[:, self.flagship] = 0.0
+    return out
+
+
+Relay.delays_many = _delays_many
+
+
 def relay(fleet, view: str, own: np.ndarray) -> Relay:
     """The view's relay, made once (the scenario fixes it)."""
     got = fleet._relays.get(view)
