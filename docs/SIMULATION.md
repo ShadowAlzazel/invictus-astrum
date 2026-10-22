@@ -331,7 +331,7 @@ a **stance**, read with a **combat profile** (`astrum/profiles.py`):
 
 | Stance | Does | Root range |
 |---|---|---|
-| aggressive | a target known within range is engaged, and followed while it is known | her passive suite's reach against a warm ship (30 MW) |
+| aggressive | a target in its side's picture within range is engaged, and followed while it is in it | her passive suite's reach against a warm ship (30 MW) |
 | guard | a target known within range is engaged; once it is lost or out of range of her post, back to her post | half that |
 | hold ground | faces the nearest target in range, her hull on it while she does not burn; never moves | her dazzle range |
 | return fire | a ship flying an engage order on her within range is engaged; once none is, back to her post | her dazzle range |
@@ -352,29 +352,52 @@ section shows both and where each comes from (`GET /api/engagement/{scenario}/{u
 (`veterancy`: green, rated, veteran, exceptional; rated unless written) and her last three orders
 (the order book, each once however many ships it went to).
 
-**Orders the AI gives.** `astrum/ai.py` `Mind`, the fleet's `ai`, ticks at each block end on the
-grid (every 10 minutes of the fleet's time, on the run-ahead or as a past order's rows fly again).
-A ship is free to act unless she flies a plain go-to of the map's or the scenario's; an
-attack-move (**A**) is aggressive the whole way and a patrol (**P**) on guard, and after an
-engagement she flies on with it. What she decides is an order with source `auto`, at the tick:
-an engage (a go-to on the target, held at her focus battery's farthest range: `ShipSpec.engage_km`,
-else her farthest, else 50,000 km), back to her post (her place, or where she stood, in the frame
-the stance was ordered in: the active bullseye's; on the star centre, carried with the body pulling
-hardest), or the drive cut. Patrol legs and queued orders (**Shift**-click: a QUEUE event, given
-once the order it follows is carried out) are `auto` too, on the grid after she arrives. Every
-`auto` order after the moment the fleet is set back to (or a past order flies rows again from) is
-struck and decided again as it flies past, so the same flight gives the same orders.
+**The picture processor and the AI.** The simulation flies the fleet and takes orders; nothing
+else runs in its flight. What each side may know is made by the picture processor
+(`astrum/pictures.py`, a thread of its own in the simulation's process): at the map's clock (the
+moment its last picture was asked for), once the clock has moved a game minute, at most four times
+a wall second and never more than 15% of the time, it pictures each side its subscribers want, with
+the same functions the map's pictures are made by (what its sensors saw, as reported to its
+flagship), and hands each picture over. The AI (`astrum/ai.py`) is such a subscriber, as a browser
+is of its side's pictures: it reads only what is in the picture (a ship not shown is NaN to it), and
+answers with orders (source `ai`) given at that moment through the order book, as a player's are.
 
-**What she knows.** Her side's picture as reported to its flagship (the reports that reached it),
-and what her own sensors saw, at once. One sweep per side per tick (every sensor that came round in
-the ten minutes, as at the tick: `detect.scan` with a span), kept with the fleet's scans, and only
-for a side with a ship that needs it; a track not seen within the hold starts again. A target is
+```
+simulation (flight, order book) -> picture processor (each side's picture) -> subscribers (the AI)
+          ^------------------------------- orders -----------------------------------'
+```
+
+A ship is free to act unless she flies a plain go-to of the map's or the scenario's; an attack-move
+(**A**) is aggressive the whole way and a patrol (**P**) on guard, and after an engagement she flies
+on with it. What she decides: an engage (a go-to on the target, held at her focus battery's farthest
+range: `ShipSpec.engage_km`, else her farthest, else 50,000 km); when the target stops being one,
+straight on to the next in range, else back to what she was doing or her post (her place, or where
+she stood, in the frame the stance was ordered in: the active bullseye's; on the star centre,
+carried with the body pulling hardest). If she cannot stop there from how she moves, she brakes to
+rest in its frame first, and an attack-move whose point she would pass while braking is done once
+she rests. Hold ground turns her hull (a `face` order) when the target has moved 10° off it. A
+ship on return fire knows who is engaging her by being fired on (the picture says so, and where the
+shooter is), whether or not her side sees the shooter.
+
+Its orders are facts of the book: a replay gives them as given, and the AI does not decide again for
+a moment it has decided for (its clock only moves on, ship by ship). An order of the map's given in
+the past (a go-to, a stop, a decelerate) strikes the AI's later orders to those ships, and the AI
+decides for them again from then (`ai.AI.overrule`). Patrol legs, queued orders (**Shift**-click: a
+QUEUE event, given once the order it follows is carried out) and the braking leg's "then" are the
+flight's own (source `auto`), on the grid after she arrives, struck and given again when the fleet is
+set back. `[sim] ai = false` in `config.toml` turns the AI off.
+
+**What it knows.** Its side's picture: the reports that have reached the flagship. A target is
 hostile only once identified: hostile to the scenario's own side as its contact says; to another
-side, if it is the own side's and that side holds it hostile; else a bogey.
+side, if it is the own side's and that side holds it hostile (`Side.hostile`); else a bogey. A side
+with only ships on return fire is pictured without its tracks (no sweep is read), and only once an
+engage order has been given anywhere; a side holding fire not at all.
 
-**What it costs** (sol-demo, three days flown, wall time): no AI 3.6 s; every ship on the root's
-return fire 3.8 s (a tick without an engage order anywhere reads nothing); ARCVS aggressive against
-bogeys and GHOST on guard 7.1 s, the side's sweep about 2 ms a tick and the chases flown besides.
+**What it costs.** A side the map is shown costs little more: its sweeps are the map's, kept
+(TF-3 attack-moving on GHOST with ARCVS shown: 7.5 ms a picture at 1 h/s, 20 ms at 1 d/s, its orders
+included). Another side's are its own (30–110 ms a picture), which is what the 15% bounds. The map's
+pictures in the server, ARCVS aggressive and GHOST on guard: 5.3 a second at 1 h/s and 4.8 at 1 d/s,
+the same as with the AI off (5.4, 4.9; the browser here renders in software).
 
 ## Time
 

@@ -13,7 +13,7 @@ What has been measured and left for later, biggest gain first. Figures are the d
 | 4 | **Encoder vectorized.** `ShipEncoder.encode` and `Side.picture` loop over changed rows in Python. | Fine at 100s of ships (~1 ms); needed for 1000s. | Columns diffed and packed as arrays; descriptors built per stage, not per row. |
 | 5 | **Binary pictures.** JSON text (8–30 KiB a picture) through the process pipe and the socket. | Less parsing on both ends (0.4 ms encode, 0.2 ms parse today); smaller at 1000s of ships. | A typed-array format for the map; JSON kept for tools. |
 | 6 | **Spatial culling in `kernels.detect`.** Every due sensor against every other ship. | Linear, not quadratic, for big fleets (today ~0.1 ms a sweep). | A coarse grid per sweep; each sensor only against cells within its reach. |
-| 14 | **The AI's sweep with #3.** The AI sweeps each side that needs it once a tick (every sensor of the ten minutes, as at the tick), apart from the pictures' minute sweeps. | With the run-ahead sweeping every minute (#3), the AI reads the same summaries: one sweep, not two, and the ARCVS-aggressive demo's ~2 ms a tick gone. | As #3. |
+| 14 | **A side nobody is shown, swept once.** The picture processor pictures a side the map is not shown off its own minute sweeps (30–110 ms a picture, kept to 15% of the time). | With #3 (or #1) those sweeps are made as the fleet flies, once; the AI only reads. | As #3. |
 | 7 | **The map's clustering on a grid.** The overlay links units and tracks pairwise every frame. | Fine at 100s (the overlay is 2 ms a frame); needed for 1000s on screen. | Screen-space buckets for `clusters`. |
 
 ## Clarity
@@ -23,7 +23,7 @@ What has been measured and left for later, biggest gain first. Figures are the d
 | 9 | **`detect.latest` kept by side, not in the shared `_scans` dict.** Summaries, scans and strided scans share one dict with a FIFO cap, and finding the newest summary before a minute scans its keys. | A per-side ring of summaries: clearer, and the lookup constant. |
 | 10 | **Old-track removals kept.** They live in the sim's memory (`SimHost._dismissed`): a restart brings them back. | Write them beside `bullseyes.toml`, per player. |
 | 11 | **Clock jumps longer than the hold.** Sweeps between are skipped and a ship seen on both sides starts a new track (her stage lost). | With #3 the run-ahead sweeps every minute anyway; else carry the track over a jump when she is seen on both sides. |
-| 15 | **Holding on a unit is placed, not flown.** A ship that arrives on a unit (an engage) holds station on it: carried as it moves, burning or not. | An engaged ship that burns away should be chased under thrust; today the AI only notices at the next tick, and only if she is lost. | The kernel keeps flying a go-to on a unit (a hold that steers), or the AI re-engages a target that burns. |
+| 15 | **Holding on a unit is placed, not flown.** A ship that arrives on a unit (an engage) holds station on it: carried as it moves, burning or not. | An engaged ship that burns away should be chased under thrust; today the AI only notices at its next picture, and only if she is lost. | The kernel keeps flying a go-to on a unit (a hold that steers), or the AI re-engages a target that burns. |
 | 12 | **`Versions` as arrays.** Per-row Python lists, flattened for `at` when they change. | Kept flat (append-only arrays with a per-row cut) would drop the rebuild and the lists. |
 
 ## Done

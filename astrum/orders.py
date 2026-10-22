@@ -20,9 +20,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE, STANCE, QUEUE = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
+GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE, STANCE, QUEUE, FACE = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
 KIND = {"goto": GOTO, "burn": BURN, "setg": SETG, "coast": COAST, "cold": COLD, "warm": WARM,
-        "active": ACTIVE, "passive": PASSIVE, "stance": STANCE, "queue": QUEUE}
+        "active": ACTIVE, "passive": PASSIVE, "stance": STANCE, "queue": QUEUE, "face": FACE}
 
 
 @dataclass(frozen=True)
@@ -34,11 +34,12 @@ class Given:
     at: float
     target: dict = field(default_factory=dict)     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body};
                                                    # stance: {stance, profile} (either, or both);
-                                                   # queue: a go-to's target, and after: the order it follows
+                                                   # queue: a go-to's target, and after: the order it follows;
+                                                   # face: dir, where her hull is to point while she does not burn
     label: str | None = None
     g: float = 0.0                 # goto: held; setg: the new g
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s
-    source: str = "scenario"       # or "map", or "auto": given by the fleet itself (a leg, a patrol's turn, the AI's)
+    source: str = "scenario"       # or "map"; "ai" (astrum/ai.py); "auto": given by the fleet itself (a leg, a patrol's turn)
     retunes: str | None = None     # setg: the order it retunes (None: whichever she flies)
 
 
@@ -46,7 +47,8 @@ class OrderBook:
     COLS = {"at": ((), float, 0.0), "kind": ((), np.int8, GOTO), "ship": ((), np.int64, -1),
             "gid": ((), np.int64, -1), "slot": ((3,), float, 0.0),
             "struck": ((), np.bool_, False),          # withdrawn: out of the queue, kept for the record
-            "auto": ((), np.bool_, False)}            # given by the fleet itself: struck when it is set back before it
+            "auto": ((), np.bool_, False),            # given by the fleet itself: struck when it is set back before it
+            "ai": ((), np.bool_, False)}              # given by the AI: struck when the map orders her before it
 
     def __init__(self):
         self.n, self.cap = 0, 64
@@ -70,7 +72,7 @@ class OrderBook:
         e = self.n
         self.n += 1
         self.at[e], self.kind[e], self.ship[e], self.gid[e], self.slot[e] = g.at, g.kind, ship, gid, slot
-        self.auto[e] = g.source == "auto"
+        self.auto[e], self.ai[e] = g.source == "auto", g.source == "ai"
         k = int(np.searchsorted(self._qat, g.at, side="right"))
         self.queue = np.insert(self.queue, k, e)
         self._qat = np.insert(self._qat, k, g.at)

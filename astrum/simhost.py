@@ -34,6 +34,8 @@ import traceback
 import numpy as np
 
 from . import ai, picture, profiles
+from .ai import AI
+from .pictures import Pictures
 from .app import contact_dict
 from .encode import ShipEncoder, ship_columns
 from .profiles import STANCES
@@ -101,6 +103,12 @@ class Side:
         self.last_k: dict[str, int] = {}                 # ... and the minute it last saw her
         self.dismissed = {} if dismissed is None else dismissed
         self.knows = picture.journal(fleet, world.factions, view)
+        F, home = world.factions, world.home(sc)        # whom it holds hostile, once identified: the scenario's own
+        me = next((sc.contacts[sid] for i, sid in enumerate(ids) if self.own[i]), None)   # side as its contacts say;
+        foe = lambda x: F.head(x.faction) != F.head(view) and (                           # another, the own side if it
+            x.affiliation == "hostile" if view == home else                               # holds that side hostile
+            bool(me and me.affiliation == "hostile") if F.owner(x.faction) == home else False)
+        self.hostile = np.array([not master and foe(sc.contacts[sid]) for sid in ids], dtype=bool)
         home, top, tree = world.home(sc), world.factions.head(view), world.trees.get(sc.id)
         self.known, self.classed, self.bogey = {}, {}, {}
         for sid, t_ in self.alias.items():
@@ -187,7 +195,7 @@ def ordering(side: Side, fleet, ships: list[str]) -> None:
         raise OrderRefused(403, f"{', '.join(theirs[:3])}{'…' if len(theirs) > 3 else ''}: not {side.view or 'yours'} to order")
 
 
-def give_order(world, req: dict, side_of=None) -> dict:
+def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
     """An order at the map's clock, for one ship or for every ship under a formation.
     target: {bullseye, aer: [deg, deg, km]} (the ordering player's bullseye, so the point moves
     with its frame), {unit} (one of the side's units, or one of its tracks), or {body}; or halt:
@@ -241,6 +249,8 @@ def give_order(world, req: dict, side_of=None) -> dict:
         return order_reply(fleet, t, unit, ships, [Order(sid, t, "setg", g=float(g), source="map",
                                                          order_id=req.get("order_id")) for sid in ships], side)
     if g == 0:
+        if overrule is not None:                     # (the AI's later orders to them go: ai.AI.overrule)
+            overrule(sc, fleet, ships, t)
         return order_reply(fleet, t, unit, ships, [Order(sid, t, "coast", source="map") for sid in ships], side)
     s, _ = world.system(sc.system)
     tg, player = req.get("target") or {}, req.get("player") or sc.player
@@ -297,6 +307,8 @@ def give_order(world, req: dict, side_of=None) -> dict:
         target.update(patrol=back, label=f"patrol to {target['label']}")
     oid = f"{unit}@{t:.0f}#{next(_order_n)}"
     after = queue_tails(fleet, ships, tp, t) if req.get("queue") else {}
+    if overrule is not None and not after:
+        overrule(sc, fleet, ships, t)
     orders = [Order(sid, t, "queue" if sid in after else "goto", g=float(g), source="map", order_id=oid, by=unit,
                     target=dict(target, **({"offset_m": offsets[sid].tolist()} if np.any(offsets[sid]) else {}),
                                 **({"after": after[sid]} if sid in after else {})))
@@ -367,6 +379,10 @@ class SimHost:
         self._dismissed: dict = {}                      # (scenario, view) -> old tracks it removed: ship -> minute last seen
         self.ahead = RunAhead(world) if run_ahead else None
         self.arrivals = Arrivals(world)
+        self.ai = AI(world)                             # the AI: a subscriber of each side's picture, giving orders
+        self.pictures = Pictures(world, self, threaded=run_ahead and world.config["sim"]["ai"])
+        if world.config["sim"]["ai"]:
+            self.pictures.subscribe(self.ai)
 
     def handle(self, kind: str, payload):
         if kind == "frame":
@@ -374,7 +390,10 @@ class SimHost:
             return self.frame(req, conn)
         if kind == "order":
             try:
-                return {"ok": True, "reply": give_order(self.world, payload, self._side)}
+                out = {"ok": True, "reply": give_order(self.world, payload, self._side, self.ai.overrule)}
+                if payload.get("scenario"):
+                    self.pictures.poke(payload["scenario"])
+                return out
             except OrderRefused as e:
                 return {"ok": False, "status": e.status, "detail": e.detail}
         if kind == "withdraw":                         # an order from the map taken back (Fleet.withdraw)
@@ -454,6 +473,7 @@ class SimHost:
 
     def stop(self) -> None:
         self.arrivals.stop()
+        self.pictures.stop()
         if self.ahead is not None:
             self.ahead.stop()
 
@@ -478,6 +498,7 @@ class SimHost:
         if fleet is not None:
             if self.ahead is not None:
                 self.ahead.want(sc.id, fleet, t)
+            self.pictures.clock(sc, fleet, t)
             side = self._side(sc, fleet, world.side(sc, req.get("view"), req.get("player")))
             switches = resolve(world.config["picture"], req.get("picture"))
             t, ids, cols, flown, seen = self._ships_at(fleet, t, side.own, side.view, side.friendly, switches, side.knows)

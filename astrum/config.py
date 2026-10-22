@@ -26,7 +26,7 @@ CONFIG_SCHEMA = {
               "display": str, "settings": str, "bullseyes": str, "profiles": str},
     "server": {"host": str, "port": int},
     "live": {"check_seconds": float},
-    "sim": {"start": str, "orbit_samples": int, "table_days": float, "run_ahead": bool},
+    "sim": {"start": str, "orbit_samples": int, "table_days": float, "run_ahead": bool, "ai": bool},
     "picture": None,               # astrum/switches.py: every switch, its type and range
 }
 

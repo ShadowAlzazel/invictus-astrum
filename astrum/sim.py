@@ -73,7 +73,7 @@ from .classis import COLUMNS, BURN_G, BURN_NONE, BURN_THROTTLE, DEAD, FREE, LEAD
 from .entity import G0, Ship, ShipSpec, SpecError
 from .frames import from_aer
 from .placement import plan
-from .orders import ACTIVE, BURN, COAST, COLD, GOTO, KIND, PASSIVE, SETG, WARM, Given, OrderBook
+from .orders import ACTIVE, BURN, COAST, COLD, FACE, GOTO, KIND, PASSIVE, SETG, WARM, Given, OrderBook
 from .detect import Sensors
 from .signature import Signature
 from .timeline import FIELDS, Timeline, Versions
@@ -161,7 +161,8 @@ class Order:
                                    # "cold" (fold her wings) or "warm" (spread them), "active" (sweep
                                    # her active sensors: ping) or "passive" (stop), "stance" (her stance
                                    # or combat profile: target {stance, profile}; read by astrum/ai.py),
-                                   # "queue" (a go-to given once she has carried out the order target.after)
+                                   # "queue" (a go-to given once she has carried out the order target.after),
+                                   # "face" (her hull on target.dir while she does not burn)
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s
     target: dict | None = None     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body}, and a label
     g: float | None = None         # goto: the acceleration to hold, capped at her most
@@ -282,8 +283,6 @@ class Fleet:
         self._enter(orders or [])
         self._checkpoints: list[tuple] = [(t0, self._snapshot(), t0)]    # (t, the rows then, station ships paid to)
         self.sensors = Sensors(self, registry)              # every ship's sensors, a cone each (astrum/detect.py)
-        self.ai = None                                      # standing orders carried out (astrum/ai.py Mind), if given
-        self._thinking = False
 
     # ---- the timeline: what the map reads ----------------------------------------------------
     def keep_timeline(self) -> Timeline:
@@ -300,7 +299,7 @@ class Fleet:
         """Every row at t, for the map: off the timeline (Timeline.at), or as the rows stand at the
         fleet's own moment (or one the timeline does not hold: before the scenario starts). What
         each row was given is the version she was on at t; station ships stand at their places then."""
-        if self.mending is not None and not self._thinking:   # an order's rows flying again: up to the sample after t
+        if self.mending is not None:                     # an order's rows flying again: up to the sample after t
             self._mend(self.t0 + (math.floor((t - self.t0) / TIMELINE_S + 1e-9) + 1) * TIMELINE_S)
         c, n, tl, V = self.c, self.c.n, self.timeline, self.versions
         if tl is not None and tl.covers(t) and abs(t - self.t) > 1e-6:
@@ -472,6 +471,16 @@ class Fleet:
             self._qi += int((B.at[given] < self.t).sum())   # given before where the fleet is: flown again below
             return self._refly({self.c.ids[B.ship[e]] for e in given}, t_o, set(given), float(B.at[given].max()))
 
+    def overrule(self, ships: list[str], t: float) -> None:
+        """The AI's orders to these ships after t struck: an order of the map's at t stands over them
+        (it flies them again from t, as any order in the past does)."""
+        with self.lock:
+            B = self.book
+            q = B.queue[B.before(t + 2e-6):]
+            ev = q[B.ai[q] & np.isin(B.ship[q], [self.c.row[s] for s in ships])]
+            if len(ev):
+                self._qi -= int((B.strike(ev) < self._qi).sum())
+
     def withdraw(self, oid: str) -> bool:
         """Take back an order given from the map: struck from the book, and if the fleet has flown
         past it, the ships it went to (and whoever their flight bears on) fly again from before it,
@@ -633,7 +642,6 @@ class Fleet:
             m.st_t = self._station_grid(m.st_t, T1, m.scope)
             self._record(slots, m.scope, flown)
             self._heat(m.t, T1, m.scope, slots)
-            self._think(T1, m.scope)
             for cp in [cp for cp in self._checkpoints if m.t + 1e-9 < cp[0] <= T1 + 1e-9]:
                 if abs(cp[0] - T1) < 1e-6:
                     self._patch(cp[1], m.scope)
@@ -770,24 +778,11 @@ class Fleet:
             self._stations_to(t1)
             self._record(slots, np.arange(c.n), flown)
             self._heat(T0, t1, np.arange(c.n), slots)
-            self._think(t1)
             cps = self._checkpoints
             if self.t - cps[-1][0] >= CHECKPOINT_S - 1e-6:
                 cps.append((self.t, self._snapshot(), self._station_t))
                 while len(cps) > 2 and cps[1][0] < self.t - CHECKPOINT_KEEP_S:
                     del cps[1]                          # the scenario's start stays: further back flies from there
-
-    def _think(self, t: float, rows: np.ndarray | None = None) -> None:
-        """At a block's end on the grid, the ships (these rows) carry out their standing orders
-        (Fleet.ai, astrum/ai.py Mind): what they decide is given as orders at that moment. The
-        fleet's pictures are read as they stand (an order's rows flying again are already here)."""
-        if self.ai is None or abs(self._grid_next(t - 1e-6) - t) > 1e-6:
-            return
-        self._thinking = True
-        try:
-            self.ai.tick(self, t, rows)
-        finally:
-            self._thinking = False
 
     def _grid_next(self, t: float) -> float:
         """The next block boundary after t: blocks lie on a grid from the scenario's start, so
@@ -1515,6 +1510,9 @@ class Fleet:
                 c.cold[i] = True
         elif kind == WARM:
             c.cold[i] = False
+        elif kind == FACE and c.thrust[i] <= 0:      # her hull on a target, while she does not burn
+            c.dir[i] = g.target["dir"]
+            self._touch(i)
 
     def _leave_station(self, i: int, t: float) -> None:
         """A station ship leaves her place at the speed it was moving."""

@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 206 tests
+python -m pytest -q tests             # 208 tests
 ```
 
 The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
@@ -130,8 +130,8 @@ above it comes down to it.
 | `style.toml` | colours, affiliation frames, echelon marks, formation roles (built from blocks, each an APP-6 mark: battle, line, picket, supply, forward, point defence, escort, signal), body display sizes by role |
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |
 | `settings.toml` | display settings over `display.toml`, if you keep one (the map keeps yours in the browser); not committed |
-| `config.toml` | paths, port, clock start, orbit sampling, the run-ahead, and what a player is shown ([picture]) |
-| `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server; the fleet (`classis.py`, `sim.py`), its order book (`orders.py`), timeline (`timeline.py`), standing orders and the AI (`ai.py`, `profiles.py`) |
+| `config.toml` | paths, port, clock start, orbit sampling, the run-ahead, the AI, and what a player is shown ([picture]) |
+| `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server; the fleet (`classis.py`, `sim.py`), its order book (`orders.py`), timeline (`timeline.py`), standing orders and the AI (`ai.py`, `profiles.py`), a subscriber of each side's picture (`pictures.py`) |
 | `web/` | the map (Svelte + Three.js) |
 | `tools/formation_tf2.py` | lays out the demo's Task Force 2 wedge; edit its numbers and rerun |
 | `tools/formation_tf3.py` | lays out Task Force 3, docked tight around Mars, and the Luna Strike Squadron behind Jupiter |

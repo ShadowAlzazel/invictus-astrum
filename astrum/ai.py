@@ -1,26 +1,26 @@
-"""Standing orders: what a unit stands in, the orders it was given, and the orders it gives itself.
+"""Standing orders: what a unit stands in, the orders it was given, and the AI that carries them out.
 
 A ship's stance and combat profile (astrum/profiles.py) are each, at a moment, the last one ordered
 to her (a STANCE event of the order book, given to her or to a formation she is in), else the one
 written for her in the scenario or for the nearest formation above her, else her profile's own
 stance and the root profile. A formation stands in what its ships do, when they all do.
 
-Mind carries them out (Fleet.ai). At each block's end on the grid (every 10 minutes) every ship free
-to act looks at what she knows, and what she decides is given as an order (source "auto") at that
-moment: struck and decided again if the fleet is set back before it. Free to act: no plain go-to
-of the map's or the scenario's to fly (an attack-move is aggressive the whole way; a patrol on
-guard), and not holding fire.
+The AI is a subscriber of the picture processor (astrum/pictures.py), as a browser is of the map's
+pictures: it is handed each side's picture at the map's clock, reads only what is in it, and gives
+orders (source "ai") through the order book, as a player does. The flight never waits on it. A ship
+is free to act unless she flies a plain go-to of the map's or the scenario's (an attack-move is
+aggressive the whole way; a patrol on guard), and not holding fire:
 
-    aggressive    a target known within range: engaged, and followed while it is known
-    guard         a target known within range: engaged, then back to her post (her place, or where
-                  she stood, in the frame her stance was ordered in) once it is lost or out of range
-    hold          faces the nearest target in range (her hull on it while she does not burn); never moves
-    return-fire   engages a ship flying an engage order on her, within range; then back to her post
+    aggressive    a target in the picture within range: engaged, and followed while it is in it
+    guard         a target within range: engaged, then back to her post (her place, or where she
+                  stood, in the frame her stance was ordered in) once it is gone or out of range
+    hold          her hull turned on the nearest target in range while she does not burn; never moves
+    return-fire   a ship engaging her within range (she knows by being fired on): engaged; then back
 
-What she knows: her side's picture as reported to its flagship (the reports that have reached it),
-and what her own sensors saw, at once; a target is hostile only once identified (unknown: a bogey).
-The side's sweep for it is one per tick (every sensor that came round in the ten minutes, as at
-the tick: detect.scan with a span), and only for sides with a ship that needs it.
+A target is hostile only once identified (Side.hostile: unknown is a bogey). Its orders are facts of
+the book, like a player's: a replay gives them again as given, and the AI's clock only moves on
+(it decides for each ship from where it last did). An order of the map's given in the past strikes
+the AI's later orders to those ships, and the AI decides for them again from there (overrule).
 """
 from __future__ import annotations
 
@@ -29,16 +29,16 @@ import math
 import numpy as np
 
 from .classis import DEAD, SHIP, STATION
-from .detect import SAMPLE_S, scan
 from .entity import G0
-from .orders import COAST, GOTO, KIND, STANCE
-from .picture import own_rows
+from .orders import GOTO, KIND, STANCE
 from .profiles import ROOT
-from .sim import BLOCK_S
+from .sim import Order
 
 NAMES = {v: k for k, v in KIND.items()}
 WARM_W = 30e6                 # the warm ship a sensor's range is read against (profiles.RANGES "sensor")
-SEEING = ("aggressive", "attack", "guard", "hold")   # what needs the side's picture
+SEEING = ("aggressive", "attack", "guard", "hold")   # what needs the side's tracks
+FACE_DEG = 10.0               # her hull turned again once the target has moved off it by this much
+
 
 def player_of(world, sc, cid: str) -> str | None:
     """The player a unit's profiles are read as: the one whose faction owns hers."""
@@ -102,22 +102,17 @@ def _said(g) -> str | None:
     return None
 
 
+
+
 class Mind:
-    """A fleet's standing orders carried out (see the module's docstring). Made once per fleet; what
-    each side holds as hostile, each ship's ranges, what the scenario writes for each."""
+    """One fleet's AI (see the module's docstring): each ship's ranges, what the scenario writes for
+    each, and how far each has been decided for."""
 
     def __init__(self, world, sc, fleet):
         c, F, n = fleet.c, world.factions, len(fleet.c.row)
-        self.world, home = world, world.home(sc)
+        self.world = world
         self.view = [F.owner(sc.contacts[c.ids[i]].faction) for i in range(n)]
-        self.own, self.hostile, self.player = {}, {}, {}
-        for v in set(self.view):
-            me = sc.contacts[c.ids[self.view.index(v)]]
-            foe = lambda x: (F.head(x.faction) != F.head(v)) and (
-                x.affiliation == "hostile" if v == home else me.affiliation == "hostile" if F.owner(x.faction) == home else False)
-            self.own[v] = own_rows(fleet, F, v)
-            self.hostile[v] = np.array([foe(sc.contacts[c.ids[j]]) for j in range(n)], dtype=bool)
-            self.player[v] = next((p.id for p in world.players.values() if p.faction == v), None)
+        self.player = {v: next((p.id for p in world.players.values() if p.faction == v), None) for v in set(self.view)}
         self.written = [(written(world, sc, c.ids[i], "stance")[0], written(world, sc, c.ids[i], "profile")[0]) for i in range(n)]
         S = fleet.sensors
         self.sensor_m = np.zeros(n)                      # her passive suite's reach against a warm ship
@@ -126,15 +121,17 @@ class Mind:
         km = lambda i, k: (getattr(c.spec[i], k, None) or 0.0) * 1e3 if c.spec[i] is not None else 0.0
         self.dazzle_m = np.array([km(i, "dazzle_km") for i in range(n)])
         self.engage_m = np.array([km(i, "engage_km") for i in range(n)])
+        self.until = np.full(n, -np.inf)                 # each ship decided for up to here: its clock only moves on
         self._stood = (None, None)
-        self._eng = (0, math.inf)                        # (book events looked at, the first engage order's moment)
+        self._moving = (0, set(), np.inf)                # (book events looked at, ships ever given an attack-move or
+                                                         # a patrol, the first engage order's moment)
         self._reach: dict = {}
 
     # ---- what each stands in ---------------------------------------------------------------------
     def standing(self, B, t: float) -> tuple[list, list, list]:
         """Every ship's stance, profile and the frame her stance was ordered in, at t (kept until a
         stance is ordered, or a profile changed)."""
-        q = B.queue[: B.before(t)]
+        q = B.queue[: B.before(t + 2e-6)]
         st = q[B.kind[q] == STANCE]
         key = (st.tobytes(), id(self.world.profiles_made))
         if self._stood[0] == key:
@@ -163,197 +160,216 @@ class Mind:
                 "weapons": self.engage_m[i]}.get(r, 0.0)
         return got
 
-    # ---- what a side knows -------------------------------------------------------------------------
-    def known(self, fleet, k: int, v: str) -> dict:
-        """What side v holds at whole minute k (a tick): per ship, the minute last seen, where, when
-        the report reached its flagship, identified; and this tick's hits, by the ship whose sensor
-        saw her. The tick before's, with this tick's sweep laid over (a track not seen within the
-        hold starts again). Kept with the fleet's scans."""
-        key = ("ai", k, v)
-        got = fleet._scans.get(key)
-        if got is not None:
-            return got
-        S, n, tick = fleet.sensors, len(fleet.c.row), round(BLOCK_S / SAMPLE_S)
-        H = int(S.hold_s // SAMPLE_S)
-        prev = fleet._scans.get(("ai", k - tick, v))
-        cur = {name: prev[name].copy() for name in ("k", "r", "arrive", "ident")} if prev else {
-            "k": np.full(n, -1, dtype=np.int64), "r": np.full((n, 3), np.nan), "arrive": np.zeros(n), "ident": np.zeros(n, dtype=bool)}
-        h = scan(fleet, k, v, self.own[v], tick)
-        ident = ~h["act"] & (h["flux"] - h["plume"] >= S.identify * S.thr[h["s"]])
-        if len(h["s"]):
-            order = np.argsort(h["flux"])[::-1]
-            _, first = np.unique(h["j"][order], return_index=True)
-            pick = order[first]
-            j = h["j"][pick]
-            new = cur["k"][j] < k - H - tick
-            cur["ident"][j] &= ~new
-            np.logical_or.at(cur["ident"], h["j"], ident)
-            cur["k"][j], cur["r"][j], cur["arrive"][j] = k, h["r"][pick], h["arrive"][pick]
-        cur["hits"] = (S.row[h["s"]], h["j"], ident)
-        if len(fleet._scans) >= 4096:
-            fleet._scans.pop(next(iter(fleet._scans)))
-        fleet._scans[key] = cur
-        return cur
-
-    # ---- a tick ----------------------------------------------------------------------------------
-    def tick(self, fleet, t: float, rows: np.ndarray | None = None) -> None:
-        """Every ship free to act (these rows) at t, a block end on the grid: see the module's docstring."""
-        c, B = fleet.c, fleet.book
-        n = len(c.row)
-        stance, prof, frame = self.standing(B, t)
-        cand = np.arange(n) if rows is None else rows[rows < n]
-        cand = cand[(c.kind[cand] == SHIP) & (c.mode[cand] != DEAD) & (c.fmax[cand] > 0)]
-        seeing, firing = {}, []
-        for i in cand.tolist():
-            e = int(c.order[i]) if c.goal[i] else -1
-            g = B.of(e) if e >= 0 else None
-            tg = g.target if g is not None else {}
-            if g is not None and g.source != "auto" and not (tg.get("attack") or tg.get("patrol")):
-                continue                                  # a plain order of the map's or the scenario's
-            mode = "attack" if tg.get("attack") else "guard" if tg.get("patrol") else tg.get("why") or stance[i]
-            if mode in SEEING:
-                seeing.setdefault(self.view[i], []).append((i, mode, e, g))
-            elif mode == "return-fire" and (tg.get("engage") or self._engages(B, t)):
-                firing.append((i, e, g))
-        if not seeing and not firing:
-            return
-        k = round((t - fleet.t0) / SAMPLE_S)
-        R = fleet.past_sample(k)["r"]
-        if firing:
-            self._return_fire(fleet, t, k, R, firing, frame, prof)
-        H = int(fleet.sensors.hold_s // SAMPLE_S)
-        for v, items in seeing.items():
-            K = self.known(fleet, k, v)
-            I = np.array([i for i, *_ in items])
-            hr, hj, hid = K["hits"]
-            mine = np.isin(hr, I)
-            at = np.searchsorted(np.sort(I), hr[mine])          # her own sensors: seen at once
-            order = np.argsort(I)
-            seen = np.repeat(((K["k"] >= k - H) & (K["arrive"] <= t + 1e-6))[None], len(I), axis=0)
-            ident = np.repeat(K["ident"][None], len(I), axis=0)
-            seen[order[at], hj[mine]] = True
-            ident[order[at[hid[mine]]], hj[mine][hid[mine]]] = True
-            hostile = np.array(["hostile" in prof[i].targets for i in I])[:, None]
-            bogey = np.array(["unknown" in prof[i].targets for i in I])[:, None]
-            want = seen & ((ident & self.hostile[v][None] & hostile) | (~ident & bogey))
-            D = np.linalg.norm(K["r"][None] - R[I][:, None], axis=2)
-            reach = np.array([self.reach_m(i, "aggressive" if m == "attack" else m, prof[i]) for i, m, _, _ in items])
-            near = want & (D <= reach[:, None])
-            for a, (i, mode, e, g) in enumerate(items):
-                if g is not None and g.source == "auto" and g.target.get("engage"):      # engaging: on, or over
-                    j = c.row.get(g.target["unit"])
-                    home = g.target.get("resume", {}).get("target") if mode == "guard" else None
-                    leash = fleet._point(home, t) if home else None
-                    if j is None or not want[a, j] or (leash is not None and np.linalg.norm(K["r"][j] - leash) > reach[a]):
-                        nxt = np.flatnonzero(near[a] & (np.arange(n) != (j if j is not None else -1)))
-                        if len(nxt):                      # another in range: straight on to it, no turn back between
-                            j = int(nxt[np.argmin(D[a][nxt])])
-                            self._engage(fleet, i, t, j, mode, "engage hostile" if ident[a, j] else "engage bogey", g.target.get("resume"), g)
-                        else:
-                            self._end(fleet, i, t, g)
-                    continue
-                if not near[a].any():
-                    continue
-                j = int(np.flatnonzero(near[a])[np.argmin(D[a][near[a]])])
-                if mode == "hold":                        # her hull on it, while she does not burn
-                    if c.thrust[i] <= 0:
-                        u = K["r"][j] - R[i]
-                        c.dir[i] = u / max(np.linalg.norm(u), 1.0)
-                    continue
-                back = None
-                if g is not None and "then" in g.target:  # braking on the way back: back to that, after
-                    back = g.target["then"]
-                elif g is not None and (g.target.get("attack") or g.target.get("patrol")):   # on with it, after
-                    back = {"target": dict(g.target), "g": g.g, "by": g.by, "slot": B.slot[e].tolist()}
-                elif mode == "guard":
-                    back = self._home(fleet, i, t, frame[i], v)
-                self._engage(fleet, i, t, j, mode, "engage hostile" if ident[a, j] else "engage bogey", back, g)
-
-    def _engages(self, B, t: float) -> bool:
-        """Whether an engage order has been given before t (else there is nothing to return fire on)."""
-        n0, seen = self._eng
+    def wants(self, fleet, t: float) -> dict[str, bool]:
+        """The sides to picture at t, and whether each needs its tracks (what it sees): those with a
+        ship that acts on them; those with a ship on return fire only once an engage order is given."""
+        B = fleet.book
+        n0, moving, first = self._moving
         for e in range(n0, B.n):
-            if B.kind[e] == GOTO and B.of(e).target.get("engage"):
-                seen = min(seen, float(B.at[e]))
-        self._eng = (B.n, seen)
-        return seen < t
+            tg = B.of(e).target if B.kind[e] == GOTO else {}
+            if tg.get("attack") or tg.get("patrol"):
+                moving = moving | {int(B.ship[e])}
+            if tg.get("engage"):
+                first = min(first, float(B.at[e]))
+        self._moving = (B.n, moving, first)
+        stance = self.standing(B, t)[0]
+        out: dict[str, bool] = {}
+        for i, (v, s) in enumerate(zip(self.view, stance)):
+            if s in SEEING or i in moving:
+                out[v] = True
+            elif s == "return-fire" and first <= t:
+                out.setdefault(v, False)
+        return out
 
-    def _return_fire(self, fleet, t: float, k: int, R, firing: list, frame: list, prof: list) -> None:
-        """Ships on return fire: one flying an engage order on her within her range (the root's: her
-        dazzle range) is engaged, then back to her post once none is."""
-        c, pic, on = fleet.c, fleet.past_sample(k), {}
-        for a in np.flatnonzero(pic["goal"][: len(c.row)]).tolist():     # who flies an engage order on whom, at t
-            tg = ((fleet.versions.said[pic["mver"][a]] or {}).get("goal") or {}).get("target", {})
-            if tg.get("engage") and tg.get("unit") in c.row:
-                on.setdefault(c.row[tg["unit"]], []).append(a)
-        for i, e, g in firing:
-            foes = [a for a in on.get(i, []) if np.linalg.norm(R[a] - R[i]) <= self.reach_m(i, "return-fire", prof[i])]
-            if g is not None and g.target.get("engage"):
-                if c.row.get(g.target["unit"]) not in foes:
-                    self._end(fleet, i, t, g)
-            elif foes:
-                j = min(foes, key=lambda a: np.linalg.norm(R[a] - R[i]))
-                self._engage(fleet, i, t, j, "return-fire", "engage attacker", self._home(fleet, i, t, frame[i], self.view[i]), g)
+    # ---- a picture: what each of the side's ships does ---------------------------------------------
+    def decide(self, sp) -> list[Order]:
+        fleet, side, t = sp.fleet, sp.side, sp.t
+        c, n = fleet.c, len(fleet.c.row)
+        stance, prof, frame = self.standing(fleet.book, t)
+        rows = [i for i in np.flatnonzero(side.own).tolist() if c.kind[i] == SHIP and c.mode[i] != DEAD
+                and c.fmax[i] > 0 and t >= self.until[i] - 1e-6]
+        out, seeing = [], []
+        for i in rows:
+            said = sp.said.get(i) or {}
+            goal = said.get("goal")
+            tg = goal["target"] if goal else {}
+            if goal and goal["source"] not in ("ai", "auto") and not (tg.get("attack") or tg.get("patrol")):
+                continue                                  # a plain order of the map's or the scenario's
+            back = tg.get("resume") or {}
+            on = back.get("target", tg)
+            mode = "attack" if on.get("attack") else "guard" if on.get("patrol") else stance[i]
+            engaging = bool(tg.get("engage")) and goal["source"] == "ai"
+            if mode == "hold-fire":
+                if engaging:
+                    out.append(self._end(sp, i, goal))
+            elif mode == "return-fire":
+                foes = [a for a in sp.fired_on.get(i, []) if _d(sp.r[a], sp.r[i]) <= self.reach_m(i, mode, prof[i])]
+                if engaging and c.row.get(tg["unit"]) not in foes:
+                    out.append(self._end(sp, i, goal))
+                elif not engaging and foes:
+                    j = min(foes, key=lambda a: _d(sp.r[a], sp.r[i]))
+                    out.append(self._engage(sp, i, j, "engage attacker", self._home(sp, i, frame[i]), goal))
+            else:
+                seeing.append((i, mode, goal, engaging))
+        self.until[rows] = t
+        if seeing:
+            out += self._seeing(sp, seeing, prof, frame)
+        return [o for o in out if o is not None]
 
-    def _engage(self, fleet, i: int, t: float, j: int, why: str, label: str, back: dict | None, g) -> None:
-        c = fleet.c
-        spec = c.spec[i]
-        gg = g.g if g is not None and g.g > 0 else (spec.cruise_g[1] if spec is not None and spec.cruise_g else 0.5 * c.max_accel(i) / G0)
-        target = {"unit": c.ids[j], "engage": True, "why": why, "label": label}
+    def _seeing(self, sp, items: list, prof: list, frame: list) -> list:
+        """The side's ships that act on what it sees, all at once: its targets, by her profile's."""
+        fleet, side, t = sp.fleet, sp.side, sp.t
+        c, n = fleet.c, len(fleet.c.row)
+        I = np.array([i for i, *_ in items])
+        live = sp.shown & ~sp.old & ~side.own
+        hostile = live & sp.identified & side.hostile
+        bogey = live & ~sp.identified
+        H = np.array(["hostile" in prof[i].targets for i in I])[:, None]
+        U = np.array(["unknown" in prof[i].targets for i in I])[:, None]
+        want = (hostile[None] & H) | (bogey[None] & U)
+        D = np.linalg.norm(sp.r[None] - sp.r[I][:, None], axis=2)
+        reach = np.array([self.reach_m(i, "aggressive" if m == "attack" else m, prof[i]) for i, m, _, _ in items])
+        near = want & (D <= reach[:, None])
+        out = []
+        for a, (i, mode, goal, engaging) in enumerate(items):
+            tg = goal["target"] if goal else {}
+            if engaging:                                  # on, onto the next in range, or over
+                j = c.row.get(tg["unit"])
+                home = tg.get("resume", {}).get("target") if mode == "guard" else None
+                leash = fleet._point(home, t) if home else None
+                if j is not None and want[a, j] and (leash is None or _d(sp.r[j], leash) <= reach[a]):
+                    continue
+                nxt = np.flatnonzero(near[a] & (np.arange(n) != (j if j is not None else -1)))
+                if len(nxt):
+                    k = int(nxt[np.argmin(D[a][nxt])])
+                    out.append(self._engage(sp, i, k, "engage hostile" if sp.identified[k] else "engage bogey", tg.get("resume"), goal))
+                else:
+                    out.append(self._end(sp, i, goal))
+                continue
+            if not near[a].any():
+                continue
+            j = int(np.flatnonzero(near[a])[np.argmin(D[a][near[a]])])
+            if mode == "hold":                            # her hull on it, while she does not burn
+                u = sp.r[j] - sp.r[i]
+                u = u / max(np.linalg.norm(u), 1.0)
+                if not sp.burning[i] and not float(np.nan_to_num(sp.dir[i]) @ u) >= math.cos(math.radians(FACE_DEG)):
+                    out.append(Order(c.ids[i], t, "face", target={"dir": u.tolist(), "label": "face the target"}, source="ai",
+                                     order_id=f"{c.ids[i]}:ai@{t:.0f}", by=c.ids[i]))
+                continue
+            back = None
+            if "then" in tg:                              # braking on the way back: back to that, after
+                back = tg["then"]
+            elif tg.get("attack") or tg.get("patrol"):    # on with the attack-move or the patrol leg, after
+                back = {"target": {k: v for k, v in tg.items() if k != "offset_m"}, "g": goal["g"], "by": goal["by"],
+                        "slot": tg.get("offset_m", [0.0, 0.0, 0.0])}
+            elif mode == "guard":
+                back = self._home(sp, i, frame[i])
+            out.append(self._engage(sp, i, j, "engage hostile" if sp.identified[j] else "engage bogey", back, goal))
+        return out
+
+    # ---- the orders it gives -----------------------------------------------------------------------
+    def _order(self, sp, i: int, target: dict, g: float, by: str | None = None, kind: str = "goto") -> Order:
+        sid = sp.fleet.c.ids[i]
+        return Order(sid, sp.t, kind, target=target, g=g, source="ai", order_id=f"{sid}:ai@{sp.t:.0f}", by=by or sid)
+
+    def _cruise(self, c, i: int) -> float:
+        return c.spec[i].cruise_g[1] if c.spec[i] is not None and c.spec[i].cruise_g else 0.5 * c.max_accel(i) / G0
+
+    def _engage(self, sp, i: int, j: int, label: str, back: dict | None, goal) -> Order:
+        """Engage: a go-to on her, held at her focus battery's range (Fleet._apply)."""
+        c = sp.fleet.c
+        g = goal["g"] if goal and goal.get("g") else self._cruise(c, i)
+        target = {"unit": c.ids[j], "engage": True, "label": label}
         if back is not None:
             target["resume"] = back
-        fleet._derive(i, t, target, gg, f"{c.ids[i]}:ai@{t:.0f}", c.ids[i], (0.0, 0.0, 0.0))
+        return self._order(sp, i, target, g)
 
-    def _end(self, fleet, i: int, t: float, g) -> None:
+    def _end(self, sp, i: int, goal) -> Order:
         """An engagement over: back to what she was doing, or her post; else the drive cut. If she
-        cannot stop there from how she moves now (closing too fast, or going away), she first brakes
-        to rest in its frame; an attack-move she would pass while braking is done once she rests."""
-        c, back = fleet.c, g.target.get("resume")
-        oid = f"{c.ids[i]}:ai@{t:.0f}"
+        cannot stop there from how she moves (closing too fast, or going away), she brakes to rest in
+        its frame first (then on); an attack-move she would pass while braking is done once she rests."""
+        fleet, t = sp.fleet, sp.t
+        c, back = fleet.c, goal["target"].get("resume")
         if not back:
-            fleet._derive(i, t, {"label": "engagement over"}, 0.0, oid, c.ids[i], (0.0, 0.0, 0.0), kind=COAST)
-            return
+            return self._order(sp, i, {"label": "engagement over"}, 0.0, kind="coast")
         tg, slot = back["target"], np.asarray(back.get("slot", (0.0, 0.0, 0.0)), dtype=float)
-        pic = fleet.past_sample(round((t - fleet.t0) / SAMPLE_S))
-        P0, P1 = fleet._point(tg, t), fleet._point(tg, t + 60.0)
+        target = {**tg, "offset_m": slot.tolist()} if slot.any() else dict(tg)
         a = 0.9 * min(back["g"] * G0, c.max_accel(i))
-        if P0 is None or P1 is None or a <= 0 or not ("bullseye" in tg or "body" in tg):
-            fleet._derive(i, t, tg, back["g"], oid, back.get("by", c.ids[i]), slot)
-            return
-        d, w = P0 + slot - pic["r"][i], pic["v"][i] - (P1 - P0) / 60.0       # where it is, how she moves in its frame
+        P0, P1 = (fleet._point(tg, t), fleet._point(tg, t + 60.0)) if "bullseye" in tg or "body" in tg else (None, None)
+        if P0 is None or P1 is None or a <= 0:
+            return self._order(sp, i, target, back["g"], back.get("by"))
+        d, w = P0 + slot - sp.r[i], sp.v[i] - (P1 - P0) / 60.0            # where it is, how she moves in its frame
         dist, speed = float(np.linalg.norm(d)), float(np.linalg.norm(w))
         brake = speed * speed / (2 * a)
-        if float(w @ d) > 0 and brake <= dist:                     # closing, and she can stop there: straight back to it
-            fleet._derive(i, t, tg, back["g"], oid, back.get("by", c.ids[i]), slot)
-            return
-        stop = pic["r"][i] + w * speed / (2 * a) - slot            # where braking in its frame brings her to rest
+        if float(w @ d) > 0 and brake <= dist:                             # closing, and she can stop there
+            return self._order(sp, i, target, back["g"], back.get("by"))
+        stop = sp.r[i] + w * speed / (2 * a) - slot                        # where braking in its frame brings her to rest
         if "bullseye" in tg:
             az, el, rng = fleet._bull(tg.get("player"), tg["bullseye"], t).aer(stop)
             rest = {"bullseye": tg["bullseye"], "player": tg.get("player"), "aer": [math.degrees(az) % 360, math.degrees(el), rng]}
         else:
             rest = {"body": tg["body"], "at_m": (stop - fleet._bodies(t)[tg["body"]]).tolist()}
-        done = tg.get("attack") and dist <= brake                  # the attack-move's point: she is there
+        done = tg.get("attack") and dist <= brake                          # the attack-move's point: she is there
         rest.update(halt=True, label="brake to rest: attack-move done" if done else f"brake, then {tg.get('label') or 'back'}")
         if not done:
-            rest["then"] = back
-        fleet._derive(i, t, rest, back["g"], oid, c.ids[i], slot)
+            rest["then"] = {**back, "slot": slot.tolist()}
+        if slot.any():
+            rest["offset_m"] = slot.tolist()
+        return self._order(sp, i, rest, back["g"])
 
-    def _home(self, fleet, i: int, t: float, bid: str, v: str) -> dict:
+    def _home(self, sp, i: int, bid: str) -> dict:
         """Her post, to come back to: the place she holds, else where she is, in the frame her stance
         was ordered in (the star centre's: carried with the body that pulls on her hardest)."""
+        fleet, t = sp.fleet, sp.t
         c = fleet.c
-        gg = c.spec[i].cruise_g[1] if c.spec[i] is not None and c.spec[i].cruise_g else 0.5 * c.max_accel(i) / G0
-        out = {"g": gg, "by": c.ids[i], "slot": [0.0, 0.0, 0.0]}
-        place = c.place_of(i) if c.mode[i] == STATION else None
+        out = {"g": self._cruise(c, i), "by": c.ids[i], "slot": [0.0, 0.0, 0.0]}
+        place = (sp.said.get(i) or {}).get("place")
         if place:
             return {**out, "target": {**place, "label": f"back to {place.get('label') or 'her post'}"}}
-        r = fleet.past_sample(round((t - fleet.t0) / SAMPLE_S))["r"][i]
+        r = sp.r[i]
         bodies = fleet._bodies(t)
         body = max((x for x in fleet._pulls if x.kind != "star" and x.id in bodies),
                    key=lambda x: x.gm / max(float(np.sum((bodies[x.id] - r) ** 2)), 1.0), default=None)
         if bid == "system" and body is not None:
             return {**out, "target": {"body": body.id, "at_m": (r - bodies[body.id]).tolist(), "label": f"back to her post off {body.name}"}}
-        b = fleet._bull(self.player[v], bid, t)
+        b = fleet._bull(self.player[self.view[i]], bid, t)
         az, el, rng = b.aer(r)
-        return {**out, "target": {"bullseye": bid, "player": self.player[v], "aer": [math.degrees(az) % 360, math.degrees(el), rng],
+        return {**out, "target": {"bullseye": bid, "player": self.player[self.view[i]], "aer": [math.degrees(az) % 360, math.degrees(el), rng],
                                   "label": "back to her post"}}
+
+
+class AI:
+    """The AI as the picture processor's subscriber: a Mind for each fleet, handed each side's
+    picture, its orders given to the fleet as a player's are."""
+
+    def __init__(self, world):
+        self.world = world
+        self.minds: dict[int, Mind] = {}
+
+    def mind(self, sc, fleet) -> Mind:
+        m = self.minds.get(id(fleet))
+        if m is None or len(m.until) != len(fleet.c.row):
+            self.minds = {k: v for k, v in self.minds.items() if any(id(f) == k for f in self.world.fleets.values())}
+            m = self.minds[id(fleet)] = Mind(self.world, sc, fleet)
+        return m
+
+    def wants(self, sc, fleet, t: float) -> dict[str, bool]:
+        return self.mind(sc, fleet).wants(fleet, t)
+
+    def __call__(self, sp) -> list[Order]:
+        orders = self.mind(sp.scenario, sp.fleet).decide(sp)
+        if orders:
+            sp.fleet.command(*orders)
+        return orders
+
+    def overrule(self, sc, fleet, ships: list[str], t: float) -> None:
+        """An order of the map's at t: the AI's later orders to these ships go, and it decides for
+        them again from t."""
+        fleet.overrule(ships, t)
+        m = self.mind(sc, fleet)
+        rows = [fleet.c.row[s] for s in ships]
+        m.until[rows] = np.minimum(m.until[rows], t)
+
+
+def _d(a, b) -> float:
+    return float(np.linalg.norm(a - b))
