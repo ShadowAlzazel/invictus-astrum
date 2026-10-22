@@ -261,7 +261,11 @@ def give_order(world, req: dict, side_of=None) -> dict:
         c = sc.contacts.get(cid or "")
         if c is None or cid == unit or cid in ships:
             raise OrderRefused(400, f"{tg['unit']!r} is not another unit {side.view or 'you'} hold in {sc.id}")
-        target = {"unit": c.id, "label": side.called.get(tg["unit"], "Bogey") if tg["unit"] in side.rows else c.callsign}
+        track = tg["unit"] in side.rows
+        target = {"unit": c.id, "label": side.called.get(tg["unit"], "Bogey") if track else c.callsign}
+        # a track is engaged (the side knows no more of her than its picture); MASTER engages another side's
+        if track or (side.view == picture.MASTER and world.factions.head(c.faction) != world.factions.head(sc.contacts[unit].faction)):
+            target.update(engage=True, label=f"engage {target['label']}")
     elif "body" in tg:
         b = next((b for b in s if b.id == tg["body"]), None)
         if b is None:
@@ -269,18 +273,49 @@ def give_order(world, req: dict, side_of=None) -> dict:
         target = {"body": b.id, "label": b.name}
     else:
         raise OrderRefused(400, "target is {bullseye, aer}, {unit} or {body}")
-    offsets = {sid: np.zeros(3) for sid in ships}
-    if len(ships) > 1 or unit not in ships:          # a formation: each ship keeps her place in it, as it stands
-        flown = fleet.positions_at(tp)               # (where the fleet has got, if it is behind the clock)
+    mode = req.get("mode") or "move"
+    if mode not in ("move", "attack", "patrol") or (mode == "patrol" and "bullseye" not in target):
+        raise OrderRefused(400, "mode is move, attack or patrol (patrol: to a point off a bullseye)")
+    formation, offsets, anchor = len(ships) > 1 or unit not in ships, {sid: np.zeros(3) for sid in ships}, None
+    if formation or mode == "patrol":                # where it is now (where the fleet has got, if it is behind the clock)
+        flown = fleet.positions_at(tp)
         pos = world.table(sc.system).positions(tp)
-        where = contact_positions(sc, world.resolved(sc.system, sc.player, pos), pos, flown)
-        anchor = where.get(unit)
-        if anchor is not None:
+        anchor = contact_positions(sc, world.resolved(sc.system, sc.player, pos), pos, flown).get(unit)
+        if formation and anchor is not None:         # a formation: each ship keeps her place in it, as it stands
             offsets = {sid: flown[sid] - anchor for sid in ships}
+    if mode == "attack":                             # aggressive the whole way (astrum/ai.py)
+        target.update(attack=True, label=f"attack-move to {target['label']}")
+    elif mode == "patrol" and anchor is not None:    # to the point and back to where it is now, over and over
+        bid = target["bullseye"]
+        az, el, rng = world.resolved(sc.system, player, pos, only=bid)[bid].aer(anchor)
+        back = {"bullseye": bid, "player": player, "aer": [math.degrees(az) % 360, math.degrees(el), rng],
+                "label": f"patrol to {round(math.degrees(az)) % 360:03d}°, {rng / 1e3:,.0f} km from {listed[bid].name}"}
+        target.update(patrol=back, label=f"patrol to {target['label']}")
     oid = f"{unit}@{t:.0f}#{next(_order_n)}"
-    orders = [Order(sid, t, "goto", target=dict(target, offset_m=offsets[sid].tolist()) if np.any(offsets[sid]) else target,
-                    g=float(g), source="map", order_id=oid, by=unit) for sid in ships]
+    after = queue_tails(fleet, ships, tp, t) if req.get("queue") else {}
+    orders = [Order(sid, t, "queue" if sid in after else "goto", g=float(g), source="map", order_id=oid, by=unit,
+                    target=dict(target, **({"offset_m": offsets[sid].tolist()} if np.any(offsets[sid]) else {}),
+                                **({"after": after[sid]} if sid in after else {})))
+              for sid in ships]
     return order_reply(fleet, t, unit, ships, orders, side)
+
+
+def queue_tails(fleet, ships: list[str], tp: float, t: float) -> dict[str, str]:
+    """For each ship flying an order at tp, the order a new one queued at t follows: the last queued
+    after hers (orders.QUEUE), else hers."""
+    B = fleet.book
+    with fleet.lock:
+        mver = fleet.picture(tp)["mver"]
+    out = {}
+    for sid in ships:
+        i = fleet.c.row[sid]
+        goal = (fleet.versions.said[mver[i]] or {}).get("goal")
+        if goal:
+            oid, q = goal["order_id"], 0
+            while (q := B.queued(i, oid, t)) >= 0:
+                oid = B.of(q).oid
+            out[sid] = oid
+    return out
 
 
 def halt_target(world, sc, fleet, player: str, ships: list[str], t: float, g: float, bid: str) -> dict:

@@ -46,6 +46,8 @@ class ShipSpec:
     pulse_rate_hz: float | None = None
     cruise_g: tuple[float, float] | None = None
     ranges: tuple[dict, ...] = ()      # where each kind of weapon starts to matter (her class's, ships.py _ranges)
+    engage_km: float | None = None     # where she holds to engage: her focus battery's farthest, else her farthest
+    dazzle_km: float | None = None     # where her optics dazzle an open sensor
     store_j: float = 0.0               # her thermal store
     quiet_w: float = 0.0               # what she sheds at rest, wings spread: her quiet load
     cold_s: float = 0.0                # how long she can run cold (wings folded) on an empty store; 0: she cannot
@@ -84,6 +86,8 @@ class ShipSpec:
         if not hull_kg:
             raise SpecError(f"{sc.id}: no mass stated; a ship needs [hull] mass_t")
         cruise = d["cruise"]["band_g"] if d and d.get("cruise") else None
+        rs = getattr(sc, "ranges", ())
+        focus = next((b["raw"].get("label") or b["raw"].get("id") for b in sc.batteries if b["focus"]), None)
         return ShipSpec(
             class_id=sc.id, name=sc.name, symbol=c.get("symbol", ""),
             length_m=float(length) if isinstance(length, (int, float)) else None,
@@ -93,7 +97,9 @@ class ShipSpec:
             exhaust_ms=val(d["exhaust_kms"]) * 1e3 if d and d["exhaust_kms"] else None,
             pulse_rate_hz=val(d["pulse_rate_hz"]) if d else None,
             cruise_g=(cruise.lo, cruise.hi) if cruise else None,
-            ranges=tuple(dict(r) for r in getattr(sc, "ranges", ())),
+            ranges=tuple(dict(r) for r in rs),
+            engage_km=max((r["km"] for r in rs if r["battery"] == focus), default=None) or (rs[0]["km"] if rs else None),
+            dazzle_km=next((r["km"] for r in rs if r["what"] == "dazzle"), None),
             **heat_figures(sc.doc.get("endurance") or {}))
 
     def as_dict(self) -> dict:
@@ -101,7 +107,7 @@ class ShipSpec:
                 "hull_t": {k: v / 1e3 for k, v in self.hull_kg.items()}, "propellant_t": self.propellant_kg / 1e3,
                 "thrust_mn": self.thrust_n and self.thrust_n / 1e6, "exhaust_kms": self.exhaust_ms and self.exhaust_ms / 1e3,
                 "pulse_rate_hz": self.pulse_rate_hz, "cruise_g": self.cruise_g, "has_drive": self.has_drive,
-                "ranges": list(self.ranges), "reach_km": self.reach_km,
+                "ranges": list(self.ranges), "reach_km": self.reach_km, "engage_km": self.engage_km, "dazzle_km": self.dazzle_km,
                 "store_tj": self.store_j / 1e12, "quiet_mw": self.quiet_w / 1e6, "cold_h": self.cold_s / 3600}
 
 

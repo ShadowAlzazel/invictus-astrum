@@ -102,7 +102,9 @@
   const whence = (f) => !f ? '' : f.from === 'ordered' ? `ordered to ${nameOf(f.by)}` : f.from === 'written' ? `written for ${nameOf(f.by)}`
     : f.from === 'profile' ? "the profile's" : f.gone ? `the root (${f.gone} deleted)` : 'the root';
   const SAID = { coast: 'Stop: drive cut', cold: 'Run cold', warm: 'Spread wings', active: 'Ping', passive: 'Go quiet' };
-  const said = (o) => o.kind === 'setg' ? `Telegraph ${o.g ? `${o.g.toFixed(2)} g` : 'cut'}` : o.kind === 'goto' ? `To ${o.label}`
+  const goes = (label) => /^(engage|patrol|attack|hold)/.test(label ?? '') ? label[0].toUpperCase() + label.slice(1) : `To ${label}`;
+  const said = (o) => o.kind === 'setg' ? `Telegraph ${o.g ? `${o.g.toFixed(2)} g` : 'cut'}` : o.kind === 'goto' ? goes(o.label)
+    : o.kind === 'queue' ? `Then ${o.label}`
     : o.kind === 'stance' ? o.label.replace(/(stance|profile) (\S+)/g, (_, k, v) => k === 'stance' ? short(stances[v]) || v
       : `profile ${profiles.find((p) => p.id === v)?.name ?? v}`) : SAID[o.kind] ?? o.label ?? o.kind;
   $: affColor = contact && style ? (style.affiliation[contact.affiliation] ?? style.affiliation.unknown).color : null;
@@ -210,7 +212,7 @@
         {#if !shut.orders}
         {#each orders as o (o.id)}
           <div class="order">
-            <p><b>{o.halt ? 'Decelerate,' : 'To'} {o.label}</b> <span>at {o.g.toFixed(2)} g</span></p>
+            <p><b>{o.halt ? `Decelerate, ${o.label}` : goes(o.label)}</b> <span>at {o.g.toFixed(2)} g</span></p>
             <p class="by dim">given to {nameOf(o.by)} · {o.ships.length} ship{o.ships.length > 1 ? 's' : ''}{o.here < o.ships.length ? `, ${o.here} of them here` : ''}
               {#if master && o.source === 'map'}<button class="withdraw" class:sure={withdrawing === o.id} on:click={() => withdraw(o.id)} on:blur={() => (withdrawing = null)}
                 title="MASTER: take the order back, as if it had never been given">{withdrawing === o.id ? 'Withdraw?' : 'Withdraw'}</button>{/if}</p>
@@ -249,7 +251,7 @@
         <div class="tank" title="propellant"><i style="width:{Math.max(0, Math.min(1, ship.propellant_share)) * 100}%"></i></div>
         {#if ship.goal}
           <div class="order">
-            <p><b>{ship.goal.target?.halt ? 'Decelerate,' : 'To'} {ship.goal.label}</b> <span>at {ship.goal.g.toFixed(2)} g</span></p>
+            <p><b>{ship.goal.target?.halt ? `Decelerate, ${ship.goal.label}` : goes(ship.goal.label)}</b> <span>at {ship.goal.g.toFixed(2)} g</span></p>
             <p class="eta">{hms(ship.goal.eta_s)}{#if arrives} <span>· arrives {arrives}</span>{/if}</p>
             <p class="dim">{km(ship.goal.range_km)} to go · closing {n(ship.goal.closing_kms, 2)} km/s</p>
             {#if ship.goal.in_formation}<p class="dim form">In formation: she keeps her place on {nameOf(ship.goal.by)}. Her own telegraph takes her out of it.</p>{/if}
@@ -307,7 +309,7 @@
           </dl>
           {/if}
         {/if}
-        {#if spec?.has_drive}<p class="dim hint"><kbd>{cap($keymap.order)}</kbd> order her{#if ship.goal} · <kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>{cap($keymap.ranges)}</kbd> weapon ranges{/if}{#if spec.sensors?.length} · <kbd>{cap($keymap.sensing)}</kbd> detection{/if}</p>{/if}
+        {#if spec?.has_drive}<p class="dim hint"><kbd>{cap($keymap.order)}</kbd> move <kbd>{cap($keymap.attack)}</kbd> attack <kbd>{cap($keymap.patrol)}</kbd> patrol{#if ship.goal} · <kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>{cap($keymap.ranges)}</kbd> weapon ranges{/if}{#if spec.sensors?.length} · <kbd>{cap($keymap.sensing)}</kbd> detection{/if}</p>{/if}
       </section>
     {:else if spec && !spec.has_drive}
       <section><h2>Ship</h2><p class="dim">No drive stated for her class; she holds station.</p></section>

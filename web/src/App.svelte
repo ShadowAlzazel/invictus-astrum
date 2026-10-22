@@ -213,11 +213,11 @@
     return best;
   }
   function pointerMove(e) { const m = markAt(e.clientX, e.clientY); map.hover = m ? { kind: m.kind, id: m.id } : null; }
-  function pointerDown(e) { down = { x: e.clientX, y: e.clientY, b: e.button }; }
+  function pointerDown(e) { down = { x: e.clientX, y: e.clientY, b: e.button, shift: e.shiftKey }; }
   async function pointerUp(e) {
     if (ordering && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) {
       if (down.b === 2) { ordering = null; return; }             // right click: cancel
-      if (down.b === 0) return giveOrder();
+      if (down.b === 0) return giveOrder(down.shift);
     }
     if (!down || down.b !== 0 || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return;
     const m = markAt(e.clientX, e.clientY);
@@ -237,14 +237,15 @@
   function say(m) { orderMsg = m; clearTimeout(msgTimer); msgTimer = setTimeout(() => (orderMsg = ''), 3500); }
   // the ships an order from the selection goes to: the ship, or every ship under the formation
   $: selShips = sel?.kind === 'contact' ? shipsUnder(contacts, state, sel.id) : [];
-  function startOrder() {
+  const MODES = { order: 'move', attack: 'attack', patrol: 'patrol' };   // the key's action -> the order's mode
+  function startOrder(mode = 'move') {
     if (sel?.kind !== 'contact' || !selShips.length) return say(`Select a ship or a formation to order: ${cap($keymap.order)}`);
     if (contacts.find((c) => c.id === sel.id)?.track) return say('A track: not ours to order.');
     const able = selShips.filter((id) => contacts.find((c) => c.id === id)?.ship?.has_drive);
     if (!able.length) return say('No ship there has a drive stated; they cannot be ordered to move.');
     const grp = group(state, contacts, able);
     const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
-    ordering = { unit: sel.id, ships: able, g, tilt: 0, plane: orderPlane };
+    ordering = { unit: sel.id, ships: able, g, tilt: 0, plane: orderPlane, mode };
   }
   // a telegraph moved for orders already being flown: only their g changes. With an order
   // ({id, by}) only that order's ships, all of them; without, the selected ship
@@ -305,17 +306,18 @@
     try { await api.withdrawOrder(scenario.id, id, side, playerId); say('Order withdrawn: as if it had never been given'); }
     catch (err) { say(String(err.message ?? err)); }
   }
-  async function giveOrder() {
+  // a click gives the order aimed; Shift-click queues it after what they fly (and keeps aiming)
+  async function giveOrder(queue = false) {
     const aim = orderTool?.aim();
     if (!aim || !scenario) return say('Nothing to aim at there.');
     const o = ordering;
     try {
       const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId, view: side,
-                                  target: aim.target });
+                                  target: aim.target, mode: o.mode, queue });
       const goal = Object.values(r.ships)[0]?.goal;
       const who = `${map.contactName(o.unit)}${o.ships.length > 1 ? ` (${o.ships.length} ships)` : ''}`;
-      say(o.g > 0 ? `${who}: to ${goal?.label ?? aim.label} at ${o.g.toFixed(2)} g` : `${who}: drive cut`);
-      ordering = null;
+      say(o.g <= 0 ? `${who}: drive cut` : queue ? `${who}: queued, then ${aim.label}` : `${who}: ${goal?.label ?? aim.label} at ${o.g.toFixed(2)} g`);
+      if (!queue) ordering = null;
     } catch (err) {
       say(String(err.message ?? err));
     }
@@ -357,9 +359,11 @@
     if (e.key === 'Escape' && showSettings) { showSettings = false; return; }
     if (!inMap) return;                                  // menus have their own keys
     if (ordering) {                                      // aiming an order: its own keys first
-      if (e.key === 'Escape' || is(e, 'order')) { ordering = null; return; }
+      const m = Object.keys(MODES).find((a) => is(e, a));
+      if (e.key === 'Escape' || (m && MODES[m] === ordering.mode)) { ordering = null; return; }
+      if (m) { ordering = { ...ordering, mode: MODES[m] }; return; }      // another kind of order, aimed the same
       if (orderTool?.key(e)) { e.preventDefault(); return; }
-    } else if (is(e, 'order') && mode === 'map') { startOrder(); return; }
+    } else if (Object.keys(MODES).some((a) => is(e, a)) && mode === 'map') { startOrder(MODES[Object.keys(MODES).find((a) => is(e, a))]); return; }
     else if (is(e, 'stop') && mode === 'map') { stopOrder(); return; }
     else if (is(e, 'decel') && mode === 'map') { decelOrder(); return; }
     else if (is(e, 'ping') && mode === 'map') { setPing(); return; }

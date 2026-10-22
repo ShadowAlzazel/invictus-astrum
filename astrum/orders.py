@@ -20,9 +20,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE, STANCE = 0, 1, 2, 3, 4, 5, 6, 7, 8
+GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE, STANCE, QUEUE = 0, 1, 2, 3, 4, 5, 6, 7, 8, 9
 KIND = {"goto": GOTO, "burn": BURN, "setg": SETG, "coast": COAST, "cold": COLD, "warm": WARM,
-        "active": ACTIVE, "passive": PASSIVE, "stance": STANCE}
+        "active": ACTIVE, "passive": PASSIVE, "stance": STANCE, "queue": QUEUE}
 
 
 @dataclass(frozen=True)
@@ -33,18 +33,20 @@ class Given:
     kind: int
     at: float
     target: dict = field(default_factory=dict)     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body};
-                                                   # stance: {stance, profile} (either, or both)
+                                                   # stance: {stance, profile} (either, or both);
+                                                   # queue: a go-to's target, and after: the order it follows
     label: str | None = None
     g: float = 0.0                 # goto: held; setg: the new g
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s
-    source: str = "scenario"
+    source: str = "scenario"       # or "map", or "auto": given by the fleet itself (a leg, a patrol's turn, the AI's)
     retunes: str | None = None     # setg: the order it retunes (None: whichever she flies)
 
 
 class OrderBook:
     COLS = {"at": ((), float, 0.0), "kind": ((), np.int8, GOTO), "ship": ((), np.int64, -1),
             "gid": ((), np.int64, -1), "slot": ((3,), float, 0.0),
-            "struck": ((), np.bool_, False)}          # withdrawn: out of the queue, kept for the record
+            "struck": ((), np.bool_, False),          # withdrawn: out of the queue, kept for the record
+            "auto": ((), np.bool_, False)}            # given by the fleet itself: struck when it is set back before it
 
     def __init__(self):
         self.n, self.cap = 0, 64
@@ -68,6 +70,7 @@ class OrderBook:
         e = self.n
         self.n += 1
         self.at[e], self.kind[e], self.ship[e], self.gid[e], self.slot[e] = g.at, g.kind, ship, gid, slot
+        self.auto[e] = g.source == "auto"
         k = int(np.searchsorted(self._qat, g.at, side="right"))
         self.queue = np.insert(self.queue, k, e)
         self._qat = np.insert(self._qat, k, g.at)
@@ -95,6 +98,20 @@ class OrderBook:
             if key in self.of(e).target:
                 return int(e)
         return -1
+
+    def queued(self, ship: int, after: str, t: float) -> int:
+        """Her QUEUE event before t that follows the order with this id; -1 if none."""
+        q = self.queue[: self.before(t + 2e-6)]
+        for e in q[(self.kind[q] == QUEUE) & (self.ship[q] == ship)][::-1]:
+            if self.of(e).target.get("after") == after:
+                return int(e)
+        return -1
+
+    def auto_after(self, t: float, ships: np.ndarray | None = None) -> np.ndarray:
+        """The events the fleet gave itself after t (for these ships)."""
+        q = self.queue[self.before(t + 2e-6):]
+        q = q[self.auto[q]]
+        return q if ships is None else q[np.isin(self.ship[q], ships)]
 
     def events_of(self, oid: str) -> np.ndarray:
         """The events still in the queue of the order given with this id."""

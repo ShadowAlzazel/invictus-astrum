@@ -7,14 +7,16 @@ export const ACTIONS = {
   faster:   { key: ']', label: 'Clock faster' },
   slower:   { key: '[', label: 'Clock slower' },
   settings: { key: ',', label: 'Settings' },
-  order:    { key: 'a', label: 'Order the selection (again: cancel)' },
+  order:    { key: 'm', label: 'Move: order the selection (again: cancel; Shift-click queues)' },
+  attack:   { key: 'a', label: 'Attack-move: aggressive the whole way, on after each engagement' },
+  patrol:   { key: 'p', label: 'Patrol: to the point and back, over and over, on guard' },
   up:       { key: 'w', label: 'Telegraph up' },
   down:     { key: 's', label: 'Telegraph down' },
   eve:      { key: 'e', label: 'Aim toward Eve' },
   haid:     { key: 'q', label: 'Aim toward Haid' },
   stop:     { key: 'z', label: 'STOP: drop the order, cut the drive, fly on as she goes' },
   decel:    { key: 'x', label: 'DECELERATE: drop the order, turn and burn to rest on the bullseye' },
-  ping:     { key: 'p', label: 'Active sensors: ping, or go quiet (a ping shows the pinger)' },
+  ping:     { key: 'v', label: 'Active sensors: ping, or go quiet (a ping shows the pinger)' },
   plane:    { key: 'b', label: "Orders: her own height or the bullseye's plane" },
   ranges:   { key: 'g', label: 'Weapon ranges (hold)' },
   sensing:  { key: 'r', label: 'Detection ranges (hold)' },
@@ -23,7 +25,7 @@ export const ACTIONS = {
   chain:    { key: 'u', label: 'Up the chain of command' },
   levels:   { key: 'l', label: 'Levels' },
 };
-const STORE = 'astrum.keys';
+const STORE = 'astrum.keys.2';       // (.2: move went to M, ping to V)
 const defaults = () => Object.fromEntries(Object.entries(ACTIONS).map(([a, d]) => [a, d.key]));
 
 function load() {

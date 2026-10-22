@@ -141,7 +141,7 @@
 
 {#if ordering && grp}
   <aside class="telegraph" data-ui>
-    <header><b>Order</b><span>{name}</span>{#if ordering.ships.length > 1}<i>{ordering.ships.length} ships</i>{/if}</header>
+    <header><b>{{ move: 'Move', attack: 'Attack-move', patrol: 'Patrol' }[ordering.mode] ?? 'Order'}</b><span>{name}</span>{#if ordering.ships.length > 1}<i>{ordering.ships.length} ships</i>{/if}</header>
     <div class="body">
       <Telegraph maxG={grp.maxG} cruise={grp.cruise} value={shown}
                  {note}
@@ -152,7 +152,7 @@
     <button class="plane" class:on={onBull} on:click={togglePlane} title="B: Eve and Haid from her own height, or from the bullseye's plane">
       <i></i>{onBull ? "Bullseye's plane" : 'Her own height'}<kbd>{cap($keymap.plane)}</kbd>
     </button>
-    <p class="keys"><kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>{cap($keymap.eve)}</kbd><kbd>{cap($keymap.haid)}</kbd> Eve / Haid · <kbd>{cap($keymap.plane)}</kbd> plane · click to order · <kbd>Esc</kbd> cancel</p>
+    <p class="keys"><kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>{cap($keymap.eve)}</kbd><kbd>{cap($keymap.haid)}</kbd> Eve / Haid · <kbd>{cap($keymap.plane)}</kbd> plane · click to order, <kbd>⇧</kbd>-click to queue · <kbd>{cap($keymap.order)}</kbd><kbd>{cap($keymap.attack)}</kbd><kbd>{cap($keymap.patrol)}</kbd> move, attack, patrol · <kbd>Esc</kbd> cancel</p>
     {#if message}<p class="msg">{message}</p>{/if}
   </aside>
 {:else if message}

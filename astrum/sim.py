@@ -91,7 +91,7 @@ PROBE_S = 60.0                 # the station velocity's finite difference
 BRAKE_MARGIN = 0.9             # a go-to plans to brake on this share of the ordered acceleration
 ARRIVE_M = 2000.0              # arrived: inside this of the aim point ...
 ARRIVE_MS = 10.0               # ... and moving with it to within this
-STANDOFF_UNIT_M = 50e3         # how far short of a unit a go-to stops
+STANDOFF_UNIT_M = 50e3         # how far short of a unit a go-to stops (engaging: her engagement range, if she has one)
 STANDOFF_BODY_R = 3.0          # ... and of a body, in its radii (at least 1,000 km) ...
 STANDOFF_PULL = 0.5            # ... and where its pull is at most this share of what she holds
 CHECKPOINT_S = 600.0           # a checkpoint every block: an order flies again from at most this far before it
@@ -159,7 +159,8 @@ class Order:
     kind: str                      # "burn", "goto", "setg" (a new g for the go-to she is flying), "coast",
                                    # "cold" (fold her wings) or "warm" (spread them), "active" (sweep
                                    # her active sensors: ping) or "passive" (stop), "stance" (her stance
-                                   # or combat profile: target {stance, profile}; read by astrum/ai.py)
+                                   # or combat profile: target {stance, profile}; read by astrum/ai.py),
+                                   # "queue" (a go-to given once she has carried out the order target.after)
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s
     target: dict | None = None     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body}, and a label
     g: float | None = None         # goto: the acceleration to hold, capped at her most
@@ -424,6 +425,7 @@ class Fleet:
 
     def _restore(self, t: float, snap: tuple, station_t: float) -> None:
         rows, leads = snap
+        self._strike_auto(t)
         self.c.restore(rows)
         self.versions.cut_all(self.c.mver[: self.c.n])
         self.leads = {oid: LeadView(self.c, i) for oid, i in leads.items()}
@@ -501,6 +503,7 @@ class Fleet:
                 break
             rows |= more
         scope = np.array(sorted(rows), dtype=np.int64)
+        self._strike_auto(t_k, scope)
         replay = B.given_since(t_k, self._qi, scope)
         self._free_leads(snap[0]["n"], {B.of(e).oid for e in replay if B.kind[e] == GOTO})
         m = self.mending = Mend(rows, scope, t_k, st_t, self.t, replay, given)
@@ -1354,12 +1357,48 @@ class Fleet:
             tg.pop("at_m", None)                      # (a point carried with a body: held off its centre, as any is)
             R = self._point({k: v for k, v in tg.items() if k != "offset_m"}, t)
             tg["offset_m"] = (aim - R).tolist() if R is not None else [0.0, 0.0, 0.0]
-        tg["label"] = self.book.of(c.order[i]).label
+        e = int(c.order[i])
+        tg["label"] = self.book.of(e).label
         c.places.append(tg)
         c.place[i] = len(c.places) - 1
         c.mode[i], c.goal[i], c.order[i], c.burn[i], c.thrust[i] = STATION, False, -1, BURN_NONE, 0.0
         c.r[i], c.t[i] = aim, t
         self._touch(i)
+        if c.kind[i] == SHIP:
+            self._chain(i, t, e)
+
+    # ---- orders the fleet gives itself ----------------------------------------------------------
+    def _chain(self, i: int, t: float, e: int) -> None:
+        """What follows an order she has carried out: a patrol's turn back, else the order queued
+        after it. Given at the block's end after she arrived (_derive)."""
+        B = self.book
+        g = B.of(e)
+        if "patrol" in g.target:
+            back = {k: v for k, v in g.target.items() if k != "patrol"}
+            self._derive(i, t, {**g.target["patrol"], "patrol": back}, g.g, _leg(g.oid), g.by, B.slot[e])
+            return
+        q = B.queued(i, g.oid, t)
+        if q >= 0:
+            G = B.of(q)
+            self._derive(i, t, {k: v for k, v in G.target.items() if k != "after"}, G.g, G.oid, G.by, B.slot[q])
+
+    def _derive(self, i: int, t: float, target: dict, g: float, oid: str, by: str, slot) -> int:
+        """A go-to the fleet gives itself (source "auto"), at the first block end from t: the grid's,
+        so it falls at the same moment however the fleet is flown there. Struck when the fleet is set
+        back before it, and given again as it flies past (_strike_auto)."""
+        B, at = self.book, self._grid_next(t - 1e-6)
+        e = B.add(Given(oid=oid, by=by, kind=GOTO, at=at, target=target, label=target.get("label"), g=g, source="auto"), i, slot)
+        m = self.mending
+        if at < self.t - 1e-6 and m is not None:   # flown again (an order's rows on their way): given in the past
+            self._qi += 1
+            m.replay = np.insert(m.replay, int(np.searchsorted(B.at[m.replay], at, side="right")), e)
+        return e
+
+    def _strike_auto(self, t: float, rows: np.ndarray | None = None) -> None:
+        """Orders the fleet gave itself after t (on these rows): struck, given again as it flies past."""
+        ev = self.book.auto_after(t, rows)
+        if len(ev):
+            self._qi -= int((self.book.strike(ev) < self._qi).sum())
 
     def _coast(self, i: int) -> None:
         c = self.c
@@ -1391,7 +1430,8 @@ class Fleet:
             self._leave_station(i, at)
             tg, stand = g.target, 0.0
             if "unit" in tg:
-                stand = STANDOFF_UNIT_M
+                km = c.spec[i].engage_km if tg.get("engage") and c.spec[i] is not None else None
+                stand = tg.get("stand_m") or (km * 1e3 if km else STANDOFF_UNIT_M)
             elif "body" in tg and "at_m" not in tg:
                 b = next((b for b in self.system.massive() if b.id == tg["body"]), None)
                 a = min(g.g * G0, c.max_accel(i))
@@ -1457,3 +1497,9 @@ class Fleet:
         if p1 is not None and p2 is not None:
             c.r[i], c.v[i] = p1, (p2 - p1) / PROBE_S
         c.t[i] = t
+
+
+def _leg(oid: str) -> str:
+    """The id of a patrol's next leg: the order's, counted on (x, x~1, x~2...)."""
+    base, _, n = oid.rpartition("~")
+    return f"{base}~{int(n) + 1}" if base and n.isdigit() else f"{oid}~1"

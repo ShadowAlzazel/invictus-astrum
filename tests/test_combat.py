@@ -76,3 +76,45 @@ def test_a_stance_is_ordered_inherited_and_kept_in_the_ledger(tmp_path):
     assert f["stance"] == "guard" and f["profile"] is None and f["ships"] > 3
     assert c.get("/api/engagement/sol-demo/kiki-2", params={**q, "t": t - 60}).json()["stance"] == "return-fire"
     assert c.get("/api/engagement/sol-demo/ghost-1", params={**q, "view": "arcvs"}).status_code in (400, 403)
+
+
+def _legs(fleet, sid):
+    B, i = fleet.book, fleet.c.row[sid]
+    q = B.queue
+    return [(float(B.at[e]), B.of(e).label) for e in q[(B.ship[q] == i) & B.auto[q]]]
+
+
+def test_a_patrol_shuttles_and_a_queue_follows_the_same_after_a_rewind(tmp_path):
+    c, world = _app(tmp_path)
+    fleet = world.fleet(world.scenarios["sol-demo"])
+    t = fleet.t0 + 600
+    o = {"scenario": "sol-demo", "player": "arcvs", "t": t, "g": 0.3}
+    assert c.post("/api/order", json={**o, "unit": "kiki-1", "mode": "patrol",
+                                      "target": {"bullseye": "burn", "aer": [0, 0, 20000]}}).status_code == 200
+    c.post("/api/order", json={**o, "unit": "kiki-2", "target": {"bullseye": "burn", "aer": [90, 0, 20000]}})
+    c.post("/api/order", json={**o, "unit": "kiki-2", "queue": True, "target": {"bullseye": "burn", "aer": [180, 0, 20000]}})
+    c.post("/api/order", json={**o, "unit": "kiki-2", "queue": True, "target": {"bullseye": "burn", "aer": [270, 0, 20000]}})
+    fleet.reach(t + 86400)
+    patrol, queue = _legs(fleet, "kiki-1"), _legs(fleet, "kiki-2")
+    assert len(patrol) > 4 and all(l.startswith("patrol to") for _, l in patrol)
+    assert [a for a, _ in patrol] == sorted(a for a, _ in patrol) and all(abs((a - fleet.t0) / 600 - round((a - fleet.t0) / 600)) < 1e-6 for a, _ in patrol)
+    assert [l[:3] for _, l in queue] == ["180", "270"]
+    fleet.advance(t + 3 * 3600)                       # set back: what it gave itself since is struck, and given again
+    fleet.reach(t + 86400)
+    assert (_legs(fleet, "kiki-1"), _legs(fleet, "kiki-2")) == (patrol, queue)
+    c.post("/api/order", json={**o, "unit": "kiki", "t": t + 3 * 3600, "stance": "guard"})   # flown again from then
+    fleet.reach(t + 86400)
+    assert (_legs(fleet, "kiki-1"), _legs(fleet, "kiki-2")) == (patrol, queue)
+
+
+def test_an_order_onto_another_sides_ship_engages_at_her_focus_range(tmp_path):
+    c, world = _app(tmp_path)
+    sc = world.scenarios["sol-demo"]
+    fleet = world.fleet(sc)
+    foe = next(cid for cid, x in sc.contacts.items() if cid in fleet.c.row and world.factions.head(x.faction) == "ghost")
+    t = fleet.t0 + 600
+    r = c.post("/api/order", json={"scenario": "sol-demo", "view": "master", "unit": "kiki-1", "t": t, "g": 0.3,
+                                   "target": {"unit": foe}}).json()
+    assert r["ship"]["goal"]["label"].startswith("engage") and r["ship"]["goal"]["target"]["engage"]
+    i = fleet.c.row["kiki-1"]
+    assert fleet.c.stand[i] == fleet.c.spec[i].engage_km * 1e3

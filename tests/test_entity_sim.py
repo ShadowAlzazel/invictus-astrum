@@ -1155,7 +1155,7 @@ def test_a_view_orders_only_its_own():
     assert fr["ships"][g[0]]["mass_t"] is None and "g1" in fr["contacts"]          # the scenario's own side's intel
     r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-1", "t": t, "g": 0.3, "player": "arcvs",
                                    "target": {"unit": g[0]}})
-    assert r.status_code == 200 and r.json()["ship"]["goal"]["target"]["unit"] == g[0] and r.json()["ship"]["goal"]["label"] == "Bogey"
+    assert r.status_code == 200 and r.json()["ship"]["goal"]["target"]["unit"] == g[0] and r.json()["ship"]["goal"]["label"] == "engage Bogey"
     assert c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-1", "t": t, "g": 0.3, "player": "arcvs",
                                       "target": {"unit": "ghost-1"}}).status_code == 400   # not by her own id
     meta = c.get("/api/meta", params={"view": "ghost"}).json()
