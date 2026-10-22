@@ -28,6 +28,8 @@ FIELDS = {                             # name -> (shape after the row, dtype, em
     "r": ((3,), float, math.nan), "v": ((3,), float, 0.0), "prop": ((), float, 0.0), "dvs": ((), float, 0.0),
     "aim": ((3,), float, 0.0), "thrust": ((), float, 0.0), "rng": ((), float, math.nan), "clos": ((), float, math.nan),
     "eta1": ((), float, math.inf), "arrive": ((), float, math.nan),
+    "dir": ((3,), float, 0.0),                 # where her hull points: her drive's axis
+    "heat": ((), float, 0.0), "cold": ((), float, 0.0),
 }
 HOW = ("aim", "thrust", "rng", "clos", "eta1", "arrive")    # how her order stands: only one order's samples mix
 
@@ -197,8 +199,15 @@ class Timeline:
             "prop": e0["prop"] + (e1["prop"] - e0["prop"]) * u,
             "dvs": e0["dvs"] + (e1["dvs"] - e0["dvs"]) * u,
         }
-        # how her order stands: drawn straight between samples of the same order, else the side of hers
+        # where her hull points and her store: drawn straight between the samples
         x = (t - ta) / self.dt if kb > ka else 0.0
+        out["heat"] = A["heat"] + (B["heat"] - A["heat"]) * x
+        out["cold"] = A["cold"]                            # (folded or not, as at the sample before)
+        d = A["dir"] + (B["dir"] - A["dir"]) * x
+        with np.errstate(invalid="ignore", divide="ignore"):
+            n_ = np.linalg.norm(d, axis=1, keepdims=True)
+            out["dir"] = np.where(n_ > 0, d / np.where(n_ > 0, n_, 1.0), A["dir"])
+        # how her order stands: drawn straight between samples of the same order, else the side of hers
         same, side = (va == vt) & (vb == vt), (vb == vt) & (kb > ka)
         for k in HOW:
             a, b = A[k], B[k]

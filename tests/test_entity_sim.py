@@ -966,3 +966,91 @@ def test_no_ship_passes_a_surface_and_bodies_are_stood_off_by_their_pull():
     f.at(t0 + 3 * 3600 + 1200)
     jupiter = next(b for b in w.systems["sol"].massive() if b.id == "jupiter")
     assert f.c.stand[j] == pytest.approx(math.sqrt(jupiter.gm / (0.5 * 0.05 * G0)), rel=1e-9)
+
+
+# ---- heat, signature and the player's picture ----------------------------------------------------
+
+def test_her_store_fills_cold_and_empties_warm():
+    """A stamina bar from her class: a PHALAENA's 5 TJ fills in her 48 h cold; full, she spreads her
+    wings, and spread, it empties four times faster. A fixed-wing cutter cannot run cold."""
+    from astrum.app import create_app
+    w = create_app().state.world
+    f = _demo(w)
+    i, j = f.c.row["kiki-2"], f.c.row["luna-patrol-1"]          # PHALAENA (starts cold), BACILLUS
+    assert f.c.cold[i] and f.c.coldt[i] == pytest.approx(48 * 3600)
+    f.at(f.t0 + 24 * 3600)
+    assert f.c.cold[i] and f.c.heat[i] / f.c.store[i] == pytest.approx(0.5, abs=1e-6)
+    f.at(f.t0 + 54 * 3600)
+    assert not f.c.cold[i] and f.c.heat[i] / f.c.store[i] == pytest.approx(0.5, abs=1e-6)
+    assert "kiki-2: her store is full; she spread her wings" in f.findings
+    f.command(Order("luna-patrol-1", f.t, "cold", source="map"), Order("kiki-2", f.t, "cold", source="map"))
+    assert not f.c.cold[j] and f.c.cold[i]
+    assert any("luna-patrol-1" in x and "cannot run cold" in x for x in f.findings)
+    p = f.picture(f.t0 + 24 * 3600)                              # and the timeline keeps it
+    assert p["cold"][i] == 1.0 and p["heat"][i] / f.c.store[i] == pytest.approx(0.5, abs=1e-4)
+
+
+def test_a_plume_is_brightest_from_astern():
+    from astrum.signature import Signature
+    s = Signature()
+    axis = np.array([[1.0, 0, 0]] * 3)                          # her hull points along +x: her plume goes to -x
+    toward = np.array([[-1.0, 0, 0], [0, 1.0, 0], [1.0, 0, 0]])  # astern, abeam, ahead
+    p = s.plume(np.full(3, 100e6), np.full(3, 1e7), axis, toward)
+    assert p[0] == pytest.approx(0.5 * 100e6 * 1e7) and p[0] > p[1] > p[2] and p[2] == pytest.approx(0.005 * p[0])
+    assert list(s.radiators(np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0]), np.full(3, 10e6))) == \
+        pytest.approx([0.1e6, 10e6, 50e6])                       # cold; warm, store empty; warm, emptying
+
+
+def test_others_are_seen_as_their_light_left_them():
+    """The JADF's flight off Jupiter is not the ARCVS player's: it is shown where it was when its light
+    reached the nearest ARCVS ship, its burn seen, nothing of what only it knows. ARCVS's own as they are."""
+    import json
+    from astrum.app import create_app
+    from astrum.simhost import SimHost
+    w = create_app().state.world
+    host = SimHost(w)
+    f = _demo(w)
+    f.command(Order("jove-1", f.t0 + 600, "burn", burn={"g": 0.3, "bullseye": "system", "bearing": 90, "elevation": 0,
+                                                         "duration_s": 7200}, source="map"))
+    t = f.t0 + 2 * 3600
+    f.reach(t + 600)
+    fr = json.loads(host.frame({"system": "sol", "t": t, "player": "arcvs", "scenario": "sol-demo"}, conn=1))
+    seen, ours = fr["ships"]["jove-1"], fr["ships"]["kiki-1"]
+    i = f.c.row["jove-1"]
+    then = f.picture(t - seen["seen_s"])["r"][i]
+    own = host._own(w.scenarios["sol-demo"], f, "arcvs")
+    nearest = np.min(np.linalg.norm(f.picture(t)["r"][own] - then, axis=1))
+    assert seen["seen_s"] == pytest.approx(nearest / 299792458.0, rel=1e-4)
+    assert np.linalg.norm(np.array(fr["contacts"]["jove-1"]) * 1e3 - then) < 10.0
+    assert np.linalg.norm(f.picture(t)["r"][i] - then) > 100e3                 # she has moved on since
+    assert seen["burning"] and seen["sig_w"] > 1e13
+    assert seen["mass_t"] is None and seen["goal"] is None and seen["cold"] is None
+    assert ours["seen_s"] is None and ours["mass_t"] > 0 and ours["cold"] is True
+    w.config["picture"] = {"light_delay": False, "hide_private": False}         # both off: the truth
+    fr = json.loads(host.frame({"system": "sol", "t": t, "player": "arcvs", "scenario": "sol-demo"}, conn=2))
+    assert np.allclose(np.array(fr["contacts"]["jove-1"]) * 1e3, f.picture(t)["r"][i], atol=10.0)
+    assert fr["ships"]["jove-1"]["mass_t"] > 0
+
+
+def test_wings_are_folded_from_the_map():
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, w = TestClient(app), app.state.world
+    f = w.fleet(w.scenarios["sol-demo"])
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "tf3-lf4-bs", "t": f.t0 + 600, "cold": True})
+    assert r.status_code == 200
+    f.at(f.t0 + 1200)
+    assert all(f.c.cold[f.c.row[f"tf3-lf4-bs-{k}"]] for k in range(1, 5))
+
+
+def test_wings_show_folded_or_spread_at_the_moment_given():
+    """Between two samples, a wing order shows from its own moment, not from the next sample."""
+    from astrum.app import create_app
+    f = _demo(create_app().state.world)
+    t = f.t0 + 3600 + 25.0                                     # between whole minutes
+    f.reach(t + 1800)
+    i = f.c.row["kiki-2"]
+    assert f.picture(t)["cold"][i] == 1.0
+    f.command(Order("kiki-2", t, "warm", source="map"))
+    assert f.picture(t - 1)["cold"][i] == 1.0 and f.picture(t)["cold"][i] == 0.0 and f.picture(t + 20)["cold"][i] == 0.0

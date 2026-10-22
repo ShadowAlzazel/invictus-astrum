@@ -15,9 +15,10 @@ import numpy as np
 
 from .classis import FREE, STATION
 from .entity import G0
+from .picture import PRIVATE
 
 SCALARS = ("mass_t", "dry_t", "propellant_t", "propellant_share", "dv_left_kms", "dv_spent_kms",
-           "max_accel_g", "accel_g", "thrust_mn", "jet_pw")
+           "max_accel_g", "accel_g", "thrust_mn", "jet_pw", "glow_mw", "heat_share", "cold_left_h", "seen_s", "sig_w")
 GOAL_SCALARS = ("g", "eta_s", "range_km", "closing_kms")
 
 
@@ -45,8 +46,10 @@ def _values(a: np.ndarray) -> list:
     return out
 
 
-def ship_columns(fleet, pic: dict, t: float, n: int) -> dict:
-    """Every ship row's figures at t, from a picture of the rows (Timeline.at, or the rows now)."""
+def ship_columns(fleet, pic: dict, t: float, n: int, seen: dict | None = None) -> dict:
+    """Every ship row's figures at t, from a picture of the rows (Timeline.at, or the rows now), as
+    the player is shown them (seen: astrum/picture.py view): how old what is shown is and how
+    bright she looks, and nothing of what only she knows for the rows hidden."""
     c = fleet.c
     dry, pmax, fmax, ve = c.dry[:n], c.pmax[:n], c.fmax[:n], c.ve[:n]
     prop, thrust = pic["prop"][:n], pic["thrust"][:n]
@@ -59,6 +62,12 @@ def ship_columns(fleet, pic: dict, t: float, n: int) -> dict:
             "dv_left_kms": np.where(drive, ve * np.log(m / dry), 0.0) / 1e3, "dv_spent_kms": pic["dvs"][:n] / 1e3,
             "max_accel_g": np.where(drive, fmax / m, 0.0) / G0, "accel_g": thrust / m / G0,
             "thrust_mn": thrust / 1e6, "jet_pw": 0.5 * thrust * ve / 1e15,
+            # her heat: what her wings shed now, her store, and how long she can still run cold
+            "glow_mw": fleet.signature.radiators(pic["cold"][:n], pic["heat"][:n], c.quiet[:n]) / 1e6,
+            "heat_share": np.where(c.store[:n] > 0, pic["heat"][:n] / c.store[:n], np.nan),
+            "cold_left_h": np.where(c.coldt[:n] > 0, (c.store[:n] - pic["heat"][:n]) / np.where(c.quiet[:n] > 0, c.quiet[:n], 1.0) / 3600, np.nan),
+            "seen_s": seen["seen_s"] if seen else np.full(n, np.nan),
+            "sig_w": seen["sig_w"] if seen else np.full(n, np.nan),
         }
     cols = {k: sig6(v) for k, v in cols.items()}
     cols["burning"] = thrust > 0
@@ -81,6 +90,13 @@ def ship_columns(fleet, pic: dict, t: float, n: int) -> dict:
     cols["aim_km"] = np.round(aim / 1e3, 3)
     cols["eta_flown"] = np.isfinite(arrive)
     cols["mver"] = pic["mver"][:n]
+    cols["cold"] = np.where(c.coldt[:n] > 0, (pic["cold"][:n] > 0.5).astype(float), np.nan)
+    hidden = seen["hidden"] if seen else np.zeros(n, dtype=bool)
+    if hidden.any():                                   # what only she knows
+        for k in PRIVATE:
+            cols[k] = np.where(hidden, np.nan, cols[k])
+        cols["goal_on"] = cols["goal_on"] & ~hidden
+        cols["mver"] = np.where(hidden, 0, cols["mver"])
     return cols
 
 
@@ -118,6 +134,8 @@ class ShipEncoder:
                     d[k] = val[k][i]
             if changed["burning"][i]:
                 d["burning"] = bool(cols["burning"][i])
+            if changed["cold"][i]:
+                d["cold"] = None if np.isnan(cols["cold"][i]) else bool(cols["cold"][i])
             if changed["velocity_kms"][i]:
                 d["velocity_kms"] = val["velocity_kms"][i]
             if changed["mode"][i]:

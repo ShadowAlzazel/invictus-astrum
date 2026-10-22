@@ -13,12 +13,15 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 175 tests
+python -m pytest -q tests             # 181 tests
 ```
 
 The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
 `run_ahead = false` under `[sim]` in `config.toml` turns it off (each picture then flies the fleet
-there itself; everything else works the same).
+there itself; everything else works the same). What a player is shown is made from the
+simulation's truth by functions, each a switch under `[picture]`: other factions' ships seen as
+their light left them (`light_delay`), and what only they know kept back (`hide_private`); both
+off shows everything.
 
 Frontend work: `python serve.py` in one terminal, `cd web && npm run dev` in another (live
 reload on :5173, proxied to the server).
@@ -91,7 +94,7 @@ above it comes down to it.
 | `style.toml` | colours, affiliation frames, echelon marks, formation roles (built from blocks, each an APP-6 mark: battle, line, picket, supply, forward, point defence, escort, signal), body display sizes by role |
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |
 | `settings.toml` | your settings, written by the map; overrides `display.toml`; not committed (delete to reset) |
-| `config.toml` | paths, port, clock start, orbit sampling |
+| `config.toml` | paths, port, clock start, orbit sampling, the run-ahead, and what a player is shown ([picture]) |
 | `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server; the fleet (`classis.py`, `sim.py`), its order book (`orders.py`), timeline (`timeline.py`) |
 | `web/` | the map (Svelte + Three.js) |
 | `tools/formation_tf2.py` | lays out the demo's Task Force 2 wedge; edit its numbers and rerun |

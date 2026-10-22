@@ -73,6 +73,7 @@ class Player:
     id: str
     name: str
     bullseyes: dict[str, Bullseye]
+    faction: str | None = None          # whose ships are hers (that faction's and its branches'): data/factions.toml
 
 
 def load_players(path: str | Path) -> dict[str, Player]:
@@ -89,7 +90,7 @@ def load_players(path: str | Path) -> dict[str, Player]:
             if be.id in bulls:
                 raise BullseyeError(f"player {p['id']!r}: bullseye id {be.id!r} is used twice")
             bulls[be.id] = be
-        players[p["id"]] = Player(p["id"], p.get("name", p["id"]), bulls)
+        players[p["id"]] = Player(p["id"], p.get("name", p["id"]), bulls, p.get("faction"))
     return players
 
 
@@ -134,7 +135,8 @@ def load_factions(path: str | Path) -> dict[str, dict]:
             problems.append(f"faction {fid}: needs a name")
         if "branch_of" in spec and "member_of" in spec:
             problems.append(f"faction {fid}: a branch of one faction, or a member's force: not both")
-        out[fid] = {"id": fid, "name": spec.get("name", fid), "prefix": spec.get("prefix", "")}
+        out[fid] = {"id": fid, "name": spec.get("name", fid), "prefix": spec.get("prefix", ""),
+                    "parent": spec.get("branch_of", "")}         # a branch's faction, by id: its ships are its players'
         for key in ("branch_of", "member_of"):
             other = spec.get(key)
             if other is not None and (other not in every or other == fid):

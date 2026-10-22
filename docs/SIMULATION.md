@@ -29,6 +29,51 @@ simulation needs them.
 The rocket equation is exact over every step: a held acceleration a burns m₁ = m₀·exp(−a·dt/vₑ);
 a held thrust F burns m₁ = m₀ − F·dt/vₑ. A held acceleration is never more than the drive's ceiling.
 
+## Heat: her stamina bar
+
+Each class's heat comes from its canon `[endurance]`, turned into three simple figures (ShipSpec):
+her thermal store, how long she can run cold, and what she sheds at rest (her quiet load: stated,
+or the store over the cold time). PAPILION: 10.8 TJ, 36 h, 83 MW. PHALAENA: 5 TJ, 48 h, 29 MW.
+AESHNA: 45.4 TJ, 8 days, 66 MW. BACILLUS and SALTICIDAE have fixed wings and never run cold
+(19 MW; SALTICIDAE's 20 MW is a placeholder); COCCINELLA never runs cold (0.56 GW at her dimmest).
+
+| Wings | What she sheds | Her store |
+|---|---|---|
+| folded (`cold` order, or `status = ["cold"]` in the scenario) | 1% of her quiet load | fills at her quiet load; full, she must spread her wings, at that moment |
+| spread (`warm` order) | her quiet load, and her store emptying on top of it | empties four times faster than it filled |
+
+The share kept folded and the rate it empties are `data/ships/rules.toml [signature]`, marked
+temporary until detection calibrates them. Her store is two columns of the Classis and the
+timeline, so a checkpoint, a re-fly and a picture keep it like anything else.
+
+## What she gives off
+
+Two sources (`astrum/signature.py`), arithmetic on columns, every ship at once:
+
+- **Her plume:** the jet power, ½ × thrust × exhaust velocity (a PHALAENA at full thrust: 627 TW),
+  times the share seen at that angle off her tail: where her hull points (the drive's axis, a
+  column, sampled every minute) says which way the plume goes. From dead astern all of it, abeam
+  a fifth, from dead ahead half a percent (`plume_aspect`, temporary).
+- **Her radiators:** as the table above.
+
+## What a player is shown
+
+The simulation knows everything; a player is shown a picture made from it by functions
+(`astrum/picture.py`), each on or off in `config.toml [picture]`:
+
+- **light_delay:** a ship that is not the player's own (her faction's, or a branch's:
+  `data/players.toml faction`) is shown where she was when the light that reaches the nearest of
+  the player's own ships now left her, with her burn, her hull and her heat then. Those come from
+  the fleet's own pictures at past whole minutes, kept, drawn by Hermite between (`Fleet.past`):
+  what was flown is read back, not flown again. How bright she looks to that ship, plume and
+  wings, goes with her (`sig_w`).
+- **hide_private:** of such a ship, what only she knows (her tanks, her mass, her drive's figures,
+  her orders, her store) is not sent.
+
+The player's own ships are shown as they are. Both off: the truth (a referee's view). To come:
+detection (what sensors make of what reaches them) and relay (what reaches the player, and when).
+The light delay costs about half a millisecond a picture.
+
 ## Modes
 
 | Mode | What she does | What it costs |

@@ -27,6 +27,21 @@ export function lightTime(rangeKm) {
   return `${n(s / 31557600, 2)} yr`;
 }
 
+// a power, W, in the unit that reads best: 19 MW, 236 TW
+export function watts(w) {
+  if (w == null || !isFinite(w)) return '—';
+  const [div, unit] = [[1e15, 'PW'], [1e12, 'TW'], [1e9, 'GW'], [1e6, 'MW'], [1e3, 'kW'], [1, 'W']].find(([d]) => Math.abs(w) >= d) ?? [1, 'W'];
+  return `${n(w / div, w / div < 10 ? 2 : w / div < 100 ? 1 : 0)} ${unit}`;
+}
+
+// an age in seconds, as it reads: 8.0 s, 41 min 12 s, 2 h 04 min
+export function age(s) {
+  if (s == null || !isFinite(s)) return '—';
+  if (s < 60) return `${n(s, 1)} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, '0')} s`;
+  return `${Math.floor(s / 3600)} h ${String(Math.round((s % 3600) / 60)).padStart(2, '0')} min`;
+}
+
 export const bearing = (deg) => String(Math.round(((deg % 360) + 360) % 360) % 360).padStart(3, '0') + '°';
 // Eve above the bullseye plane, Haid below; the word carries the sign
 export const elev = (deg) => (Math.abs(deg) < 0.05 ? 'Level' : `${deg > 0 ? 'Eve' : 'Haid'} ${n(Math.abs(deg), Math.abs(deg) < 10 ? 1 : 0)}°`);

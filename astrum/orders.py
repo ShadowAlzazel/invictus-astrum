@@ -20,8 +20,8 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-GOTO, BURN, SETG, COAST = 0, 1, 2, 3
-KIND = {"goto": GOTO, "burn": BURN, "setg": SETG, "coast": COAST}
+GOTO, BURN, SETG, COAST, COLD, WARM = 0, 1, 2, 3, 4, 5
+KIND = {"goto": GOTO, "burn": BURN, "setg": SETG, "coast": COAST, "cold": COLD, "warm": WARM}
 
 
 @dataclass(frozen=True)

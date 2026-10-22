@@ -1,6 +1,6 @@
 <script>
   // What is selected: a body, a unit, or a point in space (probed on the server).
-  import { km, kmFull, n, bearing, elev, lightTime, duration } from './format.js';
+  import { km, kmFull, n, bearing, elev, lightTime, duration, watts, age } from './format.js';
   import { hms, group, shipsUnder, orderGroups } from './orders.js';
   import { unitSymbol } from './symbols.js';
   import Telegraph from './Telegraph.svelte';
@@ -18,6 +18,7 @@
   export let onselect = () => {};   // pick another unit: a member, or the formation above
   export let onretune = () => {};   // (g, now, order): a telegraph moved; order {id, by} for one order, else the selection
   export let onwithdraw = () => {}; // (order id): take an order from the map back, as if never given
+  export let oncold = () => {};     // (cold): fold her wings (run cold) or spread them
   let withdrawing = null;           // the order asked about once: a second click takes it back
   const withdraw = (id) => { if (withdrawing !== id) { withdrawing = id; return; } withdrawing = null; onwithdraw(id); };
 
@@ -34,6 +35,8 @@
   // a ship in the simulation: what she is now (the server flies her), and what her class gives her
   $: ship = contact ? state?.ships?.[contact.id] ?? null : null;
   $: spec = contact?.ship ?? null;
+  // another's ship is shown as seen: where she was when her light reached one of ours, none of what only she knows
+  $: seenOnly = ship ? ship.mass_t == null : false;
   $: arrives = ship?.goal?.eta_s != null && state?.utc && isFinite(ship.goal.eta_s)
     ? new Date(Date.parse(state.utc) + ship.goal.eta_s * 1000).toISOString().slice(11, 16) + ' UTC' : null;
   // the ships under this formation, and the orders they fly: each order its own telegraph
@@ -70,7 +73,7 @@
     try { localStorage.setItem(FOLD_KEY, JSON.stringify(shut)); } catch { /* not remembered */ }
   }
   $: affColor = contact && style ? (style.affiliation[contact.affiliation] ?? style.affiliation.unknown).color : null;
-  $: doing = !ship ? '' : ship.goal ? (ship.burning ? `on her order, ${ship.accel_g.toFixed(2)} g` : 'on her order, coasting') : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
+  $: doing = !ship ? '' : seenOnly ? (ship.burning ? 'seen burning' : 'as seen') : ship.goal ? (ship.burning ? `on her order, ${ship.accel_g.toFixed(2)} g` : 'on her order, coasting') : ship.burning ? `burning ${ship.burn?.g != null ? `${ship.burn.g} g` : `${Math.round((ship.burn?.throttle ?? 1) * 100)}%`}`
     : ship.mode === 'station' ? 'holding station' : 'coasting';
   // every ship under a formation, counted by class: what the formation is made of
   $: makeup = contact && members.length ? tally(contact.id) : [];
@@ -182,7 +185,19 @@
         <p class="dim hint">{#if orders.length === 1}<kbd>W</kbd><kbd>S</kbd> telegraph · {/if}<kbd>A</kbd> a new order for all of them</p>
       </section>
     {/if}
-    {#if ship}
+    {#if ship && seenOnly}
+      <section class="ship">
+        <h2>Ship <span class="dim">{doing}</span></h2>
+        <dl class="tight">
+          <dt>Seen</dt><dd>{age(ship.seen_s)} ago</dd>
+          <dt class="sub">her light, to the nearest of ours</dt><dd class="sub"></dd>
+          <dt>Drive</dt><dd class:hot={ship.burning}>{ship.burning ? 'burning' : 'not burning'}</dd>
+          <dt>Signature</dt><dd>{watts(ship.sig_w)}</dd>
+          <dt class="sub">her wings</dt><dd class="sub">{watts(ship.glow_mw * 1e6)}</dd>
+          {#if ship.velocity_kms}<dt>Speed</dt><dd>{n(Math.hypot(...ship.velocity_kms), 2)} km/s</dd>{/if}
+        </dl>
+      </section>
+    {:else if ship}
       <section class="ship">
         <h2>Ship <span class="dim">{doing}</span></h2>
         <div class="tank" title="propellant"><i style="width:{Math.max(0, Math.min(1, ship.propellant_share)) * 100}%"></i></div>
@@ -218,6 +233,18 @@
           {#if spec?.length_m}<dt>Length</dt><dd>{n(spec.length_m)} m</dd>{/if}
           {#if spec?.cruise_g}<dt>Cruise band</dt><dd>{spec.cruise_g[0]}–{spec.cruise_g[1]} g</dd>{/if}
         </dl>
+        {/if}
+        <h3><button class="fold" class:shut={shut.heat} on:click={() => flip('heat')}><i></i>Heat</button>{#if shut.heat} <span class="dim">{ship.cold ? `cold · ${n(ship.cold_left_h, 1)} h left` : `radiating ${watts(ship.glow_mw * 1e6)}`}</span>{/if}</h3>
+        {#if !shut.heat}
+          {#if ship.cold != null}<div class="tank heat" title="her thermal store"><i style="width:{Math.max(0, Math.min(1, ship.heat_share ?? 0)) * 100}%"></i></div>{/if}
+          <dl class="tight">
+            <dt>Wings</dt><dd class:cool={ship.cold}>{ship.cold ? 'folded: running cold' : ship.cold === false ? 'spread' : 'fixed'}</dd>
+            {#if ship.cold != null}<dt>Cold time left</dt><dd>{n(ship.cold_left_h, 1)} h <span class="dim">of {n(spec?.cold_h, 0)}</span></dd>{/if}
+            {#if ship.heat_share != null}<dt>Store</dt><dd>{n(ship.heat_share * 100, 1)}% <span class="dim">of {n(spec?.store_tj, 1)} TJ</span></dd>{/if}
+            <dt>Radiating</dt><dd>{watts(ship.glow_mw * 1e6)}</dd>
+          </dl>
+          {#if ship.cold != null}<button class="act" on:click={() => oncold(!ship.cold)}
+            title={ship.cold ? 'Spread her wings: she sheds her heat and empties her store, glowing the brighter for it' : 'Fold her wings: she sheds little while her store fills'}>{ship.cold ? 'Spread wings' : 'Run cold'}</button>{/if}
         {/if}
         {#if spec?.ranges?.length}
           <h3><button class="fold" class:shut={shut.weapons} on:click={() => flip('weapons')}><i></i>Weapons</button>{#if shut.weapons} <span class="dim">{spec.ranges.map((r) => `${r.what} ${km(r.km)}`).join(' · ')}</span>{/if}</h3>
@@ -299,6 +326,8 @@
   .makeup { margin-top: 6px; font-size: 11px; }
   .tank { height: 3px; background: var(--rule); margin: 2px 0 8px; }
   .tank i { display: block; height: 100%; background: var(--cyan, #9ff0ff); }
+  .tank.heat i { background: #ff8a5c; }            /* her store filling: the heat she holds */
+  .cool { color: var(--cyan, #9ff0ff); }
   dl.tight { margin: 0; padding-top: 0; border-top: 0; }
   dt.sub, dd.sub { font-size: 10px; margin-top: -3px; }
   dd.hot { color: var(--fuchsia); }

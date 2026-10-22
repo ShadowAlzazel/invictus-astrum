@@ -38,6 +38,9 @@ count = 20
 at_km = 100
 kills_per_s = { value = 8, approx = true }
 
+[endurance]
+quiet_mw = { value = 560, approx = true, note = "her dimmest: covers closed, grade I" }   # she never runs cold
+
 [tending]
 radiating_gw = { "fully expanded" = 23, "covers open" = 5.8, closed = 3.4 }
 cold_carried_tj = { value = 76, est = true, note = "up to, in her loaded mass" }

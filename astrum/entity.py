@@ -6,7 +6,8 @@ batteries and everything else stay with the class. A Ship is one hull: a spec, a
 changes as she flies.
 
     ShipSpec    frozen: length, hull mass per ammunition load (tanks dry), tank capacity,
-                thrust at the pulse ceiling, exhaust velocity, pulse rate, cruise band
+                thrust at the pulse ceiling, exhaust velocity, pulse rate, cruise band, and her heat:
+                her thermal store, what she sheds at rest, how long she can run cold
     ShipState   what changes: time, position and velocity (system frame, SI), propellant,
                 what the drive is doing, Δv spent
     Ship        a spec, a load, a state; the rocket's arithmetic
@@ -45,6 +46,13 @@ class ShipSpec:
     pulse_rate_hz: float | None = None
     cruise_g: tuple[float, float] | None = None
     ranges: tuple[dict, ...] = ()      # where each kind of weapon starts to matter (her class's, ships.py _ranges)
+    store_j: float = 0.0               # her thermal store
+    quiet_w: float = 0.0               # what she sheds at rest, wings spread: her quiet load
+    cold_s: float = 0.0                # how long she can run cold (wings folded) on an empty store; 0: she cannot
+
+    @property
+    def can_cold(self) -> bool:
+        return self.cold_s > 0 and self.store_j > 0
 
     @property
     def has_drive(self) -> bool:
@@ -85,14 +93,37 @@ class ShipSpec:
             exhaust_ms=val(d["exhaust_kms"]) * 1e3 if d and d["exhaust_kms"] else None,
             pulse_rate_hz=val(d["pulse_rate_hz"]) if d else None,
             cruise_g=(cruise.lo, cruise.hi) if cruise else None,
-            ranges=tuple(dict(r) for r in getattr(sc, "ranges", ())))
+            ranges=tuple(dict(r) for r in getattr(sc, "ranges", ())),
+            **heat_figures(sc.doc.get("endurance") or {}))
 
     def as_dict(self) -> dict:
         return {"class_id": self.class_id, "name": self.name, "length_m": self.length_m,
                 "hull_t": {k: v / 1e3 for k, v in self.hull_kg.items()}, "propellant_t": self.propellant_kg / 1e3,
                 "thrust_mn": self.thrust_n and self.thrust_n / 1e6, "exhaust_kms": self.exhaust_ms and self.exhaust_ms / 1e3,
                 "pulse_rate_hz": self.pulse_rate_hz, "cruise_g": self.cruise_g, "has_drive": self.has_drive,
-                "ranges": list(self.ranges), "reach_km": self.reach_km}
+                "ranges": list(self.ranges), "reach_km": self.reach_km,
+                "store_tj": self.store_j / 1e12, "quiet_mw": self.quiet_w / 1e6, "cold_h": self.cold_s / 3600}
+
+
+def heat_figures(endurance: dict) -> dict:
+    """Her heat as the simulation keeps it, from her class's [endurance] as the canon states it:
+    her thermal store (thermal_store_tj); how long she runs cold with her wings folded (cold_h's
+    "wings folded", or a "cold" entry of working_days); what she sheds at rest (quiet_mw if stated,
+    else what fills the store in that time: store / cold time). No cold figure: she cannot fold
+    her wings (or it is not stated) and never runs cold."""
+    num = lambda x: x.get("value") if isinstance(x, dict) and "value" in x else x if isinstance(x, (int, float)) else None
+    store = (num(endurance.get("thermal_store_tj")) or 0.0) * 1e12
+    cold_s = 0.0
+    hours = endurance.get("cold_h")
+    if isinstance(hours, dict):
+        cold_s = (num(next((v for k, v in hours.items() if "wings folded" in k), None)) or 0.0) * 3600
+    elif num(hours):
+        cold_s = num(hours) * 3600
+    days = endurance.get("working_days")
+    if not cold_s and isinstance(days, dict):
+        cold_s = (num(next((v for k, v in days.items() if "cold" in k), None)) or 0.0) * 86400
+    quiet = (num(endurance.get("quiet_mw")) or 0.0) * 1e6 or (store / cold_s if store and cold_s else 0.0)
+    return {"store_j": store, "quiet_w": quiet, "cold_s": cold_s}
 
 
 @dataclass

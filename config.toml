@@ -23,3 +23,7 @@ start = "system"       # "system" = each system's own epoch, "now" = the wall cl
 orbit_samples = 360    # points per drawn orbit
 table_days = 60        # body positions worked out up front, from each game's start (the rest as it goes)
 run_ahead = true       # a worker keeps the fleet flown ahead of the map's clock; off, each picture flies it there
+
+[picture]              # what a player is shown, made from the simulation's truth (astrum/picture.py); both off: all of it
+light_delay = true     # a ship not her own is shown where she was when her light reached the nearest of her own
+hide_private = true    # ... and what only that ship knows (tanks, orders, store) is not shown

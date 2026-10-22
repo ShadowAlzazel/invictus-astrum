@@ -6,10 +6,12 @@
 # up:      "system" | "ecliptic" | "galactic" | "icrs" | "pole:<body>" | [x, y, z]
 # ref:     "system" | "vernal-equinox" | "galactic-centre" | "toward:<body>" | [x, y, z]
 # roll_deg turns 000 clockwise about Eve.
+# faction: the faction whose ships (and its branches') are the player's own (data/factions.toml).
 
 [[player]]
 id = "arcvs"
 name = "ARCVS Vanguard"
+faction = "arcvs"            # her own ships: ARCVS's and its branches' (AVC, AAG). Every other is seen as it was
 
   # Doctrine: before sync the TACAN centre is the burn end, oriented by galactic markers, in the
   # launch system's up. Here: a point carried with Earth, 1.2 million km out of the plane (Eve).

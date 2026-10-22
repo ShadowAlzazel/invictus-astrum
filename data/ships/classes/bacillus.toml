@@ -52,4 +52,5 @@ kills_per_s = { value = 6.4, approx = true }
 
 [endurance]
 thermal_store_tj = 2.4
+quiet_mw = 19                # her quiet load, shed by her fixed wings: she never runs cold
 notes = "Runs indefinitely on her fixed wings; guns at full cycle, about 37 hours."

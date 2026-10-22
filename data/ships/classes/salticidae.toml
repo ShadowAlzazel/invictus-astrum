@@ -89,4 +89,5 @@ reach = "located to a few km at 10,000 km, by her masts"
 
 [endurance]
 thermal_store_tj = 2.8
+quiet_mw = { value = 20, est = true, note = "TEMPORARY: not yet stated; a BACILLUS's 19 MW, scaled up a little" }   # fixed wings: she never runs cold
 notes = "She watches and relays indefinitely; all optics working, about 58 hours."

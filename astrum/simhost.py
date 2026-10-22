@@ -31,6 +31,7 @@ import traceback
 
 import numpy as np
 
+from . import picture
 from .encode import ShipEncoder, ship_columns
 from .loader import contact_positions
 from .placement import plan
@@ -97,7 +98,8 @@ def give_order(world, req: dict) -> dict:
     """An order at the map's clock, for one ship or for every ship under a formation.
     target: {bullseye, aer: [deg, deg, km]} (the ordering player's bullseye, so the point moves
     with its frame), {unit}, or {body}. g is the acceleration held, each ship capped at her most;
-    0 cuts the drive. keep_target: only the g of the order they are flying changes.
+    0 cuts the drive. keep_target: only the g of the order they are flying changes. cold: true
+    folds their wings (they run cold, as long as their stores last), false spreads them.
     A formation's ships each keep their offset from the formation as it stands now, so they
     arrive laid out as they left, not on one point."""
     world.check()
@@ -106,6 +108,14 @@ def give_order(world, req: dict) -> dict:
         raise OrderRefused(404, f"no scenario {req.get('scenario')!r}")
     fleet = world.fleet(sc)
     unit, g, t = req.get("unit"), req.get("g"), req.get("t")
+    if isinstance(req.get("cold"), bool) and isinstance(t, (int, float)):
+        with fleet.lock:
+            fleet.reach(float(t), ORDER_BUDGET_S)
+        ships = order_ships(world, sc, fleet, unit)
+        if not ships:
+            raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
+        kind = "cold" if req["cold"] else "warm"
+        return order_reply(fleet, float(t), unit, ships, [Order(sid, float(t), kind, source="map") for sid in ships])
     if not isinstance(g, (int, float)) or g < 0 or not isinstance(t, (int, float)):
         raise OrderRefused(400, "an order needs t, and g of 0 or more")
     t = float(t)
@@ -161,6 +171,7 @@ class SimHost:
     def __init__(self, world, run_ahead: bool = False):
         self.world = world
         self._encoders: dict = {}                       # connection -> what it has been sent
+        self._owns: dict = {}                           # (fleet, player, data version) -> which rows are the player's own
         self.ahead = RunAhead(world) if run_ahead else None
         self.arrivals = Arrivals(world)
 
@@ -223,7 +234,7 @@ class SimHost:
         if fleet is not None:
             if self.ahead is not None:
                 self.ahead.want(sc.id, fleet, t)
-            t, ids, cols, flown = self._ships_at(fleet, t)
+            t, ids, cols, flown = self._ships_at(fleet, t, self._own(sc, fleet, req.get("player")))
             ships, full = enc.encode(fleet, cols, ids, (sid, sc.id, world.version, id(fleet)))
         else:
             enc.key = None
@@ -244,15 +255,29 @@ class SimHost:
             "magnetopause_km": {b.id: round(m * KM, 1) for b in s if (m := magnetopause(s, pos, b))},
         })
 
-    def _ships_at(self, fleet, t: float):
-        """The ships at t (or as near as the fleet could be got): (the moment, ids, their figures,
-        {id: position}). Read off the timeline, the fleet got ready for it first (Fleet.reach)."""
+    def _own(self, sc, fleet, player: str | None):
+        """Which of the fleet's ships are the player's own (astrum/picture.py own_rows), kept."""
+        world = self.world
+        key = (id(fleet), player or sc.player, world.version, len(fleet.c.row))
+        got = self._owns.get(key)
+        if got is None:
+            if len(self._owns) > 32:
+                self._owns.clear()
+            p = world.players.get(player or sc.player)
+            got = self._owns[key] = picture.own_rows(fleet, world.factions, p.faction if p else None)
+        return got
+
+    def _ships_at(self, fleet, t: float, own):
+        """The ships at t (or as near as the fleet could be got), as the player is shown them
+        (astrum/picture.py): (the moment, ids, their figures, {id: position}). Read off the
+        timeline, the fleet got ready for it first (Fleet.reach)."""
         with fleet.lock:
             t = fleet.reach(t, FRAME_BUDGET_S)
             pic = fleet.picture(t)
             n = len(fleet.c.row)
             ids = fleet.c.ids[:n]
-            cols = ship_columns(fleet, pic, t, n)
+            seen = picture.view(fleet, pic, t, own, self.world.config["picture"])
+            cols = ship_columns(fleet, pic, t, n, seen)
             flown = {ids[i]: pic["r"][i] for i in range(n) if np.isfinite(pic["r"][i]).all()}
         return t, ids, cols, flown
 

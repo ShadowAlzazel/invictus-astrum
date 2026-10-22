@@ -202,6 +202,13 @@
     };
     if (now) send(); else retuneTimer = setTimeout(send, 250);
   }
+  async function setCold(cold) {
+    if (!scenario || sel?.kind !== 'contact') return;
+    try {
+      await api.order({ scenario: scenario.id, unit: sel.id, t, cold });
+      say(`${map.contactName(sel.id)}: ${cold ? 'wings folded, running cold' : 'wings spread'}`);
+    } catch (err) { say(String(err.message ?? err)); }
+  }
   async function withdrawOrder(id) {
     try { await api.withdrawOrder(scenario.id, id); say('Order withdrawn: as if it had never been given'); }
     catch (err) { say(String(err.message ?? err)); }
@@ -454,7 +461,7 @@
 {#if !showSettings}
 <InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
-  onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} />
+  onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold} />
 {/if}
 {/if}
 

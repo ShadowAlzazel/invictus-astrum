@@ -55,6 +55,11 @@ COLUMNS = {
     "arrive_at": ((), float, math.nan),        # her flight ahead to the target: when it gets there (may be inf) ...
     "predicted": ((), float, math.nan),        # ... and when it was asked for (from her state then; nan: not yet)
     "nmem": ((), np.int64, 0),                 # a lead: the ships it was made from (its point is their mean)
+    # her heat: her thermal store and what fills it (her class's, ShipSpec), and how she runs now
+    "store": ((), float, 0.0), "quiet": ((), float, 0.0),
+    "coldt": ((), float, 0.0),                 # how long she can run cold on an empty store (0: she cannot)
+    "heat": ((), float, 0.0),                  # what her store holds now
+    "cold": ((), np.bool_, False),             # wings folded: running cold, her store filling
 }
 
 
@@ -103,6 +108,7 @@ class Classis:
                 self.pmax[i] = spec.propellant_kg
                 self.fmax[i] = spec.thrust_n or 0.0
                 self.ve[i] = spec.exhaust_ms or 0.0
+                self.store[i], self.quiet[i], self.coldt[i] = spec.store_j, spec.quiet_w, spec.cold_s
         return i
 
     # ---- checkpoints --------------------------------------------------------------------------

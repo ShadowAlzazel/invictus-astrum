@@ -119,3 +119,16 @@ order = 10
 # when fully loaded is shown, with the thrust it would need. A class may give its own cruise_g.
 [drive]
 cruise_g = [0.4, 0.5]
+
+# ---- signature: what makes a ship seen, as the simulation keeps it --------------------------------
+# Each class gives its heat in [endurance] (thermal store, cold time, quiet load); these turn it, and
+# her drive, into what she gives off. TEMPORARY values are marked: step 3 (detection) calibrates
+# them against the sensors' stated reaches.
+[signature]
+# Her plume: the drive's jet power (thrust x exhaust velocity / 2), seen at an angle off her tail
+# (0: from dead astern, looking up the plume; 180: from dead ahead, the hull in the way). Degrees,
+# and the share of the jet power seen there, drawn straight between. TEMPORARY.
+plume_aspect = [[0, 1.0], [45, 0.6], [90, 0.2], [135, 0.03], [180, 0.005]]
+cold_share = 0.01    # wings folded, what she still sheds, as a share of her quiet load. TEMPORARY
+recover = 4          # wings spread, her store empties this many times faster than it filled. TEMPORARY
+

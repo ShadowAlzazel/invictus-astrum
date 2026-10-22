@@ -25,6 +25,7 @@ CONFIG_SCHEMA = {
     "server": {"host": str, "port": int},
     "live": {"check_seconds": float},
     "sim": {"start": str, "orbit_samples": int, "table_days": float, "run_ahead": bool},
+    "picture": {"light_delay": bool, "hide_private": bool},
 }
 
 
