@@ -749,7 +749,9 @@ apart (rounded up from the moment asked), so every map of a side asks for the sa
 does not time them by their round trip (a pushed picture has none): it draws a tenth of a second
 of the clock's wall time behind the newest picture it was sent, running on at the warp and eased
 onto each new one, so there is always a picture after the moment it draws, and keeps the last
-twelve to draw between. It is made once (`SimHost._picture`: the ships read off the timeline, the
+twelve to draw between. With `[server] pictures = "ask"` a map asks instead: for its next as each
+lands (at most 60 a second, however fast it draws), on moments a 60th of a second apart, its clock
+timed by the round trip; less delay, more requests. It is made once (`SimHost._picture`: the ships read off the timeline, the
 side's view and tracks, the bodies, bullseyes and units placed, the message's JSON) and kept a few
 moments; each map is then sent only what changed of the ships since its own last picture. Any
 order, a withdrawal, a dismissed track or a level action, and every new event in the order book (the

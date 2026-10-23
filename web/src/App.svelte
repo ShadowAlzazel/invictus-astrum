@@ -71,6 +71,7 @@
   let t = 0, warpS = 3600, paused = true, last = 0, raf;
   let clockAt = null;                   // { t, warp, paused, wall }: the level's clock, as the last picture told it
   const BUFFER_S = 0.1;                 // drawn this far behind the newest picture: two pushes (and their jitter) to draw between
+  let pictureMode = 'push';             // the server's [server] pictures: 'push' (sent unasked) or 'ask' (each asked for as the last lands)
   let levels = [], levelId = null, listed = null, levelNote = '';   // Play's list, the level on the map, the one chosen in the list
   $: level = levels.find((l) => l.id === levelId) ?? null;
   const scenarioIn = (lid, sid) => levels.find((l) => l.id === lid)?.systems.find((x) => x.id === sid)?.scenario ?? null;
@@ -259,7 +260,9 @@
     if (s.error) { error = s.error; return; }
     // a level's clock, from the pictures themselves: the map draws BUFFER_S of the clock's wall time
     // behind the newest it was sent, so there is always a picture after the moment it draws
-    if (s.clock?.level === levelId) clockAt = { ...s.clock, t: s.t - (s.clock.paused ? 0 : s.clock.warp * BUFFER_S), wall: performance.now() };
+    // (asked for: timed by the round trip, as it was sent half of one ago)
+    if (s.clock?.level === levelId) clockAt = pictureMode === 'ask' ? { ...s.clock, wall: performance.now() - 500 * stream.rtt }
+      : { ...s.clock, t: s.t - (s.clock.paused ? 0 : s.clock.warp * BUFFER_S), wall: performance.now() };
     if (s.system !== systemId) return;
     s.ships = mergeShips(state?.system === s.system ? state.ships : null, s.ships ?? {}, s.full);
     if (!s.tracks) s.tracks = s.full ? {} : state?.tracks ?? {};     // sent when they change
@@ -282,7 +285,9 @@
     // the level's moment and that much of its wall time on (the server's clock); else at this one's
     const lead = Math.min(0.25, 1.5 * stream.rtt + 1 / 60);
     if (!systemId) return;
-    if (levelId && mode === 'map') stream.watch({ level: levelId, system: systemId, player: playerId, view: side, picture: game });   // (sent unasked)
+    const ask = { level: levelId, system: systemId, player: playerId, view: side, picture: game };
+    if (levelId && mode === 'map' && pictureMode === 'ask') stream.ask({ ...ask, lead, step: 1 / 60 });     // its next as each lands, a 60th apart
+    else if (levelId && mode === 'map') stream.watch(ask);                                                  // (sent unasked)
     else stream.request({ system: systemId, t: t + (paused ? 0 : warpS * lead), player: playerId, picture: game });
   }
   // the clock's controls: a level's asked of the server (it answers how the clock stands), else this map's
@@ -681,7 +686,7 @@
       await loadMeta();
       await openSystem(meta.systems.find((s) => s.id === 'sol')?.id ?? meta.systems[0].id);   // behind the menu: still
       await loadLevels();
-      ({ auth: authOn, user: you } = await api.me());
+      ({ auth: authOn, user: you, pictures: pictureMode = 'push' } = await api.me());
       if (authOn && !you) mode = 'signin';
       else if (authOn) openLobby();
     } catch (e) { error = 'Cannot reach the server. Start it with: python serve.py'; }

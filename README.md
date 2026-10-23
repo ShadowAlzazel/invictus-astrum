@@ -67,7 +67,9 @@ and sets the lobby's **rules**: whether anyone may pause it and set its warp (el
 alone: a member's clock bar is locked), whether anyone may switch sides while it runs, and whether
 a side may be played by several (else one member each: a side taken shows whose it is). Once it
 runs, everyone in it takes the map, and the server sends each map 20 pictures a second unasked
-(`[server] picture_hz`). On the server,
+(`[server] picture_hz`); `pictures = "ask"` has each map ask for its next as each lands instead, up
+to 60 a second (smoothest on one machine or a LAN, with less delay: the map does not draw a tenth
+of a second behind). On the server,
 every picture and order of a member is made as the lobby grants: its level, their side and that
 side's player, whatever the map asked; a GHOST member cannot order an ARCVS ship, nor see one GHOST
 has not seen. The host leaving, the next member is host; the last one leaving closes the lobby

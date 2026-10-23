@@ -18,6 +18,9 @@ profiles  = "profiles.toml"     # combat profiles commanders make on the map; wr
 host = "127.0.0.1"     # "0.0.0.0": every machine on the network may open the map
 port = 8010
 auth = true            # sign in (data/users.toml), and every request is made as the lobby grants: its level, your side
+pictures = "push"      # "push": the server sends each map in a running level picture_hz pictures a second, unasked
+                       # (the map draws 0.1 s behind the newest); "ask": each map asks for its next as each lands,
+                       # up to 60 a second, its clock timed by the round trip (smoothest on one machine or a LAN)
 picture_hz = 20        # pictures a second the server sends each map in a running level, unasked
 orders_limit = 100     # orders one user may give ...
 orders_span_s = 10.0   # ... in this many seconds; more are refused until the span has passed

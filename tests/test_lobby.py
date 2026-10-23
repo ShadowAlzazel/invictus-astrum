@@ -39,7 +39,7 @@ def _members(m):
 def test_signing_in(server):
     app, c = server
     assert c.post("/api/signin", json={"name": "halsey", "password": "nope"}).status_code == 401
-    assert c.get("/api/me").json() == {"user": None, "auth": True, "lobby": None}
+    assert c.get("/api/me").json() == {"user": None, "auth": True, "lobby": None, "pictures": "push"}
     h = _signed(c, "halsey")                             # (any case)
     assert c.get("/api/me", headers=h).json()["user"] == "Halsey"
     assert c.post("/api/order", json={}, headers=h).status_code != 401
@@ -174,3 +174,30 @@ def test_an_order_is_given_once_by_its_id_and_a_user_may_not_flood():
         assert await gate.give("b", "x5", {"u": 3}, send(7)) == ("given", 7)       # another user's own span
     asyncio.run(run())
     assert given == [1, 4, 5, 7]
+
+
+def test_asked_pictures_are_answered_once_each():
+    """[server] pictures = "ask": a map watching a level is sent a picture only when it asks (as
+    each lands), none unasked; /api/me says which the server does."""
+    import time
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    from astrum.config import load_config
+    cfg = load_config()
+    cfg["server"] = {**cfg["server"], "pictures": "ask"}
+    app = create_app(cfg, auth=True)
+    with TestClient(app) as c:
+        h = _signed(c, "Scipio")
+        assert c.get("/api/me", headers=h).json()["pictures"] == "ask"
+        with c.websocket_connect("/ws/lobby", headers=h) as lobby:
+            for m in ({"do": "make", "level": "cislunar"}, {"do": "side", "side": "jadf"}, {"do": "start"}):
+                lobby.send_json(m)
+            _until(lobby, lambda m: next(x for x in m["levels"] if x["id"] == "cislunar")["clock"] and _members(m).get("Scipio"))
+            with c.websocket_connect("/ws", headers=h) as ws:
+                ws.send_json({"level": "cislunar", "system": "sol", "lead": 0.02, "step": 1 / 60})
+                first = ws.receive_json()
+                time.sleep(0.3)                                    # (pushed, a few would be waiting by now)
+                ws.send_json({"level": "cislunar", "system": "sol", "lead": 0.02, "step": 1 / 60})
+                second = ws.receive_json()
+        assert first["full"] and not second["full"] and second["t"] - first["t"] > 3600 * 0.25  # fresh: not one pushed and queued since
+    app.state.sim.close()

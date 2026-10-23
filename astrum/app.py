@@ -848,7 +848,8 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     def me(request: Request):
         """Who this browser is signed in as (None), and whether the server asks."""
         user = user_of(request)
-        return {"user": user, "auth": auth, "lobby": (lb := lobbies.of(user)) and lb.id}
+        return {"user": user, "auth": auth, "lobby": (lb := lobbies.of(user)) and lb.id,
+                "pictures": "ask" if config["server"].get("pictures") == "ask" else "push"}
 
     @app.websocket("/ws/lobby")
     async def lobby_ws(sock: WebSocket):
@@ -1189,11 +1190,11 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         try:
             while True:
                 req = await sock.receive_json()
-                if req.get("level"):                     # a level's: watched, and sent PICTURE_HZ a second unasked
+                if req.get("level") and not asking:      # a level's: watched, and sent PICTURE_HZ a second unasked
                     w.req = {**req, "lead": 2 / hz, "step": 1 / hz}      # two pushes ahead, on moments a push apart
                     watching[conn] = w
                     await send_picture(w)
-                else:                                    # a system's bodies, at the moment it says: answered once
+                else:                                    # a system's bodies at the moment it says, or (asking) a level's: answered once
                     watching.pop(conn, None)
                     w.req = None
                     text = await sim.call("frame", (bound(req, user), conn))
@@ -1208,6 +1209,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
 
     # ---- pictures pushed: every map watching a running level, PICTURE_HZ a second ------------------
     hz = config["server"]["picture_hz"]
+    asking = config["server"].get("pictures") == "ask"          # each map asks for its own instead (as each lands)
 
     class Watch:
         """A map's picture socket: the level it watches, as it asked (bound again each time: the

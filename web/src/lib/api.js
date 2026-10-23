@@ -82,7 +82,10 @@ export class StateStream {
     };
     this.ws.onclose = () => { this.busy = false; setTimeout(() => this._open(), 1000); };
   }
-  request(req) { this.watching = null; this.want = req; this._send(); }
+  request(req) { this.watching = null; this.asking = null; this.want = req; this._send(); }
+  // a level's pictures, asked for ([server] pictures = "ask"): asked again the moment each lands,
+  // at most 60 a second, however fast the map draws (the server says the moment: its clock's)
+  ask(req) { this.watching = null; this.asking = req; this._send(); }
   // a level's pictures: asked for once (again only when what is asked changes), then sent by the
   // server some 20 times a second, unasked
   watch(req) {
@@ -92,10 +95,13 @@ export class StateStream {
     if (this.ws.readyState === 1) this.ws.send(text);
   }
   _send() {
-    if (this.busy || !this.want || this.ws.readyState !== 1) return;
+    const want = this.want ?? this.asking;
+    if (this.busy || !want || this.ws.readyState !== 1) return;
+    const wait = (this._sent ?? 0) + 1000 / 60 - performance.now();
+    if (this.asking && wait > 0) { clearTimeout(this._later); this._later = setTimeout(() => this._send(), wait); return; }
     this.busy = true;
     this._sent = performance.now();
-    this.ws.send(JSON.stringify(this.want));
+    this.ws.send(JSON.stringify(want));
     this.want = null;
   }
 }
