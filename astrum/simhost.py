@@ -10,9 +10,12 @@ answers from it:
     an order    given to the fleet: if the fleet has flown past it, only the rows it touches fly
                 again (Fleet.command)
 
-A run-ahead worker keeps every fleet someone watches ahead of their clock: by how fast the clock
-runs (three seconds of it, from ten minutes to twelve hours), so the timeline is there before it
-is asked for. Another thread answers when each order gets there (Fleet.arrivals): an order is
+The clock is a LEVEL's (astrum/level.py): the host starts a level, and from then its clock runs
+here, watched or not. A picture of a running level is of its moment (a little ahead, for the map's
+way there), an order on it is given at its moment, whatever the map's clock said; a request with
+no level (a system's preview, a test, a tool) says its own moment. A run-ahead worker keeps every
+running level's fleets ahead of its clock (three seconds of it, from ten minutes to twelve hours),
+so the timeline is there before it is asked for, and gives the AI the level's moment. Another thread answers when each order gets there (Fleet.arrivals): an order is
 given, and flown, on the one-dimensional estimate, and its time to target flown ahead under gravity
 a few milliseconds after, run-ahead or not.
 
@@ -44,6 +47,7 @@ from .loader import contact_positions
 from .placement import plan
 from .entity import G0
 from .frames import to_aer
+from .level import Clock
 from .sim import BLOCK_S, STANDOFF_BODY_R, Order
 from .timescale import iso
 from .zones import magnetopause
@@ -53,7 +57,7 @@ FRAME_BUDGET_S = 0.05         # wall time a picture may spend getting the fleet 
 ORDER_BUDGET_S = 0.05         # ... and an order: past it, the order waits for the fleet to get there (queued)
 LOOKAHEAD_WALL_S = 3.0        # the run-ahead keeps this much of the clock's wall time ahead ...
 LOOKAHEAD_S = (600.0, 12 * 3600.0)   # ... within these (sim seconds); the timeline holds a day and a half
-IDLE_S = 60.0                 # a fleet nobody has asked about for this long is left alone
+LEAD_WALL_S = 0.25            # a picture is asked for at most this much of the clock's wall time ahead
 ARRIVALS_POLL_S = 0.005       # how often the arrivals thread looks for questions
 BRAKE_SHARE = 0.9             # of what she holds, what guidance brakes with (kernels._guide): where a halt comes to rest
 DRIFT_S = 60.0                # how a bullseye's frame moves, read over this
@@ -489,7 +493,8 @@ class SimHost:
         self._encoders: dict = {}                       # connection -> what it has been sent
         self._sides: dict = {}                          # (scenario, fleet, data version, view) -> the side's table (Side)
         self._dismissed: dict = {}                      # (scenario, view) -> old tracks it removed: ship -> minute last seen
-        self.ahead = RunAhead(world) if run_ahead else None
+        self.clocks: dict[str, Clock] = {}              # level -> its game clock, once the host starts it
+        self.ahead = RunAhead(self) if run_ahead else None
         self.arrivals = Arrivals(world)
         self.ai = AI(world)                             # the AI: a subscriber of each side's picture, giving orders
         self.pictures = Pictures(world, self, threaded=run_ahead and world.config["sim"]["ai"])
@@ -500,6 +505,12 @@ class SimHost:
         if kind == "frame":
             req, conn = payload
             return self.frame(req, conn)
+        if kind == "level":
+            return self.level(payload)
+        if kind == "levels":                           # how each running level's clock stands
+            return {lid: c.as_dict() for lid, c in self.clocks.items()}
+        if kind in ("order", "engagement"):            # on a running level: at its moment
+            payload = self.at_clock(payload)
         if kind == "order":
             try:
                 out = {"ok": True, "reply": give_order(self.world, payload, self._side, self.ai.overrule)}
@@ -583,6 +594,48 @@ class SimHost:
             "profile_name": each[0]["profile_name"] if all(x["profile"] == each[0]["profile"] for x in each) else None}
         return {**out, "unit": unit, "ships": len(ships), "veterancy": sc.contacts[unit].veterancy if unit in sc.contacts else None, "ledger": orders}
 
+    # ---- the levels ------------------------------------------------------------------------------
+    def level(self, req: dict) -> dict:
+        """The host's hand on a level's clock. start: its clock made at the level's start, running
+        at its warp (nothing ticks before); run, pause; warp: at req["warp"]; restart: from its
+        start again, its fleets built afresh from their scenarios; stop: no clock, no fleets.
+        Returns {ok, clock} (clock None once stopped)."""
+        lv = self.world.levels.get(req.get("id") or "")
+        if lv is None:
+            return {"ok": False, "status": 404, "detail": f"no level {req.get('id')!r}"}
+        do, clock = req.get("do"), self.clocks.get(lv.id)
+        if do == "start":
+            clock = clock or self.clocks.setdefault(lv.id, Clock(self.world.level_start(lv), lv.warp))
+        elif clock is None:
+            return {"ok": False, "status": 409, "detail": f"{lv.name} is not running: start it"}
+        elif do in ("run", "pause"):
+            clock.set(paused=do == "pause")
+        elif do == "warp" and isinstance(req.get("warp"), (int, float)):
+            clock.set(warp=req["warp"])
+        elif do in ("restart", "stop"):
+            for sc in lv.scenarios:                      # its fleets go; the next ask builds them afresh
+                self.world.fleets.pop(sc, None)
+                self.pictures.forget(sc)
+                for key in [k for k in self._dismissed if k[0] == sc]:
+                    del self._dismissed[key]
+            if do == "stop":
+                del self.clocks[lv.id]
+                return {"ok": True, "clock": None}
+            clock.set(t=self.world.level_start(lv))
+        else:
+            return {"ok": False, "status": 400, "detail": "do is start, run, pause, warp (with warp), restart or stop"}
+        return {"ok": True, "clock": clock.as_dict()}
+
+    def clock_of(self, scenario: str | None) -> Clock | None:
+        """The clock of the running level a scenario is played in, if it runs."""
+        lv = self.world.level_of(scenario or "")
+        return self.clocks.get(lv.id) if lv else None
+
+    def at_clock(self, req: dict) -> dict:
+        """A request on a running level, at its moment (what the map's clock said goes)."""
+        clock = self.clock_of(req.get("scenario"))
+        return {**req, "t": clock.now()} if clock is not None else req
+
     def stop(self) -> None:
         self.arrivals.stop()
         self.pictures.stop()
@@ -602,14 +655,23 @@ class SimHost:
         if got is None:
             return json.dumps({"error": f"no system {sid!r}", "system": sid})
         s, eph = got
-        asked = t = float(req.get("t", world.start_time(s)))
-        sc = world.scenarios.get(req.get("scenario") or "")
+        lid, clock = req.get("level"), None
+        if lid is not None:                              # a level's: at its moment, and of its scenario there
+            lv, clock = world.levels.get(lid), self.clocks.get(lid)
+            if lv is None or clock is None or sid not in (x.id for x in lv.systems):
+                return json.dumps({"error": f"level {lid!r} is not running" if lv else f"no level {lid!r}",
+                                   "system": sid, "stopped": lid})
+            now = clock.now()
+            lead = 0.0 if clock.paused else clock.warp * min(max(float(req.get("lead") or 0.0), 0.0), LEAD_WALL_S)
+            asked = t = now + lead
+            sc = world.scenarios.get(lv.scenario_in(sid) or "")
+        else:
+            asked = t = float(req.get("t", world.start_time(s)))
+            sc = world.scenarios.get(req.get("scenario") or "")
         fleet = world.fleet(sc) if sc and sc.system == sid else None
         enc = self._encoders.setdefault(conn, ShipEncoder())
         ships, full, flown = {}, True, {}
         if fleet is not None:
-            if self.ahead is not None:
-                self.ahead.want(sc.id, fleet, t)
             self.pictures.clock(sc, fleet, t)
             side = self._side(sc, fleet, world.side(sc, req.get("view"), req.get("player")))
             switches = resolve(world.config["picture"], req.get("picture"))
@@ -633,7 +695,9 @@ class SimHost:
             if full or tracks != enc.tracks:             # its tracks as it knows them: when that changes
                 out["tracks"] = enc.tracks = tracks
         return json.dumps({
-            "t": t, "utc": iso(t), "behind_s": asked - t, "system": sid, "version": world.version, "source": eph.source(t),
+            "t": t, "utc": iso(t), "behind_s": asked - t, "system": sid,
+            **({"clock": {"level": lid, **clock.as_dict(), "t": now}} if clock is not None else {}),     # the level's, now
+            "version": world.version, "source": eph.source(t),
             "bodies": _km_all(list(pos), np.array(list(pos.values()))),
             **({"bodies_kms": {k: np.round(v * KM, 6).tolist() for k, (_, v) in states.items()}} if states else {}),
             "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
@@ -668,34 +732,16 @@ class SimHost:
 
 
 class RunAhead:
-    """Keeps the fleets someone watches ahead of their clock, in a thread of its own; the compiled
-    step lets go of the interpreter, so pictures and orders are answered while it flies."""
+    """The levels' tick, in a thread of its own: keeps every running level's fleets ahead of its
+    clock, watched or not, and gives the AI the level's moment (Pictures.clock). The compiled step
+    lets go of the interpreter, so pictures and orders are answered while it flies."""
 
-    def __init__(self, world):
-        self.world = world
-        self._wants: dict[str, dict] = {}
-        self._lock = threading.Lock()
+    def __init__(self, host):
+        self.host, self.world = host, host.world
         self._wake = threading.Event()
         self._stop = False
         self._thread = threading.Thread(target=self._loop, name="run-ahead", daemon=True)
         self._thread.start()
-
-    def want(self, sid: str, fleet, t: float) -> None:
-        """A picture was asked for at t: keep the fleet ahead of it, by how fast the clock runs."""
-        now = time.monotonic()
-        with self._lock:
-            w = self._wants.get(sid)
-            if w is None or w["fleet"] is not fleet:
-                w = self._wants[sid] = {"fleet": fleet, "t": t, "wall": now, "warp": 0.0}
-            else:
-                dw = now - w["wall"]
-                if dw > 0.02:
-                    rate = max(0.0, (t - w["t"]) / dw)
-                    w["warp"] = rate if w["warp"] == 0 else 0.7 * w["warp"] + 0.3 * rate
-                    w["t"], w["wall"] = t, now
-                else:
-                    w["t"] = max(w["t"], t)
-        self._wake.set()
 
     def stop(self) -> None:
         self._stop = True
@@ -704,22 +750,24 @@ class RunAhead:
     def _loop(self) -> None:
         while not self._stop:
             busy = False
-            with self._lock:
-                wants = list(self._wants.items())
-            for sid, w in wants:
-                if time.monotonic() - w["wall"] > IDLE_S:
-                    with self._lock:
-                        self._wants.pop(sid, None)
-                    continue
-                f = w["fleet"]
-                ahead = min(max(w["warp"] * LOOKAHEAD_WALL_S, LOOKAHEAD_S[0]), LOOKAHEAD_S[1])
-                target = f.t0 + math.ceil((w["t"] + ahead - f.t0) / BLOCK_S - 1e-9) * BLOCK_S
-                if f.t < target - 1e-6 or f.mending is not None:    # behind, or an order's rows still on their way
-                    f.keep_timeline()
-                    f.advance(max(target, f.t), budget_s=0.02, view=lambda _: None)
-                    busy = True
-                with f.lock:                             # what every side saw of what was just flown
-                    f.sweeper.catch_up()
+            for lid, clock in list(self.host.clocks.items()):
+                lv = self.world.levels.get(lid)
+                now = clock.now()
+                warp = 0.0 if clock.paused else clock.warp
+                ahead = min(max(warp * LOOKAHEAD_WALL_S, LOOKAHEAD_S[0]), LOOKAHEAD_S[1])
+                for sid in lv.scenarios if lv else ():
+                    sc = self.world.scenarios.get(sid)
+                    f = self.world.fleet(sc) if sc else None
+                    if f is None:
+                        continue
+                    target = f.t0 + math.ceil((now + ahead - f.t0) / BLOCK_S - 1e-9) * BLOCK_S
+                    if f.t < target - 1e-6 or f.mending is not None:    # behind, or an order's rows still on their way
+                        f.keep_timeline()
+                        f.advance(max(target, f.t), budget_s=0.02, view=lambda _: None)
+                        busy = True
+                    with f.lock:                         # what every side saw of what was just flown
+                        f.sweeper.catch_up()
+                    self.host.pictures.clock(sc, f, now)
             if busy:
                 time.sleep(0.001)                         # let a picture or an order waiting on the fleet in first
             else:

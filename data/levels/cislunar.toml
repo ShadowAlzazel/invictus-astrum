@@ -1,0 +1,23 @@
+# A level: a game. Its clock, and the systems it is played in, each with the scenario loaded into it
+# (astrum/level.py). Nothing ticks until the host starts it from Play; then it runs on the server,
+# whoever watches, and every picture and order is at its moment.
+#
+#   [level]
+#   id, name, notes
+#   start = "2026-10-19T12:00:00Z"   when its clock starts (ISO UTC); left out: the first scenario's
+#                                    epoch, else its first system's start
+#   warp = 3600                      game seconds a wall second, once it runs (Space pauses it)
+#   [[system]]                       one or more: each its own bullseyes, fleet and order book
+#   id = "sol"                       a system in data/systems
+#   scenario = "sol-demo"            the scenario loaded into it (one of that system's); a scenario
+#                                    is played in one level only. Left out: the system alone
+
+[level]
+id = "cislunar"
+name = "Cislunar Picture"
+notes = "Luna Classis I holds the Earth-Moon space; Task Force 3 sits off Mars, the Luna Strike Squadron behind Jupiter."
+warp = 3600
+
+[[system]]
+id = "sol"
+scenario = "sol-demo"

@@ -473,8 +473,26 @@ the same as with the AI off (5.4, 4.9; the browser here renders in software).
 
 ## Time
 
-A scenario starts at its own `epoch`, or when its system's clock does. Before that every ship is on
-station with the tanks she starts with. The map's clock starts at an hour a second.
+**The clock is a level's.** A level (`data/levels/*.toml`, `astrum/level.py`) is the one thing that
+holds a game's clock, and the systems it is played in: each with the scenario loaded into it, its
+own bullseyes, fleet and order book, all at the level's one moment (a system with no scenario is
+its bodies alone; every system is also a level of its own, `system:<id>`). A scenario is played in
+one level. The clock starts at the level's `start`, else its first scenario's `epoch`, else its
+first system's start, and runs at its `warp` (an hour a second, unless it says), and only once the
+host starts the level: nothing ticks before. It lives in the simulation's process (`SimHost.clocks`)
+and nowhere else; the host runs, pauses, warps, restarts (its fleets built afresh at its start) or
+stops it (`POST /api/level/{id}`).
+
+Every picture of a running level is of its moment, plus as much of its wall time as the map asks to
+see ahead (`lead`, at most a quarter of a second: the picture after the map's clock is then there
+when it gets there), and says how the clock stands (`clock`: its moment, warp, paused). The map runs
+its clock on from that at the warp, eased onto each picture's word; it does not set it. An order
+on a running level is given at the level's moment, whatever the map's clock said. A request that
+names no level (a system's preview behind the menus, the workshop, a test or a tool) says its own
+moment, as before. The run-ahead is the levels' tick: it keeps every running level's fleets flown
+ahead of its clock, watched or not, and gives the AI the level's moment, so the AI plays on with no
+map open. The fleet starts at the level's start; before a scenario's first order every ship is on
+station with the tanks she starts with.
 
 The fleet moves in **blocks** of up to 10 minutes (shorter where an order, the end of a burn or
 the moment asked for falls). Inside a block every **unit** (a ship on her own, or a formation's

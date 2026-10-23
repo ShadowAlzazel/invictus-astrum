@@ -1,11 +1,11 @@
 <script>
   // The landing page: one place to choose what to do, so no screen carries another's controls.
   export let onchoose = () => {};
-  export let counts = { systems: 0, ships: 0 };
+  export let counts = { levels: 0, systems: 0, ships: 0 };
 
   const ITEMS = [
-    { id: 'play', title: 'Simulation', text: 'Choose a system and take the map. True scale, live clock, tactical picture.' },
-    { id: 'build', title: 'System workshop', text: 'Build a stellar system, or copy one and change it. Saved systems become levels.' },
+    { id: 'play', title: 'Simulation', text: 'Choose a level and start it: its clock runs on the server, true scale, tactical picture.' },
+    { id: 'build', title: 'System workshop', text: 'Build a stellar system, or copy one and change it. Every saved system is also a level of its own.' },
     { id: 'ships', title: 'Ship registry', text: 'The classes of the fleet: particulars, batteries, reaches by crew, and what is still blank.' },
     { id: 'shipyard', title: 'Ship workshop', text: 'Design ship classes.', soon: true },
     { id: 'settings', title: 'Settings', text: 'Text and icon sizes, folding, what a selection shows. Saved on this machine.' },
@@ -31,7 +31,7 @@
       </button>
     {/each}
   </nav>
-  <p class="foot">{counts.systems} systems · {counts.ships} ship classes · all data on this machine, in data/</p>
+  <p class="foot">{counts.levels} levels · {counts.systems} systems · {counts.ships} ship classes · all data on this machine, in data/</p>
 </main>
 
 <style>

@@ -15,14 +15,12 @@
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
   import LevelSelect from './lib/LevelSelect.svelte';
+  import LevelList from './lib/LevelList.svelte';
+  import { stepWarp, warpLabel } from './lib/clock.js';
   import MainMenu from './lib/MainMenu.svelte';
   import ShipRegistry from './lib/ShipRegistry.svelte';
   import Settings from './lib/Settings.svelte';
   import Workshop from './lib/Workshop.svelte';
-
-  // sim seconds per real second; the clock runs in TDB seconds since J2000, like the server
-  const WARPS = [[1, '1×'], [5, '5×'], [10, '10×'], [60, '1 min/s'], [600, '10 min/s'], [1800, '30 min/s'], [3600, '1 h/s'],
-                 [7200, '2 h/s'], [21600, '6 h/s'], [86400, '1 d/s'], [604800, '1 wk/s'], [2629800, '1 mo/s'], [31557600, '1 yr/s']];
 
   let canvas, map = null, stream, meta = null, style = null, def = null, state = null;
   let systemId = null, pickedPlayer = 'arcvs', bullseyeId = 'system', scenarioOn = true;
@@ -63,7 +61,18 @@
     key: `${scenario.id}:${side}:${playerId}`,
     units: scenario.contacts.map((c) => ({ id: c.id, callsign: c.callsign ?? c.name ?? c.id, parent: c.parent ?? null, ship: c.echelon === 'ship' })),
   } : null;
-  let t = 0, warp = WARPS.findIndex(([s]) => s === 3600), paused = false, last = 0, raf;
+  // The clock. In a level it is the level's, on the server (astrum/level.py): every picture says how
+  // it stands (clockAt), and the map runs it on between pictures at its warp, eased onto what the
+  // next one says; pausing, the warp and a restart are asked of the server, for everyone in it. Off a
+  // level (a system's preview behind the menus, the workshop) the map keeps a clock of its own
+  let t = 0, warpS = 3600, paused = true, last = 0, raf;
+  let clockAt = null;                   // { t, warp, paused, wall }: the level's clock, as the last picture told it
+  let levels = [], levelId = null, listed = null, levelNote = '';   // Play's list, the level on the map, the one chosen in the list
+  $: level = levels.find((l) => l.id === levelId) ?? null;
+  const scenarioIn = (lid, sid) => levels.find((l) => l.id === lid)?.systems.find((x) => x.id === sid)?.scenario ?? null;
+  $: scenarioId = scenarioIn(levelId, systemId);
+  $: running = clockAt ? !clockAt.paused : !paused;
+  $: shownWarp = clockAt ? clockAt.warp : warpS;
   let orbitsT = null, orbitsBusy = false;
   let drules = {}, settings = null, showSettings = false, settingsStatus = '';
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
@@ -89,7 +98,7 @@
   $: playerId = scenarioOn && scenario ? views.find((v) => v.id === side)?.player ?? scenario.player : pickedPlayer;
   $: player = meta?.players.find((p) => p.id === playerId);
   $: bullseyes = [{ id: 'system', name: `${def?.name ?? ''} centre` }, ...(player?.bullseyes.filter((b) => b.system === systemId) ?? [])];   // the star centre always first
-  $: scenario = meta?.scenarios.find((s) => s.system === systemId);
+  $: scenario = scenarioId ? meta?.scenarios.find((s) => s.id === scenarioId) : null;    // the level's, in this system
   // the side's units (meta), and the others' ships it has seen, as tracks (each picture's)
   $: tracks = Object.values(state?.tracks ?? {}).map((c) => ({ ...c, ship: c.ship_class ? meta?.specs[c.ship_class] ?? null : null }));
   $: contacts = scenarioOn && scenario ? [...scenario.contacts, ...tracks] : [];
@@ -167,8 +176,8 @@
 
   // the side kept for the scenario on the map (before any map: the one kept last)
   function wantedSide() {
-    const sc = meta?.scenarios.find((s) => s.system === systemId);
-    return sc ? sides[sc.id] ?? null : Object.values(sides)[0] ?? null;
+    const sc = scenarioIn(levelId, systemId);
+    return sc ? sides[sc] ?? null : Object.values(sides)[0] ?? null;
   }
   async function loadMeta() {
     meta = await api.meta(wantedSide());
@@ -186,7 +195,7 @@
   async function openSystem(id, keepTime = false, keepView = false) {
     const before = def?.bodies.length;
     systemId = id;
-    const sc = meta?.scenarios.find((s) => s.system === id);
+    const sc = meta?.scenarios.find((s) => s.id === scenarioIn(levelId, id));
     if (sc && (sides[sc.id] ?? sc.view) !== sc.view) await loadMeta();   // a scenario played as another side
     def = await api.system(id);
     const same = keepView && def.bodies.length === before;
@@ -217,7 +226,9 @@
   }
 
   function onstate(s) {
+    if (s.stopped) { if (s.stopped === levelId) leaveLevel(`${level?.name ?? s.stopped} is not running on the server (it was stopped, or the server started again): start it again.`); return; }
     if (s.error) { error = s.error; return; }
+    if (s.clock?.level === levelId) clockAt = { ...s.clock, wall: performance.now() - 500 * stream.rtt };   // (sent half a round trip ago)
     if (s.system !== systemId) return;
     s.ships = mergeShips(state?.system === s.system ? state.ships : null, s.ships ?? {}, s.full);
     if (!s.tracks) s.tracks = s.full ? {} : state?.tracks ?? {};     // sent when they change
@@ -231,11 +242,35 @@
     raf = requestAnimationFrame(frame);
     const dt = last ? Math.min((now - last) / 1000, 0.25) : 0;
     last = now;
-    if (!paused) t += dt * WARPS[warp][0];
+    if (clockAt) {                                  // the level's: on from the last picture's word, eased onto it
+      const w = clockAt.paused ? 0 : clockAt.warp, there = clockAt.t + (w * (now - clockAt.wall)) / 1000;
+      t = Math.abs(there - t) > Math.max(60, 2 * w) ? there : t + dt * w + (there - t) * Math.min(1, 4 * dt);
+    } else if (!paused) t += dt * warpS;
     map.setClock(t);
-    // running, ask for a moment a round trip or two ahead, so the picture after the clock is there
-    const ahead = paused ? 0 : WARPS[warp][0] * Math.min(0.25, 1.5 * stream.rtt + 1 / 60);
-    if (systemId) stream.request({ system: systemId, t: t + ahead, player: playerId, view: side, scenario: scenarioOn ? scenario?.id : null, picture: game });
+    // a picture a round trip or two ahead of the clock, so the one after it is there: a level's, at
+    // the level's moment and that much of its wall time on (the server's clock); else at this one's
+    const lead = Math.min(0.25, 1.5 * stream.rtt + 1 / 60);
+    if (!systemId) return;
+    if (levelId && mode === 'map') stream.request({ level: levelId, system: systemId, lead, player: playerId, view: side, picture: game });
+    else stream.request({ system: systemId, t: t + (paused ? 0 : warpS * lead), player: playerId, picture: game });
+  }
+  // the clock's controls: a level's asked of the server (it answers how the clock stands), else this map's
+  async function clockDo(what, extra = {}) {
+    try {
+      const r = await api.level(levelId, { do: what, ...extra });
+      if (r.clock) { clockAt = { ...r.clock, wall: performance.now() }; if (what === 'restart') t = r.clock.t; }
+    } catch (err) { say(String(err.message ?? err)); }
+  }
+  const inLevel = () => levelId && mode === 'map';
+  function togglePause() { if (inLevel()) clockDo(running ? 'pause' : 'run'); else paused = !paused; }
+  function warpStep(up) { const w = stepWarp(shownWarp, up); if (inLevel()) clockDo('warp', { warp: w }); else warpS = w; }
+  let restartSure = false;
+  function resetClock() {
+    if (!inLevel()) { t = def.start; return; }
+    if (!restartSure) { restartSure = true; setTimeout(() => (restartSure = false), 3000); return; }
+    restartSure = false;
+    select(null);
+    clockDo('restart');
   }
 
   // ---- pointer ----------------------------------------------------------------------------------
@@ -437,9 +472,9 @@
     if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) && e.target.type !== 'range') return;
     if (is(e, 'ranges') && mode === 'map') { ranges = true; return; }
     if (is(e, 'sensing') && mode === 'map') { sensing = true; return; }
-    if (is(e, 'pause')) { e.preventDefault(); paused = !paused; }
-    if (is(e, 'faster')) warp = Math.min(warp + 1, WARPS.length - 1);
-    if (is(e, 'slower')) warp = Math.max(warp - 1, 0);
+    if (is(e, 'pause') && (inMap || mode === 'menu')) { e.preventDefault(); togglePause(); }
+    if (is(e, 'faster') && inMap) warpStep(true);
+    if (is(e, 'slower') && inMap) warpStep(false);
     if (is(e, 'settings')) { showSettings = !showSettings; return; }
     if (e.key === 'Escape' && showSettings) { showSettings = false; return; }
     if (!inMap) return;                                  // menus have their own keys
@@ -491,18 +526,58 @@
 
   // ---- the menu, levels and the workshop --------------------------------------------------------
   function choose(what) {
-    if (what === 'play' || what === 'build') { purpose = what; mode = 'levels'; }
+    if (what === 'play' || what === 'build') { purpose = what; toLevels(); }
     if (what === 'ships') mode = 'ships';
     if (what === 'settings') showSettings = true;
   }
-  function toMenu() { mode = 'menu'; select(null); }
-  async function previewLevel(id) { if (id !== systemId) await openSystem(id); lastLevel = id; }
-  async function enter(id) { await previewLevel(id); mode = 'map'; }
-  function toLevels() {
-    mode = 'levels';
+  // out of a level: it runs on on the server; behind the menus, its system stands still
+  function leaveFor(next) { levelId = null; clockAt = null; paused = true; ordering = null; select(null); mode = next; }
+  function toMenu() { leaveFor('menu'); }
+  function leaveLevel(note) { levelNote = note; toLevels(); }
+  async function loadLevels() { try { levels = await api.levels(); } catch { /* the banner says offline */ } }
+  // Play lists levels: one chosen shows its first system behind the list, still, at its clock or its
+  // start (no fleet: nothing is flown for a preview); Build lists systems
+  async function previewLevel(id) {
+    if (purpose === 'play') {
+      const l = levels.find((x) => x.id === id);
+      if (!l) return;
+      listed = id;
+      if (l.systems[0].id !== systemId) await openSystem(l.systems[0].id);
+      t = l.clock?.t ?? l.start;
+    } else if (id !== systemId) await openSystem(id);
+    lastLevel = id;
+  }
+  // Play: the level started (nothing of it ran before), or gone back into, and the map
+  async function enter(id) {
+    if (purpose !== 'play') { await previewLevel(id); mode = 'map'; return; }
+    try {
+      const r = await api.level(id, { do: 'start' });
+      await loadLevels();
+      levelId = id; levelNote = '';
+      clockAt = { ...r.clock, wall: performance.now() }; t = r.clock.t;
+      const first = levels.find((l) => l.id === id).systems[0].id;
+      await openSystem(first, true);
+      await loadMeta();
+      mode = 'map';
+    } catch (err) { levelNote = String(err.message ?? err); }
+  }
+  async function restartLevel(id) { await api.level(id, { do: 'restart' }).catch(() => {}); await loadLevels(); previewLevel(id); }
+  async function stopLevel(id) { await api.level(id, { do: 'stop' }).catch(() => {}); await loadLevels(); previewLevel(id); }
+  async function toLevels() {
+    const was = levelId;
+    leaveFor('levels');
+    if (purpose === 'play') {
+      await loadLevels();
+      const back = levels.find((l) => l.id === (was ?? listed)) ?? levels[0];
+      if (back) previewLevel(back.id);
+      return;
+    }
     const back = meta.systems.find((s) => s.id === (systemId === 'draft' ? lastLevel : systemId)) ?? meta.systems[0];
     if (back) previewLevel(back.id);
   }
+  // the list's clocks, while it is up
+  let listPoll;
+  $: { clearInterval(listPoll); if (mode === 'levels' && purpose === 'play') listPoll = setInterval(loadLevels, 2000); }
 
   async function openWorkshop(id, copy) {
     schema ??= await api.workshop.schema();
@@ -526,7 +601,6 @@
   async function draftBuilt(draftId) { await openSystem(draftId, systemId === draftId, systemId === draftId); }
   async function workshopSaved() { await loadMeta(); }
   const trackUI = (e) => { overUI = !!e.target.closest?.('[data-ui]'); };
-  function resetClock() { t = def.start; }
 
   async function checkStatus() {
     try {
@@ -556,12 +630,13 @@
     stream = new StateStream(onstate);
     try {
       await loadMeta();
-      await previewLevel(meta.systems.find((s) => s.id === 'sol')?.id ?? meta.systems[0].id);
+      await openSystem(meta.systems.find((s) => s.id === 'sol')?.id ?? meta.systems[0].id);   // behind the menu: still
+      await loadLevels();
     } catch (e) { error = 'Cannot reach the server. Start it with: python serve.py'; }
     raf = requestAnimationFrame(frame);
     poll = setInterval(checkStatus, 2000);
   });
-  onDestroy(() => { cancelAnimationFrame(raf); clearInterval(poll); map?.dispose(); });
+  onDestroy(() => { cancelAnimationFrame(raf); clearInterval(poll); clearInterval(listPoll); map?.dispose(); });
 </script>
 
 <svelte:window on:keydown={key} on:keyup={keyUp} on:blur={() => (ranges = sensing = false)} on:pointermove={trackUI} />
@@ -578,9 +653,11 @@
 {/if}
 
 {#if mode === 'menu'}
-  <MainMenu onchoose={choose} counts={{ systems: meta?.systems.length ?? 0, ships: meta?.ship_classes ?? 0 }} />
+  <MainMenu onchoose={choose} counts={{ levels: levels.filter((l) => !l.own).length, systems: meta?.systems.length ?? 0, ships: meta?.ship_classes ?? 0 }} />
 {:else if mode === 'ships'}
   <ShipRegistry bind:this={registry} {style} onback={toMenu} />
+{:else if mode === 'levels' && purpose === 'play'}
+  <LevelList {levels} current={listed} note={levelNote} onpreview={previewLevel} onenter={enter} onrestart={restartLevel} onstop={stopLevel} onback={toMenu} />
 {:else if mode === 'levels'}
   <LevelSelect {purpose} levels={meta?.systems ?? []} current={systemId} onpreview={previewLevel} onenter={enter} onworkshop={openWorkshop} onback={toMenu} />
 {:else if mode === 'workshop' && schema && wdoc}
@@ -591,20 +668,26 @@
     <button on:click={toLevels} title={$keymap.levels ? cap($keymap.levels) : "Levels"}>Levels</button>
     <button on:click={() => (showSettings = !showSettings)} title={cap($keymap.settings)}>Settings</button>
     <span class="brand">INVICTUS <b>ASTRUM</b></span>
-    <span class="here">{def?.name ?? ''}</span>
+    <span class="here">{level ? `${level.name} · ` : ''}{def?.name ?? ''}</span>
+    {#if level?.systems.length > 1}
+      <select class="systems" value={systemId} on:change={(e) => openSystem(e.target.value, true)} title="The level's systems: each its own bullseyes, fleet and orders, on the level's one clock">
+        {#each level.systems as x}<option value={x.id}>{x.name}</option>{/each}
+      </select>
+    {/if}
   </div>
 {/if}
 
-{#if inMap || mode === 'levels'}
+{#if inMap}
 <div class="clock" data-ui>
   <span class="utc">{state?.utc?.replace('T', ' ').replace('Z', ' UTC') ?? '—'}</span>
   {#if kernels}<span class="lag" title={kernels}>flight not compiled</span>{/if}
   {#if state?.behind_s > 30}<span class="lag" title="The simulation is catching up with the clock: the map shows the moment it has reached">sim {hms(state.behind_s)} behind</span>{/if}
-  <button on:click={() => (paused = !paused)} title="Space">{paused ? '▶' : '❚❚'}</button>
-  <button on:click={() => (warp = Math.max(warp - 1, 0))} title="[">◀</button>
-  <span class="warp">{WARPS[warp][1]}</span>
-  <button on:click={() => (warp = Math.min(warp + 1, WARPS.length - 1))} title="]">▶</button>
-  <button class="small" on:click={resetClock}>reset</button>
+  <button on:click={togglePause} title="Space{levelId ? ': the level, for everyone in it' : ''}">{running ? '❚❚' : '▶'}</button>
+  <button on:click={() => warpStep(false)} title="[">◀</button>
+  <span class="warp">{warpLabel(shownWarp)}</span>
+  <button on:click={() => warpStep(true)} title="]">▶</button>
+  <button class="small" class:sure={restartSure} on:click={resetClock}
+    title={levelId ? 'The level from its start again: its clock, and its fleets as their scenarios have them' : 'Back to the system\'s start'}>{levelId ? (restartSure ? 'restart?' : 'restart') : 'reset'}</button>
   <span class="src">{state?.source ?? ''}</span>
 </div>
 {/if}
@@ -712,6 +795,8 @@
   .clock button { background: none; border: 0; color: var(--dim); padding: 0 2px; }
   .clock button:hover { color: var(--fuchsia); }
   .clock .small { font-size: 11px; }
+  .clock .small.sure { color: #ffd27a; }
+  .bar .systems { background: none; border: 1px solid var(--rule); color: var(--ink); font: inherit; font-size: 12px; }
   .warp { min-width: 5.5em; text-align: center; color: var(--ink); }
   .src { color: var(--dim); font-size: 10px; }
   .lag { color: #ffd27a; font-size: 11px; border-left: 2px solid #ffd27a; padding-left: 6px; }

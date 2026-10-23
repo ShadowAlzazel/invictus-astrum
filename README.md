@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 224 tests (the map's math too, in node)
+python -m pytest -q tests             # 228 tests (the map's math too, in node)
 ```
 
 `serve.py` says at start whether the simulation's hot loops are compiled (`kernels compiled
@@ -21,7 +21,9 @@ python -m pytest -q tests             # 224 tests (the map's math too, in node)
 new for the Numba release), and the flight runs as plain Python, some 100× slower; the map's clock
 reads "flight not compiled". `python -m pip install numba` for the Python that runs the server.
 
-The simulation keeps the fleet flown a little ahead of the map's clock in a worker thread;
+The clock is a level's, and it runs on the server: started from Play, a level ticks there whoever
+watches, until it is stopped, and the map is told its moment with every picture. The simulation
+keeps every running level's fleets flown a little ahead of its clock in a worker thread;
 `run_ahead = false` under `[sim]` in `config.toml` turns it off (each picture then flies the fleet
 there itself; everything else works the same). What a player is shown is made from the
 simulation's truth by functions, each a switch under `[picture]` (and in the map's Settings, Game):
@@ -38,9 +40,9 @@ reload on :5173, proxied to the server).
 
 ## The main menu
 
-The map opens on the main menu, over a live system:
+The map opens on the main menu, over a system standing still:
 
-1. **Simulation**: choose a system and take the map.
+1. **Simulation**: choose a level and start it.
 2. **System workshop**: build a system, or copy one and change it.
 3. **Ship registry**: the classes of the fleet.
 4. **Ship workshop**: next.
@@ -50,8 +52,15 @@ The map opens on the main menu, over a live system:
 
 ## Levels and the workshop
 
-**Simulation** opens the **level selector**: every file in `data/systems/` is a level. Choose one to
-preview it behind the list; Enter (or double-click) takes the map, and L brings you back.
+**Simulation** opens the **level selector**. A **level** is a game (`data/levels/*.toml`): its
+clock, and the systems it is played in, each with the scenario loaded into it (each system its own
+bullseyes, fleet and order book, all on the level's one clock; a level of several systems has a
+system picker in the top bar). Every system in `data/systems/` is also listed alone, with no
+scenario. Choose one to preview its first system behind the list, standing still (nothing ticks,
+nothing is flown); **Start** (Enter, or double-click) starts its clock on the server at the level's
+start and takes the map; L brings you back, and the level runs on: the list shows it running, at
+what warp and moment, with **Resume**, **Restart** (its clock back to its start, its fleets as their
+scenarios have them) and **Stop** (no clock, no fleets; each asked twice).
 
 The **workshop** builds systems. From the menu's System workshop, start from "+ New system", or
 copy any level into it. Add bodies
@@ -102,7 +111,7 @@ the author*. The format is in `data/ships/README.md`.
 | `,` | settings |
 | Double-click, or F | centre on the selection and ride with it |
 | H | frame the whole system |
-| Space, `[` `]` | pause, slower, faster (1 s/s up to 1 yr/s) |
+| Space, `[` `]` | pause, slower, faster (1 s/s up to 1 yr/s): in a level, its clock on the server, for everyone in it. The clock bar's restart (clicked twice) restarts the level |
 | Esc | clear the selection |
 
 Every key but Esc and Shift can be rebound in Settings, Hotkeys.
@@ -165,7 +174,8 @@ above it comes down to it.
 
 | Path | Holds |
 |---|---|
-| `data/systems/*.toml` | stellar systems, one level each; see `data/systems/README.md` for the format |
+| `data/levels/*.toml` | the levels: each a game's clock (its start and warp) and the systems it is played in, with the scenario loaded into each; the format is in `data/levels/cislunar.toml` |
+| `data/systems/*.toml` | stellar systems, each also a level of its own (no scenario); see `data/systems/README.md` for the format |
 | `data/presets.toml` | the workshop's starting bodies; add your own |
 | `data/ships/` | ship classes, their components, and the rules they are read against |
 | `data/players.toml` | players and their bullseyes |
@@ -179,7 +189,7 @@ above it comes down to it.
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |
 | `settings.toml` | display settings over `display.toml`, if you keep one (the map keeps yours in the browser); not committed |
 | `config.toml` | paths, port, clock start, orbit sampling, the run-ahead, the AI, and what a player is shown ([picture]) |
-| `astrum/` | the simulation: builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server; the fleet (`classis.py`, `sim.py`), its order book (`orders.py`), timeline (`timeline.py`), standing orders and the AI (`ai.py`, `profiles.py`), a subscriber of each side's picture (`pictures.py`) |
+| `astrum/` | the simulation: the levels and their clocks (`level.py`), builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server; the fleet (`classis.py`, `sim.py`), its order book (`orders.py`), timeline (`timeline.py`), standing orders and the AI (`ai.py`, `profiles.py`), a subscriber of each side's picture (`pictures.py`) |
 | `web/` | the map (Svelte + Three.js) |
 | `tools/formation_tf2.py` | lays out the demo's Task Force 2 wedge; edit its numbers and rerun |
 | `tools/formation_tf3.py` | lays out Task Force 3, docked tight around Mars, and the Luna Strike Squadron behind Jupiter |

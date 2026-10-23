@@ -23,7 +23,7 @@ BLOCK_DRAWS = ("oval", "cross", "slash", "bar", "stroke", "chevron", "dome", "bo
 
 CONFIG_SCHEMA = {
     "paths": {"systems": str, "scenarios": str, "players": str, "style": str, "ships": str,
-              "display": str, "settings": str, "bullseyes": str, "profiles": str},
+              "display": str, "settings": str, "bullseyes": str, "profiles": str, "levels": str},
     "server": {"host": str, "port": int},
     "live": {"check_seconds": float},
     "sim": {"start": str, "orbit_samples": int, "table_days": float, "run_ahead": bool, "ai": bool},

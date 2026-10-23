@@ -74,6 +74,13 @@ class Pictures:
             self._clock[sc.id] = (sc, fleet, t)
         self._wake.set()
 
+    def forget(self, sid: str) -> None:
+        """The scenario's level stopped or started again: nothing more of it, until asked again."""
+        with self._lock:
+            self._clock.pop(sid, None)
+            self._done.pop(sid, None)
+            self._poked.discard(sid)
+
     def poke(self, sid: str) -> None:
         """Orders were given: picture it again at once (the subscribers see what changed)."""
         with self._lock:

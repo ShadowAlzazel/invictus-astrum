@@ -159,8 +159,9 @@ def profile_flight(case="sun", hours=HOURS):
 def live(seconds, warp=WARP):
     """The simulation's own process as serve.py runs it (ProcessSim: the pipe, the request pool, the
     run-ahead, arrivals, the pictures and the AI), and a map asking as the browser does: one picture
-    in flight, the next as each arrives, at most 60 a second, a round trip or two ahead of a clock
-    at `warp`. Task Force 3 is ordered toward the Sun after a few seconds of warming up. py-spy
+    in flight, the next as each arrives, at most 60 a second, a round trip or two ahead: of the
+    Cislunar level's clock, started at `warp` (the server's clock, astrum/level.py). Task Force 3
+    is ordered toward the Sun after a few seconds of warming up, at the level's moment. py-spy
     samples the process twice at once, nonblocking: every thread on the CPU, and the one holding the
     interpreter (--gil). Returns (round trips, behind_s, the two sample files, or None)."""
     import asyncio
@@ -171,20 +172,22 @@ def live(seconds, warp=WARP):
     files = {k: os.path.join(tempfile.gettempdir(), f"astrum-pyspy-{k}-{os.getpid()}.txt") for k in ("cpu", "gil")}
 
     async def run():
-        first = json.loads(await sim.call("frame", ({k: v for k, v in req.items()}, 1)))
-        t0, rtt, start, took, behind, spies = first["t"] + 600, 0.05, time.monotonic(), [], [], []
+        await sim.call("level", {"id": "cislunar", "do": "start"})
+        await sim.call("level", {"id": "cislunar", "do": "warp", "warp": warp})
+        ask = {"level": "cislunar", "system": "sol", "player": "arcvs"}
+        await sim.call("frame", (ask, 1))
+        rtt, start, took, behind, spies = 0.05, time.monotonic(), [], [], []
         ordered = False
         while time.monotonic() - start < seconds + 4:
             a = time.monotonic()
-            clock = t0 + warp * (a - start)
             if not ordered and a - start > 3:           # warmed up: the order, then the samplers
-                ordered = await sim.call("order", {**req, "unit": "tf-3", "g": 0.3, "t": clock, "target": tf3_target(None, None, None, True)})
+                ordered = await sim.call("order", {**req, "unit": "tf-3", "g": 0.3, "target": tf3_target(None, None, None, True)})
                 if shutil.which("py-spy"):
                     spies = [subprocess.Popen(["py-spy", "record", "--pid", str(sim.proc.pid), "--threads", "--nonblocking", "-r", "100",
                                                *(["--gil"] if k == "gil" else []), "--format", "raw", "-d", str(seconds), "-o", f],
                                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) for k, f in files.items()]
-                a = time.monotonic(); clock = t0 + warp * (a - start)
-            m = await sim.call("frame", ({**req, "t": clock + warp * min(0.25, 1.5 * rtt + 1 / 60)}, 1))
+                a = time.monotonic()
+            m = await sim.call("frame", ({**ask, "lead": min(0.25, 1.5 * rtt + 1 / 60)}, 1))
             d = time.monotonic() - a
             rtt = 0.8 * rtt + 0.2 * d
             if ordered:

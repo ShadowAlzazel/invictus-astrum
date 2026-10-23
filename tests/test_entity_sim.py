@@ -784,26 +784,29 @@ def test_a_formation_ordered_in_the_past_flies_as_one():
 # ---- the simulation's side: ahead of the clock, and in a process of its own -----------------------
 
 def test_the_fleet_flies_ahead_of_the_clock():
-    """With the run-ahead worker, the fleet goes on ahead of what was asked; a picture asked for
-    behind it is read off the timeline, and the fleet is not set back for it."""
+    """With the run-ahead worker, a running level's fleet goes on ahead of its clock; a picture of
+    the level is read off the timeline, and the fleet is not set back for it."""
     import time as _t
     from fastapi.testclient import TestClient
     from astrum.app import create_app
     app = create_app(run_ahead=True)
     c, world = TestClient(app), app.state.world
-    f = world.fleet(world.scenarios["sol-demo"])
-    req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo"}
+    assert c.post("/api/level/cislunar", json={"do": "start"}).status_code == 200
+    req = {"level": "cislunar", "system": "sol", "player": "arcvs"}
     with c.websocket_connect("/ws") as ws:
-        ws.send_json({**req, "t": f.t0 + 60})
+        ws.send_json(req)
         assert ws.receive_json()["full"]
+        f = world.fleets["sol-demo"]
+        c.post("/api/level/cislunar", json={"do": "pause"})
+        now = c.get("/api/levels").json()[0]["clock"]["t"]
         deadline = _t.monotonic() + 10
-        while f.t < f.t0 + 600 and _t.monotonic() < deadline:
+        while f.t < now + 600 and _t.monotonic() < deadline:
             _t.sleep(0.05)
         ahead = f.t
-        assert ahead >= f.t0 + 600
-        ws.send_json({**req, "t": f.t0 + 300})
+        assert ahead >= now + 600
+        ws.send_json(req)
         m = ws.receive_json()
-        assert m["t"] == pytest.approx(f.t0 + 300) and m["behind_s"] == 0 and f.t >= ahead
+        assert m["t"] == pytest.approx(now) and m["behind_s"] == 0 and f.t >= ahead
     app.state.sim.close()
 
 

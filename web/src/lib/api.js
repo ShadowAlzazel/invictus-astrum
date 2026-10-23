@@ -8,6 +8,8 @@ async function get(path, params) {
 
 export const api = {
   meta: (view) => get('/meta', view ? { view } : undefined),
+  levels: () => get('/levels'),
+  level: (id, req) => post(`/level/${encodeURIComponent(id)}`, req),     // the host's hand on its clock: { do, warp }
   status: () => get('/status'),
   system: (id) => get(`/system/${id}`),
   orbits: (id, t) => get(`/system/${id}/orbits`, { t }),
@@ -44,7 +46,7 @@ async function send(method, path, body) {
   return data;
 }
 
-// One request in flight at a time: the latest wanted time wins, so a fast clock never queues up.
+// One request in flight at a time: the latest wanted picture wins, so a fast clock never queues up.
 export class StateStream {
   constructor(onstate) {
     this.onstate = onstate;

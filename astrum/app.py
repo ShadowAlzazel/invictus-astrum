@@ -46,6 +46,7 @@ from . import workshop
 from .ships import ShipRegistry, class_detail, class_summary, rules_dict
 from .entity import ShipSpec, SpecError
 from .sim import Fleet, Order
+from .level import Level, load_levels
 from . import display
 from . import picture
 from . import profiles
@@ -73,6 +74,7 @@ class World:
         self.settings: dict = {}
         self.trees: dict[str, dict] = {}         # scenario id -> formation tree
         self.fleets: dict[str, Fleet] = {}       # scenario id -> its ships, flown; rebuilt on reload
+        self.levels: dict[str, Level] = {}       # the games (astrum/level.py): each a clock's systems and scenarios
         self.made: dict[str, dict[str, Bullseye]] = {}     # player -> bullseyes commanders made on the map
         self.retired: dict[str, dict[str, Bullseye]] = {}  # ... and deleted: still flown to, never listed
         self.profiles: dict[str, Profile] = {}              # the shared combat profiles (data/profiles.toml), by id
@@ -87,7 +89,7 @@ class World:
 
     def _files(self) -> list[Path]:
         p = self.config["paths"]
-        files = list(Path(p["systems"]).glob("*.toml")) + list(Path(p["scenarios"]).glob("*.toml"))
+        files = list(Path(p["systems"]).glob("*.toml")) + list(Path(p["scenarios"]).glob("*.toml")) + list(Path(p["levels"]).glob("*.toml"))
         files += list(Path(p["ships"]).glob("*.toml")) + list((Path(p["ships"]) / "classes").glob("*.toml"))
         return files + [Path(p["players"]), Path(p["players"]).parent / "factions.toml",
                         Path(p["players"]).parent / "profiles.toml", Path(p["style"]),
@@ -199,6 +201,9 @@ class World:
                     resolve(s, b, Ephemeris(s, numerical=False).positions(s.default_epoch), pl.bullseyes)
                 except BullseyeError as e:
                     errors[f"players.toml/{pl.id}/{b.id}"] = str(e)
+        levels, lv_err = load_levels(p["levels"], {**self.systems, **systems} if sys_err else systems,
+                                     {**self.scenarios, **scenarios} if sc_err else scenarios)
+        errors.update({f"levels/{k_}": v for k_, v in lv_err.items()})
         with self.lock:
             # a file that fails keeps its last good system on the map; without failures the
             # folder is the truth, so a deleted file's system goes
@@ -217,6 +222,7 @@ class World:
             self.made, self.retired = made, {}
             self.profiles, self.profiles_made = shared, made_profiles
             self.display_rules, self.settings, self.trees = rules, settings, trees
+            self.levels = levels
             self.fleets = {}
             self._specs = {}
             self.version += 1
@@ -499,7 +505,8 @@ class World:
             bulls = self.resolved(sc.system, sc.player, pos)
             return pos, contact_positions(sc, bulls, pos), bulls
 
-        t0 = sc.epoch if sc.epoch is not None else self.start_time(s)
+        lv = self.level_of(sc.id)
+        t0 = self.level_start(lv) if lv else sc.epoch if sc.epoch is not None else self.start_time(s)
         orders = [Order(o["unit"], t0 + float(o["at_s"]), "burn" if "burn" in o else "coast", o.get("burn") or {})
                   for o in sc.orders]
         f = self.fleets[sc.id] = Fleet(sc, s, eph, self.ships, place, t0, orders,
@@ -508,6 +515,20 @@ class World:
         for fid in sc.factions:                          # every side is swept as the fleet is flown, watched or not
             f.sweeper.watch(fid, picture.own_rows(f, self.factions, fid))
         return f
+
+    def level_of(self, scenario: str) -> Level | None:
+        """The level a scenario is played in (one at most)."""
+        return next((lv for lv in self.levels.values() if scenario in lv.scenarios), None)
+
+    def level_start(self, lv: Level) -> float:
+        """When a level's clock starts: its own moment, else its first scenario's epoch, else its
+        first system's start."""
+        if lv.start_utc:
+            return utc_to_tdb(lv.start_utc)
+        sc = next((self.scenarios[s] for s in lv.scenarios if s in self.scenarios), None)
+        if sc is not None and sc.epoch is not None:
+            return sc.epoch
+        return self.start_time(self.systems[lv.systems[0].id])
 
     def start_time(self, s) -> float:
         start = self.config["sim"]["start"]
@@ -642,6 +663,16 @@ def level_dict(world: "World", s) -> dict:
     }
 
 
+def level_dict_of(world: "World", lv: Level, clock: dict | None) -> dict:
+    """A level as the landing page shows it: what it holds, when it starts, and how its clock
+    stands (None: not started)."""
+    return {"id": lv.id, "name": lv.name, "notes": lv.notes, "warp": lv.warp, "own": lv.source is None,
+            "start": (t0 := world.level_start(lv)), "start_utc": iso(t0), "clock": clock,
+            "systems": [{"id": x.id, "name": world.systems[x.id].name if x.id in world.systems else x.id, "scenario": x.scenario,
+                         "scenario_name": world.scenarios[x.scenario].name if x.scenario in world.scenarios else None}
+                        for x in lv.systems]}
+
+
 def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool = False) -> FastAPI:
     """The web server. The simulation answers its pictures and orders: in a process of its own
     (sim="process", as serve.py runs it), or in this one (sim="inline", sharing this world: for
@@ -690,6 +721,24 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             "display": {"rules": world.display_rules, "settings": world.settings},
             "picture": switches.described(config["picture"]),
         }
+
+    @app.get("/api/levels")
+    async def levels():
+        """Every level, and how each running one's clock stands: the authored ones first, then each
+        system alone."""
+        world.check()
+        clocks = await sim.call("levels", None)
+        return sorted((level_dict_of(world, lv, clocks.get(lv.id)) for lv in world.levels.values()),
+                      key=lambda d: (d["own"], d["name"]))
+
+    @app.post("/api/level/{lid}")
+    async def level(lid: str, req: dict = Body(...)):
+        """The host's hand on a level's clock (simhost.SimHost.level): start, run, pause, warp,
+        restart or stop. Answers how its clock stands."""
+        out = await sim.call("level", {**req, "id": lid})
+        if not out["ok"]:
+            raise HTTPException(out["status"], out["detail"])
+        return out
 
     @app.get("/api/status")
     def status():

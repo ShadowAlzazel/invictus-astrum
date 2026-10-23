@@ -4,6 +4,7 @@
 [paths]
 systems   = "data/systems"
 scenarios = "data/scenarios"
+levels    = "data/levels"       # the games: each a clock and the systems (with their scenarios) it is played in
 players   = "data/players.toml"
 ships     = "data/ships"
 style     = "style.toml"
