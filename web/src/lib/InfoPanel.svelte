@@ -2,6 +2,7 @@
   // What is selected: a body, a unit, or a point in space (probed on the server).
   import { km, kmFull, n, bearing, elev, lightTime, duration, watts, age } from './format.js';
   import { hms, group, shipsUnder, orderGroups, heading } from './orders.js';
+  import { G, figures, len, sub } from './kepler.js';
   import { unitSymbol } from './symbols.js';
   import Telegraph from './Telegraph.svelte';
   import { cap, keymap } from './keys.js';
@@ -27,6 +28,7 @@
   export let watched = new Set();   // ships whose sensors the map draws always
   export let onwatch = () => {};    // (unit): draw her sensors always, or not (a formation: every ship under it)
   export let onfree = () => {};     // (unit): take station, or go free
+  export let frameVel = [0, 0, 0];  // how fast the active bullseye's origin moves (km/s, motion.js)
   export let ondismiss = () => {};  // (track id): remove an old track
   export let profiles = [];         // the commander's combat profiles (the shared ones first)
   export let stances = {};          // stance -> what it does ("Guard: ...")
@@ -39,7 +41,6 @@
   let withdrawing = null;           // the order asked about once: a second click takes it back
   const withdraw = (id) => { if (withdrawing !== id) { withdrawing = id; return; } withdrawing = null; onwithdraw(id); };
 
-  const G = 6.6743e-20;             // km³/(kg·s²)
   $: body = sel?.kind === 'body' ? map?.bodies[sel.id] : null;
   $: contact = sel?.kind === 'contact' ? contacts.find((c) => c.id === sel.id) : null;
   $: p = state && map ? map.position(sel) : null;
@@ -70,16 +71,18 @@
   $: mine = contact ? (ship ? [contact.id] : under).filter((id) => state?.ships?.[id]?.propellant_share != null) : [];
   $: holds = mine.map((id) => state.ships[id]);
   $: held = { station: holds.filter((s) => s.mode === 'station').length, orbit: holds.filter((s) => s.mode === 'orbit').length,
-              flying: holds.filter((s) => s.mode === 'free' && s.goal).length, coasting: holds.filter((s) => s.mode === 'free' && !s.goal).length };
+              flying: holds.filter((s) => s.mode === 'free' && s.goal).length, burning: holds.filter((s) => s.mode === 'free' && !s.goal && s.burning).length,
+              coasting: holds.filter((s) => s.mode === 'free' && !s.goal && !s.burning).length };
+  // how fast she goes off the active bullseye (a formation: the mean of its ships), off the picture
+  $: moving = holds.filter((s) => s.velocity_kms);
+  $: speed = moving.length ? Math.hypot(...[0, 1, 2].map((k) => moving.reduce((a, s) => a + s.velocity_kms[k], 0) / moving.length - frameVel[k])) : null;
   // her orbit, read off the picture: its period and how high she is above the body
   $: orbit = ship?.mode === 'orbit' && ship.orbit_of && state?.bodies_kms ? orbitOf(ship, ship.orbit_of) : null;
   function orbitOf(s, bid) {
     const b = map.bodies[bid], P = state.bodies[bid], V = state.bodies_kms[bid], r = state.contacts?.[sel.id];   // (all of one picture's moment)
     if (!b || !P || !V || !r || !s.velocity_kms) return null;
-    const mu = G * b.mass_kg, d = Math.hypot(r[0] - P[0], r[1] - P[1], r[2] - P[2]);
-    const v2 = (s.velocity_kms[0] - V[0]) ** 2 + (s.velocity_kms[1] - V[1]) ** 2 + (s.velocity_kms[2] - V[2]) ** 2;
-    const a = 1 / (2 / d - v2 / mu);
-    return a > 0 ? { period_s: 2 * Math.PI * Math.sqrt(a ** 3 / mu), alt_km: d - (b.radius_km ?? 0), body: b.name } : null;
+    const rel = sub(r, P), f = figures(rel, sub(s.velocity_kms, V), G * b.mass_kg);
+    return isFinite(f.period) ? { period_s: f.period, alt_km: len(rel) - (b.radius_km ?? 0), body: b.name } : null;
   }
   $: flying = grp?.flying ?? [];
   $: orders = !ship && flying.length ? orderGroups(state, contacts, under) : [];
@@ -189,11 +192,13 @@
               {#if ship.mode === 'station'}<b>Stationed</b> <span class="dim">holds her place, paying to</span>
               {:else if ship.mode === 'orbit'}<b class="free">Free</b> <span class="dim">{orbit ? `orbit of ${orbit.body}, ${km(orbit.alt_km)} up, ${hms(orbit.period_s)} a turn` : ship.station_at}</span>
               {:else if ship.goal}<b>Flying</b> <span class="dim">her order</span>
+              {:else if ship.burning}<b>Burning</b> <span class="dim">{ship.burn?.duration_s ? 'ballistic: then coasting' : 'her drive lit'}</span>
               {:else}<b class="free">Free</b> <span class="dim">coasting</span>{/if}
             {:else}
-              <span class="dim">{[['station', 'stationed'], ['orbit', 'in orbit'], ['coasting', 'coasting'], ['flying', 'flying']].filter(([k]) => held[k]).map(([k, w]) => `${held[k]} ${w}`).join(' · ')}</span>
+              <span class="dim">{[['station', 'stationed'], ['orbit', 'in orbit'], ['coasting', 'coasting'], ['burning', 'burning'], ['flying', 'flying']].filter(([k]) => held[k]).map(([k, w]) => `${held[k]} ${w}`).join(' · ')}</span>
             {/if}
-            {#if held.station || held.orbit || held.coasting}
+            {#if speed != null}<span class="speed" title="off {bullseyeName}{ship ? '' : ', the mean of its ships'}">{speed < 10 ? n(speed, 2) : n(speed, 1)} km/s</span>{/if}
+            {#if held.station || held.orbit || held.coasting || held.burning}
               <button class="act inline" on:click={() => onfree(contact.id)}
                 title={held.station ? 'Go free: onto an orbit of the body whose well she is in (paying only the burn onto it), else coasting' : 'Take station: decelerate to rest on the active bullseye, and hold there'}>{held.station ? 'Go free' : 'Take station'} <kbd>{cap($keymap.free)}</kbd></button>
             {/if}
@@ -468,6 +473,7 @@
   .hold b { font-weight: 500; color: var(--ink); }
   .hold b.free { color: var(--cyan, #9ff0ff); }
   .act.inline { margin: 0 0 0 auto; }
+  .hold .speed { color: var(--ink); font-variant-numeric: tabular-nums; }
   .low { margin: 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .low b.short { color: #ffd27a; }
   .unit.inline { display: inline; padding: 0; width: auto; }

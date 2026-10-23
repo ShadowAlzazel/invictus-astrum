@@ -10,7 +10,8 @@
   import { config as adjutantConfig } from './lib/adjutant.js';
   import Orders from './lib/Orders.svelte';
   import Bullseyes from './lib/Bullseyes.svelte';
-  import { group, hms, orderGroups, shipsUnder, stepG } from './lib/orders.js';
+  import { group, hms, nextThen, orderGroups, shipsUnder, stepG } from './lib/orders.js';
+  import { Motion } from './lib/motion.js';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
   import LevelSelect from './lib/LevelSelect.svelte';
@@ -33,6 +34,8 @@
   let game = {};
   try { game = JSON.parse(localStorage.getItem('astrum.game') ?? '{}'); } catch { /* not kept */ }
   let settingsTab = 'display';
+  const motion = new Motion();               // how fast the bullseyes' origins move, off the pictures
+  $: frameVel = state ? motion.of(bullseyeId) : [0, 0, 0];
   // the adjutant's settings (Settings, Adjutant), kept in this browser; she reads the side's pictures
   let adjutant = adjutantConfig();
   try { adjutant = adjutantConfig(JSON.parse(localStorage.getItem('astrum.adjutant') ?? 'null')); } catch { /* not kept */ }
@@ -218,6 +221,7 @@
     if (s.system !== systemId) return;
     s.ships = mergeShips(state?.system === s.system ? state.ships : null, s.ships ?? {}, s.full);
     if (!s.tracks) s.tracks = s.full ? {} : state?.tracks ?? {};     // sent when they change
+    motion.feed(s);
     state = s;
     map.setState(s);
     if (orbitsT == null || Math.abs(s.t - orbitsT) > 2 * 86400) refreshOrbits();   // orbits precess: redraw now and then
@@ -288,12 +292,11 @@
     if (!able.length) return say('No ship there has a drive stated; they cannot be ordered to move.');
     const grp = group(state, contacts, able);
     const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
-    ordering = { unit: sel.id, ships: able, g, tilt: 0, plane: orderPlane, mode, free: freeMoves };
+    ordering = { unit: sel.id, ships: able, g, tilt: 0, plane: orderPlane, mode, then: lastThen };
   }
-  // how a move ends: on station (paying to hold the place), or free (an orbit in a well, else
-  // coasting); K while aiming, kept for the next move
-  let freeMoves = false;
-  $: if (ordering) freeMoves = !!ordering.free;
+  // how a move ends (orders.js THEN): on station, free, or ballistic; K while aiming, kept for the next move
+  let lastThen = 'station';
+  $: if (ordering?.then) lastThen = ordering.then;
   // K: the selection goes free if any of its ships holds station, else takes station (decelerate: to
   // rest on the active bullseye, held there)
   async function toggleFree(unit = sel?.id) {
@@ -372,10 +375,12 @@
     const o = ordering;
     try {
       const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId, view: side,
-                                  target: aim.target, mode: o.mode, queue, free: o.mode === 'move' && o.free ? true : undefined });
+                                  target: aim.target, mode: o.mode, queue, free: o.mode === 'move' && o.then === 'free' ? true : undefined,
+                                  ballistic: o.mode === 'move' && o.then === 'ballistic' && !queue ? true : undefined });
       const goal = Object.values(r.ships)[0]?.goal;
       const who = `${map.contactName(o.unit)}${o.ships.length > 1 ? ` (${o.ships.length} ships)` : ''}`;
       say(o.mode === 'turn' ? `${who}: turned to ${aim.kind === 'point' ? 'the point' : aim.label}` : o.g <= 0 ? `${who}: drive cut`
+        : r.ballistic ? `${who}: ${r.ballistic.label}, burning ${hms(r.ballistic.burn_s)}, there in ${hms(r.ballistic.there_s)}`
         : queue ? `${who}: queued, then ${aim.label}` : `${who}: ${goal?.label ?? aim.label} at ${o.g.toFixed(2)} g`);
       if (!queue) ordering = null;
     } catch (err) {
@@ -429,7 +434,7 @@
       const m = Object.keys(MODES).find((a) => is(e, a));
       if (e.key === 'Escape' || (m && MODES[m] === ordering.mode)) { ordering = null; return; }
       if (m) { ordering = { ...ordering, mode: MODES[m] }; return; }      // another kind of order, aimed the same
-      if (is(e, 'free') && ordering.mode === 'move') { ordering = { ...ordering, free: !ordering.free }; return; }
+      if (is(e, 'free') && ordering.mode === 'move') { ordering = { ...ordering, then: nextThen(ordering.then) }; return; }
       if (orderTool?.key(e)) { e.preventDefault(); return; }
     } else if (Object.keys(MODES).some((a) => is(e, a)) && mode === 'map') { startOrder(MODES[Object.keys(MODES).find((a) => is(e, a))]); return; }
     else if (is(e, 'stop') && mode === 'map') { stopOrder(); return; }
@@ -545,7 +550,7 @@
   watched={mode === 'map' ? watched : new Set()} />
 <HudCursor {map} {style} {settings} {overUI} />
 {#if mode === 'map' && scenarioOn && scenario}<Paths {map} {style} on={settings?.layers.paths ?? true} estimates={settings?.layers.path_estimates ?? true}
-  contacts={scenario.contacts} {sel} {ordering} aim={() => orderTool?.aim()} />{/if}
+  contacts={scenario.contacts} {sel} {ordering} aim={() => orderTool?.aim()} {motion} />{/if}
 {#if ruler && mode === 'map'}<Ruler {map} {style} {ruler} {markAt} />{/if}
 {#if mode === 'map'}
   <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />
@@ -657,7 +662,7 @@
 <InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold}
-  {watched} onwatch={toggleWatch} onfree={toggleFree}
+  {watched} onwatch={toggleWatch} onfree={toggleFree} {frameVel}
   master={side === 'master'} onstop={stopOrder} ondecel={decelOrder} onping={setPing} ondismiss={dismissTrack}
   {profiles} stances={profileRules.stances ?? {}} {engagement} onstance={setStance} />
 {/if}

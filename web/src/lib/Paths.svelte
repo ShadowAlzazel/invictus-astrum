@@ -14,7 +14,9 @@
   // free, what she does once there: at a body, or a point in a well, the orbit she goes onto; a
   // point out of every well, her coast from it (at rest by its bullseye, as she stops there).
   import { onMount, onDestroy } from 'svelte';
-  import { rgba } from './symbols.js';
+  import { rgba, text } from './symbols.js';
+  import { G, add, conic, dominant, len, onto, scale, sub, ballisticAim, ballisticAt } from './kepler.js';
+  import { G0 } from './orders.js';
 
   export let map = null;
   export let style = null;
@@ -24,68 +26,34 @@
   export let sel = null;
   export let ordering = null;           // an order being aimed (Orders), and where it is aimed: aim()
   export let aim = () => null;
+  export let motion = null;             // motion.js: how fast each bullseye's origin moves
 
-  const G = 6.6743e-20;                 // km³/(kg·s²)
   const N = 96, REDO_MS = 500;
+  // the ballistic predictor's notches, as Eva's: where she is 1 min, 10 min, 1 h, 1 d and 1 wk on
+  const NOTCH = [[60, '1m'], [600, '10m'], [3600, '1h'], [86400, '1d'], [604800, '1w']], WEEK = 604800, M = 80;
   let canvas, ctx, unhook, W = 0, H = 0;
   const kept = new Map();               // ship (k: as K would give) -> { at, body, pts: Float64Array, closed }
   let scr = new Float32Array(2 * (N + 1));
-  let pics = [null, null];              // the last two pictures: how fast a bullseye's origin moves
+  const line = new Float64Array(3 * (M + 1)), dots = new Float64Array(3 * NOTCH.length);
+  let dotScr = new Float32Array(2 * NOTCH.length);
 
-  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
-  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-  const len = (a) => Math.hypot(a[0], a[1], a[2]);
-  const scale = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
-
-  // the body whose well a point is in: the smallest well about it; a binary's, the component that pulls harder
-  function dominant(p) {
-    const st = map.state.bodies, bodies = map.def.bodies;
-    let best = null;
-    for (const b of bodies) {
-      const s = b.zones?.soi_km, q = st[b.id];
-      if (s && q && len(sub(p, q)) < s && (!best || s < best.zones.soi_km)) best = b;
-    }
-    const well = best && map.bodies[best.zones.well_of ?? best.id];
-    if (well?.components) {
-      return well.components.map((id) => map.bodies[id]).filter((b) => st[b.id])
-        .reduce((a, b) => (b.mass_kg / len(sub(p, st[b.id])) ** 2 > a.mass_kg / len(sub(p, st[a.id])) ** 2 ? b : a));
-    }
-    return best ?? bodies.find((b) => !b.parent);
+  // the units by id, and the selection's (worked out as they change, not every frame)
+  $: byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
+  $: under = subtree(sel?.kind === 'contact' ? sel.id : null, byId);
+  function subtree(id, byId) {
+    const out = new Set(), walk = (u) => { out.add(u); (byId[u]?.children ?? []).forEach(walk); };
+    if (id) walk(id);
+    return out;
   }
 
-  // a conic about a body, as points off it (km, 3 a point): an ellipse whole, else the arc ahead to limit;
-  // falling straight (no turn about it), the line in
-  function conic(r, v, mu, limit) {
-    const rn = len(r), h = cross(r, v), hn = len(h), pts = new Float64Array(3 * (N + 1));
-    if (mu <= 0) return null;
-    if (hn < 1e-9 * rn * Math.max(len(v), 1e-9)) {
-      for (let k = 0; k <= N; k++) for (let i = 0; i < 3; i++) pts[3 * k + i] = r[i] * (1 - k / N);
-      return { pts, closed: false };
-    }
-    const ev = sub(scale(cross(v, h), 1 / mu), scale(r, 1 / rn)), e = len(ev);
-    const P = e > 1e-8 ? scale(ev, 1 / e) : scale(r, 1 / rn), Qr = cross(h, P), Q = scale(Qr, 1 / len(Qr)), p = (hn * hn) / mu;
-    const put = (k, nu) => { const rr = p / (1 + e * Math.cos(nu)), c = Math.cos(nu) * rr, s = Math.sin(nu) * rr;
-      for (let i = 0; i < 3; i++) pts[3 * k + i] = c * P[i] + s * Q[i]; };
-    if (e < 1) { for (let k = 0; k <= N; k++) put(k, (2 * Math.PI * k) / N); return { pts, closed: true }; }
-    const now = Math.atan2(dot(r, Q), dot(r, P)), far = Math.acos(-1 / e) - 1e-3;
-    let end = far;                                     // outward only as far as the limit
-    for (let k = 1; k <= N; k++) { const nu = now + ((far - now) * k) / N, rr = p / (1 + e * Math.cos(nu)); if (rr > limit) { end = nu; break; } }
-    if (end <= now) return null;
-    for (let k = 0; k <= N; k++) put(k, now + ((end - now) * k) / N);
-    return { pts, closed: false };
-  }
-  // the orbit she goes onto, going free at rel off a body of mu: circular, prograde about the system's up
-  function onto(rel, mu) {
-    const R = len(rel), up = Math.abs(rel[2]) < 0.95 * R ? [0, 0, 1] : [1, 0, 0], along = cross(up, rel);
-    return conic(rel, scale(along, Math.sqrt(mu / R) / len(along)), mu, 3 * R);
-  }
+  // (the math: kepler.js)
+  const dominantAt = (p) => dominant(map.def.bodies, map.bodies, map.state.bodies, p);
   // what going free at p moving at v gives: an orbit in a body's well, else her coast about the star
   function goingFree(p, v) {
-    const st = map.state, b = dominant(p), bp = b && st.bodies[b.id], bv = b && st.bodies_kms?.[b.id];
+    const st = map.state, b = dominantAt(p), bp = b && st.bodies[b.id], bv = b && st.bodies_kms?.[b.id];
     if (!bp || !bv || !(b.mass_kg > 0)) return null;
     const r = sub(p, bp), mu = G * b.mass_kg;
-    return { body: b.id, ...(b.kind !== 'star' ? onto(r, mu) : conic(r, sub(v, bv), mu, Math.max(3 * len(r), 1))) };
+    return { body: b.id, ...(b.kind !== 'star' ? onto(r, mu, N) : conic(r, sub(v, bv), mu, Math.max(3 * len(r), 1), N)) };
   }
 
   // a ship's path now, as she is in the picture: her own conic (free), or what K would give (on station)
@@ -93,9 +61,9 @@
     const st = map.state, p = st.contacts?.[id];
     if (!p) return null;
     if (k) return goingFree(p, s.velocity_kms);
-    const b = s.orbit_of ? map.bodies[s.orbit_of] : dominant(p), bp = b && st.bodies[b.id], bv = b && st.bodies_kms?.[b.id];
+    const b = s.orbit_of ? map.bodies[s.orbit_of] : dominantAt(p), bp = b && st.bodies[b.id], bv = b && st.bodies_kms?.[b.id];
     if (!bp || !bv || !(b.mass_kg > 0)) return null;
-    const r = sub(p, bp), path = conic(r, sub(s.velocity_kms, bv), G * b.mass_kg, Math.max(3 * len(r), b.zones?.soi_km ?? 0));
+    const r = sub(p, bp), path = conic(r, sub(s.velocity_kms, bv), G * b.mass_kg, Math.max(3 * len(r), b.zones?.soi_km ?? 0), N);
     return path && { body: b.id, ...path };
   }
 
@@ -120,15 +88,52 @@
     }
     ctx.stroke();
   }
+  // BALLISTIC aimed: as the simulation aims it (kepler.js ballisticAim) from the ships' mean, the
+  // burn's line, then her coast about the body whose well she is in when it ends (two bodies, it
+  // moving on as it does now), out to a week, notched where she is 1 min, 10 min, 1 h, 1 d, 1 wk on
+  function ballistic(a, color) {
+    const st = map.state, ships = ordering.ships.filter((id) => st.contacts?.[id] && st.ships?.[id]?.velocity_kms);
+    if (!ships.length || !(ordering.g > 0)) return;
+    const mean = (f) => [0, 1, 2].map((k) => ships.reduce((x, id) => x + f(id)[k], 0) / ships.length);
+    const r0 = mean((id) => st.contacts[id]), v0 = mean((id) => st.ships[id].velocity_kms), acc = ordering.g * G0;
+    const bv = (id) => st.bodies_kms?.[id] ?? [0, 0, 0];
+    let P;                                             // where the target is T on
+    if (a.kind === 'body') {
+      const b = map.bodies[a.id], B0 = st.bodies[a.id], stand = Math.max(3 * (b?.radius_km ?? 0), 1000);
+      P = (T) => {                                     // past it, as the simulation aims: off it across her line
+        const Bt = add(B0, scale(bv(a.id), T)), d = sub(Bt, r0), across = [-d[1], d[0], 0], n = len(across);
+        return n < 1e-3 ? add(Bt, [stand, 0, 0]) : add(Bt, scale(across, stand / n));
+      };
+    } else if (a.kind === 'contact') {
+      const p = st.contacts[a.id], v = st.ships?.[a.id]?.velocity_kms ?? [0, 0, 0];
+      P = (T) => add(p, scale(v, T));
+    } else {
+      const vb = motion?.of(a.target?.bullseye) ?? [0, 0, 0];
+      P = (T) => add(a.to, scale(vb, T));
+    }
+    const aim = ballisticAim(r0, v0, acc, P);
+    const endAt = ballisticAt(r0, v0, acc, aim, aim.tb, null), b = dominantAt(endAt), B = b && st.bodies[b.id];
+    const body = B && b.mass_kg > 0 ? { mu: G * b.mass_kg, v: bv(b.id), at: (t) => add(B, scale(bv(b.id), t)) } : null;
+    const span = Math.max(WEEK, 1.2 * aim.T);
+    for (let k = 0; k <= M; k++) {                     // denser early on, where the burn is and the near notches
+      const t = span * (k / M) ** 3, p = ballisticAt(r0, v0, acc, aim, t, body);
+      for (let i = 0; i < 3; i++) line[3 * k + i] = p[i] - r0[i];
+    }
+    NOTCH.forEach(([t], k) => { const p = ballisticAt(r0, v0, acc, aim, t, body); for (let i = 0; i < 3; i++) dots[3 * k + i] = p[i] - r0[i]; });
+    stroke({ pts: line }, r0, color, [1, 4]);
+    map.projectMany(r0, dots, dotScr);
+    ctx.setLineDash([]); ctx.strokeStyle = color;
+    NOTCH.forEach(([, label], k) => {
+      const x = dotScr[2 * k], y = dotScr[2 * k + 1];
+      if (x !== x) return;
+      ctx.beginPath(); ctx.moveTo(x - 4, y - 4); ctx.lineTo(x + 4, y + 4); ctx.moveTo(x - 4, y + 4); ctx.lineTo(x + 4, y - 4); ctx.stroke();
+      text(ctx, label, x + 6, y - 6, color, 10);
+    });
+  }
   function draw(now) {
     ctx.clearRect(0, 0, W, H);
     const st = map?.state;
     if (!st || !map.def || !style || (!on && !estimates)) return;
-    if (pics[1] !== st) pics = [pics[1], st];
-    const byId = {};
-    for (const c of contacts) byId[c.id] = c;
-    const under = new Set(), walk = (u) => { under.add(u); (byId[u]?.children ?? []).forEach(walk); };
-    if (sel?.kind === 'contact') walk(sel.id);
     const marked = new Set();
     for (const m of map.marks ?? []) marked.add(m.id);
     const friend = rgba((style.affiliation.friend ?? style.affiliation.unknown).color, 0.28);
@@ -158,22 +163,21 @@
       if (o) stroke(path, o, k ? fuchsia : under.has(c.id) ? friendOn : friend, k ? [1, 4] : [3, 4]);
     }
     if (kept.size > 4 * contacts.length) kept.clear();
-    // a move given free, aimed: what she does once there
-    const a = estimates && ordering?.mode === 'move' && ordering.free ? aim() : null;
-    if (a) {
+    // a move aimed: given free, what she does once there; ballistic, her whole way, notched in time
+    const a = estimates && ordering?.mode === 'move' && ordering.then !== 'station' ? aim() : null;
+    if (a && ordering.then === 'free') {
       let path = null;
       const b = a.kind === 'body' && map.bodies[a.id];
       if (b && b.mass_kg > 0 && a.standoff > 0) {
         const d = sub(a.from, a.to);
-        path = { body: b.id, ...onto(scale(d, a.standoff / len(d)), G * b.mass_kg) };
+        path = { body: b.id, ...onto(scale(d, a.standoff / len(d)), G * b.mass_kg, N) };
       } else if (a.kind === 'point') {                 // she stops at rest by the bullseye: its origin's motion
-        const bid = a.target?.bullseye, [p0, p1] = pics;
-        const O0 = p0?.bullseyes?.[bid]?.origin, O1 = p1?.bullseyes?.[bid]?.origin, dt = p1 && p0 ? p1.t - p0.t : 0;
-        const v = O0 && O1 && dt > 0 ? scale(sub(O1, O0), 1 / dt) : [0, 0, 0];
-        path = goingFree(a.to, v);
+        path = goingFree(a.to, motion?.of(a.target?.bullseye) ?? [0, 0, 0]);
       }
-      const o = path?.pts && (path.body === (a.kind === 'body' ? a.id : null) ? a.to : map.position({ kind: 'body', id: path.body }));
+      const o = path?.pts && (a.kind === 'body' ? a.to : map.position({ kind: 'body', id: path.body }));
       if (o) stroke(path, o, fuchsia, [1, 4]);
+    } else if (a && ordering.then === 'ballistic') {
+      ballistic(a, fuchsia);
     }
     ctx.setLineDash([]);
   }

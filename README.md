@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 221 tests
+python -m pytest -q tests             # 223 tests (the map's math too, in node)
 ```
 
 `serve.py` says at start whether the simulation's hot loops are compiled (`kernels compiled
@@ -93,7 +93,7 @@ the author*. The format is in `data/ships/README.md`.
 | Shift-click | (aiming) queue the order after what the selection flies; aiming goes on |
 | Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
 | V | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond); a formation: every ship under it |
-| K | station or free: a ship (or every ship under a formation) holding station goes free, onto an orbit of the body whose well she is in (paying only the burn onto it), else coasting; a free one takes station (decelerate, as X). Aiming a move: once there, free (at a body, an orbit of it) or holding station |
+| K | station or free: a ship (or every ship under a formation) holding station goes free, onto an orbit of the body whose well she is in (paying only the burn onto it), else coasting; a free one takes station (decelerate, as X). Aiming a move, how it ends, cycled: holding station there, free there (at a body, an orbit of it), or ballistic (no braking: half the way burning, then on through it) |
 | Y | trajectories: the free ships' paths on the map, on or off (Display, Free paths; the fuchsia estimates are Free path estimates) |
 | C | show sensors: the selection's drawn on the map always (a formation: every ship under it); again: hide |
 | X | DECELERATE the selection: a new order to turn and burn to rest on the active bullseye (on the star centre: by the body that pulls hardest) and hold there |
@@ -124,7 +124,10 @@ paths): her conic about the body whose well she is in, read off the picture, one
 drawn folded into its mark. Dotted fuchsia, what K would give: for the selection's ships on
 station, the orbit they would go onto (or their coast, out of every well); aiming a move given free
 once there: at a body, or a point in a well, the orbit she would be on; a point out of every well,
-her coast from it. **Bingo:** a ship flying an order with less Δv left than
+her coast from it; aiming a move ballistic, her whole way (the burn's line, then her coast about the
+body whose well she is in when it ends), notched where she is 1 min, 10 min, 1 h, 1 day and 1 week
+on. Beside station or free, her speed off the active bullseye (a formation's: its ships' mean),
+worked out by the map from its own pictures. **Bingo:** a ship flying an order with less Δv left than
 she closes on its target at can no longer stop there; she drops it and goes free, keeping the rest
 (the findings say so).
 

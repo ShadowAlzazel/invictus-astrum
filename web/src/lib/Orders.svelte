@@ -5,7 +5,7 @@
   // slowest ship can give down to stop. Every ship flying an order shows its vector and time to
   // target; the selected ones brightest.
   import { onMount, onDestroy } from 'svelte';
-  import { aimAt, estimate, heading, hms, group, stepG, shipsUnder } from './orders.js';
+  import { nextThen, aimAt, estimate, heading, hms, group, stepG, shipsUnder } from './orders.js';
   import Telegraph from './Telegraph.svelte';
   import { cap, keymap } from './keys.js';
   import { km, bearing, elev } from './format.js';
@@ -102,7 +102,7 @@
     if (aimed) {
       const a = map.project(aimed.from), b = map.project(aimed.to);
       if (a && b) {
-        const est = estimate(aimed, shown), hd = heading(map, aimed);
+        const ballistic = ordering.mode === 'move' && ordering.then === 'ballistic', est = estimate(aimed, shown, ballistic), hd = heading(map, aimed);
         line(a, b, col(F, 0.95), 1.6);
         if (ordering.ships.length > 1 || ordering.ships[0] !== ordering.unit) {      // each ship's own line, offset kept
           for (const id of ordering.ships) {
@@ -118,9 +118,11 @@
         label(ordering.mode === 'turn'
           ? [`turn to ${aimed.kind === 'point' ? `${bearing(hd.bearing)} ${elev(hd.elevation)}` : aimed.label}`, 'her hull pointed there, nothing flown']
           : [aimed.kind === 'point' ? `to ${bearing(hd.bearing)} ${elev(hd.elevation)}` : `to ${aimed.label}`,
-             `${km(est.distance)}${aimed.standoff ? `, stopping ${km(aimed.standoff)} short` : ''}`,
+             `${km(est.distance)}${aimed.standoff && !ballistic ? `, stopping ${km(aimed.standoff)} short` : ''}`,
              shown > 0 ? `ETA ≈ ${hms(est.eta)} at ${shown.toFixed(2)} g · Δv ≈ ${est.dv.toFixed(1)} km/s` : 'stop: cut her drive',
-             ...(ordering.mode === 'move' && shown > 0 ? [ordering.free ? (aimed.kind === 'body' ? `then free: an orbit of ${aimed.label}` : 'then free: coasting, or an orbit in a well') : 'then holds station there'] : [])],
+             ...(ordering.mode === 'move' && shown > 0 ? [ballistic ? 'ballistic: no braking, on through it'
+               : ordering.then === 'free' ? (aimed.kind === 'body' ? `then free: an orbit of ${aimed.label}` : 'then free: coasting, or an orbit in a well')
+               : 'then holds station there'] : [])],
               b.x, b.y, F);
       }
     }
@@ -156,9 +158,9 @@
       <i></i>{onBull ? "Bullseye's plane" : 'Her own height'}<kbd>{cap($keymap.plane)}</kbd>
     </button>
     {#if ordering.mode === 'move'}
-      <button class="plane" class:on={ordering.free} on:click={() => (ordering = { ...ordering, free: !ordering.free })}
-        title="Once there: hold station (paying to hold her place), or go free (an orbit in a body's well, paying only the burn onto it; else coasting)">
-        <i></i>{ordering.free ? 'Then free: orbit or coast' : 'Then hold station'}<kbd>{cap($keymap.free)}</kbd>
+      <button class="plane" class:on={ordering.then !== 'station'} on:click={() => (ordering = { ...ordering, then: nextThen(ordering.then) })}
+        title="How it ends (K cycles): hold station there (paying to hold her place); free there (an orbit in a body's well, paying only the burn onto it; else coasting); or ballistic (no braking: half the way burning, then on through it at that speed)">
+        <i></i>{ordering.then === 'ballistic' ? 'Ballistic: burn, then on through' : ordering.then === 'free' ? 'Then free: orbit or coast' : 'Then hold station'}<kbd>{cap($keymap.free)}</kbd>
       </button>
     {/if}
     <p class="keys"><kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>{cap($keymap.eve)}</kbd><kbd>{cap($keymap.haid)}</kbd> Eve / Haid · <kbd>{cap($keymap.plane)}</kbd> plane · click to order, <kbd>⇧</kbd>-click to queue · <kbd>{cap($keymap.order)}</kbd><kbd>{cap($keymap.attack)}</kbd><kbd>{cap($keymap.patrol)}</kbd><kbd>{cap($keymap.turn)}</kbd> move, attack, patrol, turn · <kbd>Esc</kbd> cancel</p>

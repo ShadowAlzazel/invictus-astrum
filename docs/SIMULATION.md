@@ -323,6 +323,18 @@ hold: it is free fall. Off it (a move, decelerate) she leaves from where it has 
 speed. The map draws every free ship's conic about the body whose well she is in, off its picture
 (the bodies' velocities ride in it, `bodies_kms`): nothing is asked of the server.
 
+**BALLISTIC.** A move given ballistic (K while aiming cycles station, free, ballistic) does not
+brake: the server aims one burn (`simhost.ballistic_order`) from the ships' mean along a line in
+the system's frame, for half the way by distance, and she coasts on through the target at the
+speed reached. With D = P(T) − r0 − v0·T (the target where it will be, less where her own velocity
+takes her), the burn lasts tb = √(|D|/a) and she is there T = 1.5·tb after the order; T is iterated
+until it settles. At a body she passes it, aimed max(3 radii, 1000 km) off it across her line. It is
+a BURN order with a duration (no goal, nothing held, nothing for bingo to drop), so it costs the
+flight what any burn does, and she is free after it. The map draws the same aim (`kepler.js`
+`ballisticAim`, `ballisticAt`: the burn's line, then Kepler's drift about the body whose well she
+is in when it ends), notched in time; a straight line under thrust and two bodies after, an
+estimate.
+
 **BINGO.** After every block, a ship flying an order whose Δv left (by the rocket equation) is
 less than the speed she closes on its target at (her formation's lead's, in formation) can no
 longer stop there: she drops it and goes free (an orbit only if she still has the Δv for it),

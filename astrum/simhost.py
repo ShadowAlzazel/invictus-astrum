@@ -43,7 +43,8 @@ from .switches import resolve
 from .loader import contact_positions
 from .placement import plan
 from .entity import G0
-from .sim import BLOCK_S, Order
+from .frames import to_aer
+from .sim import BLOCK_S, STANDOFF_BODY_R, Order
 from .timescale import iso
 from .zones import magnetopause
 
@@ -307,6 +308,8 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
         raise OrderRefused(400, "mode is move, attack, patrol or turn (patrol: to a point off a bullseye)")
     if mode == "turn":
         return turn_order(world, sc, fleet, side, unit, ships, t, tp, target, player, overrule)
+    if req.get("ballistic") is True and mode == "move":
+        return ballistic_order(world, sc, fleet, side, unit, ships, t, tp, target, float(g), overrule)
     formation, offsets, anchor = len(ships) > 1 or unit not in ships, {sid: np.zeros(3) for sid in ships}, None
     if formation or mode == "patrol":                # where it is now (where the fleet has got, if it is behind the clock)
         flown = fleet.positions_at(tp)
@@ -333,6 +336,49 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
                                 **({"after": after[sid]} if sid in after else {})))
               for sid in ships]
     return order_reply(fleet, t, unit, ships, orders, side)
+
+
+def ballistic_order(world, sc, fleet, side, unit: str, ships: list[str], t: float, tp: float, target: dict, g: float,
+                    overrule=None) -> dict:
+    """BALLISTIC: a move that keeps its speed. Every ship burns at g along one line for half the
+    way, then her drive is cut and she coasts on through the target at the speed she reached: no
+    braking, no order left to fly (a timed burn, as a scenario writes one, so the formation keeps
+    its shape). Aimed as a straight line, gravity left out: from where the formation is (the mean of
+    its ships) with its own drift, at where the target will be when she gets there (worked out again
+    until that settles); at a body, past it at the distance a go-to would stop short of it. As the
+    map's predictor aims it (web/src/lib/kepler.js ballisticAim)."""
+    a = g * G0
+    if a <= 0:
+        raise OrderRefused(400, "a ballistic move needs g above 0")
+    s, _ = world.system(sc.system)
+    with fleet.lock:
+        pic = fleet.picture(tp)
+        rows = [fleet.c.row[sid] for sid in ships]
+        r0, v0 = pic["r"][rows].mean(axis=0), pic["v"][rows].mean(axis=0)
+        T, D, tb = 0.0, None, 0.0
+        for _ in range(30):
+            P = fleet._point(target, tp + T)
+            if P is None:
+                raise OrderRefused(400, f"{target.get('label', 'the target')} is not there to aim at")
+            if "body" in target:                       # a flyby, not a collision
+                b = next((x for x in s if x.id == target["body"]), None)
+                across = np.cross([0.0, 0.0, 1.0], P - r0)
+                if np.linalg.norm(across) < 1.0:
+                    across = np.array([1.0, 0.0, 0.0])
+                stand = max(STANDOFF_BODY_R * (getattr(b, "radius_eq", 0.0) or getattr(b, "radius", 0.0) or 0.0), 1e6)
+                P = P + stand * across / np.linalg.norm(across)
+            D = P - r0 - v0 * T
+            tb, was = math.sqrt(float(np.linalg.norm(D)) / a), T
+            T = 1.5 * tb                               # half the way burning, the rest at the speed reached
+            if abs(T - was) < 1e-9 * T:
+                break
+    brg, el, _ = to_aer(D)
+    if overrule is not None:
+        overrule(sc, fleet, ships, t)
+    oid = f"{unit}:ballistic@{t:.0f}#{next(_order_n)}"
+    burn = {"bullseye": "system", "bearing": math.degrees(brg), "elevation": math.degrees(el), "g": g, "duration_s": tb}
+    out = order_reply(fleet, t, unit, ships, [Order(sid, t, "burn", burn=burn, source="map", order_id=oid, by=unit) for sid in ships], side)
+    return {**out, "ballistic": {"burn_s": tb, "there_s": T, "label": f"ballistic to {target.get('label', 'the target')}"}}
 
 
 def turn_order(world, sc, fleet, side, unit: str, ships: list[str], t: float, tp: float, target: dict, player: str,

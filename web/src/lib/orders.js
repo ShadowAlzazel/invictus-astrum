@@ -1,6 +1,6 @@
 // The order tool's arithmetic. The server flies the ship; this only says where she is told to go
 // and what that will roughly take, for the vector drawn while the order is aimed.
-const G0 = 9.80665e-3;                       // km/s² in a g
+export const G0 = 9.80665e-3;                       // km/s² in a g
 const STANDOFF_UNIT_KM = 50, STANDOFF_BODY_R = 3, STANDOFF_BODY_MIN_KM = 1000;   // as astrum/sim.py
 
 const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -39,10 +39,12 @@ export function aimAt(map, unit, ships, cursor, tiltDeg, plane = 'her') {
            target: { bullseye: map.bullseyeId, aer: [a.bearing, a.elevation, a.range] } };
 }
 
-// From rest, flip and burn: there in 2√(d/a), at a cost of 2√(a·d)
-export function estimate(aim, g) {
-  const d = Math.max(len(sub(aim.to, aim.from)) - aim.standoff, 0), a = g * G0;
-  return { distance: d, eta: a > 0 ? 2 * Math.sqrt(d / a) : Infinity, dv: a > 0 ? 2 * Math.sqrt(a * d) : 0 };
+// From rest, flip and burn: there in 2√(d/a), at a cost of 2√(a·d). Ballistic (no braking, on
+// through it): burning √(d/a), there half as long again, at a cost of √(a·d)
+export function estimate(aim, g, ballistic = false) {
+  const d = Math.max(len(sub(aim.to, aim.from)) - (ballistic ? 0 : aim.standoff), 0), a = g * G0;
+  if (!(a > 0)) return { distance: d, eta: Infinity, dv: 0 };
+  return { distance: d, eta: (ballistic ? 1.5 : 2) * Math.sqrt(d / a), dv: (ballistic ? 1 : 2) * Math.sqrt(a * d) };
 }
 
 // The vector's own bearing and elevation, in the bullseye's axes, from the ship
@@ -132,3 +134,8 @@ export function stepG(g, maxG, cruise, up, fine) {
   const next = up ? [...list].reverse().find((x) => x > cur + 1e-6) : list.find((x) => x < cur - 1e-6);
   return next ?? cur;
 }
+
+// how a move ends, K cycling them: on station (paying to hold the place), free (an orbit in a
+// well, else coasting), or ballistic (no braking: half the way burning, then coasting on through)
+export const THEN = ['station', 'free', 'ballistic'];
+export const nextThen = (then) => THEN[(THEN.indexOf(then ?? 'station') + 1) % THEN.length];

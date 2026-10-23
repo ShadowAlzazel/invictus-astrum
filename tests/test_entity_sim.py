@@ -1590,3 +1590,26 @@ def test_bingo_fuel_drops_the_order_and_goes_free():
     f.at(t + 24 * 3600)
     assert not f.c.goal[i] and f.c.mode[i] == 1 and f.c.prop[i] > 0.005 * f.c.pmax[i]
     assert any("kiki-1: bingo fuel" in x for x in f.findings)
+
+
+def test_a_ballistic_move_burns_then_coasts_through():
+    """BALLISTIC: one timed burn, then she coasts on through the point at the speed she reached:
+    no braking, no order left."""
+    from astrum.app import create_app
+    from astrum.simhost import give_order
+    world = create_app().state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    f.at(t)
+    target = {"bullseye": "burn", "aer": [90, 0, 3e6]}
+    r = give_order(world, {"scenario": "sol-demo", "unit": "kiki-1", "player": "arcvs", "t": t, "g": 0.3, "target": target, "ballistic": True})
+    tb, T = r["ballistic"]["burn_s"], r["ballistic"]["there_s"]
+    i = f.c.row["kiki-1"]
+    f.at(t + 0.5 * tb)
+    assert f.c.thrust[i] > 0 and not f.c.goal[i]
+    s = f.at(t + tb + 600)["kiki-1"].state
+    assert f.c.thrust[i] == 0 and np.linalg.norm(s.v) > 0
+    # she passes the point (it is carried with Earth's bullseye): closest within a few percent of the way
+    P = lambda T_: f._point({"bullseye": "burn", "player": "arcvs", "aer": [90, 0, 3e9]}, T_)
+    miss = min(np.linalg.norm(f.at(t + k * T / 40)["kiki-1"].state.r - P(t + k * T / 40)) for k in range(30, 51))
+    assert miss < 0.05 * 3e9
