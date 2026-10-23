@@ -165,7 +165,7 @@ def test_sol_demo_fleet(reg):
     world = app.state.world
     sc = world.scenarios["sol-demo"]
     f = world.fleet(sc)
-    assert len(f.ships) == 131 and not f.findings
+    assert len(f.ships) == 154 and not f.findings
     c = TestClient(app)
     meta = c.get("/api/meta").json()
     kiki = next(u for u in meta["scenarios"][0]["contacts"] if u["id"] == "kiki-1")
@@ -1252,7 +1252,7 @@ def test_reports_come_up_the_leaders_to_the_fleet_flagship():
     assert np.isclose(d[row["kiki-2"]], far("kiki-2", "kiki-1") / (0.3 * C) + d[row["kiki-1"]])   # to her leader, slow
     jadf = Relay(f, picture.own_rows(f, w.factions, "jadf"), {"vigils": ["salticidae"], "fast": 1.0, "slow": 0.3})
     dj = jadf.delays(r)
-    assert jadf.flagship == row["jove-1"] and list(jadf.vigils) == [row["jove-1"]]
+    assert jadf.flagship == row["jove-1"] and list(jadf.vigils) == [row["jove-1"], row["cew2-1"]]     # both Callisto flights' Vigils
     assert np.isclose(dj[row["jove-2"]], far("jove-2", "jove-1") / C)                   # through the Vigil: at c
     k = int((t - f.t0) // SAMPLE_S)
     now, held = f.sweeper.latest(k, "arcvs", own), f.sweeper.arrived(t, "arcvs", own)
