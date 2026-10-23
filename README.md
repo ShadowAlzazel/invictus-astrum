@@ -15,8 +15,12 @@ cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
 python serve.py --dev                 # the same, no sign-in: straight onto config.toml [dev] level as its side
 python serve.py --dev cislunar --side jadf   # (a level's id, a scenario's or a system's; any side of it)
-python -m pytest -q tests             # 236 tests (the map's math too, in node)
+python tools/check.py                 # the data loads, sol-demo builds and flies a day: ~5 s, no server
+python -m pytest -q tests             # 237 tests (the map's math too, in node)
 ```
+
+Working on it: `docs/DEVOPS.md` (what to run after which change, the tools, the tests);
+`CLAUDE.md` (the project's goals and how we work on it).
 
 The map asks you to **sign in**: the users are `data/users.toml` (Halsey, Nimitz, Fabian and
 Scipio, every password `1234`: test accounts for a local network; add one with

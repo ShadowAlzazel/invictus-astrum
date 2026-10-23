@@ -321,3 +321,15 @@ def test_a_class_is_called_in_one_line_and_says_who_builds_her(reg):
     assert any("terms is a list" in m for m in msgs) and "[class] 'designation' is now [class] builder" in msgs
     assert "[class] 'body' is now [hull] body" in msgs
     assert not [f for c in reg.classes.values() for f in c.findings if f.level == "error"]     # every class moved over
+
+
+def test_check_tool(capsys):
+    """tools/check.py loads the data, builds sol-demo's fleet and flies it, and says so."""
+    import importlib.util
+    from conftest import ROOT
+    spec = importlib.util.spec_from_file_location("check", ROOT / "tools" / "check.py")
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    assert tool.main(["sol-demo", "--hours", "1"]) == 0
+    out = capsys.readouterr().out
+    assert "registry: " in out and "0 errors" in out and "jadf" in out and "flown 1 h" in out and out.rstrip().endswith("ok")
