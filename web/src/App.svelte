@@ -722,7 +722,7 @@
 {:else if mode === 'ships'}
   <ShipRegistry bind:this={registry} {style} onback={toMenu} />
 {:else if mode === 'fleets'}
-  <FleetManager onback={toMenu} />
+  <FleetManager {style} onback={toMenu} />
 {:else if mode === 'signin'}
   <SignIn onsigned={signedIn} />
 {:else if mode === 'levels' && purpose === 'play' && authOn}

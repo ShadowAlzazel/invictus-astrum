@@ -694,10 +694,19 @@ def fleet_dict(world: "World", fl, units: bool = False) -> dict:
            "by_class": dict(sorted(by.items(), key=lambda kv: -kv[1])),
            "scenarios": [s.id for s in world._loaded.values() if fl.id in s.fleets]}
     if units:
-        classes = world.ships.classes
+        classes, by_id = world.ships.classes, {c["id"]: c for c in fl.contacts}
+
+        def above(c, key):                               # stated, else the formation's above it
+            while c is not None and c.get(key) is None:
+                c = by_id.get(c.get("formation"))
+            return c.get(key) if c else None
         out["units"] = [{"id": c["id"], "callsign": c.get("callsign", c["id"]), "echelon": c.get("echelon", "ship"),
                          "formation": c.get("formation"), "class": c.get("class", ""), "hull_number": str(c.get("hull_number", "")),
-                         "class_name": classes[c["class"]].name if c.get("class") in classes else ""} for c in fl.contacts]
+                         "class_name": classes[c["class"]].name if c.get("class") in classes else "",
+                         "affiliation": above(c, "affiliation") or "unknown", "status": c.get("status", []),
+                         "role": "" if c.get("class") else c.get("role") or formation_role(world.style, c.get("callsign", "")),
+                         "unit_type": c.get("unit_type") or (classes[c["class"]].doc.get("class", {}).get("symbol", "")
+                                                             if c.get("class") in classes else "")} for c in fl.contacts]
         out["classes"] = sorted(({"id": k, "name": v.name} for k, v in classes.items() if v.drive), key=lambda x: x["name"])
     return out
 

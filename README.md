@@ -59,7 +59,9 @@ The map opens on the main menu, over a system standing still:
 1. **Simulation**: choose a level and start it.
 2. **System workshop**: build a system, or copy one and change it.
 3. **Ship registry**: the classes of the fleet.
-4. **Fleets**: every fleet (`data/fleets`), its ships by class and its order of battle. An admin
+4. **Fleets**: every fleet (`data/fleets`), its ships by class and its order of battle, as a chart
+   in the NATO manner (the map's own symbols, each unit under the one above it, a formation's
+   symbol making it the chart's top; ships shown or tallied by class) or as a table. An admin
    (`role = "admin"` in `data/users.toml`: Fabian, and the `--dev` user) renames its units and
    changes a ship's hull number or class; the edit is written into the fleet's file. A level
    plays a copy of its scenarios and fleets as they stood when it started: an edit is played

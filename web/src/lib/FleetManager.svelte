@@ -1,12 +1,17 @@
 <script>
   // The fleets (data/fleets, astrum/fleets.py): every fleet, its ships by class, and its order of
-  // battle, formation by formation. An admin renames units and changes a ship's hull number or
-  // class; the server writes it into the fleet's file. A level already running keeps the copy it
-  // started with: an edit is played from the next start.
+  // battle, formation by formation: as a table, or as a chart in the NATO manner, each unit under
+  // the one above it with the map's own symbols. An admin renames units and changes a ship's hull
+  // number or class, in either; the server writes it into the fleet's file. A level already
+  // running keeps the copy it started with: an edit is played from the next start.
   import { onMount } from 'svelte';
   import { api } from './api.js';
+  import OrgNode from './OrgNode.svelte';
 
   export let onback = () => {};
+  export let style = null;
+
+  let view = 'chart', top = null, ships = false;   // the chart: its top formation, ships shown or tallied
 
   let fleets = [], admin = false, current = null, fleet = null, error = '', saved = '';
   let edits = {};                       // unit id -> { callsign, hull_number, class }: what is changed and not saved
@@ -22,7 +27,7 @@
   }
   async function open(id) {
     if (dirty && !confirm('Leave this fleet without saving its changes?')) return;
-    current = id; edits = {}; saved = '';
+    current = id; edits = {}; saved = ''; top = null;
     try { fleet = await api.fleet(id); } catch (e) { error = String(e.message ?? e); }
   }
   onMount(load);
@@ -37,6 +42,14 @@
     walk('', 0);
     return out;
   }
+  // the chart: from its top formation (the fleet's own, or the one chosen), its units under it
+  $: nodes = fleet ? (() => {
+    const by = Object.fromEntries(fleet.units.map((u) => [u.id, { ...u, kids: [] }]));
+    for (const u of Object.values(by)) if (u.formation && by[u.formation]) by[u.formation].kids.push(u);
+    return by;
+  })() : {};
+  $: roots = fleet ? (top && nodes[top] ? [nodes[top]] : fleet.units.filter((u) => !u.formation).map((u) => nodes[u.id])) : [];
+  $: trail = top && nodes[top] ? (() => { const t = []; for (let u = nodes[top]; u; u = nodes[u.formation]) t.unshift(u); return t; })() : [];
   const value = (u, k) => edits[u.id]?.[k] ?? u[k];
   function change(u, k, v) {
     const e = { ...(edits[u.id] ?? {}), [k]: v };
@@ -95,12 +108,33 @@
       <section class="oob">
         <div class="bar">
           <h3>Order of battle</h3>
+          <span class="tabs">
+            <button class:on={view === 'chart'} on:click={() => (view = 'chart')}>Chart</button>
+            <button class:on={view === 'table'} on:click={() => (view = 'table')}>Table</button>
+          </span>
+          {#if view === 'chart'}<button class="act" class:on={ships} on:click={() => (ships = !ships)}>{ships ? 'Ships shown' : 'Ships tallied'}</button>{/if}
           {#if admin}
             {#if saved}<span class="ok">{saved}</span>{/if}
             <button class="act" disabled={!dirty} on:click={save}>Save {dirty ? `(${Object.keys(edits).length})` : ''}</button>
             <button class="act" disabled={!dirty} on:click={() => (edits = {})}>Undo</button>
           {/if}
         </div>
+        {#if view === 'chart'}
+          {#if trail.length}
+            <p class="trail">{#each trail.slice(0, -1) as t, i}{#if i}<span class="sl">/</span>{/if}<button on:click={() => (top = t.formation ? t.id : null)}>{value(t, 'callsign')}</button>{/each}<span class="sl">/</span><b>{value(trail[trail.length - 1], 'callsign')}</b></p>
+          {/if}
+          <p class="hint">A formation's symbol makes it the chart's top.</p>
+          {#each roots as r (r.id)}
+            <div class="chart">
+              <div class="root"><OrgNode unit={{ ...r, kids: [] }} {style} {admin} ships {value} {change} changed={edits} classes={fleet.classes} onfocus={(id) => (top = id)} /></div>
+              <div class="cols">
+                {#each (ships ? r.kids : r.kids.filter((k) => !k.class)) as col (col.id)}
+                  <div class="col"><OrgNode unit={col} {style} {admin} {ships} {value} {change} changed={edits} classes={fleet.classes} onfocus={(id) => (top = id)} /></div>
+                {/each}
+              </div>
+            </div>
+          {/each}
+        {:else}
         <table>
           <thead><tr><th>Unit</th><th>Class</th><th>Hull</th><th class="dim">id</th></tr></thead>
           <tbody>
@@ -131,6 +165,7 @@
             {/each}
           </tbody>
         </table>
+        {/if}
       </section>
     {/if}
   </main>
@@ -174,6 +209,25 @@
   .card span { color: var(--t2); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; text-align: center; }
   .bar { display: flex; align-items: center; gap: 8px; }
   .bar h3 { flex: 1; }
+  .tabs { display: flex; margin-right: 12px; }
+  .tabs button { padding: 5px 12px; color: var(--t2); border-bottom: 2px solid transparent; }
+  .tabs button.on { color: var(--t); border-bottom-color: var(--y); }
+  .act.on { background: rgba(250, 31, 153, 0.25); }
+  .trail { margin: 10px 0 0; font-size: 13px; }
+  .trail button { color: var(--c); }
+  .hint { color: var(--t3); font-size: 11px; margin: 6px 0 0; }
+
+  /* the chart: the top in the middle, the units under it in columns, joined by a bar */
+  .chart { margin: 18px 0 30px; }
+  .root { display: flex; justify-content: center; padding-bottom: 14px; position: relative; }
+  .root::after { content: ''; position: absolute; left: 50%; bottom: 0; height: 14px; border-left: 1px solid var(--t3); }
+  .cols { display: flex; gap: 28px; padding-top: 14px; overflow-x: auto; }
+  .col { position: relative; flex: 0 0 auto; }
+  .col::before { content: ''; position: absolute; top: -14px; left: 26px; height: 14px; border-left: 1px solid var(--t3); }
+  .col::after { content: ''; position: absolute; top: -14px; left: 0; right: -28px; border-top: 1px solid var(--t3); }
+  .col:first-child::after { left: 26px; }
+  .col:last-child::after { right: auto; width: 27px; }
+  .col:only-child::after { display: none; }
   .act { padding: 5px 12px; background: rgba(255, 255, 255, 0.08); }
   .act:hover:not(:disabled) { background: var(--y); }
   .act:disabled { opacity: 0.35; }
