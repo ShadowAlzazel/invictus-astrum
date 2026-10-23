@@ -132,7 +132,7 @@ formation = "io-tg"
 
 [[unit]]
 id = "jove-fs1-1"
-callsign = "Jove F1 Dryad 1"
+callsign = "Magnolia"
 affiliation = "friend"
 echelon = "ship"
 formation = "jove-fs1"

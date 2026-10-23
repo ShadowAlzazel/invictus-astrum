@@ -273,3 +273,9 @@ But yes, this is to make a scenario editor/ place ships or fleets.
 As well as a fleet editor.
 
 Simple, just add 
+
+
+Depolyment zones, and what fleets you want.
+
+
+SPAWNING
