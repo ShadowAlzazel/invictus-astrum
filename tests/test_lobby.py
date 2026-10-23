@@ -39,7 +39,7 @@ def _members(m):
 def test_signing_in(server):
     app, c = server
     assert c.post("/api/signin", json={"name": "halsey", "password": "nope"}).status_code == 401
-    assert c.get("/api/me").json() == {"user": None, "auth": True, "dev": False, "lobby": None, "pictures": "push"}
+    assert c.get("/api/me").json() == {"user": None, "auth": True, "dev": False, "admin": False, "lobby": None, "pictures": "push"}
     h = _signed(c, "halsey")                             # (any case)
     assert c.get("/api/me", headers=h).json()["user"] == "Halsey"
     assert c.post("/api/order", json={}, headers=h).status_code != 401

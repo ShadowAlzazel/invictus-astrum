@@ -7,12 +7,12 @@ cheapest check to the slowest.
 
 | Changed | Run first | Then |
 |---|---|---|
-| data (ships, drives, scenarios, levels) | `python tools/check.py` (~5 s) | `pytest tests/test_ships.py` or `tests/test_entity_sim.py -k <name>` |
+| data (ships, drives, fleets, scenarios, levels) | `python tools/check.py` (~5 s) | `pytest tests/test_ships.py` or `tests/test_entity_sim.py -k <name>` |
 | the flight, the sweep, the picture (`astrum/`) | the tests of that file, `-k` to the case | `python tools/bench_flight.py` if speed matters |
 | the web process (`app.py`, `lobby.py`, `gate.py`, `accounts.py`) | `pytest tests/test_lobby.py` (~5 s) | `python serve.py --dev` in the browser |
 | the map (`web/src`) | `cd web && npm run build` | `python serve.py --dev`, or `npm run dev` for live reload |
 
-Then, before a commit, the whole suite: `python -m pytest -q` (about 1.5 minutes, 237 tests).
+Then, before a commit, the whole suite: `python -m pytest -q` (about 1.5 minutes, 240 tests).
 
 ## The dev server
 
@@ -48,7 +48,7 @@ anything else.
 | `tools/bench_tactical.py` | the tactical layer at 10 min/s: pictures, orders at the clock and behind it |
 | `tools/drive_bench.py` | DRIVE_TEST_AND_BENCH from the data (`--rig`), or a class's drive, refitted (`--mark`, `--mix`, `--block`) |
 | `tools/fetch_horizons.py` | ephemerides from JPL Horizons |
-| `tools/formation_tf2.py`, `formation_tf3.py` | the task forces' formations, written into sol-demo |
+| `tools/formation_tf2.py`, `formation_tf3.py` | the task forces' formations, written into `data/fleets/luna-classis-1.toml` |
 
 ## The tests
 
@@ -62,6 +62,7 @@ runs in node from `tests/test_web.py`.
 | `test_combat.py` | veterancy, profiles, stances, the AI |
 | `test_ships.py` | the registry against the canon, the drives against DRIVE_TEST_AND_BENCH, the tools |
 | `test_lobby.py` | sign-in, lobbies, binding, pushed and asked pictures, the order gate, `--dev` |
+| `test_fleets.py` | fleets apart from scenarios, an admin's edits, the copy a running level keeps |
 | `test_level.py` | levels and their clocks |
 | `test_systems.py`, `test_orbits.py`, `test_frames.py`, `test_ephemeris_de421.py`, `test_zones_fields.py` | systems, orbits, frames, JPL accuracy, zones |
 | `test_builder.py`, `test_workshop.py`, `test_display.py`, `test_bullseye_config_app.py` | the system workshop, display rules, bullseyes, config |

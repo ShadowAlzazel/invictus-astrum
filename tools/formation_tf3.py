@@ -1,4 +1,4 @@
-"""Write Task Force 3 and the Luna Strike Squadron into data/scenarios/sol-demo.toml (between
+"""Write Task Force 3 and the Luna Strike Squadron into data/fleets/luna-classis-1.toml (between
 their markers).
 
     python tools/formation_tf3.py
@@ -35,7 +35,7 @@ sys.path.insert(0, str(ROOT))
 from astrum.ephemeris import Ephemeris  # noqa: E402
 from astrum.loader import load_system  # noqa: E402
 
-SCENARIO = ROOT / "data" / "scenarios" / "sol-demo.toml"
+FLEET = ROOT / "data" / "fleets" / "luna-classis-1.toml"
 BEGIN, END = "# >>> task force 3 and the strike squadron (written by tools/formation_tf3.py)", "# <<< task force 3"
 RING = 20_000                                    # km from Mars to each flotilla
 SHIP_GAP = 800                                   # km between hulls in a squadron: tight
@@ -110,12 +110,11 @@ for uid, name, ech, parent, cls, place in units:
 lines.append(END)
 block = "\n".join(lines)
 
-text = SCENARIO.read_text(encoding="utf-8")
+text = FLEET.read_text(encoding="utf-8")
 if BEGIN in text:
     text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _: block, text, flags=re.S)
 else:
-    marker = "# ---- the local picture"
-    text = text.replace(marker, block + "\n\n" + marker, 1)
-SCENARIO.write_text(text, encoding="utf-8")
+    text = text.rstrip() + "\n\n" + block + "\n"
+FLEET.write_text(text, encoding="utf-8")
 ships = sum(1 for u in units if u[2] == "ship")
-print(f"Task Force 3 and the Luna Strike Squadron: {len(units)} units, {ships} ships, written to {SCENARIO.name}")
+print(f"Task Force 3 and the Luna Strike Squadron: {len(units)} units, {ships} ships, written to {FLEET.name}")

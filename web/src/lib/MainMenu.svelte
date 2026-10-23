@@ -7,6 +7,7 @@
     { id: 'play', title: 'Simulation', text: 'Choose a level and start it: its clock runs on the server, true scale, tactical picture.' },
     { id: 'build', title: 'System workshop', text: 'Build a stellar system, or copy one and change it. Every saved system is also a level of its own.' },
     { id: 'ships', title: 'Ship registry', text: 'The classes of the fleet: particulars, batteries, reaches by crew, and what is still blank.' },
+    { id: 'fleets', title: 'Fleets', text: 'Every fleet, its ships by class and its order of battle. An admin renames and refits them.' },
     { id: 'shipyard', title: 'Ship workshop', text: 'Design ship classes.', soon: true },
     { id: 'settings', title: 'Settings', text: 'Text and icon sizes, folding, what a selection shows. Saved on this machine.' },
   ];

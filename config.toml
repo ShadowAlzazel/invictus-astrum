@@ -4,6 +4,7 @@
 [paths]
 systems   = "data/systems"
 scenarios = "data/scenarios"
+fleets    = "data/fleets"         # formations and their ships, apart from any scenario (astrum/fleets.py)
 levels    = "data/levels"
 users     = "data/users.toml"   # who may sign in (astrum/accounts.py)       # the games: each a clock and the systems (with their scenarios) it is played in
 players   = "data/players.toml"

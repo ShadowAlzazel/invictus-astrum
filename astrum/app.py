@@ -2,6 +2,9 @@
 
     GET  /api/meta                       systems, players and bullseyes, scenarios, style
     GET  /api/status                     data version and load errors (the map polls this)
+    GET  /api/fleets                     every fleet (data/fleets): faction, ships by class, the scenarios it is in
+    GET  /api/fleets/{id}                one fleet, unit by unit
+    PUT  /api/fleets/{id}                an admin's edit of its units: {units: {id: {callsign, hull_number, class}}}
     GET  /api/system/{id}                bodies, derived zones, findings
     GET  /api/system/{id}/orbits?t=      orbit paths, each relative to its parent, km
     GET  /api/system/{id}/probe?x&y&z&t  what is at a point: zone, gravity, magnetism, AER
@@ -42,6 +45,7 @@ from .ephemeris import Ephemeris, Tabled
 from .fields import gravity, magnetic, potential
 from .frames import to_spherical
 from .factions import Factions, load_factions
+from .fleets import edit as edit_fleet, load_fleets
 from .loader import Player, contact_positions, load_players, load_scenarios, load_systems
 from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify
@@ -81,7 +85,10 @@ class World:
         self.display_rules: dict = {}
         self.settings: dict = {}
         self.trees: dict[str, dict] = {}         # scenario id -> formation tree
-        self.fleets: dict[str, Fleet] = {}       # scenario id -> its ships, flown; rebuilt on reload
+        self.fleets: dict[str, Fleet] = {}       # scenario id -> its ships, flown; rebuilt on reload, unless a level holds it
+        self.fleet_files: dict = {}              # fleet id -> its file (astrum/fleets.py), as loaded
+        self.held: dict[str, dict] = {}          # level id -> the copy of its scenarios it plays (hold)
+        self._loaded: dict = {}                  # scenario id -> as loaded from disk
         self.levels: dict[str, Level] = {}       # the games (astrum/level.py): each a clock's systems and scenarios
         self.made: dict[str, dict[str, Bullseye]] = {}     # player -> bullseyes commanders made on the map
         self.retired: dict[str, dict[str, Bullseye]] = {}  # ... and deleted: still flown to, never listed
@@ -97,7 +104,7 @@ class World:
 
     def _files(self) -> list[Path]:
         p = self.config["paths"]
-        files = list(Path(p["systems"]).glob("*.toml")) + list(Path(p["scenarios"]).glob("*.toml")) + list(Path(p["levels"]).glob("*.toml"))
+        files = [f for k in ("systems", "scenarios", "fleets", "levels") for f in Path(p[k]).glob("*.toml")]
         files += list(Path(p["ships"]).glob("*.toml")) + list((Path(p["ships"]) / "classes").glob("*.toml"))
         return files + [Path(p["players"]), Path(p["players"]).parent / "factions.toml",
                         Path(p["players"]).parent / "profiles.toml", Path(p["style"]),
@@ -111,7 +118,9 @@ class World:
         errors = {}
         systems, sys_err = load_systems(p["systems"])
         errors.update({f"systems/{k_}": v for k_, v in sys_err.items()})
-        scenarios, sc_err = load_scenarios(p["scenarios"])
+        fleet_files, fl_err = load_fleets(p["fleets"])
+        errors.update({f"fleets/{k_}": v for k_, v in fl_err.items()})
+        scenarios, sc_err = load_scenarios(p["scenarios"], fleet_files)
         errors.update({f"scenarios/{k_}": v for k_, v in sc_err.items()})
         players = self.players
         try:
@@ -224,18 +233,37 @@ class World:
                 if self.ephemerides[sid].numerical_error:
                     errors[f"systems/{sid} ephemeris"] = self.ephemerides[sid].numerical_error
             self.tables = {sid: tb for sid, tb in self.tables.items() if sid in self.systems}
-            self.scenarios = {**self.scenarios, **scenarios} if sc_err else scenarios
+            self._loaded = {**self._loaded, **scenarios} if sc_err else scenarios
+            self.fleet_files = {**self.fleet_files, **fleet_files} if fl_err else fleet_files
+            self.scenarios = self._playing()
             self.players, self.style, self.errors, self.ships = players, style, errors, ships
             self.factions = factions
             self.made, self.retired = made, {}
             self.profiles, self.profiles_made = shared, made_profiles
             self.display_rules, self.settings, self.trees = rules, settings, trees
             self.levels = levels
-            self.fleets = {}
+            self.fleets = {k: f for k, f in self.fleets.items() if any(k in h for h in self.held.values())}
             self._specs = {}
             self.version += 1
             self._stamp = self._mtimes()
         self._prefill()
+
+    # ---- what a running level plays: a copy of its scenarios as they stood when it started --------
+    def _playing(self) -> dict:
+        return {**self._loaded, **{k: v for h in self.held.values() for k, v in h.items()}}
+
+    def played(self, lid: str, do: str) -> None:
+        """A level started (its scenarios, their fleets in them, copied as they stand, and kept with
+        the fleets flown from them through every reload), restarted (copied afresh) or stopped
+        (let go: the next start reads the files again)."""
+        lv = self.levels.get(lid)
+        with self.lock:
+            if do in ("restart", "stop"):
+                for k in self.held.pop(lid, {}):
+                    self.fleets.pop(k, None)
+            if do in ("start", "restart") and lv is not None and lid not in self.held:
+                self.held[lid] = {k: self._loaded[k] for k in lv.scenarios if k in self._loaded}
+            self.scenarios = self._playing()
 
     def check(self) -> None:
         now = time.monotonic()
@@ -653,6 +681,27 @@ def sensing(world: "World", cid: str) -> dict:
                           "cold_h": sd.get("cold_h") or None} if spec else None}
 
 
+def fleet_dict(world: "World", fl, units: bool = False) -> dict:
+    """A fleet as the Fleets screen shows it: what it is, its ships by class, the scenarios that
+    bring it in; and (units) each of its units in the file's order."""
+    ships = [c for c in fl.contacts if c.get("class")]
+    by = {}
+    for c in ships:
+        by[c["class"]] = by.get(c["class"], 0) + 1
+    fac = world.factions.get(fl.faction)
+    out = {"id": fl.id, "name": fl.name, "faction": fl.faction, "faction_name": fac.name if fac else fl.faction,
+           "system": fl.system, "notes": fl.notes, "ships": len(ships), "formations": len(fl.contacts) - len(ships),
+           "by_class": dict(sorted(by.items(), key=lambda kv: -kv[1])),
+           "scenarios": [s.id for s in world._loaded.values() if fl.id in s.fleets]}
+    if units:
+        classes = world.ships.classes
+        out["units"] = [{"id": c["id"], "callsign": c.get("callsign", c["id"]), "echelon": c.get("echelon", "ship"),
+                         "formation": c.get("formation"), "class": c.get("class", ""), "hull_number": str(c.get("hull_number", "")),
+                         "class_name": classes[c["class"]].name if c.get("class") in classes else ""} for c in fl.contacts]
+        out["classes"] = sorted(({"id": k, "name": v.name} for k, v in classes.items() if v.drive), key=lambda x: x["name"])
+    return out
+
+
 def level_dict(world: "World", s) -> dict:
     """A system as the level selector shows it."""
     kinds: dict[str, int] = {}
@@ -722,6 +771,14 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     started, pushed = time.monotonic(), [0, time.monotonic(), 0.0]   # (pictures pushed, since, the last rate a second)
     pushing = asyncio.Lock()                             # one push at a time: a socket is sent to by one sender
 
+    async def level_do(req: dict) -> dict:
+        """A level's clock worked by the simulation; started, restarted or stopped, this process's
+        world follows it, so what it shows of a running level is the copy the level plays."""
+        out = await sim.call("level", req)
+        if out["ok"] and req.get("do") in ("start", "restart", "stop"):
+            world.played(req.get("id"), req["do"])
+        return out
+
     def user_of(conn) -> str | None:
         return accounts.who(conn.cookies.get(COOKIE)) or (config["dev"]["user"] if dev else None)
 
@@ -735,7 +792,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         lb, _ = lobbies.make(d["user"], lv.id)
         sides = [x["id"] for x in sides_of(lv)]
         lb.choose(d["user"], d["side"] if d["side"] in sides else sides[0], False)
-        if not (out := await sim.call("level", {"id": lv.id, "do": "start"}))["ok"]:
+        if not (out := await level_do({"id": lv.id, "do": "start"}))["ok"]:
             raise SystemExit(f"--dev: {out['detail']}")
         log.info("dev: %s hosts %s as %s", d["user"], lv.id, lb.members[d["user"]])
 
@@ -829,17 +886,17 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             lb = lobbies.of(user)
             if lb is None or not lb.may_time(user):
                 raise LobbyError(f"only the host, {lb.host if lb else 'of the lobby'}, works the level's clock (the host's rule)")
-            out = await sim.call("level", {"id": lb.level, "do": do, "warp": msg.get("warp")})
+            out = await level_do({"id": lb.level, "do": do, "warp": msg.get("warp")})
             if not out["ok"]:
                 raise LobbyError(out["detail"])
         elif do in ("start", "restart", "stop"):
-            out = await sim.call("level", {"id": lobbies.hosted(user).level, "do": do, "warp": msg.get("warp")})
+            out = await level_do({"id": lobbies.hosted(user).level, "do": do, "warp": msg.get("warp")})
             if not out["ok"]:
                 raise LobbyError(out["detail"])
         else:
             raise LobbyError(f"no lobby action {do!r}")
         if closed is not None:                           # its last member left: its level stops
-            await sim.call("level", {"id": closed.level, "do": "stop"})
+            await level_do({"id": closed.level, "do": "stop"})
 
     @app.post("/api/signin")
     async def signin(request: Request, response: Response, req: dict = Body(...)):
@@ -857,7 +914,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         if user is not None:
             closed = lobbies.leave(user)
             if closed is not None:
-                await sim.call("level", {"id": closed.level, "do": "stop"})
+                await level_do({"id": closed.level, "do": "stop"})
             accounts.sign_out(request.cookies.get(COOKIE))
             log.info("signed out: %s from %s", user, where(request))
             await push()
@@ -868,7 +925,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     def me(request: Request):
         """Who this browser is signed in as (None), and whether the server asks."""
         user = user_of(request)
-        return {"user": user, "auth": auth, "dev": dev, "lobby": (lb := lobbies.of(user)) and lb.id,
+        return {"user": user, "auth": auth, "dev": dev, "admin": admin(user), "lobby": (lb := lobbies.of(user)) and lb.id,
                 "pictures": "ask" if config["server"].get("pictures") == "ask" else "push"}
 
     @app.websocket("/ws/lobby")
@@ -933,6 +990,58 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             "picture": switches.described(config["picture"]),
         }
 
+    def admin(user: str | None) -> bool:
+        """May edit the shared data: anyone with signing in off, the --dev user, an admin."""
+        return not auth or (dev and user == config["dev"]["user"]) or accounts.role(user) == "admin"
+
+    @app.get("/api/fleets")
+    def fleets_list(request: Request):
+        world.check()
+        return {"fleets": [fleet_dict(world, fl) for fl in world.fleet_files.values()], "admin": admin(user_of(request)),
+                "errors": {k: v for k, v in world.errors.items() if k.startswith("fleets/")}}
+
+    @app.get("/api/fleets/{fid}")
+    def fleet_one(request: Request, fid: str):
+        world.check()
+        fl = world.fleet_files.get(fid)
+        if fl is None:
+            raise HTTPException(404, f"no fleet {fid!r}")
+        return {**fleet_dict(world, fl, units=True), "admin": admin(user_of(request))}
+
+    fleet_writing = threading.Lock()                     # one edit of the fleet files at a time
+
+    @app.put("/api/fleets/{fid}")
+    def fleet_edit(request: Request, fid: str, req: dict = Body(...)):
+        """An admin's edit of a fleet's units, written into its file line by line. Levels already
+        running keep the copy they started with; the next start reads the edit. An edit that would
+        not load (a class that does not fly, a broken scenario) is undone and refused."""
+        user = user_of(request)
+        if not admin(user):
+            raise HTTPException(403, "only an admin edits the fleets")
+        changes = req.get("units") or {}
+        bad = {c["class"] for c in changes.values() if isinstance(c, dict) and c.get("class")} - {
+            k for k, v in world.ships.classes.items() if v.drive}
+        if bad:
+            raise HTTPException(400, f"no ship class {', '.join(sorted(bad))} that flies")
+        with fleet_writing:
+            fl = world.fleet_files.get(fid)
+            if fl is None:
+                raise HTTPException(404, f"no fleet {fid!r}")
+            path = Path(fl.source)
+            before = path.read_text(encoding="utf-8")
+            try:
+                path.write_text(edit_fleet(before, changes), encoding="utf-8")
+            except ValueError as e:
+                raise HTTPException(400, str(e))
+            world.reload()
+            broken = {k: v for k, v in world.errors.items() if k.startswith(("fleets/", "scenarios/"))}
+            if broken:
+                path.write_text(before, encoding="utf-8")
+                world.reload()
+                raise HTTPException(400, "; ".join(f"{k}: {v}" for k, v in broken.items()))
+        log.info("fleet %s edited by %s: %s", fid, user, ", ".join(f"{u} {sorted(c)}" for u, c in changes.items()))
+        return {**fleet_dict(world, world.fleet_files[fid], units=True), "admin": True, "version": world.version}
+
     @app.get("/api/levels")
     async def levels():
         """Every level, and how each running one's clock stands: the authored ones first, then each
@@ -948,7 +1057,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         lb = lobbies.holding(lid)
         if auth and not (lb and (lb.host == user or (req.get("do") in ("run", "pause", "warp") and lb.may_time(user)))):
             raise HTTPException(403, "only the host of the level's lobby works its clock (or anyone, by the host's rule)")
-        out = await sim.call("level", {**req, "id": lid})
+        out = await level_do({**req, "id": lid})
         if not out["ok"]:
             raise HTTPException(out["status"], out["detail"])
         await push()

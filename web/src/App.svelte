@@ -23,6 +23,7 @@
   import { stepWarp, warpLabel } from './lib/clock.js';
   import MainMenu from './lib/MainMenu.svelte';
   import ShipRegistry from './lib/ShipRegistry.svelte';
+  import FleetManager from './lib/FleetManager.svelte';
   import Settings from './lib/Settings.svelte';
   import Workshop from './lib/Workshop.svelte';
 
@@ -93,7 +94,7 @@
   $: try { localStorage.setItem('astrum.orderPlane', orderPlane); } catch {}
   function setPlane(p) { orderPlane = p; if (ordering) ordering = { ...ordering, plane: p, tilt: 0 }; }
   $: if (ordering && (mode !== 'map' || (state && !ordering.ships.some((id) => state.ships?.[id])))) ordering = null;
-  let mode = 'menu';                    // 'signin' | 'menu' | 'levels' | 'map' | 'workshop' | 'ships'
+  let mode = 'menu';                    // 'signin' | 'menu' | 'levels' | 'map' | 'workshop' | 'ships' | 'fleets'
   // Signed in (astrum/accounts.py, astrum/lobby.py): who this browser plays as, and the lobbies the
   // server pushes. Play is then a lobby: its host works the level's clock, and every picture and
   // order is made, on the server, as the lobby grants (its level, your side). With the server's
@@ -573,6 +574,7 @@
   function choose(what) {
     if (what === 'play' || what === 'build') { purpose = what; toLevels(); }
     if (what === 'ships') mode = 'ships';
+    if (what === 'fleets') mode = 'fleets';
     if (what === 'settings') showSettings = true;
   }
   // out of a level: it runs on on the server; behind the menus, its system stands still
@@ -719,6 +721,8 @@
   {#if you}<p class="whoami" data-ui>{you} · <button on:click={signOut}>sign out</button></p>{/if}
 {:else if mode === 'ships'}
   <ShipRegistry bind:this={registry} {style} onback={toMenu} />
+{:else if mode === 'fleets'}
+  <FleetManager onback={toMenu} />
 {:else if mode === 'signin'}
   <SignIn onsigned={signedIn} />
 {:else if mode === 'levels' && purpose === 'play' && authOn}

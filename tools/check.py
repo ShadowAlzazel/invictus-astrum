@@ -5,8 +5,9 @@ builds and flies, and how long that takes.
     python tools/check.py sol-demo --hours 6
     python tools/check.py --all              # every scenario
 
-It prints the ship registry's findings (errors first), the scenario's fleet by faction (ships, and
-by class), the fleet's own findings, and the wall time to build it and to fly it the hours asked
+It prints what failed to load (a system, a fleet, a scenario), the ship registry's findings
+(errors first), the fleets the scenario brings in, its ships by faction (and by class), the
+fleet's own findings, and the wall time to build it and to fly it the hours asked
 (the sensor sweep included: every side is swept as the fleet flies). It exits 1 if anything is an
 error, so it can stand in front of a commit. Run it after a change to data/ (ships, scenarios,
 drives) or to the flight, before the tests and before the browser.
@@ -47,7 +48,7 @@ def scenario(w: World, sid: str, hours: float) -> int:
     if f is None:
         print(f"{sid}: no fleet (no system, or no ships)")
         return 0
-    print(f"\n{sid}: {len(f.ships)} ships, built in {built:.2f} s")
+    print(f"\n{sid}: {len(f.ships)} ships, built in {built:.2f} s; fleets {', '.join(sc.fleets) or 'none'}")
     classes = [f.ships[i].spec.class_id for i in f.c.ids]
     for fid in sc.factions:
         own = picture.own_rows(f, w.factions, fid)
@@ -73,7 +74,9 @@ def main(argv=None) -> int:
     kernels.warm_up()
     w = World(load_config())
     print(f"loaded in {time.perf_counter() - t:.2f} s; {kernels.status()}")
-    errors = registry(w)
+    for where, msg in w.errors.items():
+        print(f"[error] {where}: {msg}")
+    errors = len(w.errors) + registry(w)
     ids = sorted(w.scenarios) if a.all else [a.scenario]
     for sid in ids:
         if sid not in w.scenarios:

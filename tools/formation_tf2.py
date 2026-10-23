@@ -1,4 +1,4 @@
-"""Write Task Force 2's formation into data/scenarios/sol-demo.toml (between its markers).
+"""Write Task Force 2's formation into data/fleets/luna-classis-1.toml (between its markers).
 
     python tools/formation_tf2.py
 
@@ -22,7 +22,7 @@ import math
 import re
 from pathlib import Path
 
-SCENARIO = Path(__file__).resolve().parent.parent / "data" / "scenarios" / "sol-demo.toml"
+FLEET = Path(__file__).resolve().parent.parent / "data" / "fleets" / "luna-classis-1.toml"
 BEGIN, END = "# >>> task force 2 (written by tools/formation_tf2.py)", "# <<< task force 2"
 BULLSEYE = "wedge"
 
@@ -89,12 +89,11 @@ for uid, name, ech, parent, cls, pos in units:
 lines.append(END)
 block = "\n".join(lines)
 
-text = SCENARIO.read_text(encoding="utf-8")
+text = FLEET.read_text(encoding="utf-8")
 if BEGIN in text:
     text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _: block, text, flags=re.S)
 else:
-    marker = "# ---- the local picture"
-    text = text.replace(marker, block + "\n\n" + marker, 1)
-SCENARIO.write_text(text, encoding="utf-8")
+    text = text.rstrip() + "\n\n" + block + "\n"
+FLEET.write_text(text, encoding="utf-8")
 ships = sum(1 for u in units if u[2] == "ship")
-print(f"Task Force 2: {len(units)} units, {ships} ships, written to {SCENARIO.name}")
+print(f"Task Force 2: {len(units)} units, {ships} ships, written to {FLEET.name}")

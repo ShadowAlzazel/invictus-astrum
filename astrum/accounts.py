@@ -1,7 +1,8 @@
 """Who may sign in, and who is signed in. The web process's alone: the simulation never knows a
 user, only the side and level a request is made for (astrum/lobby.py says which).
 
-The users are a document (data/users.toml): a name and its password's hash, nothing else. A
+The users are a document (data/users.toml): a name, its password's hash, and a role ("admin" may
+edit the shared data from the map; none, look). A
 session is a random token in a cookie, kept in the web process's memory: the server started
 again, everyone signs in again. Basic on purpose, for a local network:
 
@@ -46,6 +47,16 @@ def load_users(path: str | Path) -> dict[str, str]:
     return {u["name"]: u["password"] for u in doc.get("user", []) if u.get("name") and u.get("password")}
 
 
+def load_roles(path: str | Path) -> dict[str, str]:
+    """name -> its role, for the users that have one."""
+    path = Path(path)
+    if not path.exists():
+        return {}
+    with path.open("rb") as f:
+        doc = tomllib.load(f)
+    return {u["name"]: u["role"] for u in doc.get("user", []) if u.get("name") and u.get("role")}
+
+
 class Accounts:
     def __init__(self, path: str | Path):
         self.path = path
@@ -65,6 +76,9 @@ class Accounts:
 
     def who(self, token: str | None) -> str | None:
         return self._sessions.get(token or "")
+
+    def role(self, user: str | None) -> str | None:
+        return load_roles(self.path).get(user) if user else None   # (read each time, as sign_in does)
 
     def sign_out(self, token: str | None) -> None:
         with self._lock:

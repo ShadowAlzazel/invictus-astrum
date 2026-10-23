@@ -22,7 +22,7 @@ AFFILIATIONS = ("friend", "hostile", "unknown", "neutral")
 BLOCK_DRAWS = ("oval", "cross", "slash", "bar", "stroke", "chevron", "dome", "bolt")   # what a role's blocks are drawn as
 
 CONFIG_SCHEMA = {
-    "paths": {"systems": str, "scenarios": str, "players": str, "style": str, "ships": str,
+    "paths": {"systems": str, "scenarios": str, "fleets": str, "players": str, "style": str, "ships": str,
               "display": str, "settings": str, "bullseyes": str, "profiles": str, "levels": str, "users": str},
     "server": {"host": str, "port": int, "auth": bool, "pictures": str, "picture_hz": int, "orders_limit": int, "orders_span_s": float, "log": str},
     "dev": {"user": str, "level": str, "side": str, "pictures": str},

@@ -48,8 +48,11 @@ def test_shipped_settings_and_data_load():
     assert set(style["affiliation"]) == {"friend", "hostile", "unknown", "neutral"}
     players = load_players(cfg["paths"]["players"])
     assert "burn" in players["arcvs"].bullseyes
-    scenarios, errors = load_scenarios(cfg["paths"]["scenarios"])
-    assert not errors and "sol-demo" in scenarios
+    from astrum.fleets import load_fleets
+    fleets, fleet_errors = load_fleets(cfg["paths"]["fleets"])
+    scenarios, errors = load_scenarios(cfg["paths"]["scenarios"], fleets)
+    assert not fleet_errors and not errors and "sol-demo" in scenarios
+    assert scenarios["sol-demo"].fleets == ("luna-classis-1", "jupiter-home", "ghost") and "kiki-1" in scenarios["sol-demo"].contacts
 
 
 def test_the_run_ahead_worker_is_a_setting(tmp_path):

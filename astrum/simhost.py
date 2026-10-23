@@ -611,6 +611,7 @@ class SimHost:
         do, clock = req.get("do"), self.clocks.get(lv.id)
         if do == "start":
             if clock is None:
+                self.world.played(lv.id, "start")
                 clock = self.clocks[lv.id] = Clock(self.world.level_start(lv), lv.warp)
                 if isinstance(req.get("warp"), (int, float)):
                     clock.set(warp=req["warp"])
@@ -626,6 +627,7 @@ class SimHost:
                 self.pictures.forget(sc)
                 for key in [k for k in self._dismissed if k[0] == sc]:
                     del self._dismissed[key]
+            self.world.played(lv.id, do)               # let go of its copy (restart: copied afresh)
             if do == "stop":
                 del self.clocks[lv.id]
                 return {"ok": True, "clock": None}

@@ -16,7 +16,7 @@ python serve.py                       # http://127.0.0.1:8010 (the simulation ru
 python serve.py --dev                 # the same, no sign-in: straight onto config.toml [dev] level as its side
 python serve.py --dev cislunar --side jadf   # (a level's id, a scenario's or a system's; any side of it)
 python tools/check.py                 # the data loads, sol-demo builds and flies a day: ~5 s, no server
-python -m pytest -q tests             # 237 tests (the map's math too, in node)
+python -m pytest -q tests             # 240 tests (the map's math too, in node)
 ```
 
 Working on it: `docs/DEVOPS.md` (what to run after which change, the tools, the tests);
@@ -59,8 +59,13 @@ The map opens on the main menu, over a system standing still:
 1. **Simulation**: choose a level and start it.
 2. **System workshop**: build a system, or copy one and change it.
 3. **Ship registry**: the classes of the fleet.
-4. **Ship workshop**: next.
-5. **Settings** (also `,` anywhere), kept in this browser: Display (text and icon sizes, folding,
+4. **Fleets**: every fleet (`data/fleets`), its ships by class and its order of battle. An admin
+   (`role = "admin"` in `data/users.toml`: Fabian, and the `--dev` user) renames its units and
+   changes a ship's hull number or class; the edit is written into the fleet's file. A level
+   plays a copy of its scenarios and fleets as they stood when it started: an edit is played
+   from the next start (or a restart), never in a game already running.
+5. **Ship workshop**: next.
+6. **Settings** (also `,` anywhere), kept in this browser: Display (text and icon sizes, folding,
    what a selection shows), Hotkeys (every key below, rebound by clicking it and pressing another),
    Game (the picture's switches), Combat (your combat profiles, kept on the server).
 
@@ -219,7 +224,8 @@ above it comes down to it.
 | `profiles.toml` | combat profiles commanders made on the map (written by the map; not committed) |
 | `data/factions.toml` | factions: a name, the prefix a ship's name reads with, and whose branch (AVC, AAG of ARCVS) or member world's force (JADF) it is; units take theirs from the formation above |
 | `web/src/lib/adjutant.js` | the adjutant: her calls, their templates, her heading estimates (run in `adjutant.worker.js`) |
-| `data/scenarios/*.toml` | units placed in a system, with their stance, combat profile and crew (veterancy) if not the formation's; no weapon is simulated yet |
+| `data/fleets/*.toml` | fleets: a formation tree and its ships, its faction, the system it is placed in; see `data/fleets/README.md` |
+| `data/scenarios/*.toml` | a system, the fleets it brings in (`[[fleet]] id`), its own contacts (the local picture) and its orders; units have their stance, combat profile and crew (veterancy) if not the formation's; no weapon is simulated yet |
 | `style.toml` | colours, affiliation frames, echelon marks, formation roles (built from blocks, each an APP-6 mark: battle, line, picket, supply, forward, point defence, escort, signal), body display sizes by role |
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |
 | `settings.toml` | display settings over `display.toml`, if you keep one (the map keeps yours in the browser); not committed |

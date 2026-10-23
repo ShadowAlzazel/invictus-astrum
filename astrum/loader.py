@@ -3,7 +3,8 @@
     data/systems/<id>.toml      one stellar system (see data/systems/README.md)
     data/players.toml           players and their bullseyes
     data/factions.toml          factions: a name, and the prefix a ship's name reads with
-    data/scenarios/<id>.toml    contacts placed in a system, and the orders its ships fly
+    data/scenarios/<id>.toml    contacts placed in a system, the fleets it brings in (data/fleets,
+                                astrum/fleets.py), and the orders its ships fly
 
 Every file goes through a builder or a checker that lists all of its problems at once.
 """
@@ -133,16 +134,33 @@ class Scenario:
     contacts: dict[str, Contact]
     orders: list = field(default_factory=list)
     factions: tuple[str, ...] = ()        # whose forces it holds (data/factions.toml): each a view of it, besides MASTER
+    fleets: tuple[str, ...] = ()          # the fleets it brings in (data/fleets), their units among its contacts
 
 
-def load_scenario(path: str | Path) -> Scenario:
+def load_scenario(path: str | Path, fleets: dict | None = None) -> Scenario:
+    """A scenario, its contacts its own and those of the fleets it brings in ([[fleet]] id), all
+    placed at its start."""
     path = Path(path)
     with path.open("rb") as f:
         doc = tomllib.load(f)
     s = doc["scenario"]
     contacts, problems = {}, []
-    for c in doc.get("contact", []):
+    units, brought = [], []
+    for ref in doc.get("fleet", []):
+        fl = (fleets or {}).get(ref.get("id"))
+        if fl is None:
+            problems.append(f"fleet {ref.get('id')!r} is not in data/fleets")
+        elif fl.system != s["system"]:
+            problems.append(f"fleet {fl.id!r} is placed in {fl.system}, not {s['system']}")
+        else:
+            units += fl.contacts
+            brought.append(fl.id)
+    units += doc.get("contact", [])
+    doc = {**doc, "contact": units}
+    for c in units:
         cid = c.get("id", "?")
+        if cid in contacts:
+            problems.append(f"{cid}: two units have this id (the scenario's own, or its fleets')")
         if c.get("affiliation") is not None and c["affiliation"] not in AFFILIATIONS:
             problems.append(f"{cid}: affiliation must be one of {AFFILIATIONS}")
         if "position" not in c and not any(o.get("formation") == cid for o in doc.get("contact", [])):
@@ -221,14 +239,14 @@ def load_scenario(path: str | Path) -> Scenario:
         raise ValueError(f"{path.name}:\n  " + "\n  ".join(problems))
     epoch = epoch_of(s["epoch"]) if "epoch" in s else None
     return Scenario(s["id"], s.get("name", s["id"]), s["system"], epoch, s.get("player", ""), contacts, orders,
-                    tuple(s.get("factions", ())))
+                    tuple(s.get("factions", ())), tuple(brought))
 
 
-def load_scenarios(folder: str | Path) -> tuple[dict[str, Scenario], dict[str, str]]:
+def load_scenarios(folder: str | Path, fleets: dict | None = None) -> tuple[dict[str, Scenario], dict[str, str]]:
     out, errors = {}, {}
     for p in sorted(Path(folder).glob("*.toml")):
         try:
-            sc = load_scenario(p)
+            sc = load_scenario(p, fleets)
             out[sc.id] = sc
         except (ValueError, KeyError, tomllib.TOMLDecodeError) as e:
             errors[p.name] = str(e)

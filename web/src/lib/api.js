@@ -10,6 +10,10 @@ export const api = {
   meta: (view) => get('/meta', view ? { view } : undefined),
   levels: () => get('/levels'),
   me: () => get('/me'),
+  fleets: () => get('/fleets'),
+  fleet: (id) => get(`/fleets/${encodeURIComponent(id)}`),
+  saveFleet: (id, units) => send('PUT', `/fleets/${encodeURIComponent(id)}`, { units }),   // an admin's
+
   signIn: (name, password) => post('/signin', { name, password }),
   signOut: () => post('/signout', {}),
   level: (id, req) => post(`/level/${encodeURIComponent(id)}`, req),     // the host's hand on its clock: { do, warp }
