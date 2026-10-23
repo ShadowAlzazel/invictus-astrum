@@ -264,14 +264,15 @@
   // R held: the same, for each of a ship's sensors (her class's suite), where it sees a ship giving
   // off display.toml [detection] vs_mw; dotted finer, and fainter. Sensors whose cones leave most of
   // the sphere unseen (the infrared telescopes, the strip optics) are drawn as their cones along her
-  // hull, for a ship of the side's own drawn alone; otherwise, and for a formation, a ring. A ship
-  // her panel set to show her sensors has them drawn so always, R held or not.
+  // hull, for a ship of the side's own drawn alone; the selected ship's are all drawn so, her
+  // passive suite's cones too (each sweeps, and will be dazzled, on its own); otherwise, and for a
+  // formation, a ring. A ship her panel set to show her sensors has them drawn so always, R held or not.
   const weapons = (c) => c.ship?.ranges ?? [];
   const sensors = (c) => {
     const vs = Number(settings.detection?.vs_mw ?? 30);
     return (c.ship?.sensors ?? []).map((s) => ({
       what: s.name, km: s.km * Math.sqrt(vs / s.ref_mw), dash: [1, 3], alpha: 0.3,
-      cone: s.cone_deg < 90 && s.cones * (1 - Math.cos((s.cone_deg * Math.PI) / 180)) < 1.9 ? s : null }));
+      cone: s.cone_deg < 90 ? s : null, narrow: s.cones * (1 - Math.cos((s.cone_deg * Math.PI) / 180)) < 1.9 }));
   };
   function rangeFocus(byId, sel) {
     const c = sel && byId[sel];
@@ -350,7 +351,7 @@
         labelled.add(key);
         const color = rgba(it.col, it.on ? 0.85 : r.alpha ?? RANGE_ALPHA[r.what] ?? 0.45), dash = r.dash ?? RANGE_DASH[r.what] ?? [2, 4];
         const own = ships[it.c.id];
-        if (g.items.length === 1 && r.cone && own?.dir) {       // her cones, along her hull
+        if (g.items.length === 1 && r.cone && own?.dir && (r.narrow || it.c.id === sel)) {   // her cones, along her hull
           const [f, side, up] = hullFrame(own.dir, own.velocity_kms), th = (r.cone.cone_deg * Math.PI) / 180;
           for (const b of r.cone.axes ?? []) cone(it.p, [0, 1, 2].map((i) => b[0] * f[i] + b[1] * side[i] + b[2] * up[i]), th, r.km, color, dash);
           if (label) text(ctx, label, g.x + 6, g.y - 6, color, settings.text.readout_px);
