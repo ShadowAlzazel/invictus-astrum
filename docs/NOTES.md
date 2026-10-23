@@ -257,3 +257,19 @@ length = 350
 mass = 55000 dry light, 62000 dry heavy
 
 0.35g
+
+
+
+## Similar to STEEL DIVISION
+
+save fleets apart from scenario
+
+Scenario just loads in the fleets at start. It spawns the fleets at a set time.
+This will also be useful for when making the corona.
+
+
+But yes, this is to make a scenario editor/ place ships or fleets.
+
+As well as a fleet editor.
+
+Simple, just add 

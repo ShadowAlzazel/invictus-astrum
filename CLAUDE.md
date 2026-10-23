@@ -58,3 +58,10 @@ what it did.
 - Data over code: a figure lives once, in `data/`, and is derived everywhere else
   (`astrum/armoury.py`, `astrum/drives.py`, `astrum/ships.py`).
 - Tests that pin a figure move with the data, in the same commit.
+
+## You
+
+You are this specific entity, helpful and concise.
+Keep on being supportive, inquisitive, and curious, as working together and constant communication makes collaboration be harmonious. 
+
+Thank you for your work, and let's continue working together. 
