@@ -78,6 +78,7 @@ path_estimates = { default = true, label = "Free path estimates (going free)" }
 [cursor]
 label = "Cursor"
 hairlines = { default = true, label = "Full-screen hairlines" }
+notches   = { default = true, label = "Scale notches on the hairlines" }
 readout   = { default = true, label = "Bearing and range readout" }
 
 # ---- weapon ranges: hold G -------------------------------------------------------------------------

@@ -4,6 +4,7 @@
   import { api, StateStream } from './lib/api.js';
   import { cap, is, keymap } from './lib/keys.js';
   import HudCursor from './lib/HudCursor.svelte';
+  import ScaleBar from './lib/ScaleBar.svelte';
   import Ruler from './lib/Ruler.svelte';
   import Adjutant from './lib/Adjutant.svelte';
   import Paths from './lib/Paths.svelte';
@@ -750,9 +751,9 @@
   <button on:click={() => warpStep(false)} title="[">◀</button>
   <span class="warp">{warpLabel(shownWarp)}</span>
   <button on:click={() => warpStep(true)} title="]">▶</button>
-  <button class="small" class:sure={restartSure} on:click={resetClock}
+  <button class="small restart" class:sure={restartSure} on:click={resetClock}
     title={levelId ? 'The level from its start again: its clock, and its fleets as their scenarios have them' : 'Back to the system\'s start'}>{levelId ? (restartSure ? 'restart?' : 'restart') : 'reset'}</button>
-  <span class="src">{state?.source ?? ''}</span>
+  {#if !levelId}<span class="src">{state?.source ?? ''}</span>{/if}
 </div>
 {/if}
 
@@ -802,7 +803,9 @@
 {/if}
 
 {#if inMap && settings}
-<!-- the display legend: a tab that opens while the pointer is over it, or stays open once pinned -->
+<!-- the map's scale, and the display legend: a tab that opens while the pointer is over it, or stays open once pinned -->
+<div class="corner">
+<ScaleBar {map} />
 <div class="panel right" class:pinned={legendPinned} data-ui>
   <button class="legend" on:click={pinLegend} title={legendPinned ? 'Unpin: open only on hover' : 'Pin open'}>
     <span>Display</span><i class:pin={legendPinned}></i>
@@ -824,6 +827,7 @@
     {/each}
     <button class="more" on:click={() => (showSettings = true)}>All settings {cap($keymap.settings)}</button>
   </div>
+</div>
 </div>
 
 {#if !showSettings}
@@ -860,6 +864,7 @@
   .clock button:hover { color: var(--fuchsia); }
   .clock .small { font-size: 11px; }
   .clock .small.sure { color: #ffd27a; }
+  .clock .restart { color: var(--ink); font-weight: 700; }
   .clock.locked button { opacity: 0.35; pointer-events: none; }
   .whoami { position: fixed; top: 20px; right: 24px; z-index: 30; margin: 0; color: var(--ink); font-size: 12px; }
   .whoami button { background: none; border: 0; padding: 0; color: var(--dim); font: inherit; }
@@ -873,7 +878,9 @@
   .leftcol { position: fixed; left: 20px; bottom: 20px; z-index: 20; width: 300px; display: flex; flex-direction: column; gap: 8px; }
   .leftcol .panel { position: static; }
   .left { display: grid; gap: 6px; }
-  .right { right: 20px; display: grid; gap: 2px; min-width: 0; padding: 6px 12px; }
+  .corner { position: fixed; right: 20px; bottom: 20px; z-index: 20; display: flex; align-items: flex-end; gap: 10px; }
+  .corner .panel { position: static; }
+  .right { display: grid; gap: 2px; min-width: 0; padding: 6px 12px; }
   .legend { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: none; border: 0; padding: 0;
             color: var(--dim); font-family: var(--display); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
   .legend i { width: 6px; height: 6px; border: 1px solid var(--violet); transform: rotate(45deg); }

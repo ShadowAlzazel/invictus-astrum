@@ -4,11 +4,12 @@
   // the selection. When free, it reads the point under it on the bullseye's plane.
   import { onMount, onDestroy } from 'svelte';
   import { km, bearing, elev, lightTime } from './format.js';
+  import { niceLength } from './SystemMap.js';
 
   export let map = null;
   export let style = null;
   export let overUI = false;    // pointer is over a panel: hide hairlines
-  export let settings = null;   // display settings: hairlines, readout, text sizes
+  export let settings = null;   // display settings: hairlines, notches, readout, text sizes
 
   let canvas, ctx, unhook;
   let W = 0, H = 0, dpr = 1;
@@ -51,6 +52,26 @@
     ctx.beginPath(); ctx.moveTo(s.x - 5, s.y); ctx.lineTo(s.x + 5, s.y); ctx.stroke();
   }
 
+  // the scale on the hairlines: a notch every round distance (at the depth of what is under the
+  // cursor), every fifth longer, the first one read
+  const NOTCH_PX = 40;              // notches 40 to about 100 px apart
+  function notches(x, y, p, c, size) {
+    const k = map.pxPerKm(p ?? undefined);
+    if (!(k > 0)) return;
+    const step = niceLength(NOTCH_PX / k), s = step * k;
+    ctx.strokeStyle = c; ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    for (let i = 1; i * s < Math.max(W, H) && i < 80; i++) {
+      const a = i % 5 ? 3 : 6, r = i * s;
+      ctx.moveTo(x + r, y - a); ctx.lineTo(x + r, y + a);
+      ctx.moveTo(x - r, y - a); ctx.lineTo(x - r, y + a);
+      ctx.moveTo(x - a, y + r); ctx.lineTo(x + a, y + r);
+      ctx.moveTo(x - a, y - r); ctx.lineTo(x + a, y - r);
+    }
+    ctx.stroke();
+    text(km(step), x + 5, y + s + 3, c, size);
+  }
+
   function readout(p) {
     const a = map.aer(p);
     return a ? `${bearing(a.bearing)}  ${km(a.range)}  ${elev(a.elevation)}  ·  ${lightTime(a.range)}` : '';
@@ -87,7 +108,7 @@
     const d = overUI ? 9 : 14;
     const gap = d + 6;
 
-    const C = settings?.cursor ?? { hairlines: true, readout: true };
+    const C = settings?.cursor ?? { hairlines: true, notches: true, readout: true };
     const px = settings?.text.readout_px ?? 9, namePx = settings?.text.unit_label_px ?? 12;
     if (!overUI && C.hairlines) {
       ctx.lineWidth = 0.8;
@@ -96,6 +117,7 @@
       ctx.beginPath(); ctx.moveTo(hx + gap, hy); ctx.lineTo(W, hy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, hy - gap); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(hx, hy + gap); ctx.lineTo(hx, H); ctx.stroke();
+      if (C.notches && map?.state) notches(hx, hy, lock ? map.position(hover) : map.planeAt(mx, my), col(V, 0.5), px);
     }
 
     ctx.strokeStyle = col(lock ? F : V, 0.95);

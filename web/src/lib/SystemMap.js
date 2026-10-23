@@ -19,11 +19,17 @@ const NICE = [1, 2, 5];
 
 const AU_KM = 149597870.7;
 // a round ring spacing: 1, 2 or 5 × 10ⁿ, in km below ~0.1 AU and in AU above, so labels read clean
-function niceStep(x) {
+export function niceStep(x) {
   const au = x > 0.05 * AU_KM;
   const v = au ? x / AU_KM : x, p = Math.pow(10, Math.floor(Math.log10(v)));
   const step = (NICE.find((m) => m * p >= v) ?? 10) * p;
   return au ? step * AU_KM : Math.min(step, 5e6);      // km steps stop at 5 million; AU take over
+}
+// a round length, as niceStep, but never less than x (past 5 million km, the next AU step)
+export function niceLength(x) {
+  let s = niceStep(x);
+  while (s < x) s = niceStep(s * 2.01);
+  return s;
 }
 
 function unitCircle(seg = 256) {
@@ -253,6 +259,9 @@ export class SystemMap {
     const s = this.project(p);
     return s ? (r / s.depth) * this._pxPerRad : 0;
   }
+
+  // screen pixels a kilometre spans at p (km, system frame), else at the centre of the view
+  pxPerKm(p = this.focus) { return this.pxRadius(p, 1); }
 
   // point on the bullseye plane under the cursor, system frame km
   // the point under the cursor on the bullseye's plane, or on the plane parallel to it through `through` (km)
