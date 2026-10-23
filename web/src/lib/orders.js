@@ -14,10 +14,10 @@ const len = (a) => Math.hypot(a[0], a[1], a[2]);
 // the bullseye (0: on its own plane, level with it, wherever she is now).
 // `unit` is the ship, or the formation, the order is for; `ships` are the ships it goes to.
 export function aimAt(map, unit, ships, cursor, tiltDeg, plane = 'her') {
-  const from = map.position({ kind: 'contact', id: unit });
+  const from = unitAt(map, unit);
   if (!from) return null;
   const h = map.hover;
-  const own = h?.kind === 'contact' && (h.id === unit || ships.includes(h.id));
+  const own = h?.kind === 'contact' && (groupOf(unit).includes(h.id) || ships.includes(h.id));
   if (h && !own && (h.kind === 'contact' || h.kind === 'body')) {
     const p = map.position(h);
     if (p) {
@@ -37,6 +37,12 @@ export function aimAt(map, unit, ships, cursor, tiltDeg, plane = 'her') {
   const a = map.aer(to);
   return { from, to, kind: 'point', label: 'point', standoff: 0,
            target: { bullseye: map.bullseyeId, aer: [a.bearing, a.elevation, a.range] } };
+}
+
+// where a unit is drawn; a group's, the middle of its units (as the server takes it)
+export function unitAt(map, unit) {
+  const ps = groupOf(unit).map((u) => map.position({ kind: 'contact', id: u })).filter(Boolean);
+  return ps.length ? [0, 1, 2].map((k) => ps.reduce((a, p) => a + p[k], 0) / ps.length) : null;
 }
 
 // From rest, flip and burn: there in 2√(d/a), at a cost of 2√(a·d). Ballistic (no braking, on
@@ -113,8 +119,22 @@ export function orderGroups(state, contacts, ships) {
   });
 }
 
-// The ships under a unit, from the formation tree the map was sent (children of each contact)
+// A group of units picked together (⇧-click) is ordered as one unit, "a+b" (astrum/simhost.py
+// order_units): its units, and a name for it
+export const groupOf = (unit) => String(unit ?? '').split('+').filter(Boolean);
+export function named(one, unit) {
+  const u = groupOf(unit);
+  return u.length < 3 ? u.map(one).join(' + ') : `${one(u[0])} + ${u.length - 1} more`;
+}
+// is a unit one of a group's, under one of its units, or over one (its formation): not left out of it
+export const ofGroup = (byId, picks, id) => picks.includes(id) || (byId[id]?.ancestors ?? []).some((a) => picks.includes(a))
+  || picks.some((p) => (byId[p]?.ancestors ?? []).includes(id));
+
+// The ships under a unit, from the formation tree the map was sent (children of each contact); a
+// group's, every ship of each of its units, once
 export function shipsUnder(contacts, state, unit) {
+  const units = groupOf(unit);
+  if (units.length > 1) return [...new Set(units.flatMap((u) => shipsUnder(contacts, state, u)))];
   const byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
   if (state?.ships?.[unit]) return [unit];
   const out = [], todo = [...(byId[unit]?.children ?? [])];

@@ -161,8 +161,19 @@ class Side:
 
 
 # ---- orders --------------------------------------------------------------------------------------
+def order_units(unit) -> list[str]:
+    """The units an order is given to: one, or a group given it together ("a+b", the map's
+    selection of several), each once."""
+    return list(dict.fromkeys(u for u in str(unit or "").split("+") if u))
+
+
 def order_ships(world, sc, fleet, unit) -> list[str]:
-    """The ships an order goes to: the unit itself if she is a ship, else every ship under it."""
+    """The ships an order goes to: the unit itself if she is a ship, else every ship under it; a
+    group's, every ship of each of its units, once."""
+    units = order_units(unit)
+    if len(units) > 1:                               # (a group naming a unit not in the scenario: none)
+        each = [order_ships(world, sc, fleet, u) for u in units]
+        return list(dict.fromkeys(sid for ships in each for sid in ships)) if all(each) else []
     if fleet is None or unit not in sc.contacts:
         return []
     if unit in fleet.ships:
@@ -232,7 +243,7 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
         if not ships:
             raise OrderRefused(400, f"{unit!r} is not a ship in {sc.id}, nor a formation with ships under it")
         ordering(side, fleet, ships)
-        if "profile" in stance and stance["profile"] not in world.profiles_of(ai.player_of(world, sc, unit)):
+        if "profile" in stance and stance["profile"] not in world.profiles_of(ai.player_of(world, sc, order_units(unit)[0])):
             raise OrderRefused(400, f"no combat profile {stance['profile']!r} for {unit!r}'s side")
         kind = {"cold": ("warm", "cold"), "active": ("passive", "active")}[switch][req[switch]] if switch else "stance"
         oid = f"{unit}:{kind}@{t:.0f}#{next(_order_n)}"
@@ -290,12 +301,12 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
     elif "unit" in tg:                               # one of the side's units, or one of its tracks
         cid = side.rows.get(tg["unit"]) or (tg["unit"] if tg["unit"] in side.units else None)
         c = sc.contacts.get(cid or "")
-        if c is None or cid == unit or cid in ships:
+        if c is None or cid in order_units(unit) or cid in ships:
             raise OrderRefused(400, f"{tg['unit']!r} is not another unit {side.view or 'you'} hold in {sc.id}")
         track = tg["unit"] in side.rows
         target = {"unit": c.id, "label": side.called.get(tg["unit"], "Bogey") if track else c.callsign}
         # a track is engaged (the side knows no more of her than its picture); MASTER engages another side's
-        if track or (side.view == picture.MASTER and world.factions.head(c.faction) != world.factions.head(sc.contacts[unit].faction)):
+        if track or (side.view == picture.MASTER and world.factions.head(c.faction) != world.factions.head(sc.contacts[order_units(unit)[0]].faction)):
             target.update(engage=True, label=f"engage {target['label']}")
     elif "body" in tg:
         b = next((b for b in s if b.id == tg["body"]), None)
@@ -314,8 +325,10 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
     if formation or mode == "patrol":                # where it is now (where the fleet has got, if it is behind the clock)
         flown = fleet.positions_at(tp)
         pos = world.table(sc.system).positions(tp)
-        anchor = contact_positions(sc, world.resolved(sc.system, sc.player, pos), pos, flown).get(unit)
-        if formation and anchor is not None:         # a formation: each ship keeps her place in it, as it stands
+        placed = contact_positions(sc, world.resolved(sc.system, sc.player, pos), pos, flown)
+        at = [placed[u] for u in order_units(unit) if u in placed]
+        anchor = np.mean(at, axis=0) if at else None  # a group's: the middle of its units
+        if formation and anchor is not None:         # a formation (or a group): each ship keeps her place in it, as it stands
             offsets = {sid: flown[sid] - anchor for sid in ships}
     if req.get("free") is True and mode == "move" and halt is None:    # there, free: an orbit in a well, else coasting
         target.update(free=True, label=f"{target['label']}, then free")
@@ -568,7 +581,7 @@ class SimHost:
             **{k: (each[0][k] if all(s[k] == each[0][k] for s in each) else None) for k in ("stance", "profile")},
             "stances": {s: sum(x["stance"] == s for x in each) for s in dict.fromkeys(x["stance"] for x in each)},
             "profile_name": each[0]["profile_name"] if all(x["profile"] == each[0]["profile"] for x in each) else None}
-        return {**out, "unit": unit, "ships": len(ships), "veterancy": sc.contacts[unit].veterancy, "ledger": orders}
+        return {**out, "unit": unit, "ships": len(ships), "veterancy": sc.contacts[unit].veterancy if unit in sc.contacts else None, "ledger": orders}
 
     def stop(self) -> None:
         self.arrivals.stop()

@@ -10,7 +10,7 @@
   import { config as adjutantConfig } from './lib/adjutant.js';
   import Orders from './lib/Orders.svelte';
   import Bullseyes from './lib/Bullseyes.svelte';
-  import { group, hms, nextThen, orderGroups, shipsUnder, stepG } from './lib/orders.js';
+  import { group, hms, named, nextThen, orderGroups, shipsUnder, stepG } from './lib/orders.js';
   import { Motion } from './lib/motion.js';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
@@ -48,7 +48,7 @@
   try { watchedBy = JSON.parse(localStorage.getItem('astrum.watched') ?? '{}'); } catch { /* not kept */ }
   $: watched = new Set(scenario ? watchedBy[scenario.id] ?? [] : []);
   // a ship, or every ship under a formation that states sensors: all shown already, all hidden; else all shown
-  function toggleWatch(unit = sel?.id) {
+  function toggleWatch(unit = chosen) {
     if (!scenario || sel?.kind !== 'contact' || !unit) return say(`Select a ship or a formation: ${cap($keymap.watch)} shows its sensors`);
     const ids = shipsUnder(contacts, state, unit).filter((id) => contacts.find((c) => c.id === id)?.ship?.sensors?.length);
     if (!ids.length) return say('No sensors stated there to show.');
@@ -94,7 +94,7 @@
   $: tracks = Object.values(state?.tracks ?? {}).map((c) => ({ ...c, ship: c.ship_class ? meta?.specs[c.ship_class] ?? null : null }));
   $: contacts = scenarioOn && scenario ? [...scenario.contacts, ...tracks] : [];
   $: warnings = def?.findings.filter((f) => f.level === 'warning') ?? [];
-  $: if (map) { map.bullseyeId = bullseyeId; map.contactName = (id) => { const c = contacts.find((c) => c.id === id); return c?.name ?? c?.callsign ?? id; }; }
+  $: if (map) { map.bullseyeId = bullseyeId; map.contactName = (id) => named((u) => { const c = contacts.find((c) => c.id === u); return c?.name ?? c?.callsign ?? u; }, id); }
 
   // ---- settings: display.toml defaults, settings.toml on top, this browser's on top of that -------
   function applySettings() {
@@ -268,7 +268,7 @@
     }
     if (!down || down.b !== 0 || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return;
     const m = markAt(e.clientX, e.clientY);
-    if (m) { select({ kind: m.kind, id: m.id }); return; }
+    if (m) { if (down.shift && m.kind === 'contact') pick(m.id); else select({ kind: m.kind, id: m.id }); return; }
     const p = map.planeAt(e.clientX, e.clientY);
     if (!p) return select(null);
     select({ kind: 'point', p });
@@ -278,12 +278,25 @@
     const m = markAt(e.clientX, e.clientY);
     if (m) focusOn({ kind: m.kind, id: m.id });
   }
-  function select(s) { sel = s; probe = null; map.selected = s; }
+  function select(s) { sel = s; probe = null; map.selected = s; picks = null; }
+  // ⇧-click: a group, ordered as one (orders.js groupOf). A unit under the selected formation: only
+  // those picked of it take its orders, the rest dim; any other: added to the selection (again: taken
+  // out). A plain click starts over
+  let picks = null;
+  $: if (map) map.picks = picks;
+  $: chosen = sel?.kind === 'contact' ? (picks?.length ? picks.join('+') : sel.id) : null;
+  function pick(id) {
+    const c = contacts.find((x) => x.id === id), base = contacts.find((x) => x.id === sel?.id);
+    if (!c || !base || base.track || c.track || (id === sel.id && !picks)) return select({ kind: 'contact', id });
+    const now = picks ?? ((c.ancestors ?? []).includes(sel.id) ? [] : [sel.id]);
+    const next = now.includes(id) ? now.filter((x) => x !== id) : [...now, id];
+    picks = next.length ? next : null;
+  }
 
   // ---- orders: A on a selected ship aims one; a click gives it -----------------------------------
   function say(m) { orderMsg = m; clearTimeout(msgTimer); msgTimer = setTimeout(() => (orderMsg = ''), 3500); }
-  // the ships an order from the selection goes to: the ship, or every ship under the formation
-  $: selShips = sel?.kind === 'contact' ? shipsUnder(contacts, state, sel.id) : [];
+  // the ships an order from the selection goes to: the ship, or every ship under the formation (a group's)
+  $: selShips = chosen ? shipsUnder(contacts, state, chosen) : [];
   const MODES = { order: 'move', attack: 'attack', patrol: 'patrol', turn: 'turn' };   // the key's action -> the order's mode
   function startOrder(mode = 'move') {
     if (sel?.kind !== 'contact' || !selShips.length) return say(`Select a ship or a formation to order: ${cap($keymap.order)}`);
@@ -292,14 +305,14 @@
     if (!able.length) return say('No ship there has a drive stated; they cannot be ordered to move.');
     const grp = group(state, contacts, able);
     const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
-    ordering = { unit: sel.id, ships: able, g, tilt: 0, plane: orderPlane, mode, then: lastThen };
+    ordering = { unit: chosen, ships: able, g, tilt: 0, plane: orderPlane, mode, then: lastThen };
   }
   // how a move ends (orders.js THEN): on station, free, or ballistic; K while aiming, kept for the next move
   let lastThen = 'station';
   $: if (ordering?.then) lastThen = ordering.then;
   // K: the selection goes free if any of its ships holds station, else takes station (decelerate: to
   // rest on the active bullseye, held there)
-  async function toggleFree(unit = sel?.id) {
+  async function toggleFree(unit = chosen) {
     if (!scenario || !unit || sel?.kind !== 'contact') return say(`Select a ship or a formation: ${cap($keymap.free)} takes station or goes free`);
     const ships = shipsUnder(contacts, state, unit), held = ships.filter((id) => state?.ships?.[id]?.mode === 'station');
     if (!held.length) return decelOrder(unit);
@@ -314,7 +327,7 @@
   let retuneTimer;
   async function retune(g, now = false, order = null) {
     if (!scenario || sel?.kind !== 'contact') return;
-    const unit = order?.by ?? sel.id, orderId = order?.id ?? null;
+    const unit = order?.by ?? chosen, orderId = order?.id ?? null;
     clearTimeout(retuneTimer);
     const send = async () => {
       try {
@@ -327,12 +340,12 @@
   async function setCold(cold) {
     if (!scenario || sel?.kind !== 'contact') return;
     try {
-      await api.order({ scenario: scenario.id, unit: sel.id, t, cold, player: playerId, view: side });
-      say(`${map.contactName(sel.id)}: ${cold ? 'wings folded, running cold' : 'wings spread'}`);
+      await api.order({ scenario: scenario.id, unit: chosen, t, cold, player: playerId, view: side });
+      say(`${map.contactName(chosen)}: ${cold ? 'wings folded, running cold' : 'wings spread'}`);
     } catch (err) { say(String(err.message ?? err)); }
   }
   // STOP: the order and the drive cut; she flies on as she goes, under gravity alone
-  async function stopOrder(unit = sel?.id) {
+  async function stopOrder(unit = chosen) {
     if (!scenario || !unit || sel?.kind !== 'contact') return say(`Select a ship or a formation to stop: ${cap($keymap.stop)}`);
     try {
       await api.order({ scenario: scenario.id, unit, t, g: 0, player: playerId, view: side });
@@ -340,7 +353,7 @@
     } catch (err) { say(String(err.message ?? err)); }
   }
   // DECELERATE: a new order, to turn and burn to rest in the active bullseye's frame, and hold there
-  async function decelOrder(unit = sel?.id) {
+  async function decelOrder(unit = chosen) {
     if (!scenario || !unit || sel?.kind !== 'contact') return say(`Select a ship or a formation to decelerate: ${cap($keymap.decel)}`);
     const grp = group(state, contacts, shipsUnder(contacts, state, unit));
     const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
@@ -351,7 +364,7 @@
     } catch (err) { say(String(err.message ?? err)); }
   }
   // active sensors: sweep (ping) or go quiet; a formation pings if none of its ships does, else goes quiet
-  async function setPing(on = null, unit = sel?.id) {
+  async function setPing(on = null, unit = chosen) {
     if (!scenario || !unit || sel?.kind !== 'contact') return say(`Select a ship or a formation: ${cap($keymap.ping)} pings`);
     const ships = shipsUnder(contacts, state, unit);
     on ??= !ships.some((id) => state?.ships?.[id]?.active);
@@ -526,6 +539,7 @@
     map = new SystemMap(canvas);
     window.astrum = map;                 // for the console and for screenshot scripts
     window.astrumClock = { get: () => t, set: (v) => (t = v), start: () => def?.start, pause: (v = true) => (paused = v) };
+    window.astrumSelect = (s) => select(s);
     canvas.addEventListener('pointermove', pointerMove);
     canvas.addEventListener('pointerdown', pointerDown, true);
     canvas.addEventListener('pointerup', pointerUp, true);
@@ -550,10 +564,10 @@
   watched={mode === 'map' ? watched : new Set()} />
 <HudCursor {map} {style} {settings} {overUI} />
 {#if mode === 'map' && scenarioOn && scenario}<Paths {map} {style} on={settings?.layers.paths ?? true} estimates={settings?.layers.path_estimates ?? true}
-  contacts={scenario.contacts} {sel} {ordering} aim={() => orderTool?.aim()} {motion} />{/if}
+  contacts={scenario.contacts} {chosen} {ordering} aim={() => orderTool?.aim()} {motion} />{/if}
 {#if ruler && mode === 'map'}<Ruler {map} {style} {ruler} {markAt} />{/if}
 {#if mode === 'map'}
-  <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} message={orderMsg} />
+  <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} {chosen} message={orderMsg} />
 {/if}
 
 {#if mode === 'menu'}
@@ -659,7 +673,7 @@
 </div>
 
 {#if !showSettings}
-<InfoPanel {map} {style} {sel} {state} {contacts} {probe} findings={def?.findings ?? []}
+<InfoPanel {map} {style} {sel} {picks} onpick={pick} {state} {contacts} {probe} findings={def?.findings ?? []}
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold}
   {watched} onwatch={toggleWatch} onfree={toggleFree} {frameVel}

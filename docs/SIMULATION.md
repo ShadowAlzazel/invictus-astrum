@@ -258,6 +258,15 @@ The vector shows the distance, time to target and Δv from rest (2√(d/a), 2√
 the order at the map's clock; **Esc**, **M** or a right click cancels. **A** and **P** while aiming
 make it an attack-move or a patrol (below); **Shift**-click queues it.
 
+**Groups.** Shift-click picks units to order as one. Picking units under the selected formation
+narrows its orders to those picked (the rest dim); picking any other unit joins it to the
+selection. The group goes to the server as one unit, its ids joined (`"kiki+paris"`,
+`simhost.order_units`): its ships are every ship of each of its units, once; a move is one order
+(one id, one formation), each ship keeping her place about the middle of its units, as a
+formation keeps hers about its own place. Stop, decelerate, free, ping, run cold and stances take a
+group the same way, and the order is labelled as given to it. A group naming a unit not in the
+scenario is refused.
+
 A go-to is closed-loop flip-and-burn: every step she steers her velocity relative to the target
 toward √(2·(0.9·a − pull)·d) along the line to it, within the acceleration ordered: the pull is
 the gravity at the stop point relative to the target (what braking there must also hold off), and

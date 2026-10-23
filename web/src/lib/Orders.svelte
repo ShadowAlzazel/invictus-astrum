@@ -7,7 +7,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { nextThen, aimAt, estimate, heading, hms, group, stepG, shipsUnder } from './orders.js';
   import Telegraph from './Telegraph.svelte';
-  import { cap, keymap } from './keys.js';
+  import { cap, is, keymap } from './keys.js';
   import { km, bearing, elev } from './format.js';
 
   export let map = null;
@@ -15,6 +15,7 @@
   export let state = null;
   export let contacts = [];
   export let sel = null;
+  export let chosen = null;             // the unit (or group, "a+b") the selection orders
   export let ordering = null;       // { unit, ships, g, tilt, plane } while an order is being aimed
   export let message = '';
 
@@ -24,7 +25,7 @@
   $: grp = ordering ? group(state, contacts, ordering.ships) : null;
   $: shown = ordering ? Math.min(ordering.g, grp?.maxG ?? ordering.g) : 0;
   $: name = ordering ? map?.contactName?.(ordering.unit) ?? ordering.unit : '';
-  $: selShips = sel?.kind === 'contact' ? new Set(shipsUnder(contacts, state, sel.id)) : new Set();
+  $: selShips = chosen ? new Set(shipsUnder(contacts, state, chosen)) : new Set();
 
   // what the cursor points at now; App asks for it when the order is given
   export function aim() { return ordering && map ? aimAt(map, ordering.unit, ordering.ships, cursor, ordering.tilt, ordering.plane) : null; }

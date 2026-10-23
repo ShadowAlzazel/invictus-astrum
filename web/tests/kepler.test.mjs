@@ -35,3 +35,8 @@ assert(near(aim.T, 1.5 * aim.tb, 1e-12), 'half the way burning');
 const still = ballisticAim([0, 0, 0], [0, 0, 0], a, () => [3e6, 2e6, 0]);
 const est = estimate({ from: [0, 0, 0], to: [3e6, 2e6, 0], standoff: 5e4 }, 0.3, true);
 assert(near(est.eta, still.T, 1e-9) && near(est.dv, a * still.tb, 1e-9) && est.distance === len([3e6, 2e6, 0]), 'the ballistic estimate: the aim, at rest');
+// an arc of it about her, as drawn when the conic is far larger than the view: centred on her
+const arc = conic([R, 0, 0], [0, vc, 0], mu, 3 * R, 48, 0.1), mid = 3 * 24;
+assert(!arc.closed && near(arc.pts[mid], R, 1e-12) && Math.abs(arc.pts[mid + 1]) < 1e-9 * R && near(Math.atan2(arc.pts[1], arc.pts[0]), -0.1, 1e-12), 'an arc about her, 0.1 rad either way');
+const ahead = conic([R, 0, 0], [0.5, vc * 1.8, 0], mu, 1e9, 48, 0.2);
+assert(!ahead.closed && near(Math.atan2(ahead.pts[1], ahead.pts[0]), 0, 1e-9) && Math.atan2(ahead.pts[145], ahead.pts[144]) <= 0.2 + 1e-9, 'a hyperbola: the arc ahead of her');

@@ -59,6 +59,7 @@ reveal_children = { default = 1, min = 0, max = 4, step = 1, label = "Levels of 
 reveal_parent   = { default = true, label = "Show what the selection answers to" }
 hierarchy_lines = { default = true, label = "Lines from a formation to its units" }
 dim_others      = { default = 0.35, min = 0.0, max = 1.0, step = 0.05, label = "Opacity of unrelated units" }
+dim_unpicked    = { default = 0.3, min = 0.0, max = 1.0, step = 0.05, label = "Opacity of units left out of a group (⇧-click)" }
 child_color  = "cyan"       # palette key in style.toml for revealed units and their lines
 parent_color = "violet"     # palette key for the line up to the parent
 

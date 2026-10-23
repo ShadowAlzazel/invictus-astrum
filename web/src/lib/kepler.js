@@ -31,8 +31,10 @@ export function dominant(bodies, byId, at, p) {
 }
 
 // her conic about a body from r, v off it, as n + 1 points off it (3 a point): an ellipse whole,
-// else the arc ahead out to limit; falling straight in (no turn about it), the line in
-export function conic(r, v, mu, limit, n = 96) {
+// else the arc ahead out to limit; falling straight in (no turn about it), the line in. half (rad):
+// only so far round it about her, either way (on a hyperbola, ahead), as when it is far larger
+// than the view
+export function conic(r, v, mu, limit, n = 96, half = null) {
   const rn = len(r), h = cross(r, v), hn = len(h), pts = new Float64Array(3 * (n + 1));
   if (!(mu > 0) || !(rn > 0)) return null;
   if (hn < 1e-9 * rn * Math.max(len(v), 1e-9)) {
@@ -45,8 +47,13 @@ export function conic(r, v, mu, limit, n = 96) {
     const rr = p / (1 + e * Math.cos(nu)), c = Math.cos(nu) * rr, s = Math.sin(nu) * rr;
     for (let i = 0; i < 3; i++) pts[3 * k + i] = c * P[i] + s * Q[i];
   };
-  if (e < 1) { for (let k = 0; k <= n; k++) put(k, (2 * Math.PI * k) / n); return { pts, closed: true }; }
-  const now = Math.atan2(dot(r, Q), dot(r, P)), far = Math.acos(-1 / e) - 1e-3;
+  const now = Math.atan2(dot(r, Q), dot(r, P));
+  if (e < 1) {
+    const from = half ? now - half : 0, to = half ? now + half : 2 * Math.PI;
+    for (let k = 0; k <= n; k++) put(k, from + ((to - from) * k) / n);
+    return { pts, closed: !half };
+  }
+  const far = Math.min(Math.acos(-1 / e) - 1e-3, half ? now + half : Infinity);
   let end = far;
   for (let k = 1; k <= n; k++) {
     const nu = now + ((far - now) * k) / n;
@@ -63,7 +70,7 @@ export function ontoVelocity(rel, mu) {
   const R = len(rel), up = Math.abs(rel[2]) < 0.95 * R ? [0, 0, 1] : [1, 0, 0], along = cross(up, rel);
   return scale(along, Math.sqrt(mu / R) / len(along));
 }
-export const onto = (rel, mu, n) => conic(rel, ontoVelocity(rel, mu), mu, 3 * len(rel), n);
+export const onto = (rel, mu, n, half = null) => conic(rel, ontoVelocity(rel, mu), mu, 3 * len(rel), n, half);
 
 // an orbit's figures off r, v: semi-major axis, period (Infinity unbound), apsides
 export function figures(r, v, mu) {

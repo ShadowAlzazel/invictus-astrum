@@ -1613,3 +1613,32 @@ def test_a_ballistic_move_burns_then_coasts_through():
     P = lambda T_: f._point({"bullseye": "burn", "player": "arcvs", "aer": [90, 0, 3e9]}, T_)
     miss = min(np.linalg.norm(f.at(t + k * T / 40)["kiki-1"].state.r - P(t + k * T / 40)) for k in range(30, 51))
     assert miss < 0.05 * 3e9
+
+
+def test_a_group_of_units_is_given_one_order():
+    """A selection of several units ("kiki+paris"): one order to every ship of each, as one
+    formation about the middle of its units (each keeps her place in it); stopped as one; and a group
+    naming a unit that is not there is refused."""
+    from astrum.app import create_app
+    from astrum.simhost import OrderRefused, give_order, order_ships
+    world = create_app().state.world
+    sc = world.scenarios["sol-demo"]
+    f = world.fleet(sc)
+    t = f.t0 + 600
+    f.at(t)
+    ships = order_ships(world, sc, f, "kiki+paris+kiki")
+    assert ships == ["kiki-1", "kiki-2", "kiki-3", "paris-1", "paris-2"]
+    r = give_order(world, {"scenario": "sol-demo", "unit": "kiki+paris", "player": "arcvs", "t": t, "g": 0.3,
+                           "target": {"bullseye": "burn", "aer": [90, 0, 3e5]}})
+    goals = [r["ships"][s]["goal"] for s in ships]
+    assert len({g["order_id"] for g in goals}) == 1 and all(g["by"] == "kiki+paris" for g in goals)
+    rows = [f.c.row[s] for s in ships]
+    pic = f.picture(t)
+    offs = np.array([f.c.off[i] for i in rows])
+    assert np.allclose(offs - offs[0], pic["r"][rows] - pic["r"][rows][0], atol=5e4)       # each keeps her place, as they stand
+    give_order(world, {"scenario": "sol-demo", "unit": "kiki+paris", "player": "arcvs", "t": t + 60, "g": 0})
+    f.at(t + 600)
+    assert not f.c.goal[rows].any()
+    with pytest.raises(OrderRefused):
+        give_order(world, {"scenario": "sol-demo", "unit": "kiki+nobody", "player": "arcvs", "t": t + 600, "g": 0.3,
+                           "target": {"bullseye": "burn", "aer": [90, 0, 3e5]}})

@@ -11,6 +11,7 @@
   import { rgba, text, display, unitSymbol, bodyDisplay, bodyMark, barycentreMark, zoneRing } from './symbols.js';
   import { km } from './format.js';
   import { reveal } from './hierarchy.js';
+  import { ofGroup } from './orders.js';
 
   export let map = null;
   export let style = null;
@@ -111,6 +112,7 @@
     const selId = map.selected?.kind === 'contact' ? map.selected.id : null;
     const rv = reveal(byId, selId, S.selection);
     const related = new Set([selId, ...rv.open, ...rv.children, ...rv.parents]);
+    const picks = map.picks;                       // a group picked (⇧-click): what is left out of it dims
     const childCol = pal[drules.selection?.rules.child_color] ?? pal.cyan;
     const parentCol = pal[drules.selection?.rules.parent_color] ?? pal.violet;
     const drawnAt = {};
@@ -121,7 +123,7 @@
       const ring = rv.children.has(c.id) ? childCol : rv.parents.has(c.id) ? parentCol : null;
       unitSymbol(ctx, style, c, s.x, s.y, {
         h, hot, ring, label: S.layers.labels || hot || ring !== null,
-        alpha: selId && !related.has(c.id) ? S.selection.dim_others : 1,
+        alpha: picks ? (ofGroup(byId, picks, c.id) ? 1 : S.selection.dim_unpicked ?? 0.3) : selId && !related.has(c.id) ? S.selection.dim_others : 1,
         hq: S.icons.hq_staff && formation && c.has_position,
         labelPx: S.text.unit_label_px, tagPx: S.text.unit_tag_px, faction: S.text.faction_tag ?? true,
       });

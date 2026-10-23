@@ -1,7 +1,7 @@
 <script>
   // What is selected: a body, a unit, or a point in space (probed on the server).
   import { km, kmFull, n, bearing, elev, lightTime, duration, watts, age } from './format.js';
-  import { hms, group, shipsUnder, orderGroups, heading } from './orders.js';
+  import { hms, group, shipsUnder, orderGroups, heading, named, ofGroup } from './orders.js';
   import { G, figures, len, sub } from './kepler.js';
   import { unitSymbol } from './symbols.js';
   import Telegraph from './Telegraph.svelte';
@@ -10,6 +10,8 @@
   export let map = null;
   export let style = null;
   export let sel = null;            // { kind: 'body'|'contact'|'point', id?, p? }
+  export let picks = null;          // a group picked with ⇧-click (unit ids), else null: the selection alone
+  export let onpick = () => {};     // (unit): ⇧-click, into the group or out of it
   export let state = null;          // latest state: re-renders the live readout
   export let contacts = [];
   export let findings = [];
@@ -50,15 +52,19 @@
   $: byId = Object.fromEntries(contacts.map((c) => [c.id, c]));
   $: members = contact ? (contact.children ?? []).map((id) => byId[id]).filter(Boolean) : [];
   $: chain = contact ? (contact.ancestors ?? []).map((id) => byId[id]).filter(Boolean) : [];
+  // a group: picked of its members (the rest dim), or across units (its own list): ordered as one, "a+b"
+  $: across = !!contact && !!picks && picks.some((id) => id !== contact.id && !(byId[id]?.ancestors ?? []).includes(contact.id));
+  $: chosen = contact ? (picks?.length ? picks.join('+') : contact.id) : null;
+  $: left = (id) => !!picks && !ofGroup(byId, picks, id);
   // a ship in the simulation: what she is now (the server flies her), and what her class gives her
-  $: ship = contact ? state?.ships?.[contact.id] ?? null : null;
+  $: ship = contact && !across ? state?.ships?.[contact.id] ?? null : null;
   $: spec = contact?.ship ?? null;
   // another's ship is shown as seen: where she was when her light reached one of ours, none of what only she knows
   $: seenOnly = ship ? ship.mass_t == null : false;
   $: arrives = ship?.goal?.eta_s != null && state?.utc && isFinite(ship.goal.eta_s) && ship.goal.eta_s < 3e9
     ? new Date(Date.parse(state.utc) + ship.goal.eta_s * 1000).toISOString().slice(11, 16) + ' UTC' : null;
   // the ships under this formation, and the orders they fly: each order its own telegraph
-  $: under = contact ? shipsUnder(contacts, state, contact.id) : [];
+  $: under = contact ? shipsUnder(contacts, state, chosen) : [];
   $: grp = under.length ? group(state, contacts, under) : null;
   // a formation at a glance: its lowest tanks, how many ping, whose sensors are drawn (its own ships only)
   $: fuelled = !ship ? under.filter((id) => state?.ships?.[id]?.propellant_share != null) : [];
@@ -91,7 +97,7 @@
   $: if (contact?.id !== tgFor) { tgFor = contact?.id; tgs = {}; seen = {}; tgServer = undefined; }
   $: if (ship?.goal?.g !== tgServer) { tgServer = ship?.goal?.g; tg = tgServer ?? null; }
   $: for (const o of orders) if (seen[o.id] !== o.g) { seen[o.id] = o.g; delete tgs[o.id]; tgs = tgs; }
-  const nameOf = (id) => byId[id]?.name ?? byId[id]?.callsign ?? id;
+  const nameOf = (id) => named((u) => byId[u]?.name ?? byId[u]?.callsign ?? u, id);
   // the unit's own symbol, drawn by the map's code
   function symbol(canvas, c) {
     const draw = (c) => {
@@ -118,14 +124,14 @@
   // each unit selected, and again once a new order is flown
   let eng = null, engAsked = '';
   $: ownUnit = contact && (ship ? !seenOnly : under.some((id) => state?.ships?.[id]?.mass_t != null));
-  $: engKey = ownUnit ? `${contact.id}|${ship?.goal?.order_id ?? orders.map((o) => o.id).join()}|${ship?.active}|${ship?.cold}` : '';
+  $: engKey = ownUnit ? `${chosen}|${ship?.goal?.order_id ?? orders.map((o) => o.id).join()}|${ship?.active}|${ship?.cold}` : '';
   $: if (engKey !== engAsked) { engAsked = engKey; askEngagement(); }
   async function askEngagement() {
     const key = engAsked;
     if (!key) { eng = null; return; }
-    try { const e = await engagement(contact.id); if (key === engAsked) eng = e; } catch { eng = null; }
+    try { const e = await engagement(chosen); if (key === engAsked) eng = e; } catch { eng = null; }
   }
-  async function stance(change) { await onstance(contact.id, change); engAsked = ''; }
+  async function stance(change) { await onstance(chosen, change); engAsked = ''; }
   const short = (label) => label?.split(':')[0] ?? '';
   const whence = (f) => !f ? '' : f.from === 'ordered' ? `ordered to ${nameOf(f.by)}` : f.from === 'written' ? `written for ${nameOf(f.by)}`
     : f.from === 'profile' ? "the profile's" : f.gone ? `the root (${f.gone} deleted)` : 'the root';
@@ -161,6 +167,9 @@
       {#if body}
         <h1>{body.name}</h1>
         <p class="kind">{KIND[body.kind] ?? body.kind}{#if parentName} · of {parentName}{/if}{#if body.inhabited} · inhabited{/if}</p>
+      {:else if across}
+        <h1>{picks.length} units</h1>
+        <p class="kind">a group · one order for all of them</p>
       {:else if contact}
         <h1>{contact.name ?? contact.callsign}{#if contact.hull_number}<span class="hull">{contact.hull_number}</span>{/if}</h1>
         <p class="kind">{contact.class_name || contact.unit_type || contact.echelon}{#if role}{` · ${role}`}{/if}{#if contact.brevity}{` · ${contact.brevity}`}{/if}{#if contact.pry}{` · Pry-${contact.pry}`}{/if}</p>
@@ -176,7 +185,7 @@
         <p class="kind">{probe ? `${REGION[probe.zone.region]} of ${map.bodies[probe.zone.dominant]?.name}` : 'probing…'}</p>
       {/if}
     </div>
-    {#if contact && style}<canvas class="sym" use:symbol={{ ...contact, status: [] }} aria-hidden="true"></canvas>{/if}
+    {#if contact && style && !across}<canvas class="sym" use:symbol={{ ...contact, status: [] }} aria-hidden="true"></canvas>{/if}
     <button class="close" on:click={onclose} title="Esc">✕</button>
   </header>
 
@@ -199,7 +208,7 @@
             {/if}
             {#if speed != null}<span class="speed" title="off {bullseyeName}{ship ? '' : ', the mean of its ships'}">{speed < 10 ? n(speed, 2) : n(speed, 1)} km/s</span>{/if}
             {#if held.station || held.orbit || held.coasting || held.burning}
-              <button class="act inline" on:click={() => onfree(contact.id)}
+              <button class="act inline" on:click={() => onfree(chosen)}
                 title={held.station ? 'Go free: onto an orbit of the body whose well she is in (paying only the burn onto it), else coasting' : 'Take station: decelerate to rest on the active bullseye, and hold there'}>{held.station ? 'Go free' : 'Take station'} <kbd>{cap($keymap.free)}</kbd></button>
             {/if}
           </p>
@@ -242,22 +251,35 @@
     {#if body.notes}<p class="note">{body.notes}</p>{/if}
     <button class="act" on:click={() => onfocus(sel)}>Centre and follow (F)</button>
   {:else if contact}
-    {#if members.length}
+    {#if across}
       <section>
-        <h2><button class="fold" class:shut={shut.units} on:click={() => flip('units')}><i></i>Under its command</button> <span class="dim">{members.length} unit{members.length > 1 ? 's' : ''}{under.length && !ship ? ` · ${under.length} ship${under.length > 1 ? 's' : ''}` : ''}</span></h2>
+        <h2>Picked <span class="dim">{picks.length} units · {under.length} ship{under.length === 1 ? '' : 's'}</span></h2>
+        {#each picks.map((id) => byId[id]).filter(Boolean) as m (m.id)}
+          <button class="unit" on:click={(e) => (e.shiftKey ? onpick(m.id) : onselect({ kind: 'contact', id: m.id }))} title="Select it alone; ⇧-click: take it out of the group">
+            <span>{m.name ?? m.callsign}</span><span class="dim">{m.children?.length ? m.echelon : m.class_name || m.unit_type || m.echelon}</span>
+          </button>
+        {/each}
+        <p class="dim hint">⇧-click a unit, here or on the map: into the group or out of it</p>
+      </section>
+    {:else if members.length}
+      <section>
+        <h2><button class="fold" class:shut={shut.units} on:click={() => flip('units')}><i></i>Under its command</button> <span class="dim">{members.length} unit{members.length > 1 ? 's' : ''}{under.length && !ship ? ` · ${under.length} ship${under.length > 1 ? 's' : ''}${picks ? ' picked' : ''}` : ''}</span></h2>
         {#if !shut.units}
           {#each members as m}
-            <button class="unit" on:click={() => onselect({ kind: 'contact', id: m.id })}>
+            <button class="unit" class:left={left(m.id)} on:click={(e) => (e.shiftKey ? onpick(m.id) : onselect({ kind: 'contact', id: m.id }))}
+              title="Select it; ⇧-click: give orders to it (and the others picked) alone">
               <span>{m.name ?? m.callsign}</span><span class="dim">{m.children?.length ? m.echelon : m.class_name || m.unit_type || m.echelon}</span>
             </button>
           {/each}
           {#if makeup.length}<p class="dim makeup">{makeup.map(([k, n]) => `${n} × ${k}`).join(' · ')}</p>{/if}
+          {#if picks}<p class="dim hint">Only those picked take its orders · <button class="unit inline" on:click={() => onselect({ kind: 'contact', id: contact.id })}>All of them</button></p>
+          {:else}<p class="dim hint">⇧-click: give orders to some of them alone</p>{/if}
         {/if}
       </section>
     {/if}
     {#if fuelled.length}
       <section>
-        <h2>Formation <span class="dim">{fuelled.length} ship{fuelled.length > 1 ? 's' : ''}</span></h2>
+        <h2>{picks ? 'Group' : 'Formation'} <span class="dim">{fuelled.length} ship{fuelled.length > 1 ? 's' : ''}</span></h2>
         {#if lowest}
           {@const low = state.ships[lowest]}
           <p class="low">Lowest fuel <b class:short={low.propellant_share <= 0.1}>{n(low.propellant_share * 100, 1)}%</b>
@@ -268,7 +290,7 @@
         <p class="dim">Sensors: {pinging ? `${pinging} of ${fuelled.length} pinging` : 'passive'}{sensed.length && allShown ? ' · drawn' : ''}</p>
         <button class="act" on:click={() => onping(pinging < fuelled.length)}
           title="Every ship under it: sweep their active sensors, or all go quiet">{pinging === fuelled.length ? 'Go quiet' : 'Ping'} <kbd>{cap($keymap.ping)}</kbd></button>
-        {#if sensed.length}<button class="act" class:on={allShown} on:click={() => onwatch(contact.id)}
+        {#if sensed.length}<button class="act" class:on={allShown} on:click={() => onwatch(chosen)}
           title="Draw the sensors of every ship under it always">{allShown ? 'Hide sensors' : 'Show sensors'} <kbd>{cap($keymap.watch)}</kbd></button>{/if}
       </section>
     {/if}
@@ -407,7 +429,7 @@
           <ol class="ledger">
             {#each eng.ledger as o (o.id)}
               <li class:now={o.id === ship?.goal?.order_id || orders.some((x) => x.id === o.id)} class:gone={o.withdrawn}>
-                <span>{said(o)}{#if o.by !== contact.id} <i class="dim">· {nameOf(o.by)}</i>{/if}</span><span class="dim">{state ? `${age(state.t - o.at)} ago` : ''}</span></li>
+                <span>{said(o)}{#if o.by !== chosen} <i class="dim">· {nameOf(o.by)}</i>{/if}</span><span class="dim">{state ? `${age(state.t - o.at)} ago` : ''}</span></li>
             {/each}
           </ol>
         {/if}
@@ -477,6 +499,7 @@
   .low { margin: 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
   .low b.short { color: #ffd27a; }
   .unit.inline { display: inline; padding: 0; width: auto; }
+  .unit.left { opacity: 0.3; }
   .act.on { color: var(--ink); filter: none; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 14px; margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--rule); }
   dt { color: var(--dim); }

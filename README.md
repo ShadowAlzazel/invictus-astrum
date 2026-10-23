@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 223 tests (the map's math too, in node)
+python -m pytest -q tests             # 224 tests (the map's math too, in node)
 ```
 
 `serve.py` says at start whether the simulation's hot loops are compiled (`kernels compiled
@@ -81,6 +81,7 @@ the author*. The format is in `data/ships/README.md`.
 | Left-drag / right-drag / wheel | pan / rotate / zoom (in toward the cursor; out about the centre; never inside a body) |
 | Click | select a body or unit; on empty space, probe the point (zone, gravity, field) |
 | Click a formation | it opens: the units that answer to it are shown, highlighted and joined to it; the formation it answers to is marked; the rest dims |
+| Shift-click a unit | a group, ordered as one: a unit under the selected formation (on the map, or in its panel's Under its command) picks it, and only those picked take the formation's orders, the rest at 30% (Display, Selection); any other unit joins the selection (again: leaves it). Every order, stance and switch then goes to the group; a click starts over |
 | Hold R | detection ranges: a ring for each of a ship's sensors, how far it sees a ship giving off 30 MW (warm; Settings, Display, Detection ranges: 0.3 MW cold to 30,000 MW burning); sensors that leave most of the sphere unseen (the infrared telescopes, the strip optics) as their cones along her hull. Rings of one kind that all but share a centre on screen (a formation from far off) are drawn as one about them all |
 | Others' ships | drawn as tracks; tracks close together on screen collapse into one symbol by count: a flight (up to 5), a group (up to 20), a task force (more), the map's own reading, set in Settings, Display, Others' ships. Click one to pull that track out; zoom in to resolve |
 | U | up the chain of command: select the formation the selected unit answers to |
@@ -94,7 +95,7 @@ the author*. The format is in `data/ships/README.md`.
 | Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
 | V | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond); a formation: every ship under it |
 | K | station or free: a ship (or every ship under a formation) holding station goes free, onto an orbit of the body whose well she is in (paying only the burn onto it), else coasting; a free one takes station (decelerate, as X). Aiming a move, how it ends, cycled: holding station there, free there (at a body, an orbit of it), or ballistic (no braking: half the way burning, then on through it) |
-| Y | trajectories: the free ships' paths on the map, on or off (Display, Free paths; the fuchsia estimates are Free path estimates) |
+| Y | trajectories: the free ships' paths on the map, on or off (Display, Free paths; the fuchsia estimates are Free path estimates). An orbit far larger than the view about her is drawn as an arc about her, and every path is cut at the screen's edge |
 | C | show sensors: the selection's drawn on the map always (a formation: every ship under it); again: hide |
 | X | DECELERATE the selection: a new order to turn and burn to rest on the active bullseye (on the star centre: by the body that pulls hardest) and hold there |
 | `,` | settings |
