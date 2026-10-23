@@ -291,6 +291,18 @@ full_phase_aperture_m = 7.7
 dazzle_km = 40000
 pd_kills_per_s = { 100 = 48, 300 = 5.3, 1000 = 0.48, 3000 = 0.05 }     # TELVM §5.7, on its own axis
 
+[dome.xix-a-of]
+name = "DOME XIX-A-OF, the blister"
+sensor = "watch-optic-of"
+panel = "b"
+facets = 19
+cap_deg = 70
+base_ring_m = 8.3
+full_phase_aperture_m = 7.7
+dazzle_km = 28000
+pd_kills_per_s = { 100 = 33.6, 300 = 3.7, 1000 = 0.34, 3000 = 0.035 }   # 70% of the XIX-B's
+notes = "The Holzweiber's sensor blisters, by refit in place of her secondary turrets: rated 70% of the VIGIL's DOME XIX-B."
+
 [dome.xxxvii]
 name = "DOME XXXVII, the wide dome"
 sensor = "wide-optic"

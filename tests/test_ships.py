@@ -65,7 +65,7 @@ def test_round_energies_and_broadside(reg):
 
 
 def test_thrust_agrees_light_and_full(reg):
-    assert reg.classes["papilion"].derived["thrust_mn"] == pytest.approx(276, abs=1)
+    assert reg.classes["papilion"].derived["thrust_mn"] == pytest.approx(310, abs=1)
     assert not [f for f in reg.classes["papilion"].findings if "thrust" in f.message]
 
 
@@ -143,21 +143,21 @@ def test_bench_mix_and_tamper(reg, f, n, ve):
 
 
 def test_drive_figures(reg):
-    """PAPILION on the line drive: the canon's masses read with tanks full, held at 4,000 km/s, at the bench's 0.40 g."""
+    """PAPILION on the line drive: the canon's masses read with tanks full, held at 4,000 km/s, sized to her most, 0.45 g."""
     sc = reg.classes["papilion"]
     d = sc.drive
     loads = {(r["load"], r["tanks"]): r for r in d["loads"]}
     assert loads["full", "full"]["mass_t"].value == 70340                     # the canon's figure, tanks full
-    assert loads["full", "full"]["accel_ms2"].value == pytest.approx(3.923, abs=0.001)
+    assert loads["full", "full"]["accel_ms2"].value == pytest.approx(4.413, abs=0.001)
     assert loads["full", "full"]["dv_kms"].value == pytest.approx(4000)
-    assert loads["light", "full"]["accel_ms2"].value == pytest.approx(4.43, abs=0.01)     # the class's light
+    assert loads["light", "full"]["accel_ms2"].value == pytest.approx(4.98, abs=0.01)     # the class's light
     assert d["propellant_t"].value == pytest.approx(22219, abs=1)
     assert d["pulse_rate_hz"].value == pytest.approx(23.8)                   # 2 × 7 at 1.7 Hz
-    assert d["block"]["pellet_kg"] == pytest.approx(1.10, abs=0.01)
-    assert d["cruise"]["holds"] and not d["cruise"]["reaches_top"] and d["heat"]["steady"]   # 0.40 g: the band's floor
+    assert d["block"]["pellet_kg"] == pytest.approx(1.24, abs=0.01)
+    assert d["cruise"]["holds"] and not d["cruise"]["reaches_top"] and d["heat"]["steady"]   # 0.45 g: inside the band
     assert not [f for f in sc.findings if "acceleration" in f.message]     # sized thrust agrees with the canon
     p = sc.performance("light", 0)
-    assert p["dv_kms"] == 0 and p["max_accel_g"] == pytest.approx(275.95 / 40121 * 1e3 / 9.80665, rel=1e-3)
+    assert p["dv_kms"] == 0 and p["max_accel_g"] == pytest.approx(310.44 / 40121 * 1e3 / 9.80665, rel=1e-3)
 
 
 def test_drive_typed_and_direct(reg):

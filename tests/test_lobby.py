@@ -196,7 +196,7 @@ def test_asked_pictures_are_answered_once_each():
             with c.websocket_connect("/ws", headers=h) as ws:
                 ws.send_json({"level": "cislunar", "system": "sol", "lead": 0.02, "step": 1 / 60})
                 first = ws.receive_json()
-                time.sleep(0.3)                                    # (pushed, a few would be waiting by now)
+                time.sleep(0.6)                                    # (pushed, a few would be waiting by now)
                 ws.send_json({"level": "cislunar", "system": "sol", "lead": 0.02, "step": 1 / 60})
                 second = ws.receive_json()
         assert first["full"] and not second["full"] and second["t"] - first["t"] > 3600 * 0.25  # fresh: not one pushed and queued since

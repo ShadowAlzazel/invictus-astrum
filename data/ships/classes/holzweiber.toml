@@ -14,10 +14,9 @@ length_m = 300
 mass_t = 36000
 
 [drive]
-module = "of-cruiser"
+module = "of-cruiser"        # 201 MN, typed on the drive
 hull_mass = "dry"
 dv_kms = 4000
-sized_g = 0.4
 
 [aim]                        # TEMPORARY: not yet stated
 rated_urad = { value = 7.5, est = true }
@@ -57,9 +56,10 @@ notes = "Port and starboard, facing out across her beams."
 
 [[battery]]
 id = "blisters"
-label = "Active sensor blisters"
-sensor = "blister"
+label = "Sensor blisters"
+dome = "xix-a-of"
 count = 2
+facing = ["dorsal", "ventral"]
 notes = "Fitted in place of her two 1.7 kg turrets."
 
 [endurance]

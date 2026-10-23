@@ -157,6 +157,12 @@ banks = 1
 per_bank = 5
 hz = 1.7
 
+[block.of-2x4]
+name = "Old Forest block, 2 × 4"
+banks = 2
+per_bank = 4
+hz = 1.7
+
 [block.of-2x3]
 name = "Old Forest block, 2 × 3"
 banks = 2
@@ -183,6 +189,15 @@ mark = "mk2-7b"
 mix = "std-45"
 block = "line-2x7"
 notes = "Thrust is sized per class (sized_g)."
+
+[drive.escort]
+name = "APD Mk II.7b, escort"
+kind = "fusion-pulse"
+mark = "mk2-7b"
+mix = "std-45"
+block = "line-2x7"
+thrust_mn = 260
+notes = "The AESHNA's: the line block run lower, for a deeper tank."
 
 [drive.apd-2x5]
 name = "APD Mk II.7b, 2 × 5"
@@ -225,12 +240,13 @@ block = "of-2x7"
 notes = "The Yggdrasil's."
 
 [drive.of-cruiser]
-name = "APD Mk II.C-OF, 1 × 5 and two 2 × 3"
+name = "APD Mk II.C-OF, 1 × 5 and 2 × 4"
 kind = "fusion-pulse"
 mark = "mk2c-of"
 mix = "std-45"
-block = ["of-1x5", "of-2x3", "of-2x3"]
-notes = "The Holzweiber's: a 1 × 5 and two 2 × 3, 17 engines."
+block = ["of-1x5", "of-2x4"]
+thrust_mn = 201
+notes = "The Holzweiber's: 13 engines, about 15.5 MN each."
 
 [drive.of-frigate]
 name = "APD Mk II.C-OF, 1 × 7"

@@ -17,16 +17,15 @@ body = "Four wings in an X"
 length_m = 350
 wingspan_m = { spread = 180 }
 mass_t = { value = 55000, est = true }
-acceleration_ms2 = { full = 5.40, light = 6.09 }
+acceleration_ms2 = { value = 4.73, est = true, note = "tanks full: 260 MN on 55,000 t" }
 material = "MAJOR-6 woven silk"
 protection_kgm2 = { citadel = 446, joints = 592, bumper = 18 }
 complement = { value = 450, approx = true }
 
 [drive]
-module = "line"
-hull_mass = "wet"          # the canon's masses are with tanks full: 5.40 m/s² at 70,340 t is the full-load figure
-dv_kms = 4000              # the bench's budget; the propellant follows from the mark and the mix
-sized_g = 0.55 
+module = "escort"           # 260 MN: less thrust than a PAPILION, a deeper tank
+hull_mass = "wet"          # her mass is with tanks full
+dv_kms = 5000              # a quarter over the fleet's 4,000 km/s budget
 
 [aim]
 rated_urad = 6.0

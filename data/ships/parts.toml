@@ -352,5 +352,10 @@ revisit_s = 60
 emit_mw = { value = 300, est = true }
 notes = "Every ship's own: a cold hull by active scan, ~4,400 km, every 10 s (the VIGIL's, DE_CVSTODIBVS); swept here every minute. What a ping gives off: TEMPORARY, not yet stated."
 
-[sensor.blister]
-name = "Active sensor blister"
+[sensor.watch-optic-of]
+name = "Watch dome optics, Old Forest"
+cone_deg = 70
+reach_km = 42000000
+ref_mw = 30
+revisit_s = 300
+notes = "The Holzweiber's blisters: 70% of what the VIGIL's watch domes are rated."

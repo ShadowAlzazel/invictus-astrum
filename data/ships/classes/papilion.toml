@@ -17,16 +17,16 @@ body = "two wings per side"
 length_m = 390
 wingspan_m = { spread = 140, folded = 62 }
 mass_t = { light = 62340, full = 70340 }
-acceleration_ms2 = { full = 3.92, light = 4.43 }   # the bench, 0.40 g full (SHIPS OF THE CLASSIS: 5.40 and 6.09, at 0.55 g)
+acceleration_ms2 = { full = 4.41, light = 4.98 }   # 0.45 g full (SHIPS OF THE CLASSIS: 5.40 and 6.09, at 0.55 g)
 material = "MAJOR-6 woven silk"
 protection_kgm2 = { citadel = 547, joints = 688, bumper = 18 }
 complement = { value = 500, approx = true, note = "line rate: a line crew and a splice party" }
 
 [drive]
 module = "line"
-hull_mass = "wet"          # the canon's masses are with tanks full: 3.92 m/s² at 70,340 t is the full-load figure
+hull_mass = "wet"          # the canon's masses are with tanks full: 4.41 m/s² at 70,340 t is the full-load figure
 dv_kms = 4000              # the bench's budget; the propellant follows from the mark and the mix
-sized_g = 0.40             # thrust sized to 0.40 g fully loaded, as on the bench (rated 20.5 MN an engine)
+sized_g = 0.45             # her most, full speed: 0.45 g fully loaded (the bench rates an engine at 0.40 g's 20.5 MN)
 
 [aim]
 rated_urad = 6.5

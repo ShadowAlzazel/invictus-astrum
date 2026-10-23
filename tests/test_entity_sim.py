@@ -33,12 +33,12 @@ def test_spec_keeps_only_what_flies(reg):
     assert set(spec.hull_kg) == {"light", "full"}
     assert spec.hull_kg["full"] / 1e3 == pytest.approx(48121, abs=1)          # 70,340 t less her tanks
     assert spec.propellant_kg / 1e3 == pytest.approx(22219, abs=1)
-    assert spec.thrust_n / 1e6 == pytest.approx(275.9, abs=0.1)                # 0.40 g at 70,340 t (the bench)
+    assert spec.thrust_n / 1e6 == pytest.approx(310.4, abs=0.1)                # 0.45 g at 70,340 t
     assert not hasattr(spec, "summary") and "genus" not in spec.as_dict()     # no lore
     s = ship(reg)
     assert s.mass_kg / 1e3 == pytest.approx(70340, abs=1)
     assert s.dv_left_ms / 1e3 == pytest.approx(4000, abs=0.5)
-    assert s.max_accel_ms2 / G0 == pytest.approx(0.40, abs=1e-4)
+    assert s.max_accel_ms2 / G0 == pytest.approx(0.45, abs=1e-4)
     noddy = ShipSpec.from_class(reg.classes["tarantulae"])                     # no drive: she still exists
     assert not noddy.has_drive and noddy.hull_kg
 
@@ -1466,7 +1466,7 @@ def test_the_registry_shows_each_class_s_sensors():
     assert by["watch-optic"]["mounted"][0]["as"].startswith("Domes · ") and by["ir-telescope"]["ref_mw"] == 0.3
     assert s["relay"]["vigil"] and s["rules"]["identify"] == 25 and s["gives_off"]["warm_mw"] == 20
     h = c.get("/api/ships/holzweiber").json()["sensing"]
-    assert [u["sensor"] for u in h["unsimulated"]] == ["blister"]
+    assert h["unsimulated"] == [] and {"id": "watch-optic-of", "km": 42e6} == {k: next(x for x in h["suite"] if x["id"] == "watch-optic-of")[k] for k in ("id", "km")}
 
 
 def test_the_picture_s_switches_are_one_table():

@@ -113,7 +113,7 @@ def suite(registry, sc) -> list[dict]:
 
 def unsimulated(registry, sc) -> list[dict]:
     """A class's sensor mounts the simulation does not sweep (yet): their part states no cone,
-    reach or sweep (the Holzweiber's blisters), or names none."""
+    reach or sweep, or names none."""
     arm = getattr(registry, "armoury", None)
     parts = arm.parts.get("sensor", {}) if arm else {}
     return [{"as": what, "sensor": sid, "name": parts.get(sid or "", {}).get("name", sid)} for sid, count, what, _ in mounts(registry, sc)
