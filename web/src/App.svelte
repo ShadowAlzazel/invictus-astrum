@@ -164,7 +164,14 @@
     applySettings();
     keepSettings();
   }
+  // the switches: in a lobby, its own (the host sets them, every member is shown by them); else this browser's
+  $: shownGame = authOn && mine ? mine.picture ?? {} : game;
   function setGame(k, v) {
+    if (authOn && mine) {
+      if (amHost) lobbyAct({ do: 'picture', picture: { [k]: v } });
+      else say(`The picture's switches are the lobby's: its host, ${mine.host}, sets them`);
+      return;
+    }
     const g = { ...game };
     if (v == null) delete g[k]; else g[k] = v;
     game = g;
@@ -726,7 +733,7 @@
 {:else if mode === 'signin'}
   <SignIn onsigned={signedIn} />
 {:else if mode === 'levels' && purpose === 'play' && authOn}
-  <Lobby {you} {lobbies} {levels} current={listed} note={levelNote} onpreview={previewLevel} onenter={enter} onact={lobbyAct} onsignout={signOut} onback={toMenu} />
+  <Lobby {you} {lobbies} {levels} current={listed} note={levelNote} switches={meta?.picture ?? {}} onpreview={previewLevel} onenter={enter} onact={lobbyAct} onsignout={signOut} onback={toMenu} />
 {:else if mode === 'levels' && purpose === 'play'}
   <LevelList {levels} current={listed} note={levelNote} onpreview={previewLevel} onenter={enter} onrestart={restartLevel} onstop={stopLevel} onback={toMenu} />
 {:else if mode === 'levels'}
@@ -848,7 +855,7 @@
 
 {#if showSettings && settings}
   <Settings rules={drules} values={settings} status={settingsStatus} onchange={setSetting} onreset={resetSettings}
-    {game} gameRules={meta?.picture ?? {}} ongame={setGame} bind:tab={settingsTab} onclose={() => (showSettings = false)}
+    game={shownGame} gameRules={meta?.picture ?? {}} ongame={setGame} gameBy={authOn && mine ? (amHost ? 'host' : mine.host) : null} bind:tab={settingsTab} onclose={() => (showSettings = false)}
     {profiles} {profileRules} onprofile={saveProfile} ondropprofile={dropProfile} {adjutant} onadjutant={setAdjutant} />
 {/if}
 

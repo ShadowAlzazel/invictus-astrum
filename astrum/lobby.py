@@ -5,7 +5,8 @@ A signed-in user makes a lobby for a level and is its host; others join it and e
 (any of the level's factions, or MASTER). The host starts, restarts and stops the level, chooses
 another while it is not running, and sets the lobby's rules (RULES): whether anyone may pause it
 and set its warp (else the host alone), whether a member may switch sides while it runs, and
-whether a side may be played by more than one member. A
+whether a side may be played by more than one member; and the picture's switches (astrum/switches.py:
+detection, relay, light delay...), which every member is shown by, whatever their map asks. A
 user is in one lobby at most, and a level in one lobby. The host leaving, the next member is host;
 the last one leaving, the lobby closes (and its level stops: the caller says so to the
 simulation). What the lobby grants a member is what every request of theirs is made as: its level,
@@ -15,6 +16,8 @@ from __future__ import annotations
 import itertools
 import threading
 from dataclasses import dataclass, field
+
+from .switches import SWITCHES
 
 
 class LobbyError(ValueError):
@@ -35,9 +38,10 @@ class Lobby:
     host: str
     members: dict[str, str | None] = field(default_factory=dict)    # user -> the side they play (None: not chosen)
     rules: dict[str, bool] = field(default_factory=lambda: {k: d for k, (d, _) in RULES.items()})
+    picture: dict = field(default_factory=dict)       # the host's choice of switches (the rest: the server's defaults)
 
     def as_dict(self, online: set[str]) -> dict:
-        return {"id": self.id, "level": self.level, "host": self.host, "rules": dict(self.rules),
+        return {"id": self.id, "level": self.level, "host": self.host, "rules": dict(self.rules), "picture": dict(self.picture),
                 "members": [{"user": u, "side": v, "online": u in online} for u, v in self.members.items()]}
 
     def choose(self, user: str, side: str, running: bool) -> None:
@@ -48,6 +52,17 @@ class Lobby:
         if taken and not self.rules["shared_sides"]:
             raise LobbyError(f"{taken} plays that side, and a side is one member's (the host's rule)")
         self.members[user] = side
+
+    def set_picture(self, values: dict) -> None:
+        """The host's switches: each one set (true/false, or a number), or None for the server's default."""
+        bad = [k for k, v in values.items() if k not in SWITCHES or not (v is None or isinstance(v, (bool, int, float)))]
+        if bad:
+            raise LobbyError(f"no switch {bad[0]!r}: the switches are {list(SWITCHES)}")
+        for k, v in values.items():
+            if v is None:
+                self.picture.pop(k, None)
+            else:
+                self.picture[k] = v
 
     def set_rules(self, rules: dict) -> None:
         bad = [k for k, v in rules.items() if k not in RULES or not isinstance(v, bool)]

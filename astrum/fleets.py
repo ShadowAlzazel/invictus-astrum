@@ -1,6 +1,6 @@
 """Fleets: formations and their ships, what they are, kept apart from where any scenario puts them.
 
-    data/fleets/<id>.toml    [fleet] id, name, faction, system, notes; and its [[unit]]s: each
+    data/fleets/<id>.toml    [fleet] id, name, faction, notes; and its [[unit]]s: each
                              its id, callsign, echelon, the formation above it, a ship's class
                              and hull number, and what a formation hands down (affiliation,
                              faction, veterancy, stance, profile, flag, role)
@@ -32,7 +32,6 @@ class FleetFile:
     id: str
     name: str
     faction: str
-    system: str
     notes: str
     units: tuple                          # its units, as written ([[unit]] tables), in order
     source: str
@@ -43,7 +42,7 @@ def load_fleet(path: str | Path) -> FleetFile:
     with path.open("rb") as f:
         doc = tomllib.load(f)
     fl, problems = doc.get("fleet") or {}, []
-    for k in ("id", "faction", "system"):
+    for k in ("id", "faction"):
         if not isinstance(fl.get(k), str) or not fl[k]:
             problems.append(f"[fleet] needs {k}")
     if fl.get("id") and fl["id"] != path.stem:
@@ -63,7 +62,7 @@ def load_fleet(path: str | Path) -> FleetFile:
     if problems:
         raise ValueError(f"{path.name}:\n  " + "\n  ".join(problems))
     top = [{**u, "faction": u.get("faction", fl["faction"])} if not u.get("formation") else u for u in units]
-    return FleetFile(fl["id"], fl.get("name", fl["id"]), fl["faction"], fl["system"], fl.get("notes", ""),
+    return FleetFile(fl["id"], fl.get("name", fl["id"]), fl["faction"], fl.get("notes", ""),
                      tuple(top), str(path))
 
 

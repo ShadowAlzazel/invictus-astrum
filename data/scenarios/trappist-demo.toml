@@ -1,0 +1,317 @@
+# TRAPPIST-1: Luna Classis I's Task Force 3 on free orbits about TRAPPIST-1 f, and its Luna Strike
+# Squadron on free orbits about the star, half an AU out. The rest of the Classis is undeployed, its
+# flagship (Imoogi, with Task Force 1) among them: the Classis leads by its next ship in the chain of
+# command, Task Force 3's (astrum/relay.py). How units and placements are written: data/fleets/README.md.
+
+[scenario]
+id = "trappist-demo"
+name = "Trappist picture"
+system = "trappist-1"
+player = "arcvs"
+factions = ["arcvs"]
+
+[[fleet]]
+id = "luna-classis-1"
+
+# ---- Task Force 3: as it stood off Mars, about TRAPPIST-1 f, each ship going free onto her orbit ------
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf-3"
+position = { unit = "tf3-lf4-bs-1" }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-bs-1"
+position = { body = "trappist-1f", offset_km = [20000, -1200, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-bs-2"
+position = { body = "trappist-1f", offset_km = [20000, -400, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-bs-3"
+position = { body = "trappist-1f", offset_km = [20000, 400, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-bs-4"
+position = { body = "trappist-1f", offset_km = [20000, 1200, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-ls-1"
+position = { body = "trappist-1f", offset_km = [17500, -800, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-ls-2"
+position = { body = "trappist-1f", offset_km = [17500, 0, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-ls-3"
+position = { body = "trappist-1f", offset_km = [17500, 800, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-pa-1"
+position = { body = "trappist-1f", offset_km = [26000, -400, 1000] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-pa-2"
+position = { body = "trappist-1f", offset_km = [26000, 400, 1240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-pb-1"
+position = { body = "trappist-1f", offset_km = [21000, 4600, -1000] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-pb-2"
+position = { body = "trappist-1f", offset_km = [21000, 5400, -760] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-bs-1"
+position = { body = "trappist-1f", offset_km = [-8961, 17921, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-bs-2"
+position = { body = "trappist-1f", offset_km = [-9654, 17521, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-bs-3"
+position = { body = "trappist-1f", offset_km = [-10346, 17121, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-bs-4"
+position = { body = "trappist-1f", offset_km = [-11039, 16721, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-ls-1"
+position = { body = "trappist-1f", offset_km = [-8057, 15555, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-ls-2"
+position = { body = "trappist-1f", offset_km = [-8750, 15155, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-ls-3"
+position = { body = "trappist-1f", offset_km = [-9443, 14755, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-pa-1"
+position = { body = "trappist-1f", offset_km = [-12654, 22717, 1000] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-pa-2"
+position = { body = "trappist-1f", offset_km = [-13346, 22317, 1240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-pb-1"
+position = { body = "trappist-1f", offset_km = [-14484, 15887, -1000] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-pb-2"
+position = { body = "trappist-1f", offset_km = [-15177, 15487, -760] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-bs-1"
+position = { body = "trappist-1f", offset_km = [-11039, -16721, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-bs-2"
+position = { body = "trappist-1f", offset_km = [-10346, -17121, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-bs-3"
+position = { body = "trappist-1f", offset_km = [-9654, -17521, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-bs-4"
+position = { body = "trappist-1f", offset_km = [-8961, -17921, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-ls-1"
+position = { body = "trappist-1f", offset_km = [-9443, -14755, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-ls-2"
+position = { body = "trappist-1f", offset_km = [-8750, -15155, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-ls-3"
+position = { body = "trappist-1f", offset_km = [-8057, -15555, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-pa-1"
+position = { body = "trappist-1f", offset_km = [-13346, -22317, 1000] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-pa-2"
+position = { body = "trappist-1f", offset_km = [-12654, -22717, 1240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-pb-1"
+position = { body = "trappist-1f", offset_km = [-6516, -20487, -1000] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-pb-2"
+position = { body = "trappist-1f", offset_km = [-5823, -20887, -760] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-es-1"
+position = { body = "trappist-1f", offset_km = [10346, 17121, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-es-2"
+position = { body = "trappist-1f", offset_km = [9654, 17521, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-vs-1"
+position = { body = "trappist-1f", offset_km = [9307, -17721, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-vs-2"
+position = { body = "trappist-1f", offset_km = [10000, -17321, 240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-vs-3"
+position = { body = "trappist-1f", offset_km = [10693, -16921, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp1-1"
+position = { body = "trappist-1f", offset_km = [-60000, 800, 8000] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp1-2"
+position = { body = "trappist-1f", offset_km = [-60000, 0, 8240] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp1-3"
+position = { body = "trappist-1f", offset_km = [-60000, -800, 8000] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp2-1"
+position = { body = "trappist-1f", offset_km = [60000, -800, -8000] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp2-2"
+position = { body = "trappist-1f", offset_km = [60000, 0, -7760] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp2-3"
+position = { body = "trappist-1f", offset_km = [60000, 800, -8000] }
+mode = "orbit"
+
+# ---- the Luna Strike Squadron: half an AU from TRAPPIST-1, in a line 2,000 km apart, going free ----------
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-strike-1"
+position = { body = "trappist-1", offset_km = [74798935, -4000, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-strike-2"
+position = { body = "trappist-1", offset_km = [74798935, -2000, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-strike-3"
+position = { body = "trappist-1", offset_km = [74798935, 0, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-strike-4"
+position = { body = "trappist-1", offset_km = [74798935, 2000, 0] }
+mode = "orbit"
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-strike-5"
+position = { body = "trappist-1", offset_km = [74798935, 4000, 0] }
+mode = "orbit"

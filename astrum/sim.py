@@ -955,7 +955,7 @@ class Fleet:
         for i in rows[(c.prop[rows] <= 0) | (left < closing)]:
             self.findings.append(f"{c.ids[i]}: bingo fuel, {left[rows == i][0] / 1e3:,.1f} km/s left, closing at "
                                  f"{closing[rows == i][0] / 1e3:,.1f}: she drops her order and goes free")
-            self._go_free(int(i), t)
+            self._go_free(int(i), t, star=False)
 
     # ---- her heat: a stamina bar ------------------------------------------------------------------
     def _heat(self, T0: float, T1: float, rows: np.ndarray, slots: np.ndarray) -> None:
@@ -1676,20 +1676,21 @@ class Fleet:
             c.dir[i] = g.target["dir"]
             self._touch(i)
 
-    def _well(self, r: np.ndarray, t: float):
+    def _well(self, r: np.ndarray, t: float, star: bool = True):
         """The body whose well she is in (zones.classify: the innermost sphere of influence; in a
-        binary, the one that pulls harder): None out in a star's own space."""
+        binary, the one that pulls harder): out in a star's own space, the star (star), else None."""
         b = self.system[classify(self.system, self._bodies(t), r)["dominant"]]
-        return None if b.kind == "star" or b.gm <= 0 else b
+        return None if b.gm <= 0 or (b.kind == "star" and not star) else b
 
-    def _go_free(self, i: int, t: float) -> None:
-        """Free: she gives up her place (or her order) and holds nothing. In a body's well she goes
-        onto a circular orbit about it at the height she is at, prograde about the system's up,
-        paying the burn onto it (if she has it); an orbit is free fall, and costs nothing after.
-        Out of every well, or short of the burn, she coasts as she goes."""
+    def _go_free(self, i: int, t: float, star: bool = True) -> None:
+        """Free: she gives up her place (or her order) and holds nothing. In a body's well (out in a
+        star's own space, the star's) she goes onto a circular orbit about it at the height she is
+        at, prograde about the system's up, paying the burn onto it (if she has it); an orbit is free
+        fall, and costs nothing after. Short of the burn, she coasts as she goes; so does a ship at
+        bingo (star False) out in a star's space, keeping what she has left."""
         c = self.c
         self._leave_station(i, t)
-        b = self._well(c.r[i], t)
+        b = self._well(c.r[i], t, star)
         if b is None or c.kind[i] != SHIP:
             self._coast(i)
             return

@@ -15,6 +15,7 @@
   export let onpreview = () => {};     // (level)
   export let onenter = () => {};       // take the map: your lobby's level, running
   export let onact = () => {};         // (msg): a lobby action
+  export let switches = {};            // the picture's switches (astrum/switches.py): { key: { label, default, ... } }
   export let onsignout = () => {};
   export let onback = () => {};
 
@@ -96,6 +97,14 @@
       {#each RULES as [k, label] (k)}
         <li><label><input id={`rule-${k}`} type="checkbox" checked={rules[k]} disabled={!host}
           on:change={(e) => onact({ do: 'rules', rules: { [k]: e.target.checked } })} />{label}</label></li>
+      {/each}
+    </ul>
+
+    <h2>Picture <span class="by">the host's: every member is shown by it</span></h2>
+    <ul class="rules">
+      {#each Object.entries(switches).filter(([, s]) => typeof s.default === 'boolean') as [k, s] (k)}
+        <li><label><input id={`switch-${k}`} type="checkbox" checked={mine?.picture?.[k] ?? s.default} disabled={!host}
+          on:change={(e) => onact({ do: 'picture', picture: { [k]: e.target.checked } })} />{s.label}</label></li>
       {/each}
     </ul>
 

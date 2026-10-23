@@ -545,6 +545,8 @@ class World:
         t0 = self.level_start(lv) if lv else sc.epoch if sc.epoch is not None else self.start_time(s)
         orders = [Order(o["unit"], t0 + float(o["at_s"]), "burn" if "burn" in o else "coast", o.get("burn") or {})
                   for o in sc.orders]
+        orders += [Order(c.id, t0, "free", source="scenario") for c in sc.contacts.values()    # mode "orbit": free from the start
+                   if c.mode == "orbit" and c.ship_class]
         f = self.fleets[sc.id] = Fleet(sc, s, eph, self.ships, place, t0, orders,
                                        bullseyes=lambda player, pos, only=None: self.resolved(sc.system, player, pos, only),
                                        bullseyes_many=lambda player, bid, ts: self.resolved_many(sc.system, player, bid, ts))
@@ -690,7 +692,7 @@ def fleet_dict(world: "World", fl, units: bool = False) -> dict:
         by[c["class"]] = by.get(c["class"], 0) + 1
     fac = world.factions.get(fl.faction)
     out = {"id": fl.id, "name": fl.name, "faction": fl.faction, "faction_name": fac.name if fac else fl.faction,
-           "system": fl.system, "notes": fl.notes, "ships": len(ships), "formations": len(fl.units) - len(ships),
+           "notes": fl.notes, "ships": len(ships), "formations": len(fl.units) - len(ships),
            "by_class": dict(sorted(by.items(), key=lambda kv: -kv[1])),
            "scenarios": [{"id": s.id, "placed": len(ships) - len(s.undeployed.get(fl.id, ()))}
                          for s in world._loaded.values() if fl.id in s.fleets]}
@@ -832,11 +834,11 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         of them (a system's bodies alone). With auth off, as it came."""
         if not auth:
             return req
-        out = {k: v for k, v in req.items() if k not in ("level", "view", "player", "scenario")}
+        out = {k: v for k, v in req.items() if k not in ("level", "view", "player", "scenario", "picture")}
         g = granted(user)
         if g is not None:
-            _, lv, view, player = g
-            out.update(view=view, player=player)
+            lb, lv, view, player = g
+            out.update(view=view, player=player, picture=dict(lb.picture))      # the lobby's switches, not the map's
             if req.get("scenario") in lv.scenarios:
                 out["scenario"] = req["scenario"]
             if "level" in req:
@@ -885,6 +887,8 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             lb.choose(user, msg["side"], lb.level in await sim.call("levels", None))
         elif do == "rules":                              # the host's
             lobbies.hosted(user).set_rules(msg.get("rules") or {})
+        elif do == "picture":                            # the host's: what every member is shown by
+            lobbies.hosted(user).set_picture(msg.get("picture") or {})
         elif do == "level":                              # the host's other choice, while it does not run
             lb, lv = lobbies.hosted(user), world.levels.get(msg.get("level") or "")
             if lv is None or lobbies.holding(lv.id):

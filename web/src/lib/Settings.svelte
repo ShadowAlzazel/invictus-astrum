@@ -19,6 +19,7 @@
   export let game = {};                // the picture's switches: { key: bool }
   export let gameRules = {};           // astrum/switches.py: { key: { label, default, min, max, step } }
   export let ongame = () => {};        // (key, value | null: back to its default)
+  export let gameBy = null;            // in a lobby: 'host' (yours to set), else its host's name (shown, not set)
   export let tab = 'display';
   export let profiles = [];            // the player's: the shared ones (root first), then their own
   export let profileRules = {};        // { stances: {id: label}, ranges: {id: what}, targets: [...] }
@@ -208,9 +209,10 @@
         {/if}
       {/each}
     </section>
-    <footer><button class="reset" on:click={() => Object.keys(gameRules).forEach((k) => ongame(k, null))}>Back to config.toml</button></footer>
-    <p class="hint">Kept in this browser and sent with every picture asked for: the simulation keeps everything either way;
-      these only say what this map is shown. Defaults are config.toml [picture].</p>
+    {#if !gameBy || gameBy === 'host'}<footer><button class="reset" on:click={() => Object.keys(gameRules).forEach((k) => ongame(k, null))}>Back to config.toml</button></footer>{/if}
+    <p class="hint">{#if gameBy}The lobby's: {gameBy === 'host' ? 'yours to set, as its host' : `its host, ${gameBy}, sets them`}, and every member is
+      shown by them, whatever their map asks.{:else}Kept in this browser and sent with every picture asked for.{/if} The simulation keeps
+      everything either way; these only say what a map is shown. Defaults are config.toml [picture].</p>
   {/if}
 </aside>
 

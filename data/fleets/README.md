@@ -22,7 +22,6 @@ stay.
 id = "luna-classis-1"          # = the file name
 name = "Luna Classis I"
 faction = "avc"                # data/factions.toml; a unit with no formation above it takes it
-system = "sol"                 # the system its scenarios place it in
 notes = "..."
 ```
 
@@ -55,9 +54,13 @@ position = { bullseye = "burn", aer = [0, 0, 2000] }    # or { body = "earth", o
 status = ["cold"]              # as she starts
 ```
 
-It may also say `mode = "free"` (fly from the start instead of holding station), `propellant = 0.8`
+It may also say `mode = "free"` (fly from the start instead of holding station), `mode = "orbit"`
+(go free at the start: onto a circular orbit of the body whose well she is in, out in a star's
+own space the star's, paying the burn onto it from her tanks), `propellant = 0.8`
 (the share of her tanks she starts with), `load = "light"` (her ammunition load, one of her class's
 hull masses), and a `stance` or `profile` of its own. A formation needs no placement: it stands
-where it is placed, if it is, else at the mean of its members. Holding station is not free: she
+where it is placed, if it is, else at the mean of its members. A formation's flag not placed, it
+leads by the next ship in the chain of command: the ship it is placed on, else its first ship
+(`astrum/relay.py`). Holding station is not free: she
 follows her place in the bullseye's frame, and her tanks pay for every bit of it that is not an
 orbit.

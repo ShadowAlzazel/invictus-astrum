@@ -1,0 +1,11 @@
+# A level: a game (data/levels/cislunar.toml says how one is written).
+
+[level]
+id = "trappist"
+name = "Trappist Picture"
+notes = "Task Force 3 on free orbits about TRAPPIST-1 f; the Luna Strike Squadron half an AU from the star. The Classis's flagship is not here: it leads by Task Force 3's."
+warp = 3600
+
+[[system]]
+id = "trappist-1"
+scenario = "trappist-demo"

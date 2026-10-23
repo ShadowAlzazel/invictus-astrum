@@ -12,7 +12,7 @@ cheapest check to the slowest.
 | the web process (`app.py`, `lobby.py`, `gate.py`, `accounts.py`) | `pytest tests/test_lobby.py` (~5 s) | `python serve.py --dev` in the browser |
 | the map (`web/src`) | `cd web && npm run build` | `python serve.py --dev`, or `npm run dev` for live reload |
 
-Then, before a commit, the whole suite: `python -m pytest -q` (about 1.5 minutes, 241 tests).
+Then, before a commit, the whole suite: `python -m pytest -q` (about 1.5 minutes, 243 tests).
 
 ## The dev server
 
@@ -20,6 +20,7 @@ Then, before a commit, the whole suite: `python -m pytest -q` (about 1.5 minutes
 python serve.py --dev                          # config.toml [dev]: sol-demo as ARCVS
 python serve.py --dev sol-demo --side jadf     # a level's id, a scenario's or a system's; any side of it
 python serve.py --dev cislunar --side master   # everything, every order
+python serve.py --dev trappist                 # Task Force 3 and the strike squadron at TRAPPIST-1
 ```
 
 No sign-in: every browser is the `[dev]` user, already the host of a lobby of that level, the level

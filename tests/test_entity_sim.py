@@ -1509,7 +1509,8 @@ def test_free_onto_an_orbit_pays_once():
 
 
 def test_a_move_given_free_ends_on_an_orbit_or_coasting():
-    """A move given free: at a body, onto an orbit of it; out of every well, coasting as she goes."""
+    """A move given free: at a body, onto an orbit of it; out of every planet's well, onto an orbit
+    of the star."""
     from astrum.app import create_app
     from astrum.simhost import give_order
     world = create_app().state.world
@@ -1525,7 +1526,7 @@ def test_a_move_given_free_ends_on_an_orbit_or_coasting():
     assert f.c.place_of(k)["label"].startswith("orbit of Moon")
     d = [np.linalg.norm(f.at(t + h * 3600)["kiki-1"].state.r - f.eph.positions(t + h * 3600)["moon"]) for h in (30, 40)]
     assert d[0] == pytest.approx(d[1], rel=1e-6)
-    assert f.c.mode[p] == 1 and not f.c.goal[p] and f.c.place_of(p) is None     # FREE, holding nothing
+    assert not f.c.goal[p] and f.c.place_of(p)["label"].startswith("orbit of Sun")   # 3 million km out: the Sun's
 
 
 def test_station_charges_summed_as_stepped():

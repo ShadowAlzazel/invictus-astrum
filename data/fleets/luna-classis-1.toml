@@ -7,7 +7,6 @@
 id = "luna-classis-1"
 name = "Luna Classis I"
 faction = "avc"
-system = "sol"
 notes = "Task Forces 1 to 3, the Luna Strike Squadron, and the Classis's tenders and cutters."
 
 # ---- friendly: one task force element, in flights, out of plane over Earth --------------------------

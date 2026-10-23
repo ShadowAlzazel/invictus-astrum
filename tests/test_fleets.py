@@ -118,3 +118,25 @@ position = { body = "io", offset_km = [0, 0, 0] }
     bad.write_text('[fleet]\nid = "bad"\nfaction = "jadf"\nsystem = "sol"\n\n[[unit]]\nid = "x"\nposition = { body = "io" }\n')
     with pytest.raises(ValueError, match="scenario's"):
         load_fleet(bad)
+
+
+def test_trappist_places_task_force_3_on_orbits_and_its_next_ship_leads():
+    """TRAPPIST-1: Task Force 3 on orbits of TRAPPIST-1 f, the strike squadron on orbits of the star
+    (mode "orbit": free from the start); the Classis's flagship not placed, its next ship in the
+    chain of command, Task Force 3's, is the fleet flagship."""
+    import numpy as np
+    from astrum import picture
+    from astrum.app import World
+    from astrum.config import load_config
+    from astrum.relay import relay
+    w = World(load_config())
+    sc = w.scenarios["trappist-demo"]
+    assert len(sc.undeployed["luna-classis-1"]) == 57 and not sc.contacts["luna-classis-1"].flag
+    f = w.fleet(sc)
+    f.reach(f.t0 + 3600)
+    about = [(f.c.place_of(i) or {}).get("body") for i in range(f.c.n)]
+    assert about.count("trappist-1f") == 44 and about.count("trappist-1") == 5
+    R = relay(f, "arcvs", picture.own_rows(f, w.factions, "arcvs"))
+    assert f.c.ids[R.flagship] == "tf3-lf4-bs-1" and sc.contacts["tf3-lf4-bs-1"].callsign == "Shima Rin"
+    i = f.c.row["luna-strike-1"]
+    assert np.linalg.norm(f.c.r[i] - f._bodies(f.t)["trappist-1"]) == pytest.approx(0.5 * 1.495978707e11, rel=1e-3)

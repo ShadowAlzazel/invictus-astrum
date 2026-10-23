@@ -223,3 +223,29 @@ def test_dev_needs_no_sign_in():
             ws.send_json({"level": "cislunar", "system": "sol"})
             assert ws.receive_json()["full"]                          # asked: answered
     app.state.sim.close()
+
+
+def test_the_lobby_sets_the_picture_s_switches(server):
+    """The host sets the picture's switches for the lobby: every member is shown by them, whatever
+    their map asks; no one else may set them."""
+    app, c = server
+    ha, hb = _signed(c, "Halsey"), _signed(c, "Nimitz")
+    with c.websocket_connect("/ws/lobby", headers=ha) as la, c.websocket_connect("/ws/lobby", headers=hb) as lb:
+        la.send_json({"do": "make", "level": "cislunar"})
+        lid = _until(lb, lambda m: m["lobbies"])["lobbies"][0]["id"]
+        lb.send_json({"do": "join", "lobby": lid})
+        la.send_json({"do": "side", "side": "arcvs"})
+        lb.send_json({"do": "side", "side": "arcvs"})
+        la.send_json({"do": "start", "warp": 0})
+        _until(lb, lambda m: _members(m) == {"Halsey": "arcvs", "Nimitz": "arcvs"} and next(x for x in m["levels"] if x["id"] == "cislunar")["clock"])
+        lb.send_json({"do": "picture", "picture": {"detection": False}})
+        assert _until(lb, lambda m: False)["detail"].startswith("only the host")
+
+        def tracks(h, conn):
+            with c.websocket_connect("/ws", headers=h) as ws:
+                ws.send_json({"level": "cislunar", "system": "sol", "picture": {"detection": False}})    # (not theirs to choose)
+                return len(ws.receive_json().get("tracks", {}))
+        seen = tracks(hb, 1)
+        la.send_json({"do": "picture", "picture": {"detection": False}})
+        assert _until(lb, lambda m: m["lobbies"][0]["picture"] == {"detection": False})
+        assert tracks(hb, 2) > seen                   # the host's switch: every other ship, seen or not

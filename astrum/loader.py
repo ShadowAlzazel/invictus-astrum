@@ -114,7 +114,7 @@ class Contact:
     notes: str = ""
     load: str | None = None               # ship: ammunition load in her class's hull masses (else the heaviest)
     propellant: float | None = None       # ship: share of her tanks, 0–1 (else full)
-    mode: str | None = None               # ship: "station" (holds her place) or "free" (flies)
+    mode: str | None = None               # ship: "station" (holds her place), "free" (flies), or "orbit" (goes free at the start: onto an orbit)
     faction: str | None = None            # a faction id in data/factions.toml; taken from the formation above if not stated
     hull_number: str = ""                 # her pennant, as written: "BBC-382"
     own_faction: bool = False             # the faction is stated on this unit, not taken from above
@@ -159,8 +159,6 @@ def load_scenario(path: str | Path, fleets: dict | None = None) -> Scenario:
         fl = (fleets or {}).get(ref.get("id"))
         if fl is None:
             problems.append(f"fleet {ref.get('id')!r} is not in data/fleets")
-        elif fl.system != s["system"]:
-            problems.append(f"fleet {fl.id!r} is placed in {fl.system}, not {s['system']}")
         else:
             loaded[fl.id] = {u["id"]: u for u in fl.units}
     placed, own = {}, []
@@ -182,7 +180,8 @@ def load_scenario(path: str | Path, fleets: dict | None = None) -> Scenario:
             while uid and uid not in keep:
                 keep.add(uid)
                 uid = by[uid].get("formation")
-        units += [{**u, **{k: v for k, v in placed.get(u["id"], {}).items() if k not in ("fleet", "unit")}}
+        units += [{**{k: v for k, v in u.items() if k != "flag" or v in keep},    # a flag not placed: the next leads (astrum/relay.py)
+                   **{k: v for k, v in placed.get(u["id"], {}).items() if k not in ("fleet", "unit")}}
                   for u in by.values() if u["id"] in keep]
         left = tuple(u["id"] for u in by.values() if u.get("class") and u["id"] not in keep)
         if left:
@@ -209,8 +208,8 @@ def load_scenario(path: str | Path, fleets: dict | None = None) -> Scenario:
             problems.append(f"{cid}: veterancy is one of {list(VETERANCY)}")
         if c.get("stance") not in (None, *STANCES):
             problems.append(f"{cid}: stance is one of {list(STANCES)}")
-        if c.get("mode") not in (None, "station", "free"):
-            problems.append(f"{cid}: mode is \"station\" or \"free\"")
+        if c.get("mode") not in (None, "station", "free", "orbit"):
+            problems.append(f"{cid}: mode is \"station\", \"free\" or \"orbit\"")
         pr = c.get("propellant")
         if pr is not None and not (isinstance(pr, (int, float)) and not isinstance(pr, bool) and 0 <= pr <= 1):
             problems.append(f"{cid}: propellant is a share of her tanks, 0 to 1")

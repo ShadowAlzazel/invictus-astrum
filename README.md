@@ -16,7 +16,7 @@ python serve.py                       # http://127.0.0.1:8010 (the simulation ru
 python serve.py --dev                 # the same, no sign-in: straight onto config.toml [dev] level as its side
 python serve.py --dev cislunar --side jadf   # (a level's id, a scenario's or a system's; any side of it)
 python tools/check.py                 # the data loads, sol-demo builds and flies a day: ~5 s, no server
-python -m pytest -q tests             # 241 tests (the map's math too, in node)
+python -m pytest -q tests             # 243 tests (the map's math too, in node)
 ```
 
 Working on it: `docs/DEVOPS.md` (what to run after which change, the tools, the tests);
@@ -40,7 +40,9 @@ watches, until it is stopped, and the map is told its moment with every picture.
 keeps every running level's fleets flown a little ahead of its clock in a worker thread;
 `run_ahead = false` under `[sim]` in `config.toml` turns it off (each picture then flies the fleet
 there itself; everything else works the same). What a player is shown is made from the
-simulation's truth by functions, each a switch under `[picture]` (and in the map's Settings, Game):
+simulation's truth by functions, each a switch under `[picture]` (in a lobby, its host's to set,
+on the Lobby screen or in Settings, Game, and every member is shown by them; signing in off, each
+map's own):
 other factions' ships shown only once the side's sensors see them, as their light left them
 (`detection`, else `light_delay`), and once the report has come up to its fleet flagship
 (`relay`), and what only they know kept back (`hide_private`); all off shows everything. The map's
@@ -69,7 +71,7 @@ The map opens on the main menu, over a system standing still:
 5. **Ship workshop**: next.
 6. **Settings** (also `,` anywhere), kept in this browser: Display (text and icon sizes, folding,
    what a selection shows), Hotkeys (every key below, rebound by clicking it and pressing another),
-   Game (the picture's switches), Combat (your combat profiles, kept on the server).
+   Game (the picture's switches: in a lobby, its host's), Combat (your combat profiles, kept on the server).
 
 ## Levels and the workshop
 

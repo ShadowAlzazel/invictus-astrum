@@ -7,7 +7,6 @@
 id = "jupiter-home"
 name = "Jupiter Home Force"
 faction = "jadf"
-system = "sol"
 notes = "The JADF's: Io and Europa task groups, the Ganymede battle group, Callisto's early warning, a battle squadron."
 
 # ---- the Jupiter Astrum Defence Force (JADF): the Jovian moons' own police, an ARCVS member world's ---
