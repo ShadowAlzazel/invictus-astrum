@@ -33,12 +33,12 @@ def test_spec_keeps_only_what_flies(reg):
     assert set(spec.hull_kg) == {"light", "full"}
     assert spec.hull_kg["full"] / 1e3 == pytest.approx(48121, abs=1)          # 70,340 t less her tanks
     assert spec.propellant_kg / 1e3 == pytest.approx(22219, abs=1)
-    assert spec.thrust_n / 1e6 == pytest.approx(379.4, abs=0.1)
+    assert spec.thrust_n / 1e6 == pytest.approx(275.9, abs=0.1)                # 0.40 g at 70,340 t (the bench)
     assert not hasattr(spec, "summary") and "genus" not in spec.as_dict()     # no lore
     s = ship(reg)
     assert s.mass_kg / 1e3 == pytest.approx(70340, abs=1)
     assert s.dv_left_ms / 1e3 == pytest.approx(4000, abs=0.5)
-    assert s.max_accel_ms2 / G0 == pytest.approx(0.55, abs=1e-4)
+    assert s.max_accel_ms2 / G0 == pytest.approx(0.40, abs=1e-4)
     noddy = ShipSpec.from_class(reg.classes["tarantulae"])                     # no drive: she still exists
     assert not noddy.has_drive and noddy.hull_kg
 
@@ -55,13 +55,13 @@ def test_rocket_equation_held_thrust(reg):
 
 def test_rocket_equation_held_g(reg):
     s = ship(reg)
-    s.state.burn = {"g": 0.45}
-    s.state.thrust_n = s.thrust_for(g=0.45)
+    s.state.burn = {"g": 0.35}
+    s.state.thrust_n = s.thrust_for(g=0.35)
     t, dv = s.burn_for(600)
-    assert t == 600 and dv == pytest.approx(0.45 * G0 * 600)
+    assert t == 600 and dv == pytest.approx(0.35 * G0 * 600)
     assert s.dv_left_ms == pytest.approx(4000e3 - dv, rel=1e-9)               # Δv is conserved exactly
     s2 = ship(reg)
-    s2.spend(0.45 * G0 * 600)
+    s2.spend(0.35 * G0 * 600)
     assert s2.state.propellant_kg == pytest.approx(s.state.propellant_kg)
 
 
@@ -130,12 +130,12 @@ def test_free_flight_keeps_a_circular_orbit(reg):
 
 
 def test_burn_order_in_deep_space(reg):
-    """Far from anything: a 0.45 g burn for 20 minutes, then a coast, by the numbers."""
+    """Far from anything: a 0.35 g burn for 20 minutes, then a coast, by the numbers."""
     far = np.array([1e15, 0.0, 0.0])
-    orders = [Order("s1", 600.0, "burn", {"g": 0.45, "bullseye": "system", "bearing": 0, "elevation": 0, "duration_s": 1200})]
+    orders = [Order("s1", 600.0, "burn", {"g": 0.35, "bullseye": "system", "bearing": 0, "elevation": 0, "duration_s": 1200})]
     f = toy_fleet(reg, lambda t: far.copy(), orders, gm=1.0)
     s = f.at(600 + 1200 + 600)["s1"]
-    a, T = 0.45 * G0, 1200
+    a, T = 0.35 * G0, 1200
     assert s.state.mode == "free" and s.state.thrust_n == 0 and s.state.burn is None
     assert s.state.dv_spent_ms == pytest.approx(a * T, rel=1e-6)
     assert np.linalg.norm(s.state.v) == pytest.approx(a * T, rel=1e-6)
@@ -165,7 +165,7 @@ def test_sol_demo_fleet(reg):
     world = app.state.world
     sc = world.scenarios["sol-demo"]
     f = world.fleet(sc)
-    assert len(f.ships) == 112 and not f.findings
+    assert len(f.ships) == 131 and not f.findings
     c = TestClient(app)
     meta = c.get("/api/meta").json()
     kiki = next(u for u in meta["scenarios"][0]["contacts"] if u["id"] == "kiki-1")
@@ -205,8 +205,8 @@ def test_eta_from_rest_is_the_brachistochrone():
 
 
 def test_goto_a_point_arrives_and_holds(reg):
-    far, d, a = np.array([1e15, 0.0, 0.0]), 1e8, 0.45 * G0
-    o = Order("s1", 600.0, "goto", target={"bullseye": "system", "aer": [0, 0, 1e15 + d], "label": "pt"}, g=0.45)
+    far, d, a = np.array([1e15, 0.0, 0.0]), 1e8, 0.35 * G0
+    o = Order("s1", 600.0, "goto", target={"bullseye": "system", "aer": [0, 0, 1e15 + d], "label": "pt"}, g=0.35)
     f = toy_fleet(reg, lambda t: far.copy(), [o], gm=1.0)
     ideal = 2 * math.sqrt(d / a)
     s = f.at(600 + 1.05 * ideal)["s1"]

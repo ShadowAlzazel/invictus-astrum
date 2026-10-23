@@ -187,6 +187,8 @@
   $: other = d ? [
     { k: 'read', label: 'Hull masses read', value: d.hull_mass === 'wet' ? 'tanks full' : 'tanks dry', why: 'what the class\'s hull.mass_t means ([drive] hull_mass)' },
     ...(d.dv_target_kms ? [{ k: 'holds', label: 'Propellant holds', value: q(d.dv_target_kms, 'km/s'), why: 'the class\'s [drive] dv_kms, at the heaviest load' }] : []),
+    ...(pat?.rated_dv_kms ? [{ k: 'rated', label: 'Rated to', value: `${num(pat.rated_dv_kms)} km/s`, sub: d.dv_target_kms ? `on a ${num(v(d.dv_target_kms))} km/s tank` : '',
+      why: `what ${pat.mark_name} is rated to (drives.toml [mark.${pat.mark}] rated_dv_kms); the rest of the tank is reserve` }] : []),
     { k: 'prop', label: 'Propellant, tanks full', value: q(d.propellant_t, 't'),
       why: d.dv_target_kms ? `the tank that holds ${num(v(d.dv_target_kms))} km/s at the heaviest load: ${d.hull_mass === 'wet' ? 'M × (1 − e^(−Δv / vₑ))' : 'M × (e^(Δv / vₑ) − 1)'}` : 'typed on the class' },
     ...(d.stores ? [
@@ -201,7 +203,9 @@
     { k: 'rate', label: 'Ship pulse rate', value: q(d.pulse_rate_hz, 'Hz'),
       why: d.block ? `${d.block.engines} engines × ${d.block.hz} Hz, phased: the plume stays constant` : 'typed on the drive' },
     ...(d.block ? [
-      { k: 'eng', label: 'Per engine', value: `${num(d.block.engine_thrust_mn, 1)} MN`, sub: `${num(d.block.engine_power_tw, 1)} TW`, why: 'thrust and jet power ÷ engines' },
+      { k: 'eng', label: 'Per engine', value: `${num(d.block.engine_thrust_mn, 1)} MN`, bad: d.block.engine_rated_share > 1.05,
+        sub: `${num(d.block.engine_power_tw, 1)} TW${d.block.engine_rated_share ? ` · ${num(d.block.engine_rated_share * 100)}% of rated` : ''}`,
+        why: `thrust and jet power ÷ engines${pat.rated_engine_mn ? `; ${pat.mark_name} rates an engine to ${pat.rated_engine_mn} MN` : ''}` },
       { k: 'pellet', label: 'Pellet', value: `${num(d.block.pellet_kg, 3)} kg`, why: 'mass flow ÷ ship pulse rate' },
       { k: 'pulse', label: 'Energy per pulse', value: `${num(d.block.pulse_tj, 1)} TJ`, sub: `${num(d.block.pulse_t_tnt)} t TNT`, why: 'jet power ÷ ship pulse rate' },
       { k: 'pulses', label: 'Pulses per engine, whole tank', value: num(d.block.pulses_per_engine), why: 'held burn × reactions per engine per second' },
@@ -378,7 +382,7 @@
             <section class="cards">
               <h2 class="uline">Pattern</h2>
               {#if pat}
-                <div class="card main"><p class="tag">Drive pattern</p><p class="big">{pat.mark_name}</p><p class="ft">{pat.mark_label ?? ''}</p></div>
+                <div class="card main" title={pat.designation ?? ''}><p class="tag">Drive pattern</p><p class="big">{pat.mark_name}</p><p class="ft">{pat.designation ?? pat.mark_label ?? ''}</p></div>
                 <div class="card"><p class="tag">Stores</p><p class="big">f {pat.f}</p><p class="ft">{pat.mix_name}</p></div>
                 {#if d.block}<div class="card"><p class="tag">Engines</p><p class="big">{d.block.engines} <small>@ {d.block.hz} Hz</small></p><p class="ft">{pat.block_name}</p></div>{/if}
                 <div class="card"><p class="tag">Fuel</p><p class="big">{pat.fuel.name.split(' ')[0]}</p><p class="ft">in {pat.tamper.name.toLowerCase()}</p></div>

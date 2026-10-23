@@ -1395,6 +1395,215 @@ formation = "jove"
 class = "bacillus"
 position = { body = "jupiter", offset_km = [-3000, 1000000, -500] }
 
+# The Home Force's Old Forest hulls, bought as an allied navy buys them: an escort squadron of three
+# Yggdrasil and four squadrons of four Dryad, police frigates, round the watch flight. Placeholder callsigns.
+
+[[contact]]
+id = "jove-es"
+callsign = "Jove Escort Squadron"
+affiliation = "friend"
+echelon = "squadron"
+formation = "jupiter-home"
+
+[[contact]]
+id = "jove-es-1"
+callsign = "Jove Yggdrasil 1"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-es"
+class = "yggdrasil"
+position = { body = "jupiter", offset_km = [-800, 1040000, 200] }
+
+[[contact]]
+id = "jove-es-2"
+callsign = "Jove Yggdrasil 2"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-es"
+class = "yggdrasil"
+position = { body = "jupiter", offset_km = [0, 1040000, 0] }
+
+[[contact]]
+id = "jove-es-3"
+callsign = "Jove Yggdrasil 3"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-es"
+class = "yggdrasil"
+position = { body = "jupiter", offset_km = [800, 1040000, 200] }
+
+[[contact]]
+id = "jove-fs1"
+callsign = "Jove Frigate Squadron 1"
+affiliation = "friend"
+echelon = "squadron"
+formation = "jupiter-home"
+
+[[contact]]
+id = "jove-fs1-1"
+callsign = "Jove F1 Dryad 1"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs1"
+class = "dryad"
+position = { body = "jupiter", offset_km = [-30600, 1020000, 0] }
+
+[[contact]]
+id = "jove-fs1-2"
+callsign = "Jove F1 Dryad 2"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs1"
+class = "dryad"
+position = { body = "jupiter", offset_km = [-30200, 1020300, 0] }
+
+[[contact]]
+id = "jove-fs1-3"
+callsign = "Jove F1 Dryad 3"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs1"
+class = "dryad"
+position = { body = "jupiter", offset_km = [-29800, 1020300, 0] }
+
+[[contact]]
+id = "jove-fs1-4"
+callsign = "Jove F1 Dryad 4"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs1"
+class = "dryad"
+position = { body = "jupiter", offset_km = [-29400, 1020000, 0] }
+
+[[contact]]
+id = "jove-fs2"
+callsign = "Jove Frigate Squadron 2"
+affiliation = "friend"
+echelon = "squadron"
+formation = "jupiter-home"
+
+[[contact]]
+id = "jove-fs2-1"
+callsign = "Jove F2 Dryad 1"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs2"
+class = "dryad"
+position = { body = "jupiter", offset_km = [29400, 1020000, 0] }
+
+[[contact]]
+id = "jove-fs2-2"
+callsign = "Jove F2 Dryad 2"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs2"
+class = "dryad"
+position = { body = "jupiter", offset_km = [29800, 1020300, 0] }
+
+[[contact]]
+id = "jove-fs2-3"
+callsign = "Jove F2 Dryad 3"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs2"
+class = "dryad"
+position = { body = "jupiter", offset_km = [30200, 1020300, 0] }
+
+[[contact]]
+id = "jove-fs2-4"
+callsign = "Jove F2 Dryad 4"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs2"
+class = "dryad"
+position = { body = "jupiter", offset_km = [30600, 1020000, 0] }
+
+[[contact]]
+id = "jove-fs3"
+callsign = "Jove Frigate Squadron 3"
+affiliation = "friend"
+echelon = "squadron"
+formation = "jupiter-home"
+
+[[contact]]
+id = "jove-fs3-1"
+callsign = "Jove F3 Dryad 1"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs3"
+class = "dryad"
+position = { body = "jupiter", offset_km = [-30600, 980000, 0] }
+
+[[contact]]
+id = "jove-fs3-2"
+callsign = "Jove F3 Dryad 2"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs3"
+class = "dryad"
+position = { body = "jupiter", offset_km = [-30200, 980300, 0] }
+
+[[contact]]
+id = "jove-fs3-3"
+callsign = "Jove F3 Dryad 3"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs3"
+class = "dryad"
+position = { body = "jupiter", offset_km = [-29800, 980300, 0] }
+
+[[contact]]
+id = "jove-fs3-4"
+callsign = "Jove F3 Dryad 4"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs3"
+class = "dryad"
+position = { body = "jupiter", offset_km = [-29400, 980000, 0] }
+
+[[contact]]
+id = "jove-fs4"
+callsign = "Jove Frigate Squadron 4"
+affiliation = "friend"
+echelon = "squadron"
+formation = "jupiter-home"
+
+[[contact]]
+id = "jove-fs4-1"
+callsign = "Jove F4 Dryad 1"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs4"
+class = "dryad"
+position = { body = "jupiter", offset_km = [29400, 980000, 0] }
+
+[[contact]]
+id = "jove-fs4-2"
+callsign = "Jove F4 Dryad 2"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs4"
+class = "dryad"
+position = { body = "jupiter", offset_km = [29800, 980300, 0] }
+
+[[contact]]
+id = "jove-fs4-3"
+callsign = "Jove F4 Dryad 3"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs4"
+class = "dryad"
+position = { body = "jupiter", offset_km = [30200, 980300, 0] }
+
+[[contact]]
+id = "jove-fs4-4"
+callsign = "Jove F4 Dryad 4"
+affiliation = "friend"
+echelon = "ship"
+formation = "jove-fs4"
+class = "dryad"
+position = { body = "jupiter", offset_km = [30600, 980000, 0] }
+
 # ---- GHOST: the practice force. A PHALAENA flight beyond Mars, at the edge of what Task Force 3 sees:
 # the AESHNA's wide optics see a warm PHALAENA to about 29.4 million km; the flight stands at 97%,
 # 100% and 103% of that, out from Mars on the line from the Sun. Placeholder callsigns.

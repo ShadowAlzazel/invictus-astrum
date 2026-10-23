@@ -3,9 +3,11 @@
     data/ships/drives.toml
       [fuel.<id>]     what burns: ceiling_kms (perfect burn and nozzle), split by mass, density, catalyst
       [tamper.<id>]   what it burns in: density, mean charge, how it confines, what neutron capture adds
-      [mark.<id>]     the pattern: phi (burn fraction), eta (nozzle efficiency), hull heat share
+      [mark.<id>]     the pattern: phi (burn fraction), eta (nozzle efficiency), hull heat share, and
+                      what one of its engines and its tank are rated to (rated_engine_mn, rated_dv_kms)
       [mix.<id>]      standard stores: f (fuel's share of the propellant), fuel, tamper, n_frac
-      [block.<id>]    the engines: banks × per_bank, and hz, reactions per engine per second
+      [block.<id>]    the engines: banks × per_bank, and hz, reactions per engine per second (a drive
+                      may fit several blocks: block = ["a", "b", "b"], all at one hz)
       [stores]        the standardised antimatter bunker
       [drive.<id>]    what a class connects to: a mark, a mix and a block (and thrust_mn); or the
                       simulation's figures typed directly. A figure typed on a drive wins over the
@@ -17,7 +19,7 @@ hull_heat_fraction. The translation from the pattern:
     k    = phi · eta                                                 share of the yield in the jet
     X    = f · (1 − confinement · f²) · (1 + capture · n · (1 − f))  the mix's yield
     vₑ   = ceiling · √(k · X)
-    rate = banks · per_bank · hz
+    rate = Σ banks · per_bank · hz
 
 vₑ² ∝ k is exact on the bench's mark ladder. confinement and capture belong to the tamper and
 are fitted to DRIVE_TEST_AND_BENCH: every exhaust velocity there comes back within 0.3%.
@@ -38,7 +40,7 @@ TNT_J_PER_T = 4.184e9
 SECTION_KEYS = {
     "fuel": {"name", "ceiling_kms", "split", "density_tm3", "pbar_mg_per_t", "notes"},
     "tamper": {"name", "density_tm3", "mean_z", "confinement", "capture", "notes"},
-    "mark": {"name", "label", "phi", "eta", "hull_heat_fraction", "notes"},
+    "mark": {"name", "label", "designation", "phi", "eta", "hull_heat_fraction", "rated_engine_mn", "rated_dv_kms", "notes"},
     "mix": {"name", "f", "fuel", "tamper", "n_frac", "notes"},
     "block": {"name", "banks", "per_bank", "hz", "notes"},
     "drive": {"name", "kind", "mark", "mix", "block", "thrust_mn", "exhaust_kms", "pulse_rate_hz",
@@ -62,7 +64,7 @@ class Built:
     """A drive resolved from its pattern: the technical figures and the four the simulation uses."""
     mark: str
     mix: str
-    block: str | None
+    block: str | list | None
     phi: float
     eta: float
     k: float
@@ -146,6 +148,8 @@ class Catalogue:
             num("mark", i, "phi", 0.001, 1)
             num("mark", i, "eta", 0.001, 1)
             num("mark", i, "hull_heat_fraction", 0, 1, need=False)
+            num("mark", i, "rated_engine_mn", 0, need=False)
+            num("mark", i, "rated_dv_kms", 0, need=False)
         for i, s in self.mix.items():
             num("mix", i, "f", 0.001, 1)
             num("mix", i, "n_frac", 0, 1)
@@ -168,24 +172,28 @@ class Catalogue:
                 for sec in ("mark", "mix"):
                     if d.get(sec) not in getattr(self, sec):
                         err(f"drive {i}", f"unknown {sec} {d.get(sec)!r}")
-                if "block" in d and d["block"] not in self.block:
-                    err(f"drive {i}", f"unknown block {d['block']!r}")
+                blocks = blocks_of(d.get("block"))
+                for b in blocks:
+                    if b not in self.block:
+                        err(f"drive {i}", f"unknown block {b!r}")
+                if len({self.block[b].get("hz") for b in blocks if b in self.block}) > 1:
+                    err(f"drive {i}", "its blocks run at different hz: a drive's engines fire phased, at one rate")
             elif "exhaust_kms" not in d:
                 err(f"drive {i}", "needs a mark and a mix, or exhaust_kms typed directly")
 
     # ---- translating ------------------------------------------------------------------------------
-    def build(self, mark: str, mix: str, block: str | None = None) -> Built:
-        """A pattern resolved: any mark with any mix and block, so patterns can be swapped freely."""
+    def build(self, mark: str, mix: str, block: str | list | None = None) -> Built:
+        """A pattern resolved: any mark with any mix and block (or blocks), so patterns can be swapped freely."""
         m, x = self.mark[mark], self.mix[mix]
         fuel = self.fuel[x["fuel"]]
         tamper = self.tamper.get(x.get("tamper"), {})
         y, bonus = mix_yield(x["f"], x.get("n_frac", 0.0), tamper.get("confinement", 0.0), tamper.get("capture", 0.0))
-        b = self.block.get(block) if block else None
+        bs = [self.block[x] for x in blocks_of(block)]
         return Built(mark=mark, mix=mix, block=block, phi=m["phi"], eta=m["eta"], k=m["phi"] * m["eta"],
                      f=x["f"], n_frac=x.get("n_frac", 0.0), x=y, bonus=bonus, ceiling_kms=fuel["ceiling_kms"],
                      exhaust_kms=exhaust_kms(fuel["ceiling_kms"], m["phi"], m["eta"], y),
                      hull_heat_fraction=m.get("hull_heat_fraction"),
-                     engines=b["banks"] * b["per_bank"] if b else None, hz=b["hz"] if b else None,
+                     engines=sum(b["banks"] * b["per_bank"] for b in bs) or None, hz=bs[0]["hz"] if bs else None,
                      fuel={"id": x["fuel"], **fuel}, tamper={"id": x.get("tamper"), **tamper})
 
     def resolve(self, drive_id: str) -> tuple[dict, Built | None]:
@@ -206,8 +214,19 @@ class Catalogue:
         typed = [k for k in SIM_FIGURES if k in d and k != "thrust_mn" and built]
         return {**sim, "typed": typed}, built
 
+    def block_name(self, block: str | list | None) -> str | None:
+        """A drive's blocks by name, the same ones counted: "Old Forest block, 1 × 5 + Old Forest block, 2 × 3 (2)"."""
+        ids = blocks_of(block)
+        return " + ".join(self.block[b]["name"] + (f" ({ids.count(b)})" if ids.count(b) > 1 else "")
+                          for b in dict.fromkeys(ids)) or None
+
     def marks_in_order(self) -> list[str]:
         return sorted(self.mark, key=lambda i: self.mark[i]["phi"] * self.mark[i]["eta"])
+
+
+def blocks_of(block) -> list[str]:
+    """A drive's block ids: one, or a list of them (none: [])."""
+    return [block] if isinstance(block, str) else list(block or [])
 
 
 # ---- what follows per class, once its thrust and propellant are known ------------------------------

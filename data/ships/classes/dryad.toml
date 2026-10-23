@@ -1,4 +1,4 @@
-# Source: RATE AND ROLE §5, §6.1, §8.10. No particulars yet.
+# Source: RATE AND ROLE §5, §6.1, §8.10; THE OLD FOREST §4. Figures est. where the note gives none.
 [class]
 id = "dryad"
 name = "Dryad"
@@ -9,6 +9,47 @@ old_rating = "the 38"
 summary = "The experimental heavy frigate who broke the 1 kA barrier and became the backbone of Garden frigate doctrine: the Old Forest's Constitution."
 symbol = "DRY"
 places = ["police frigate", "internal picket", "MINERVA pipeline, middle step"]
+
+[hull]
+length_m = 200
+mass_t = 14000
+
+[drive]
+module = "of-frigate"
+hull_mass = "dry"
+dv_kms = 4000
+sized_g = 0.55
+
+[aim]                        # TEMPORARY: not yet stated; a little behind the PHALAENA's
+rated_urad = { value = 6.0, est = true }
+demasted_urad = { value = 16, est = true }
+
+[layout]                     # stations along the hull, metres from the bow; est.
+truss_m = 35
+citadel_m = [35, 185]
+
+[[battery]]
+id = "spinal"
+label = "Spinal battery"
+stack = "dryad"
+count = 2
+firing = "together"
+focus = true
+fire = "56 MJ a stack, 112 MJ both: 14 thin channels, the first."
+
+[[battery]]
+id = "main"
+label = "Main battery"
+mounts = [
+  { turret = "bina-ii-31-of", side = "dorsal", at_m = 90 },
+  { turret = "bina-ii-31-of", side = "dorsal", at_m = 120 },
+  { turret = "bina-ii-31-of", side = "ventral", at_m = 90 },
+  { turret = "bina-ii-31-of", side = "ventral", at_m = 120 },
+]
+arrangement = "Four BINA on the older II/31: 8 guns."
+
+[endurance]
+quiet_mw = { value = 25, est = true, note = "TEMPORARY: not yet stated; about a PHALAENA's" }   # whether she has wings is open: she never runs cold
 
 [history]
 built_as = "experimental heavy frigate"

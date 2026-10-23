@@ -10,7 +10,7 @@ figure.
 | `rules.toml` | rates, lineages (the Garden, the Old Forest), crew tiers, the aim walls, beam effects |
 | `parts.toml` | TORMENTA's parts: drivers, rounds, UREB channels, optical panels, cells, sensors, shared constants |
 | `assemblies.toml` | TELVM's assemblies: turrets, stacks (with their rated reaches), strips, domes |
-| `drives.toml` | drives built from patterns: fuel, tamper, marks, mixes, engine blocks (see docs/DRIVE_AND_PROPELLANT.md §10) |
+| `drives.toml` | the Anti Pulse Drive (APD Mk II.7b; the Old Forest's Mk II.C-OF) built from patterns: fuel, tamper, marks and what they are rated to, mixes, engine blocks (a drive may fit several) (see docs/DRIVE_AND_PROPELLANT.md §10, docs/DRIVE_TEST_AND_BENCH.md) |
 | `classes/<id>.toml` | one class |
 
 ## Figures

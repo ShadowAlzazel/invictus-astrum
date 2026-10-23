@@ -666,14 +666,18 @@ def _drive(sc: ShipClass, doc: dict, rules: ShipRules, cat: Catalogue, f: list[F
 
     # the pattern behind the figures, and what it costs per class
     if built:
-        out["pattern"] = {**built.as_dict(), "mark_name": cat.mark[built.mark].get("name"),
-                          "mark_label": cat.mark[built.mark].get("label"), "mix_name": cat.mix[built.mix].get("name"),
-                          "block_name": cat.block[built.block].get("name") if built.block else None}
+        mark = cat.mark[built.mark]
+        out["pattern"] = {**built.as_dict(), "mark_name": mark.get("name"), "mark_label": mark.get("label"),
+                          "designation": mark.get("designation"), "rated_engine_mn": mark.get("rated_engine_mn"),
+                          "rated_dv_kms": mark.get("rated_dv_kms"), "mix_name": cat.mix[built.mix].get("name"),
+                          "block_name": cat.block_name(built.block)}
         if prop:
             out["stores"] = store_figures(cat, built, prop.value)
         if thrust and ve:
             held = out["held_burn_h"].value * 3600 if out["held_burn_h"] else None
             out["block"] = block_figures(built, thrust.value, ve.value, held)
+            if out["block"] and mark.get("rated_engine_mn"):         # each engine against what the mark rates it to
+                out["block"]["engine_rated_share"] = out["block"]["engine_thrust_mn"] / mark["rated_engine_mn"]
         # every mark on this hull: with the same tank, and with the tank that holds the same Δv
         if heavy_key is not None and masses and prop:
             h_dry, p = masses[heavy_key].value, prop.value

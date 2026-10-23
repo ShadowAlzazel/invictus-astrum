@@ -1,4 +1,4 @@
-# Source: RATE AND ROLE §6.1, §7, §8.9. No particulars yet.
+# Source: RATE AND ROLE §6.1, §7, §8.9; THE OLD FOREST §3. Figures est. where the note gives none.
 [class]
 id = "holzweiber"
 name = "Holzweiber"
@@ -9,12 +9,61 @@ old_rating = "the third-rate cruiser of its time"
 summary = "The 74 of the Old Forest, the backbone of its line. Refitted as the emitter: the ship that ranges so the line can stay cold."
 symbol = "HLZ"
 
+[hull]
+length_m = 300
+mass_t = 36000
+
+[drive]
+module = "of-cruiser"
+hull_mass = "dry"
+dv_kms = 4000
+sized_g = 0.4
+
+[aim]                        # TEMPORARY: not yet stated
+rated_urad = { value = 7.5, est = true }
+demasted_urad = { value = 20, est = true }
+
+[layout]                     # stations along the hull, metres from the bow; est.
+truss_m = 75
+citadel_m = [75, 225]
+
+[[battery]]
+id = "spinal"
+label = "Spinal battery"
+stack = "holzweiber"
+count = 2
+firing = "alternate"
+focus = true
+fire = "230 MJ a stack, 461 MJ both: nearly three PHALAENA stacks' energy in one."
+
+[[battery]]
+id = "main"
+label = "Main battery"
+mounts = [
+  { turret = "bina-ii-44", side = "dorsal", at_m = 120 },
+  { turret = "bina-ii-44", side = "dorsal", at_m = 150 },
+  { turret = "bina-ii-44", side = "ventral", at_m = 120 },
+  { turret = "bina-ii-44", side = "ventral", at_m = 150 },
+]
+arrangement = "Four twins, dorsal and ventral, superfiring: 8 guns, PILVM, 2.0 GJ. One nature since her refit."
+
+[[battery]]
+id = "optical"
+label = "Long strips"
+strip = "long"
+pairs = 1
+facing = ["port", "starboard"]
+notes = "Port and starboard, facing out across her beams."
+
 [[battery]]
 id = "blisters"
 label = "Active sensor blisters"
 sensor = "blister"
-count = "—"
+count = 2
 notes = "Fitted in place of her two 1.7 kg turrets."
+
+[endurance]
+quiet_mw = { value = 60, est = true, note = "TEMPORARY: not yet stated" }   # she never runs cold
 
 [history]
 built_as = "line ship: the backbone of the Old Forest line"

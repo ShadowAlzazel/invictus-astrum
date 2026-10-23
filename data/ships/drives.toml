@@ -13,6 +13,11 @@
 #   exhaust_kms         ceiling × √(phi · eta · X), X the mix's yield
 #   pulse_rate_hz       banks × per_bank × hz
 #   hull_heat_fraction  the mark's
+# A mark also says what it is rated to (rated_engine_mn: one engine's thrust; rated_dv_kms: the Δv
+# it is rated to on the standard tank); the registry sets each class's engines against them.
+#
+# Every drive here is the Anti Pulse Drive (APD): a high-thrust, open-cycle, magneto-inertial
+# fusion propulsion drive. The fleet's is the Mark II.7b; the Old Forest's, converted, the Mark II.C-OF.
 #
 # Numbers are plain numbers here; a drive's typed figures may also be ranges or estimates.
 
@@ -46,22 +51,29 @@ eta = 0.70
 
 [mark.mk2]
 name = "Mk II"
-label = "Old Forest"
+label = "Old Forest, as built"
 phi = 0.38
 eta = 0.75
 
-[mark.mk2c]
-name = "Mk II-C"
-label = "conversion"
+[mark.mk2c-of]
+name = "APD Mk II.C-OF"
+label = "Old Forest, converted"
+designation = "high-thrust, open-cycle, magneto-inertial fusion propulsion drive, Mark II.C-OF"
 phi = 0.38
 eta = 0.80
+rated_engine_mn = 16.4             # about 80% of the Mk II.7b's engine
+rated_dv_kms = 2400                # and of its rating
+notes = "The Old Forest's Mk II converted: the Mk II-C on the bench's ladder. Rated about 80% of the modern drive."
 
-[mark.mk2-7]
-name = "Mk II.7"
+[mark.mk2-7b]
+name = "APD Mk II.7b"
 label = "modern"
+designation = "high-thrust, open-cycle, magneto-inertial fusion propulsion drive, Mark II.7b"
 phi = 0.429
 eta = 0.785
-hull_heat_fraction = 4.5e-7        # the bench's hull leak; a mane rejects 1.0 GW, so the most is 4.81e-7
+hull_heat_fraction = 6.0e-7        # the bench's hull leak; a mane rejects 1.0 GW, so the most is 6.62e-7
+rated_engine_mn = 20.5             # the bench: 286.7 MN on 14 engines at 0.40 g
+rated_dv_kms = 3000                # rated 3,000 km/s on a 4,000 km/s tank: 21.6% of the tank's energy held back
 
 [mark.mk3]
 name = "Mk III"
@@ -100,6 +112,12 @@ banks = 2
 per_bank = 7
 hz = 1.7
 
+[block.apd-2x5]
+name = "Block, 2 × 5"
+banks = 2
+per_bank = 5
+hz = 1.7
+
 [block.frigate-1x7]
 name = "Frigate block, 1 × 7"
 banks = 1
@@ -107,12 +125,43 @@ per_bank = 7
 hz = 1.7
 notes = "Placeholder layout."
 
+[block.apd-1x5]
+name = "Block, 1 × 5"
+banks = 1
+per_bank = 5
+hz = 1.7
+
 [block.cutter-1x4]
 name = "Cutter block, 1 × 4"
 banks = 1
 per_bank = 4
 hz = 1.7
 notes = "Placeholder layout."
+
+# the Old Forest's: the same layouts, built for the Mk II and converted (their rate, est.: the modern blocks')
+[block.of-2x7]
+name = "Old Forest block, 2 × 7"
+banks = 2
+per_bank = 7
+hz = 1.7
+
+[block.of-1x7]
+name = "Old Forest block, 1 × 7"
+banks = 1
+per_bank = 7
+hz = 1.7
+
+[block.of-1x5]
+name = "Old Forest block, 1 × 5"
+banks = 1
+per_bank = 5
+hz = 1.7
+
+[block.of-2x3]
+name = "Old Forest block, 2 × 3"
+banks = 2
+per_bank = 3
+hz = 1.7
 
 [block.bench-2x7]
 name = "Test bench, 2 × 7 at 10 Hz"
@@ -126,31 +175,70 @@ notes = "The block on DRIVE_TEST_AND_BENCH."
 bunker_mg = 3.713                  # the standard antimatter bunker, the same on every hull
 
 # ---- drives: what classes connect to -----------------------------------------------------------------
+# A drive's thrust is the class's (sized_g) unless typed here.
 [drive.line]
-name = "Line drive"
+name = "APD Mk II.7b, line"
 kind = "fusion-pulse"
-mark = "mk2-7"
+mark = "mk2-7b"
 mix = "std-45"
 block = "line-2x7"
 notes = "Thrust is sized per class (sized_g)."
 
-[drive.frigate]
-name = "Frigate drive"
+[drive.apd-2x5]
+name = "APD Mk II.7b, 2 × 5"
 kind = "fusion-pulse"
-mark = "mk2-7"
+mark = "mk2-7b"
+mix = "std-45"
+block = "apd-2x5"
+
+[drive.frigate]
+name = "APD Mk II.7b, frigate"
+kind = "fusion-pulse"
+mark = "mk2-7b"
 mix = "std-45"
 block = "frigate-1x7"
 thrust_mn = { value = 119, est = true }
 notes = "Thrust from PHALAENA's estimate: 19,340 t × 6.16 m/s²."
 
-[drive.cutter]
-name = "Cutter drive"
+[drive.apd-1x5]
+name = "APD Mk II.7b, 1 × 5"
 kind = "fusion-pulse"
-mark = "mk2-7"
+mark = "mk2-7b"
+mix = "std-45"
+block = "apd-1x5"
+
+[drive.cutter]
+name = "APD Mk II.7b, cutter"
+kind = "fusion-pulse"
+mark = "mk2-7b"
 mix = "std-45"
 block = "cutter-1x4"
 thrust_mn = { value = 83, approx = true }
 notes = "Thrust from BACILLUS: ~16,000 t × ~5.2 m/s²."
+
+[drive.of-line]
+name = "APD Mk II.C-OF, 2 × 7"
+kind = "fusion-pulse"
+mark = "mk2c-of"
+mix = "std-45"
+block = "of-2x7"
+notes = "The Yggdrasil's."
+
+[drive.of-cruiser]
+name = "APD Mk II.C-OF, 1 × 5 and two 2 × 3"
+kind = "fusion-pulse"
+mark = "mk2c-of"
+mix = "std-45"
+block = ["of-1x5", "of-2x3", "of-2x3"]
+notes = "The Holzweiber's: a 1 × 5 and two 2 × 3, 17 engines."
+
+[drive.of-frigate]
+name = "APD Mk II.C-OF, 1 × 7"
+kind = "fusion-pulse"
+mark = "mk2c-of"
+mix = "std-45"
+block = "of-1x7"
+notes = "The Dryad's."
 
 # A drive can also skip the pattern and give the simulation its figures directly:
 # [drive.salvage]

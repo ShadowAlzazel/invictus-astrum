@@ -4,7 +4,7 @@
     python tools/drive_bench.py papilion --mark mk3         the same hull refitted to Mk III
     python tools/drive_bench.py papilion --dv 4500          hold another budget
     python tools/drive_bench.py --rig                       the rig on DRIVE_TEST_AND_BENCH:
-                                                            50,000 t dry, 4,000 km/s, 0.55 g, 2 × 7 at 10 Hz
+                                                            50,000 t dry, 4,000 km/s, 0.40 g, 2 × 7 at 10 Hz
 
 Switches (--mark, --mix, --block, --dv, --propellant, --g, --hull-mass, --dry) change only this
 report; nothing is written. When a pattern reads right, put it in drives.toml or the class's [drive].
@@ -128,9 +128,9 @@ def main(argv=None) -> int:
     with (folder / "drives.toml").open("rb") as f:
         cat_doc = tomllib.load(f)
     if a.rig:
-        cat_doc["drive"]["rig"] = {"name": "Bench rig", "mark": "mk2-7", "mix": "std-45", "block": "bench-2x7"}
+        cat_doc["drive"]["rig"] = {"name": "Bench rig", "mark": "mk2-7b", "mix": "std-45", "block": "bench-2x7"}
         doc = {"class": {"id": "rig", "name": "BENCH RIG", "lineage": "garden", "genus": {"word": "BENCH"}, "epithet": {"word": "RIG"}}, "hull": {"mass_t": a.dry or 50000},
-               "drive": {"module": "rig", "dv_kms": 4000, "sized_g": 0.55},
+               "drive": {"module": "rig", "dv_kms": 4000, "sized_g": 0.40},
                "endurance": {"thermal_store_tj": 10.8, "mane_gw": 1.0}}
     else:
         if a.cls not in reg.classes:

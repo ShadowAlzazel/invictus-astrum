@@ -53,6 +53,16 @@ mass_t = 22
 natures = ["pilvm", "commvnis", "clavvs", "terebra", "vespa", "cvnevs"]
 notes = "The driver the line fires. Common pattern: the gun does not vary between hulls, the round does."
 
+[driver.cvrsvs-ii-31-of]
+name = "CVRSVS II/31, Old Forest pattern"
+bore_mm = 31
+barrel_m = { value = 18, est = true }
+velocity_kms = 10
+cycle_s = 5
+mass_t = { value = 8, est = true }
+natures = ["spicvlvm", "spicvlvm-commvne"]
+notes = "The Dryad's older II/31 (THE OLD FOREST §4.1). Figures as the II/31's until stated; which natures it fires is open."
+
 # ---- rounds ------------------------------------------------------------------------------------------
 # package_kg is the round with its armature; it sets the draw and the recoil.
 [round.pilvm]
@@ -194,6 +204,38 @@ spread_pct = 0.5
 t_per_m = 0.61
 aperture_mm = 150
 trim_t = { value = 23, est = true }
+
+# The Old Forest's channels (THE OLD FOREST §1, §2-4): by current they are none of the three types,
+# and older than the Mk.2 spread. Linear mass, aperture and trim between FILVM's and NERVVS's, est.
+[channel.of-4500]
+name = "Old Forest 4.5 kA"
+type = "Old Forest heavy channel"
+current_ka = 4.5
+spread_pct = { value = 1.0, est = true }
+t_per_m = { value = 0.45, est = true }
+aperture_mm = { value = 118, est = true }
+trim_t = { value = 18, est = true }
+notes = "The Yggdrasil's."
+
+[channel.of-4000]
+name = "Old Forest 4.0 kA"
+type = "Old Forest heavy channel"
+current_ka = 4.0
+spread_pct = { value = 1.0, est = true }
+t_per_m = { value = 0.43, est = true }
+aperture_mm = { value = 114, est = true }
+trim_t = { value = 16, est = true }
+notes = "The Holzweiber's."
+
+[channel.of-1000]
+name = "Old Forest 1.0 kA"
+type = "Old Forest thin channel"
+current_ka = 1.0
+spread_pct = { value = 1.0, est = true }
+t_per_m = { value = 0.30, est = true }
+aperture_mm = { value = 88, est = true }
+trim_t = { value = 7.5, est = true }
+notes = "The Dryad's: the first thin channel, the FILVM thread's ancestor."
 
 # ---- optical panels ----------------------------------------------------------------------------------
 # aperture_m is the area-equivalent diameter. Output = emitters × 12 kW; draw = output ÷ 0.45;

@@ -1,4 +1,4 @@
-# Source: RATE AND ROLE §6.1, §6.4, §8.8, §11. No particulars yet.
+# Source: RATE AND ROLE §6.1, §6.4, §8.8, §11; THE OLD FOREST §2. Figures est. where the note gives none.
 [class]
 id = "yggdrasil"
 name = "Yggdrasil"
@@ -12,6 +12,61 @@ places = ["escort", "internal escort"]
 
 [hull]
 body = "no wings; domes"
+length_m = 350
+mass_t = 45000
+
+[drive]
+module = "of-line"
+hull_mass = "dry"
+dv_kms = 4000
+sized_g = 0.35
+
+[aim]                        # TEMPORARY: not yet stated; a little behind the PAPILION's
+rated_urad = { value = 7.0, est = true }
+demasted_urad = { value = 19, est = true }
+
+[layout]                     # stations along the hull, metres from the bow; est.
+truss_m = 86
+citadel_m = [86, 264]
+
+[[battery]]
+id = "spinal"
+label = "Spinal battery"
+stack = "yggdrasil"
+count = 2
+firing = "alternate"
+focus = true
+fire = "346 MJ a stack, 691 MJ both: a little under half a PAPILION's salvo."
+
+[[battery]]
+id = "main"
+label = "Main battery"
+mounts = [
+  { turret = "qvadra-ii-44", side = "dorsal", at_m = 150 },
+  { turret = "bina-ii-44", side = "dorsal", at_m = 178 },
+  { turret = "qvadra-ii-44", side = "ventral", at_m = 150 },
+  { turret = "bina-ii-44", side = "ventral", at_m = 178 },
+]
+arrangement = "The KGV layout: a quad and a superfiring twin, dorsal and ventral. 12 guns, PILVM: 3.00 GJ, balanced."
+
+[[battery]]
+id = "domes"
+label = "Hull domes"
+dome = "forest"
+count = 2
+facing = ["dorsal", "ventral"]
+notes = "Level with her hull's plane: all round, and good point defence on every bearing."
+
+[[battery]]
+id = "horizon"
+label = "Horizon strips"
+strip = "horizon"
+pairs = 2
+facing = ["forward", "aft", "port", "starboard"]
+notes = "Where a level dome is weakest."
+
+[endurance]
+quiet_mw = { value = 70, est = true, note = "TEMPORARY: not yet stated; about a PAPILION's" }   # no wings: she never runs cold
 
 [history]
 built_as = "the line ship of the Old Forest"

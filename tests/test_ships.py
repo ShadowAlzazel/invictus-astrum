@@ -65,7 +65,7 @@ def test_round_energies_and_broadside(reg):
 
 
 def test_thrust_agrees_light_and_full(reg):
-    assert reg.classes["papilion"].derived["thrust_mn"] == pytest.approx(380, abs=1)
+    assert reg.classes["papilion"].derived["thrust_mn"] == pytest.approx(276, abs=1)
     assert not [f for f in reg.classes["papilion"].findings if "thrust" in f.message]
 
 
@@ -78,16 +78,16 @@ def test_blanks_are_the_authors_list(reg):
 
 
 def bench_class(reg, **drive):
-    """The rig on DRIVE_TEST_AND_BENCH: 50,000 t dry, held at 4,000 km/s, sized to 0.55 g, 2 × 7 at 10 Hz."""
+    """The rig on DRIVE_TEST_AND_BENCH: 50,000 t dry, held at 4,000 km/s, sized to 0.40 g, 2 × 7 at 10 Hz."""
     import tomllib
     from astrum.drives import Catalogue
     from conftest import ROOT
     with (ROOT / "data" / "ships" / "drives.toml").open("rb") as f:
         doc = tomllib.load(f)
-    doc["drive"]["bench"] = {"name": "Bench", "mark": "mk2-7", "mix": "std-45", "block": "bench-2x7"}
+    doc["drive"]["bench"] = {"name": "Bench", "mark": "mk2-7b", "mix": "std-45", "block": "bench-2x7"}
     cat = Catalogue.from_dict(doc)
     cls = {"class": {"id": "bench", "name": "Bench", "lineage": "garden"}, "hull": {"mass_t": 50000},
-           "drive": {"module": "bench", "dv_kms": 4000, "sized_g": 0.55, **drive},
+           "drive": {"module": "bench", "dv_kms": 4000, "sized_g": 0.40, **drive},
            "endurance": {"thermal_store_tj": 10.8, "mane_gw": 1.0}}
     return build_class(cls, reg.rules, reg.armoury, drives=cat), cat
 
@@ -100,28 +100,29 @@ def test_bench_report_from_the_data(reg):
     near = lambda got, want, rel=0.003: got == pytest.approx(want, rel=rel)
     assert near(d["exhaust_kms"].value, 10539)
     assert near(d["propellant_t"].value, 23078)
-    assert near(d["thrust_mn"].value, 394.2)
-    assert near(d["jet_pw"].value, 2.077) and near(d["mass_flow_kgs"].value, 37.4)
-    assert near(d["held_burn_h"].value / 24, 8.58)
+    assert near(d["thrust_mn"].value, 286.7)
+    assert near(d["jet_pw"].value, 1.511) and near(d["mass_flow_kgs"].value, 27.2)
+    assert near(d["held_burn_h"].value / 24, 11.80)
     assert near(d["jet_energy_zj"].value, 1.28, rel=0.01)
     st = d["stores"]
     assert near(st["fuel_t"], 10385) and near(st["tamper_t"], 12693) and near(st["split_t"]["helium-3"], 6231)
     assert near(st["pbar_mg"], 1.737) and near(st["burns_per_bunker"], 2.14) and near(st["volume_m3"], 68198)
     bl = d["block"]
     assert bl["engines"] == 14 and bl["rate_hz"] == 140
-    assert near(bl["engine_thrust_mn"], 28.2) and near(bl["engine_power_tw"], 148.4)
-    assert near(bl["pellet_kg"], 0.267) and near(bl["pulse_tj"], 14.8) and near(bl["pulse_t_tnt"], 3546)
-    assert near(bl["pulses_per_engine"], 7415552)
+    assert near(bl["engine_thrust_mn"], 20.5) and near(bl["engine_power_tw"], 107.9)
+    assert near(bl["pellet_kg"], 0.194) and near(bl["pulse_tj"], 10.8) and near(bl["pulse_t_tnt"], 2578.9)
+    assert near(bl["pulses_per_engine"], 10196385)
+    assert near(bl["engine_rated_share"], 1.0)                                   # the bench is what rates an engine
     h = d["heat"]
-    assert near(h["leak_gw"].value, 0.9347) and near(h["max_fraction"].value, 4.81e-7) and h["steady"]
+    assert near(h["leak_gw"].value, 0.9064) and near(h["max_fraction"].value, 6.62e-7) and h["steady"]
 
 
 def test_bench_mark_ladders(reg):
     """Ladder A (same tank) and ladder B (held at 4,000 km/s): every mark, swapped from the data."""
     sc, _ = bench_class(reg)
     lad = {r["name"]: r for r in sc.drive["ladder"]}
-    for name, ve, dv, held in [("Mk I", 8729, 3313, 29066), ("Mk II", 9695, 3679, 25534), ("Mk II-C", 10013, 3800, 24551),
-                               ("Mk II.7", 10539, 4000, 23080), ("Mk III", 10897, 4135, 22176),
+    for name, ve, dv, held in [("Mk I", 8729, 3313, 29066), ("Mk II", 9695, 3679, 25534), ("APD Mk II.C-OF", 10013, 3800, 24551),
+                               ("APD Mk II.7b", 10539, 4000, 23080), ("Mk III", 10897, 4135, 22176),
                                ("Mk IV", 12344, 4685, 19135), ("Ceiling ◇", 12970, 4922, 18063)]:
         assert lad[name]["exhaust_kms"] == pytest.approx(ve, rel=0.003)
         assert lad[name]["dv_same_tank_kms"] == pytest.approx(dv, rel=0.003)
@@ -136,27 +137,27 @@ def test_bench_mix_and_tamper(reg, f, n, ve):
     cat = reg.drives
     cat.mix["probe"] = {**cat.mix["std-45"], "f": f, "n_frac": n}
     try:
-        assert cat.build("mk2-7", "probe").exhaust_kms == pytest.approx(ve, rel=0.003)
+        assert cat.build("mk2-7b", "probe").exhaust_kms == pytest.approx(ve, rel=0.003)
     finally:
         del cat.mix["probe"]
 
 
 def test_drive_figures(reg):
-    """PAPILION on the line drive: the canon's masses read with tanks full, held at 4,000 km/s."""
+    """PAPILION on the line drive: the canon's masses read with tanks full, held at 4,000 km/s, at the bench's 0.40 g."""
     sc = reg.classes["papilion"]
     d = sc.drive
     loads = {(r["load"], r["tanks"]): r for r in d["loads"]}
     assert loads["full", "full"]["mass_t"].value == 70340                     # the canon's figure, tanks full
-    assert loads["full", "full"]["accel_ms2"].value == pytest.approx(5.394, abs=0.001)
+    assert loads["full", "full"]["accel_ms2"].value == pytest.approx(3.923, abs=0.001)
     assert loads["full", "full"]["dv_kms"].value == pytest.approx(4000)
-    assert loads["light", "full"]["accel_ms2"].value == pytest.approx(6.09, abs=0.01)     # the canon's light
+    assert loads["light", "full"]["accel_ms2"].value == pytest.approx(4.43, abs=0.01)     # the class's light
     assert d["propellant_t"].value == pytest.approx(22219, abs=1)
     assert d["pulse_rate_hz"].value == pytest.approx(23.8)                   # 2 × 7 at 1.7 Hz
-    assert d["block"]["pellet_kg"] == pytest.approx(1.51, abs=0.01)
-    assert d["cruise"]["reaches_top"] and d["heat"]["steady"]
+    assert d["block"]["pellet_kg"] == pytest.approx(1.10, abs=0.01)
+    assert d["cruise"]["holds"] and not d["cruise"]["reaches_top"] and d["heat"]["steady"]   # 0.40 g: the band's floor
     assert not [f for f in sc.findings if "acceleration" in f.message]     # sized thrust agrees with the canon
     p = sc.performance("light", 0)
-    assert p["dv_kms"] == 0 and p["max_accel_g"] == pytest.approx(379.39 / 40121 * 1e3 / 9.80665, rel=1e-3)
+    assert p["dv_kms"] == 0 and p["max_accel_g"] == pytest.approx(275.95 / 40121 * 1e3 / 9.80665, rel=1e-3)
 
 
 def test_drive_typed_and_direct(reg):
@@ -302,7 +303,7 @@ def test_drive_bench_tool(capsys):
     spec.loader.exec_module(tool)
     assert tool.main(["--rig"]) == 0
     out = capsys.readouterr().out
-    assert "DRIVE BLOCK" in out and "394.2 MN" in out and "> Mk II.7" in out
+    assert "DRIVE BLOCK" in out and "286.7 MN" in out and "> APD Mk II.7b" in out
     assert tool.main(["papilion", "--mark", "mk3"]) == 0
     assert "> Mk III" in capsys.readouterr().out
 
