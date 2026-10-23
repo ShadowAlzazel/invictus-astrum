@@ -69,7 +69,7 @@ def test_a_lobby_plays_a_level_as_each_member_s_side(server):
         m = _until(la, lambda m: _members(m) == {"Halsey": "arcvs", "Nimitz": "ghost"})
         assert m["kind"] == "lobby"
         assert c_post_level(b, hb, "start").status_code == 403
-        la.send_json({"do": "start"})
+        la.send_json({"do": "start", "warp": 60})                # (slow enough that the sim keeps up on a busy machine)
         _until(lb, lambda m: next(x for x in m["levels"] if x["id"] == "cislunar")["clock"] is not None)
         # each map's picture is its member's side, whatever it asks for
         ask = {"level": "anything", "system": "sol", "view": "master", "player": "arcvs", "lead": 0.05}
@@ -138,7 +138,7 @@ def test_pictures_come_unasked_and_the_server_is_healthy(server):
     with c.websocket_connect("/ws/lobby", headers=h) as lobby:
         lobby.send_json({"do": "make", "level": "cislunar"})
         lobby.send_json({"do": "side", "side": "arcvs"})
-        lobby.send_json({"do": "start"})
+        lobby.send_json({"do": "start", "warp": 60})
         _until(lobby, lambda m: next(x for x in m["levels"] if x["id"] == "cislunar")["clock"] and _members(m).get("Fabian"))
         with c.websocket_connect("/ws", headers=h) as ws:
             ws.send_json({"level": "cislunar", "system": "sol"})
@@ -190,7 +190,7 @@ def test_asked_pictures_are_answered_once_each():
         h = _signed(c, "Scipio")
         assert c.get("/api/me", headers=h).json()["pictures"] == "ask"
         with c.websocket_connect("/ws/lobby", headers=h) as lobby:
-            for m in ({"do": "make", "level": "cislunar"}, {"do": "side", "side": "jadf"}, {"do": "start"}):
+            for m in ({"do": "make", "level": "cislunar"}, {"do": "side", "side": "jadf"}, {"do": "start", "warp": 60}):
                 lobby.send_json(m)
             _until(lobby, lambda m: next(x for x in m["levels"] if x["id"] == "cislunar")["clock"] and _members(m).get("Scipio"))
             with c.websocket_connect("/ws", headers=h) as ws:
@@ -199,7 +199,7 @@ def test_asked_pictures_are_answered_once_each():
                 time.sleep(0.6)                                    # (pushed, a few would be waiting by now)
                 ws.send_json({"level": "cislunar", "system": "sol", "lead": 0.02, "step": 1 / 60})
                 second = ws.receive_json()
-        assert first["full"] and not second["full"] and second["t"] - first["t"] > 3600 * 0.25  # fresh: not one pushed and queued since
+        assert first["full"] and not second["full"] and second["t"] - first["t"] > 60 * 0.25  # fresh: not one pushed and queued since
     app.state.sim.close()
 
 

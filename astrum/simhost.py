@@ -602,7 +602,7 @@ class SimHost:
     # ---- the levels ------------------------------------------------------------------------------
     def level(self, req: dict) -> dict:
         """The host's hand on a level's clock. start: its clock made at the level's start, running
-        at its warp (nothing ticks before); run, pause; warp: at req["warp"]; restart: from its
+        at its warp, or req["warp"] (nothing ticks before); run, pause; warp: at req["warp"]; restart: from its
         start again, its fleets built afresh from their scenarios; stop: no clock, no fleets.
         Returns {ok, clock} (clock None once stopped)."""
         lv = self.world.levels.get(req.get("id") or "")
@@ -610,7 +610,10 @@ class SimHost:
             return {"ok": False, "status": 404, "detail": f"no level {req.get('id')!r}"}
         do, clock = req.get("do"), self.clocks.get(lv.id)
         if do == "start":
-            clock = clock or self.clocks.setdefault(lv.id, Clock(self.world.level_start(lv), lv.warp))
+            if clock is None:
+                clock = self.clocks[lv.id] = Clock(self.world.level_start(lv), lv.warp)
+                if isinstance(req.get("warp"), (int, float)):
+                    clock.set(warp=req["warp"])
         elif clock is None:
             return {"ok": False, "status": 409, "detail": f"{lv.name} is not running: start it"}
         elif do in ("run", "pause"):

@@ -40,3 +40,20 @@ def no_background_prefill(monkeypatch, request):
     if "prefill" not in request.node.name:
         from astrum.app import World
         monkeypatch.setattr(World, "_prefill", lambda self: None)
+
+
+@pytest.fixture(autouse=True)
+def arrivals_stopped(monkeypatch):
+    """Every app a test makes starts an arrivals thread (simhost.Arrivals), polling; few tests
+    close their app, and a hundred left polling slow every test after them. Each is stopped
+    when its test ends."""
+    from astrum import simhost
+    made, real = [], simhost.Arrivals.__init__
+
+    def init(self, *a, **kw):
+        real(self, *a, **kw)
+        made.append(self)
+    monkeypatch.setattr(simhost.Arrivals, "__init__", init)
+    yield
+    for a in made:
+        a.stop()
