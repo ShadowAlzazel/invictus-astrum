@@ -1,13 +1,16 @@
-"""Fleets: formations and their ships, kept apart from any scenario.
+"""Fleets: formations and their ships, what they are, kept apart from where any scenario puts them.
 
-    data/fleets/<id>.toml    [fleet] id, name, faction, system, notes; and its units, [[contact]]
-                             as a scenario writes them (astrum/loader.py), each formation naming
-                             the one above it
+    data/fleets/<id>.toml    [fleet] id, name, faction, system, notes; and its [[unit]]s: each
+                             its id, callsign, echelon, the formation above it, a ship's class
+                             and hull number, and what a formation hands down (affiliation,
+                             faction, veterancy, stance, profile, flag, role)
 
-A scenario brings fleets in ([[fleet]] id = "..."): their units join its own, placed at its
-start, in its system. A unit with no formation above it takes the fleet's faction unless it
-states its own. A level plays a copy of its scenarios, fleets and all, as they stood when it
-started (app.World.hold), so a fleet edited meanwhile changes the next start, not the game.
+A unit says nothing of where or how she starts: that is the scenario's ([[contact]] fleet, unit,
+position, mode, propellant, load, status; astrum/loader.py). A scenario loads the fleets it names
+([[fleet]] id) and places the units it has contacts for; the rest are undeployed. A unit with no
+formation above it takes the fleet's faction unless it states its own. A level plays a copy of
+its scenarios and fleets as they stood when it started (app.World.played), so a fleet edited
+meanwhile changes the next start, not the game.
 
 edit() changes units in a fleet file in place (a ship's callsign, hull number or class), line by
 line, so the file keeps its comments and its order.
@@ -21,6 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 EDITABLE = ("callsign", "hull_number", "class")
+PLACEMENT = ("position", "mode", "propellant", "load", "status")    # the scenario's, never a fleet's
 
 
 @dataclass(frozen=True)
@@ -30,7 +34,7 @@ class FleetFile:
     faction: str
     system: str
     notes: str
-    contacts: tuple                       # its units, as written ([[contact]] tables)
+    units: tuple                          # its units, as written ([[unit]] tables), in order
     source: str
 
 
@@ -44,16 +48,21 @@ def load_fleet(path: str | Path) -> FleetFile:
             problems.append(f"[fleet] needs {k}")
     if fl.get("id") and fl["id"] != path.stem:
         problems.append(f"[fleet] id {fl['id']!r} must be the file's name, {path.stem!r}")
-    contacts = doc.get("contact", [])
-    if not contacts:
-        problems.append("a fleet needs units ([[contact]])")
-    ids = [c.get("id") for c in contacts]
-    for c in contacts:
-        if c.get("formation") and c["formation"] not in ids:
-            problems.append(f"{c.get('id')}: formation {c['formation']!r} is not one of the fleet's units")
+    if "contact" in doc:
+        problems.append("a fleet's units are [[unit]]; [[contact]] places them, in a scenario")
+    units = doc.get("unit", [])
+    if not units:
+        problems.append("a fleet needs units ([[unit]])")
+    ids = [u.get("id") for u in units]
+    for u in units:
+        if u.get("formation") and u["formation"] not in ids:
+            problems.append(f"{u.get('id')}: formation {u['formation']!r} is not one of the fleet's units")
+        for k in PLACEMENT:
+            if k in u:
+                problems.append(f"{u.get('id')}: {k} is the scenario's (where and how she starts), not the fleet's")
     if problems:
         raise ValueError(f"{path.name}:\n  " + "\n  ".join(problems))
-    top = [{**c, "faction": c.get("faction", fl["faction"])} if not c.get("formation") else c for c in contacts]
+    top = [{**u, "faction": u.get("faction", fl["faction"])} if not u.get("formation") else u for u in units]
     return FleetFile(fl["id"], fl.get("name", fl["id"]), fl["faction"], fl["system"], fl.get("notes", ""),
                      tuple(top), str(path))
 
@@ -80,10 +89,10 @@ def edit(text: str, changes: dict[str, dict]) -> str:
         for k, v in ch.items():
             if not isinstance(v, str) or (k != "hull_number" and not v.strip()):
                 raise ValueError(f"{uid}: {k} is a name, not {v!r}")
-    blocks = re.split(r"(?m)^(?=\[\[contact\]\]\s*$)", text)
+    blocks = re.split(r"(?m)^(?=\[\[unit\]\]\s*$)", text)
     seen = set()
     for i, b in enumerate(blocks):
-        m = re.search(r'(?m)^id\s*=\s*"([^"]+)"', b) if b.startswith("[[contact]]") else None
+        m = re.search(r'(?m)^id\s*=\s*"([^"]+)"', b) if b.startswith("[[unit]]") else None
         if not m or m.group(1) not in changes:
             continue
         seen.add(m.group(1))

@@ -3,8 +3,9 @@
     data/systems/<id>.toml      one stellar system (see data/systems/README.md)
     data/players.toml           players and their bullseyes
     data/factions.toml          factions: a name, and the prefix a ship's name reads with
-    data/scenarios/<id>.toml    contacts placed in a system, the fleets it brings in (data/fleets,
-                                astrum/fleets.py), and the orders its ships fly
+    data/scenarios/<id>.toml    a system; the fleets it loads (data/fleets, astrum/fleets.py) and
+                                where it places their units ([[contact]] fleet, unit, position...);
+                                contacts of its own; and the orders its ships fly
 
 Every file goes through a builder or a checker that lists all of its problems at once.
 """
@@ -134,18 +135,26 @@ class Scenario:
     contacts: dict[str, Contact]
     orders: list = field(default_factory=list)
     factions: tuple[str, ...] = ()        # whose forces it holds (data/factions.toml): each a view of it, besides MASTER
-    fleets: tuple[str, ...] = ()          # the fleets it brings in (data/fleets), their units among its contacts
+    fleets: tuple[str, ...] = ()          # the fleets it loads (data/fleets), the units it places among its contacts
+    undeployed: dict = field(default_factory=dict)   # fleet id -> its ships the scenario does not place
+    findings: tuple[str, ...] = ()        # what it could not place (a unit its fleet has not), and let through
+
+
+PLACES = {"fleet", "unit", "position", "mode", "propellant", "load", "status", "stance", "profile", "notes"}
 
 
 def load_scenario(path: str | Path, fleets: dict | None = None) -> Scenario:
-    """A scenario, its contacts its own and those of the fleets it brings in ([[fleet]] id), all
-    placed at its start."""
+    """A scenario: the fleets it loads ([[fleet]] id) and its contacts. A contact that names a
+    fleet's unit ({fleet, unit}) places her: where and how she starts (position, mode, propellant,
+    load, status; a stance or profile of its own), the rest of her the fleet's. Every formation
+    above a placed unit comes with her; a fleet's units it does not place are undeployed. A unit
+    its fleet has not is a finding, and left out. Every other contact is the scenario's own."""
     path = Path(path)
     with path.open("rb") as f:
         doc = tomllib.load(f)
     s = doc["scenario"]
-    contacts, problems = {}, []
-    units, brought = [], []
+    contacts, problems, findings = {}, [], []
+    loaded = {}                                            # fleet id -> its units by id
     for ref in doc.get("fleet", []):
         fl = (fleets or {}).get(ref.get("id"))
         if fl is None:
@@ -153,9 +162,32 @@ def load_scenario(path: str | Path, fleets: dict | None = None) -> Scenario:
         elif fl.system != s["system"]:
             problems.append(f"fleet {fl.id!r} is placed in {fl.system}, not {s['system']}")
         else:
-            units += fl.contacts
-            brought.append(fl.id)
-    units += doc.get("contact", [])
+            loaded[fl.id] = {u["id"]: u for u in fl.units}
+    placed, own = {}, []
+    for c in doc.get("contact", []):
+        if "unit" not in c:
+            own.append(c)
+            continue
+        fl, uid = c.get("fleet"), c["unit"]
+        if fl not in loaded or uid not in loaded[fl]:
+            findings.append(f"{uid}: not a unit of fleet {fl!r}" + ("" if fl in loaded else " (the scenario does not load it)"))
+            continue
+        for k in set(c) - PLACES:
+            problems.append(f"{uid}: a contact placing a fleet's unit says where and how she starts, not {k!r}")
+        placed[uid] = c
+    units, undeployed = [], {}
+    for fid, by in loaded.items():                         # placed units and the formations above them, in the fleet's order
+        keep = set()
+        for uid in (u for u in placed if u in by):
+            while uid and uid not in keep:
+                keep.add(uid)
+                uid = by[uid].get("formation")
+        units += [{**u, **{k: v for k, v in placed.get(u["id"], {}).items() if k not in ("fleet", "unit")}}
+                  for u in by.values() if u["id"] in keep]
+        left = tuple(u["id"] for u in by.values() if u.get("class") and u["id"] not in keep)
+        if left:
+            undeployed[fid] = left
+    units += own
     doc = {**doc, "contact": units}
     for c in units:
         cid = c.get("id", "?")
@@ -239,7 +271,7 @@ def load_scenario(path: str | Path, fleets: dict | None = None) -> Scenario:
         raise ValueError(f"{path.name}:\n  " + "\n  ".join(problems))
     epoch = epoch_of(s["epoch"]) if "epoch" in s else None
     return Scenario(s["id"], s.get("name", s["id"]), s["system"], epoch, s.get("player", ""), contacts, orders,
-                    tuple(s.get("factions", ())), tuple(brought))
+                    tuple(s.get("factions", ())), tuple(loaded), undeployed, tuple(findings))
 
 
 def load_scenarios(folder: str | Path, fleets: dict | None = None) -> tuple[dict[str, Scenario], dict[str, str]]:

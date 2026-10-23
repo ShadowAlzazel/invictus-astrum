@@ -683,18 +683,19 @@ def sensing(world: "World", cid: str) -> dict:
 
 def fleet_dict(world: "World", fl, units: bool = False) -> dict:
     """A fleet as the Fleets screen shows it: what it is, its ships by class, the scenarios that
-    bring it in; and (units) each of its units in the file's order."""
-    ships = [c for c in fl.contacts if c.get("class")]
+    load it and how many of its ships each places; and (units) each of its units in the file's order."""
+    ships = [c for c in fl.units if c.get("class")]
     by = {}
     for c in ships:
         by[c["class"]] = by.get(c["class"], 0) + 1
     fac = world.factions.get(fl.faction)
     out = {"id": fl.id, "name": fl.name, "faction": fl.faction, "faction_name": fac.name if fac else fl.faction,
-           "system": fl.system, "notes": fl.notes, "ships": len(ships), "formations": len(fl.contacts) - len(ships),
+           "system": fl.system, "notes": fl.notes, "ships": len(ships), "formations": len(fl.units) - len(ships),
            "by_class": dict(sorted(by.items(), key=lambda kv: -kv[1])),
-           "scenarios": [s.id for s in world._loaded.values() if fl.id in s.fleets]}
+           "scenarios": [{"id": s.id, "placed": len(ships) - len(s.undeployed.get(fl.id, ()))}
+                         for s in world._loaded.values() if fl.id in s.fleets]}
     if units:
-        classes, by_id = world.ships.classes, {c["id"]: c for c in fl.contacts}
+        classes, by_id = world.ships.classes, {c["id"]: c for c in fl.units}
 
         def above(c, key):                               # stated, else the formation's above it
             while c is not None and c.get(key) is None:
@@ -706,7 +707,7 @@ def fleet_dict(world: "World", fl, units: bool = False) -> dict:
                          "affiliation": above(c, "affiliation") or "unknown", "status": c.get("status", []),
                          "role": "" if c.get("class") else c.get("role") or formation_role(world.style, c.get("callsign", "")),
                          "unit_type": c.get("unit_type") or (classes[c["class"]].doc.get("class", {}).get("symbol", "")
-                                                             if c.get("class") in classes else "")} for c in fl.contacts]
+                                                             if c.get("class") in classes else "")} for c in fl.units]
         out["classes"] = sorted(({"id": k, "name": v.name} for k, v in classes.items() if v.drive), key=lambda x: x["name"])
     return out
 

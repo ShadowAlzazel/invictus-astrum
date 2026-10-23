@@ -1,6 +1,7 @@
-# A scenario: a system, the fleets it brings in (data/fleets), the contacts of its own (the local
-# picture), and the orders its ships fly once the clock runs (astrum/sim.py). Every unit is placed
-# at its start. How a unit is written: data/fleets/README.md.
+# A scenario: a system; the fleets it loads (data/fleets) and where their units start (a [[contact]]
+# with fleet and unit: position, mode, status...; a fleet's ships it does not place are undeployed);
+# contacts of its own (GHOST, the local picture); and the orders its ships fly once the clock runs
+# (astrum/sim.py). How units and placements are written: data/fleets/README.md.
 
 [scenario]
 id = "sol-demo"
@@ -9,15 +10,850 @@ system = "sol"
 player = "arcvs"
 factions = ["arcvs", "jadf", "bandit", "ghost"]   # whose forces it holds: each a view of it (with MASTER, everything)
 
-# ---- the fleets it brings in (data/fleets): placed at its start ---------------------------------------
+# ---- the fleets it loads (data/fleets); its contacts below place their units -------------------------
 [[fleet]]
 id = "luna-classis-1"
 
 [[fleet]]
 id = "jupiter-home"
 
-[[fleet]]
+
+# ==== where luna-classis-1's units start =========================================================
+# ---- friendly: one task force element, in flights, out of plane over Earth --------------------------
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-classis-1"
+position = { bullseye = "burn", aer = [0, 0, 1000000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "kiki-1"
+status = ["cold"]
+position = { bullseye = "burn", aer = [0, 0, 2000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "kiki-2"
+status = ["cold"]
+position = { bullseye = "burn", aer = [300, 4, 7000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "kiki-3"
+status = ["cold"]
+position = { bullseye = "burn", aer = [60, -4, 7000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "paris-1"
+position = { bullseye = "burn", aer = [90, -10, 40000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "paris-2"
+position = { bullseye = "burn", aer = [95, -12, 46000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "pciket-squadron-3"
+position = { bullseye = "burn", aer = [35, -30, 86000] }
+
+# Escort squadron: the task force's cruisers. Ship names are placeholders.
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "escort-1-1"
+position = { bullseye = "burn", aer = [180, 2, 9000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "escort-1-2"
+position = { bullseye = "burn", aer = [200, -3, 12000] }
+
+# >>> task force 2 (written by tools/formation_tf2.py)
+# Placeholder callsigns. Positions are AER from the Wedge Bullseye (data/players.toml).
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf-2"
+position = { unit = "tf2-lf1-bs-1" }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-bs-1"
+position = { bullseye = "wedge", aer = [1.718, 0.0, 150067] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-bs-2"
+position = { bullseye = "wedge", aer = [0.573, 0.344, 150010] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-bs-3"
+position = { bullseye = "wedge", aer = [359.427, 0.0, 150007] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-bs-4"
+position = { bullseye = "wedge", aer = [358.282, 0.344, 150070] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-ls-1"
+position = { bullseye = "wedge", aer = [1.245, 0.0, 138033] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-ls-2"
+position = { bullseye = "wedge", aer = [0.0, 0.374, 138003] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-ls-3"
+position = { bullseye = "wedge", aer = [358.755, 0.0, 138033] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-pa-1"
+position = { bullseye = "wedge", aer = [0.296, 1.58, 290114] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-pa-2"
+position = { bullseye = "wedge", aer = [359.704, 1.758, 290140] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-pb-1"
+position = { bullseye = "wedge", aer = [332.499, -2.39, 191823] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf1-pb-2"
+position = { bullseye = "wedge", aer = [331.709, -2.106, 193191] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-bs-1"
+position = { bullseye = "wedge", aer = [242.91, 0.0, 219591] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-bs-2"
+position = { bullseye = "wedge", aer = [243.262, 0.232, 222268] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-bs-3"
+position = { bullseye = "wedge", aer = [243.606, 0.0, 224949] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-bs-4"
+position = { bullseye = "wedge", aer = [243.941, 0.227, 227642] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-ls-1"
+position = { bullseye = "wedge", aer = [240.381, 0.0, 226612] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-ls-2"
+position = { bullseye = "wedge", aer = [240.751, 0.225, 229227] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-ls-3"
+position = { bullseye = "wedge", aer = [241.113, 0.0, 231847] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-pa-1"
+position = { bullseye = "wedge", aer = [281.393, 2.262, 202648] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-pa-2"
+position = { bullseye = "wedge", aer = [281.228, 2.481, 205625] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-pb-1"
+position = { bullseye = "wedge", aer = [254.501, -1.531, 299493] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf2-pb-2"
+position = { bullseye = "wedge", aer = [254.653, -1.346, 302362] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-bs-1"
+position = { bullseye = "wedge", aer = [116.059, 0.0, 227641] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-bs-2"
+position = { bullseye = "wedge", aer = [116.394, 0.229, 224951] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-bs-3"
+position = { bullseye = "wedge", aer = [116.738, 0.0, 222266] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-bs-4"
+position = { bullseye = "wedge", aer = [117.09, 0.235, 219593] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-ls-1"
+position = { bullseye = "wedge", aer = [118.887, 0.0, 231847] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-ls-2"
+position = { bullseye = "wedge", aer = [119.249, 0.225, 229227] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-ls-3"
+position = { bullseye = "wedge", aer = [119.619, 0.0, 226612] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-pa-1"
+position = { bullseye = "wedge", aer = [78.772, 2.23, 205588] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-pa-2"
+position = { bullseye = "wedge", aer = [78.607, 2.517, 202686] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-pb-1"
+position = { bullseye = "wedge", aer = [105.347, -1.516, 302384] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lf3-pb-2"
+position = { bullseye = "wedge", aer = [105.499, -1.359, 299471] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-es-1"
+position = { bullseye = "wedge", aer = [284.241, 0.0, 101623] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-es-2"
+position = { bullseye = "wedge", aer = [283.837, 0.493, 104537] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-vs-1"
+position = { bullseye = "wedge", aer = [76.357, 0.0, 105991] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-vs-2"
+position = { bullseye = "wedge", aer = [75.964, 0.5, 103082] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-vs-3"
+position = { bullseye = "wedge", aer = [75.548, 0.0, 100170] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lp1-1"
+position = { bullseye = "wedge", aer = [349.377, 3.648, 1886083] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lp1-2"
+position = { bullseye = "wedge", aer = [349.287, 3.674, 1886695] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lp1-3"
+position = { bullseye = "wedge", aer = [349.197, 3.646, 1887196] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lp2-1"
+position = { bullseye = "wedge", aer = [23.719, -4.906, 1754055] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lp2-2"
+position = { bullseye = "wedge", aer = [23.629, -4.88, 1752778] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf2-lp2-3"
+position = { bullseye = "wedge", aer = [23.539, -4.912, 1751659] }
+
+# <<< task force 2
+# >>> task force 3 and the strike squadron (written by tools/formation_tf3.py)
+# Placeholder callsigns. Positions are carried with Mars (Task Force 3) and Jupiter (the strike
+# squadron), in system axes, km.
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf-3"
+position = { unit = "tf3-lf4-bs-1" }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-bs-1"
+position = { body = "mars", offset_km = [20000, -1200, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-bs-2"
+position = { body = "mars", offset_km = [20000, -400, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-bs-3"
+position = { body = "mars", offset_km = [20000, 400, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-bs-4"
+position = { body = "mars", offset_km = [20000, 1200, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-ls-1"
+position = { body = "mars", offset_km = [17500, -800, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-ls-2"
+position = { body = "mars", offset_km = [17500, 0, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-ls-3"
+position = { body = "mars", offset_km = [17500, 800, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-pa-1"
+position = { body = "mars", offset_km = [26000, -400, 1000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-pa-2"
+position = { body = "mars", offset_km = [26000, 400, 1240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-pb-1"
+position = { body = "mars", offset_km = [21000, 4600, -1000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf4-pb-2"
+position = { body = "mars", offset_km = [21000, 5400, -760] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-bs-1"
+position = { body = "mars", offset_km = [-8961, 17921, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-bs-2"
+position = { body = "mars", offset_km = [-9654, 17521, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-bs-3"
+position = { body = "mars", offset_km = [-10346, 17121, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-bs-4"
+position = { body = "mars", offset_km = [-11039, 16721, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-ls-1"
+position = { body = "mars", offset_km = [-8057, 15555, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-ls-2"
+position = { body = "mars", offset_km = [-8750, 15155, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-ls-3"
+position = { body = "mars", offset_km = [-9443, 14755, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-pa-1"
+position = { body = "mars", offset_km = [-12654, 22717, 1000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-pa-2"
+position = { body = "mars", offset_km = [-13346, 22317, 1240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-pb-1"
+position = { body = "mars", offset_km = [-14484, 15887, -1000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf5-pb-2"
+position = { body = "mars", offset_km = [-15177, 15487, -760] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-bs-1"
+position = { body = "mars", offset_km = [-11039, -16721, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-bs-2"
+position = { body = "mars", offset_km = [-10346, -17121, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-bs-3"
+position = { body = "mars", offset_km = [-9654, -17521, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-bs-4"
+position = { body = "mars", offset_km = [-8961, -17921, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-ls-1"
+position = { body = "mars", offset_km = [-9443, -14755, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-ls-2"
+position = { body = "mars", offset_km = [-8750, -15155, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-ls-3"
+position = { body = "mars", offset_km = [-8057, -15555, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-pa-1"
+position = { body = "mars", offset_km = [-13346, -22317, 1000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-pa-2"
+position = { body = "mars", offset_km = [-12654, -22717, 1240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-pb-1"
+position = { body = "mars", offset_km = [-6516, -20487, -1000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lf6-pb-2"
+position = { body = "mars", offset_km = [-5823, -20887, -760] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-es-1"
+position = { body = "mars", offset_km = [10346, 17121, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-es-2"
+position = { body = "mars", offset_km = [9654, 17521, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-vs-1"
+position = { body = "mars", offset_km = [9307, -17721, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-vs-2"
+position = { body = "mars", offset_km = [10000, -17321, 240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-vs-3"
+position = { body = "mars", offset_km = [10693, -16921, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp1-1"
+position = { body = "mars", offset_km = [-60000, 800, 8000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp1-2"
+position = { body = "mars", offset_km = [-60000, 0, 8240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp1-3"
+position = { body = "mars", offset_km = [-60000, -800, 8000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp2-1"
+position = { body = "mars", offset_km = [60000, -800, -8000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp2-2"
+position = { body = "mars", offset_km = [60000, 0, -7760] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "tf3-lp2-3"
+position = { body = "mars", offset_km = [60000, 800, -8000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-strike-1"
+position = { body = "jupiter", offset_km = [-2026977, 2211350, 36240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-strike-2"
+position = { body = "jupiter", offset_km = [-2028449, 2209996, 36840] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-strike-3"
+position = { body = "jupiter", offset_km = [-2029922, 2208643, 36240] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-strike-4"
+position = { body = "jupiter", offset_km = [-2031394, 2207290, 36840] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-strike-5"
+position = { body = "jupiter", offset_km = [-2032867, 2205936, 36240] }
+
+# <<< task force 3
+# ---- the Classis's own: its tenders, in reserve by the Classis, and its cutters, patrolling Earth's well
+# Placeholder callsigns.
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-tenders-1"
+load = "loaded"
+position = { bullseye = "burn", aer = [0, 0, 1005000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-tenders-2"
+load = "loaded"
+position = { bullseye = "burn", aer = [0.1, 0, 1005000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-tenders-3"
+load = "loaded"
+position = { bullseye = "burn", aer = [359.9, 0, 1005000] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-patrol-1"
+position = { body = "earth", offset_km = [60000, 0, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-patrol-2"
+position = { body = "earth", offset_km = [-30000, 51962, 0] }
+
+[[contact]]
+fleet = "luna-classis-1"
+unit = "luna-patrol-3"
+position = { body = "earth", offset_km = [-30000, -51962, 0] }
+
+# ==== where jupiter-home's units start =========================================================
+# ---- the Jupiter Astrum Defence Force (JADF): the Jovian moons' own police, an ARCVS member world's ---
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-1"
+position = { body = "callisto", offset_km = [0, 15000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-2"
+position = { body = "callisto", offset_km = [3000, 15000, 500] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-3"
+position = { body = "callisto", offset_km = [-3000, 15000, -500] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "cew2-1"
+position = { body = "callisto", offset_km = [0, -15000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "cew2-2"
+position = { body = "callisto", offset_km = [3000, -15000, 500] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "cew2-3"
+position = { body = "callisto", offset_km = [-3000, -15000, -500] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-bs1-1"
+position = { body = "jupiter", offset_km = [-500, 1040000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-bs1-2"
+position = { body = "jupiter", offset_km = [0, 1040400, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-bs1-3"
+position = { body = "jupiter", offset_km = [500, 1040000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs1-1"
+position = { body = "io", offset_km = [-8600, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs1-2"
+position = { body = "io", offset_km = [-8200, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs1-3"
+position = { body = "io", offset_km = [-7800, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs1-4"
+position = { body = "io", offset_km = [-7400, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs2-1"
+position = { body = "io", offset_km = [7400, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs2-2"
+position = { body = "io", offset_km = [7800, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs2-3"
+position = { body = "io", offset_km = [8200, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs2-4"
+position = { body = "io", offset_km = [8600, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps1-1"
+position = { body = "io", offset_km = [-500, 8000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps1-2"
+position = { body = "io", offset_km = [0, 8400, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps1-3"
+position = { body = "io", offset_km = [500, 8000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps2-1"
+position = { body = "io", offset_km = [-500, -8000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps2-2"
+position = { body = "io", offset_km = [0, -7600, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps2-3"
+position = { body = "io", offset_km = [500, -8000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs3-1"
+position = { body = "europa", offset_km = [-8600, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs3-2"
+position = { body = "europa", offset_km = [-8200, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs3-3"
+position = { body = "europa", offset_km = [-7800, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs3-4"
+position = { body = "europa", offset_km = [-7400, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs4-1"
+position = { body = "europa", offset_km = [7400, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs4-2"
+position = { body = "europa", offset_km = [7800, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs4-3"
+position = { body = "europa", offset_km = [8200, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs4-4"
+position = { body = "europa", offset_km = [8600, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps3-1"
+position = { body = "europa", offset_km = [-500, 8000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps3-2"
+position = { body = "europa", offset_km = [0, 8400, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps3-3"
+position = { body = "europa", offset_km = [500, 8000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps4-1"
+position = { body = "europa", offset_km = [-500, -8000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps4-2"
+position = { body = "europa", offset_km = [0, -7600, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-ps4-3"
+position = { body = "europa", offset_km = [500, -8000, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs5-1"
+position = { body = "ganymede", offset_km = [-12600, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs5-2"
+position = { body = "ganymede", offset_km = [-12200, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs5-3"
+position = { body = "ganymede", offset_km = [-11800, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs5-4"
+position = { body = "ganymede", offset_km = [-11400, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-cs1-1"
+position = { body = "ganymede", offset_km = [11400, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-cs1-2"
+position = { body = "ganymede", offset_km = [11800, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-cs1-3"
+position = { body = "ganymede", offset_km = [12200, 300, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-cs1-4"
+position = { body = "ganymede", offset_km = [12600, 0, 0] }
+
+# ---- GHOST: the practice force. A PHALAENA flight beyond Mars, at the edge of what Task Force 3 sees:
+# the AESHNA's wide optics see a warm PHALAENA to about 29.4 million km; the flight stands at 97%,
+# 100% and 103% of that, out from Mars on the line from the Sun. Placeholder callsigns.
+[[contact]]
 id = "ghost"
+callsign = "Ghost flight"
+affiliation = "unknown"
+faction = "ghost"
+echelon = "flight"
+flag = "ghost-1"
+
+[[contact]]
+id = "ghost-1"
+callsign = "Ghost 1"
+affiliation = "unknown"
+echelon = "ship"
+formation = "ghost"
+class = "phalaena"
+position = { body = "mars", offset_km = [-2073703, 28478774, 647676] }
+
+[[contact]]
+id = "ghost-2"
+callsign = "Ghost 2"
+affiliation = "unknown"
+echelon = "ship"
+formation = "ghost"
+class = "phalaena"
+position = { body = "mars", offset_km = [-2137838, 29359561, 667707] }
+
+[[contact]]
+id = "ghost-3"
+callsign = "Ghost 3"
+affiliation = "unknown"
+echelon = "ship"
+formation = "ghost"
+class = "phalaena"
+position = { body = "mars", offset_km = [-2201973, 30240348, 687739] }
 
 # ---- the local picture --------------------------------------------------------------------------------
 [[contact]]

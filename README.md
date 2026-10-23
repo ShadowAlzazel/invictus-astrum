@@ -16,7 +16,7 @@ python serve.py                       # http://127.0.0.1:8010 (the simulation ru
 python serve.py --dev                 # the same, no sign-in: straight onto config.toml [dev] level as its side
 python serve.py --dev cislunar --side jadf   # (a level's id, a scenario's or a system's; any side of it)
 python tools/check.py                 # the data loads, sol-demo builds and flies a day: ~5 s, no server
-python -m pytest -q tests             # 240 tests (the map's math too, in node)
+python -m pytest -q tests             # 241 tests (the map's math too, in node)
 ```
 
 Working on it: `docs/DEVOPS.md` (what to run after which change, the tools, the tests);
@@ -226,8 +226,8 @@ above it comes down to it.
 | `profiles.toml` | combat profiles commanders made on the map (written by the map; not committed) |
 | `data/factions.toml` | factions: a name, the prefix a ship's name reads with, and whose branch (AVC, AAG of ARCVS) or member world's force (JADF) it is; units take theirs from the formation above |
 | `web/src/lib/adjutant.js` | the adjutant: her calls, their templates, her heading estimates (run in `adjutant.worker.js`) |
-| `data/fleets/*.toml` | fleets: a formation tree and its ships, its faction, the system it is placed in; see `data/fleets/README.md` |
-| `data/scenarios/*.toml` | a system, the fleets it brings in (`[[fleet]] id`), its own contacts (the local picture) and its orders; units have their stance, combat profile and crew (veterancy) if not the formation's; no weapon is simulated yet |
+| `data/fleets/*.toml` | fleets: what each unit is (`[[unit]]`: its formation tree and ships, faction, crew, stance and profile); see `data/fleets/README.md` |
+| `data/scenarios/*.toml` | a system; the fleets it loads (`[[fleet]] id`) and where their units start (`[[contact]]` fleet, unit, position, mode, status; the rest undeployed); its own contacts (GHOST, the local picture); its orders. No weapon is simulated yet |
 | `style.toml` | colours, affiliation frames, echelon marks, formation roles (built from blocks, each an APP-6 mark: battle, line, picket, supply, forward, point defence, escort, signal), body display sizes by role |
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |
 | `settings.toml` | display settings over `display.toml`, if you keep one (the map keeps yours in the browser); not committed |

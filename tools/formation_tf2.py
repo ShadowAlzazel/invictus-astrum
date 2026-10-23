@@ -1,4 +1,5 @@
-"""Write Task Force 2's formation into data/fleets/luna-classis-1.toml (between its markers).
+"""Write Task Force 2's formation into data/fleets/luna-classis-1.toml (its units) and
+data/scenarios/sol-demo.toml (where they start) (between its markers).
 
     python tools/formation_tf2.py
 
@@ -23,6 +24,7 @@ import re
 from pathlib import Path
 
 FLEET = Path(__file__).resolve().parent.parent / "data" / "fleets" / "luna-classis-1.toml"
+SCENARIO = FLEET.parent.parent / "scenarios" / "sol-demo.toml"
 BEGIN, END = "# >>> task force 2 (written by tools/formation_tf2.py)", "# <<< task force 2"
 BULLSEYE = "wedge"
 
@@ -76,24 +78,30 @@ squadron("tf2-lp1", "TF Picket 1", "tf-2", "phalaena", 3, (1_850_000, 350_000, 1
 squadron("tf2-lp2", "TF Picket 2", "tf-2", "phalaena", 3, (1_600_000, -700_000, -150_000), "TF Picket 2")
 
 lines = [BEGIN, "# Placeholder callsigns. Positions are AER from the Wedge Bullseye (data/players.toml).", ""]
+places = list(lines)                         # where they start: the scenario's
 for uid, name, ech, parent, cls, pos in units:
-    lines += ["[[contact]]", f'id = "{uid}"', f'callsign = "{name}"', 'affiliation = "friend"', f'echelon = "{ech}"',
+    lines += ["[[unit]]", f'id = "{uid}"', f'callsign = "{name}"', 'affiliation = "friend"', f'echelon = "{ech}"',
               f'formation = "{parent}"']
     if cls:
         lines.append(f'class = "{cls}"')
-    if uid == "tf-2":                            # the task force is where its flag is
-        lines.append('position = { unit = "tf2-lf1-bs-1" }')
-    if pos:
-        lines.append(f'position = {{ bullseye = "{BULLSEYE}", aer = {aer(*pos)} }}')
     lines.append("")
-lines.append(END)
-block = "\n".join(lines)
+    if uid == "tf-2":                            # the task force is where its flag is
+        places += ["[[contact]]", 'fleet = "luna-classis-1"', f'unit = "{uid}"', 'position = { unit = "tf2-lf1-bs-1" }', ""]
+    if pos:
+        places += ["[[contact]]", 'fleet = "luna-classis-1"', f'unit = "{uid}"', f'position = {{ bullseye = "{BULLSEYE}", aer = {aer(*pos)} }}', ""]
 
-text = FLEET.read_text(encoding="utf-8")
-if BEGIN in text:
-    text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _: block, text, flags=re.S)
-else:
-    text = text.rstrip() + "\n\n" + block + "\n"
-FLEET.write_text(text, encoding="utf-8")
+
+def write(path, block):
+    """The block between its markers in the file (else at its end)."""
+    text = path.read_text(encoding="utf-8")
+    if BEGIN in text:
+        text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _: block, text, flags=re.S)
+    else:
+        text = text.rstrip() + "\n\n" + block + "\n"
+    path.write_text(text, encoding="utf-8")
+
+
+write(FLEET, "\n".join(lines + [END]))
+write(SCENARIO, "\n".join(places + [END]))
 ships = sum(1 for u in units if u[2] == "ship")
-print(f"Task Force 2: {len(units)} units, {ships} ships, written to {FLEET.name}")
+print(f"Task Force 2: {len(units)} units, {ships} ships, written to {FLEET.name} and {SCENARIO.name}")

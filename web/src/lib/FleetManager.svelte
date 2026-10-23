@@ -95,7 +95,7 @@
     {#if fleet}
       <section class="head">
         <h2>{fleet.name}</h2>
-        <p class="dim">{fleet.faction_name} · placed in {fleet.system} · {fleet.formations} formations, {fleet.ships} ships · in {fleet.scenarios.join(', ') || 'no scenario'}</p>
+        <p class="dim">{fleet.faction_name} · placed in {fleet.system} · {fleet.formations} formations, {fleet.ships} ships · {fleet.scenarios.map((s) => `${s.id}: ${s.placed} placed${s.placed < fleet.ships ? `, ${fleet.ships - s.placed} undeployed` : ''}`).join(' · ') || 'in no scenario'}</p>
         {#if fleet.notes}<p>{fleet.notes}</p>{/if}
       </section>
 

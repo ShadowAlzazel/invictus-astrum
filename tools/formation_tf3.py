@@ -1,4 +1,5 @@
-"""Write Task Force 3 and the Luna Strike Squadron into data/fleets/luna-classis-1.toml (between
+"""Write Task Force 3 and the Luna Strike Squadron into data/fleets/luna-classis-1.toml (its units) and
+data/scenarios/sol-demo.toml (where they start) (between
 their markers).
 
     python tools/formation_tf3.py
@@ -36,6 +37,7 @@ from astrum.ephemeris import Ephemeris  # noqa: E402
 from astrum.loader import load_system  # noqa: E402
 
 FLEET = ROOT / "data" / "fleets" / "luna-classis-1.toml"
+SCENARIO = ROOT / "data" / "scenarios" / "sol-demo.toml"
 BEGIN, END = "# >>> task force 3 and the strike squadron (written by tools/formation_tf3.py)", "# <<< task force 3"
 RING = 20_000                                    # km from Mars to each flotilla
 SHIP_GAP = 800                                   # km between hulls in a squadron: tight
@@ -96,25 +98,30 @@ for i in range(5):
 
 lines = [BEGIN, "# Placeholder callsigns. Positions are carried with Mars (Task Force 3) and Jupiter (the strike",
          "# squadron), in system axes, km.", ""]
+places = list(lines)                         # where they start: the scenario's
 for uid, name, ech, parent, cls, place in units:
-    lines += ["[[contact]]", f'id = "{uid}"', f'callsign = "{name}"', 'affiliation = "friend"', f'echelon = "{ech}"',
+    lines += ["[[unit]]", f'id = "{uid}"', f'callsign = "{name}"', 'affiliation = "friend"', f'echelon = "{ech}"',
               f'formation = "{parent}"']
     if cls:
         lines.append(f'class = "{cls}"')
-    if uid == "tf-3":                            # the task force is where its flag is
-        lines.append('position = { unit = "tf3-lf4-bs-1" }')
-    if place:
-        body, off = place
-        lines.append(f'position = {{ body = "{body}", offset_km = [{", ".join(str(round(x)) for x in off)}] }}')
     lines.append("")
-lines.append(END)
-block = "\n".join(lines)
+    if uid == "tf-3":                            # the task force is where its flag is
+        places += ["[[contact]]", 'fleet = "luna-classis-1"', f'unit = "{uid}"', 'position = { unit = "tf3-lf4-bs-1" }', ""]
+    if place:
+        places += ["[[contact]]", 'fleet = "luna-classis-1"', f'unit = "{uid}"', f'position = {{ body = "{place[0]}", offset_km = [{", ".join(str(round(x)) for x in place[1])}] }}', ""]
 
-text = FLEET.read_text(encoding="utf-8")
-if BEGIN in text:
-    text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _: block, text, flags=re.S)
-else:
-    text = text.rstrip() + "\n\n" + block + "\n"
-FLEET.write_text(text, encoding="utf-8")
+
+def write(path, block):
+    """The block between its markers in the file (else at its end)."""
+    text = path.read_text(encoding="utf-8")
+    if BEGIN in text:
+        text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), lambda _: block, text, flags=re.S)
+    else:
+        text = text.rstrip() + "\n\n" + block + "\n"
+    path.write_text(text, encoding="utf-8")
+
+
+write(FLEET, "\n".join(lines + [END]))
+write(SCENARIO, "\n".join(places + [END]))
 ships = sum(1 for u in units if u[2] == "ship")
-print(f"Task Force 3 and the Luna Strike Squadron: {len(units)} units, {ships} ships, written to {FLEET.name}")
+print(f"Task Force 3 and the Luna Strike Squadron: {len(units)} units, {ships} ships, written to {FLEET.name} and {SCENARIO.name}")

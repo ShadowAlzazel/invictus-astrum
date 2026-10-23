@@ -1,5 +1,5 @@
-"""Fleets (astrum/fleets.py): kept apart from scenarios, brought in by them, edited by an admin, and
-played by a level as they stood when it started."""
+"""Fleets (astrum/fleets.py): what each unit is, kept apart from scenarios; placed by a scenario's
+contacts, the rest undeployed; edited by an admin; played by a level as they stood when it started."""
 import shutil
 
 import pytest
@@ -20,16 +20,16 @@ def data(tmp_path):
 
 def test_an_edit_changes_only_its_lines():
     from astrum.fleets import edit
-    text = (ROOT / "data" / "fleets" / "ghost.toml").read_text()
-    out = edit(text, {"ghost-1": {"callsign": "Wraith", "hull_number": "GH-1"}, "ghost-2": {"class": "dryad"}})
-    assert 'callsign = "Wraith"\nhull_number = "GH-1"' in out and 'id = "ghost-2"' in out
+    text = (ROOT / "data" / "fleets" / "jupiter-home.toml").read_text()
+    out = edit(text, {"jove-2": {"callsign": "Wraith", "hull_number": "JC-2"}, "jove-3": {"class": "dryad"}})
+    assert 'callsign = "Wraith"\nhull_number = "JC-2"' in out and 'id = "jove-3"' in out
     changed = [(a, b) for a, b in zip(text.splitlines(), out.splitlines()) if a != b]
     assert len(out.splitlines()) == len(text.splitlines()) + 1 and len(changed) >= 1
-    assert out.split("[[contact]]")[0] == text.split("[[contact]]")[0]             # the header and its comments
+    assert out.split("[[unit]]")[0] == text.split("[[unit]]")[0]                   # the header and its comments
     with pytest.raises(ValueError, match="no unit"):
         edit(text, {"nobody": {"callsign": "X"}})
     with pytest.raises(ValueError, match="can be changed"):
-        edit(text, {"ghost-1": {"position": "X"}})
+        edit(text, {"jove-2": {"position": "X"}})
 
 
 def test_only_an_admin_edits_and_a_bad_edit_is_undone(data):
@@ -44,16 +44,17 @@ def test_only_an_admin_edits_and_a_bad_edit_is_undone(data):
             return {"cookie": f"astrum_session={r.cookies['astrum_session']}"}
         fab, hal = signed("Fabian"), signed("Halsey")
         listed = c.get("/api/fleets", headers=hal).json()
-        assert not listed["admin"] and {f["id"]: f["ships"] for f in listed["fleets"]} == {"ghost": 3, "jupiter-home": 45, "luna-classis-1": 106}
-        assert c.put("/api/fleets/ghost", json={"units": {"ghost-1": {"callsign": "Wraith"}}}, headers=hal).status_code == 403
-        r = c.put("/api/fleets/ghost", json={"units": {"ghost-1": {"callsign": "Wraith"}}}, headers=fab)
-        assert r.status_code == 200 and next(u for u in r.json()["units"] if u["id"] == "ghost-1")["callsign"] == "Wraith"
-        assert 'callsign = "Wraith"' in (tmp / "fleets" / "ghost.toml").read_text()
-        assert app.state.world.scenarios["sol-demo"].contacts["ghost-1"].callsign == "Wraith"   # the next start has it
-        before = (tmp / "fleets" / "ghost.toml").read_text()
-        assert c.put("/api/fleets/ghost", json={"units": {"ghost-1": {"class": "nope"}}}, headers=fab).status_code == 400
-        assert c.put("/api/fleets/ghost", json={"units": {"ghost-9": {"callsign": "X"}}}, headers=fab).status_code == 400
-        assert (tmp / "fleets" / "ghost.toml").read_text() == before
+        assert not listed["admin"] and {f["id"]: f["ships"] for f in listed["fleets"]} == {"jupiter-home": 45, "luna-classis-1": 106}
+        assert listed["fleets"][0]["scenarios"] == [{"id": "sol-demo", "placed": 45}]
+        assert c.put("/api/fleets/jupiter-home", json={"units": {"jove-2": {"callsign": "Wraith"}}}, headers=hal).status_code == 403
+        r = c.put("/api/fleets/jupiter-home", json={"units": {"jove-2": {"callsign": "Wraith"}}}, headers=fab)
+        assert r.status_code == 200 and next(u for u in r.json()["units"] if u["id"] == "jove-2")["callsign"] == "Wraith"
+        assert 'callsign = "Wraith"' in (tmp / "fleets" / "jupiter-home.toml").read_text()
+        assert app.state.world.scenarios["sol-demo"].contacts["jove-2"].callsign == "Wraith"   # the next start has it
+        before = (tmp / "fleets" / "jupiter-home.toml").read_text()
+        assert c.put("/api/fleets/jupiter-home", json={"units": {"jove-2": {"class": "nope"}}}, headers=fab).status_code == 400
+        assert c.put("/api/fleets/jupiter-home", json={"units": {"jove-99": {"callsign": "X"}}}, headers=fab).status_code == 400
+        assert (tmp / "fleets" / "jupiter-home.toml").read_text() == before
     app.state.sim.close()
 
 
@@ -67,11 +68,53 @@ def test_a_level_plays_the_copy_it_started_with(data):
     w.played("cislunar", "start")
     f = w.fleet(w.scenarios["sol-demo"])
     f.reach(f.t0 + 3600)
-    path = tmp / "fleets" / "ghost.toml"
-    path.write_text(edit(path.read_text(), {"ghost-1": {"callsign": "Wraith"}}))
+    path = tmp / "fleets" / "jupiter-home.toml"
+    path.write_text(edit(path.read_text(), {"jove-2": {"callsign": "Wraith"}}))
     w.reload()
-    assert w.fleet(w.scenarios["sol-demo"]) is f and w.scenarios["sol-demo"].contacts["ghost-1"].callsign == "Ghost 1"
+    assert w.fleet(w.scenarios["sol-demo"]) is f and w.scenarios["sol-demo"].contacts["jove-2"].callsign == "Jove 2"
     w.played("cislunar", "restart")
-    assert w.scenarios["sol-demo"].contacts["ghost-1"].callsign == "Wraith" and w.fleet(w.scenarios["sol-demo"]) is not f
+    assert w.scenarios["sol-demo"].contacts["jove-2"].callsign == "Wraith" and w.fleet(w.scenarios["sol-demo"]) is not f
     w.played("cislunar", "stop")
-    assert not w.held and w.scenarios["sol-demo"].contacts["ghost-1"].callsign == "Wraith"
+    assert not w.held and w.scenarios["sol-demo"].contacts["jove-2"].callsign == "Wraith"
+
+
+def test_a_scenario_places_what_it_names_and_the_rest_is_undeployed(tmp_path):
+    """Two of the Home Force's ships placed: they and the formations above them come; the rest
+    of the fleet is undeployed; a unit the fleet has not is a finding; a fleet's unit never says
+    where she starts."""
+    from astrum.fleets import load_fleet, load_fleets
+    from astrum.loader import load_scenario
+    fleets, _ = load_fleets(ROOT / "data" / "fleets")
+    (tmp_path / "s.toml").write_text('''[scenario]
+id = "s"
+system = "sol"
+player = "arcvs"
+factions = ["jadf"]
+
+[[fleet]]
+id = "jupiter-home"
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-1"
+position = { body = "callisto", offset_km = [0, 15000, 0] }
+status = ["cold"]
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-fs1-2"
+position = { body = "io", offset_km = [-8000, 0, 0] }
+
+[[contact]]
+fleet = "jupiter-home"
+unit = "jove-77"
+position = { body = "io", offset_km = [0, 0, 0] }
+''')
+    sc = load_scenario(tmp_path / "s.toml", fleets)
+    assert list(sc.contacts) == ["jupiter-home", "jove", "jove-1", "io-tg", "jove-fs1", "jove-fs1-2"]
+    assert sc.contacts["jove-1"].status == ("cold",) and sc.contacts["jove-fs1-2"].faction == "jadf"
+    assert len(sc.undeployed["jupiter-home"]) == 43 and sc.findings == ("jove-77: not a unit of fleet 'jupiter-home'",)
+    bad = tmp_path / "bad.toml"
+    bad.write_text('[fleet]\nid = "bad"\nfaction = "jadf"\nsystem = "sol"\n\n[[unit]]\nid = "x"\nposition = { body = "io" }\n')
+    with pytest.raises(ValueError, match="scenario's"):
+        load_fleet(bad)

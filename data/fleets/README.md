@@ -1,13 +1,19 @@
 # Fleets
 
-One file per fleet, named for its id: a formation tree and its ships, kept apart from any scenario
-(`astrum/fleets.py`). A scenario brings a fleet in with `[[fleet]] id = "<id>"`; its units join the
-scenario's own, all placed at its start. A level plays a copy of its scenarios and fleets as they
-stood when it started, so editing a fleet changes the next start, not a game in progress.
+One file per fleet, named for its id: what each of its units is (a formation tree and its ships),
+kept apart from where any scenario puts them (`astrum/fleets.py`).
 
-The Fleets screen on the main menu shows every fleet; an admin (`role = "admin"` in
-`data/users.toml`, and the `--dev` user) can rename its units and change a ship's hull number or
-class there. Edits are written into the file, line by line, so its comments stay.
+A scenario loads the fleets it names (`[[fleet]] id = "<id>"`), then places their units: a
+`[[contact]]` with `fleet` and `unit` says where and how that unit starts. Every formation above
+a placed unit comes with her. A fleet's ships the scenario does not place are undeployed (that is
+fine); a contact naming a unit its fleet has not is a finding, and is left out. A level plays a
+copy of its scenarios and fleets as they stood when it started, so editing a fleet changes the
+next start, not a game in progress.
+
+The Fleets screen on the main menu shows every fleet, as a chart or a table; an admin
+(`role = "admin"` in `data/users.toml`, and the `--dev` user) renames its units and changes a
+ship's hull number or class there. Edits are written into the file, line by line, so its comments
+stay.
 
 ## A fleet
 
@@ -16,37 +22,42 @@ class there. Edits are written into the file, line by line, so its comments stay
 id = "luna-classis-1"          # = the file name
 name = "Luna Classis I"
 faction = "avc"                # data/factions.toml; a unit with no formation above it takes it
-system = "sol"                 # where its positions are read: its bodies, the scenario player's bullseyes
+system = "sol"                 # the system its scenarios place it in
 notes = "..."
 ```
 
-## A unit
+## A unit: what she is
 
 ```toml
-[[contact]]
-id = "kiki-1"                  # unique across a scenario and every fleet it brings in
+[[unit]]
+id = "kiki-1"                  # unique across a scenario and every fleet it loads
 callsign = "Kiki"
 affiliation = "friend"         # friend, hostile, unknown, neutral; else the formation's above
 echelon = "ship"               # ship, flight, group, squadron, flotilla, task-force, classis, armada
 formation = "kiki"             # the formation above it, in the same fleet
 class = "papilion"             # a ship: a class in data/ships/classes; her symbol and her figures
-position = { bullseye = "burn", aer = [0, 0, 2000] }    # or { body = "earth", offset_km = [x, y, z] }
+hull_number = "BBC-382"        # her pennant, shown beside her name
 ```
 
-A ship may also say:
-- `load = "light"`: her ammunition load, one of her class's hull masses (else the heaviest)
-- `propellant = 0.8`: the share of her tanks she starts with (else full)
-- `mode = "free"`: fly from the start instead of holding station
-- `hull_number = "BBC-382"`: her pennant, shown beside her name
-- `status = ["cold"]`, `veterancy`, `stance`, `profile`
+A formation may say `flag = "<ship>"` (its leader: the ship under it its reports go through to the
+fleet flagship; else the ship it is placed on, else its first ship; `astrum/relay.py`) and
+`role = "battle"` (one of `style.toml [formation_role]`; else a word of its callsign gives it). Any
+unit takes its affiliation, faction, veterancy, stance and profile from the formation above it,
+unless it states its own.
 
-A formation may say:
-- `flag = "<ship>"`: its leader, the ship under it its reports go through to the fleet flagship (else
-  the ship it is placed on, else its first ship; `astrum/relay.py`)
-- `role = "battle"`: one of `style.toml [formation_role]`; else a word of its callsign gives it
-  ("Line Flotilla 1", "Forward Scout 2")
-- a `position` of its own, else it stands at the mean of its members
+## A placement: where and how she starts (in the scenario)
 
-Any unit takes its affiliation, faction, veterancy, stance and profile from the formation above
-it, unless it states its own. Holding station is not free: she follows her place in the bullseye's
-frame, and her tanks pay for every bit of it that is not an orbit.
+```toml
+[[contact]]
+fleet = "luna-classis-1"
+unit = "kiki-1"
+position = { bullseye = "burn", aer = [0, 0, 2000] }    # or { body = "earth", offset_km = [x, y, z] }, or { unit = "<ship>" }
+status = ["cold"]              # as she starts
+```
+
+It may also say `mode = "free"` (fly from the start instead of holding station), `propellant = 0.8`
+(the share of her tanks she starts with), `load = "light"` (her ammunition load, one of her class's
+hull masses), and a `stance` or `profile` of its own. A formation needs no placement: it stands
+where it is placed, if it is, else at the mean of its members. Holding station is not free: she
+follows her place in the bullseye's frame, and her tanks pay for every bit of it that is not an
+orbit.

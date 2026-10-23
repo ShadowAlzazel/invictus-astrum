@@ -52,7 +52,9 @@ def test_shipped_settings_and_data_load():
     fleets, fleet_errors = load_fleets(cfg["paths"]["fleets"])
     scenarios, errors = load_scenarios(cfg["paths"]["scenarios"], fleets)
     assert not fleet_errors and not errors and "sol-demo" in scenarios
-    assert scenarios["sol-demo"].fleets == ("luna-classis-1", "jupiter-home", "ghost") and "kiki-1" in scenarios["sol-demo"].contacts
+    sc = scenarios["sol-demo"]
+    assert sc.fleets == ("luna-classis-1", "jupiter-home") and "kiki-1" in sc.contacts and "ghost-1" in sc.contacts
+    assert not sc.undeployed and not sc.findings
 
 
 def test_the_run_ahead_worker_is_a_setting(tmp_path):

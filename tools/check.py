@@ -54,6 +54,10 @@ def scenario(w: World, sid: str, hours: float) -> int:
         own = picture.own_rows(f, w.factions, fid)
         by = Counter(c for c, mine in zip(classes, own) if mine)
         print(f"  {fid:<8} {int(own.sum()):>4}  " + ", ".join(f"{n} {c}" for c, n in by.most_common()))
+    for fid, left in sc.undeployed.items():
+        print(f"  undeployed: {len(left)} of {fid}'s ships (in the fleet, not placed)")
+    for x in sc.findings:
+        print(f"  [finding] {x}")
     errors = len(f.findings)
     t = time.perf_counter()
     f.reach(f.t0 + hours * 3600)
