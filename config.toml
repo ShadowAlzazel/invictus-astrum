@@ -21,7 +21,7 @@ auth = true            # sign in (data/users.toml), and every request is made as
 pictures = "push"      # "push": the server sends each map in a running level picture_hz pictures a second, unasked
                        # (the map draws 0.1 s behind the newest); "ask": each map asks for its next as each lands,
                        # up to 60 a second, its clock timed by the round trip (smoothest on one machine or a LAN)
-picture_hz = 20        # pictures a second the server sends each map in a running level, unasked
+picture_hz = 60        # pictures a second the server sends each map in a running level, unasked
 orders_limit = 100     # orders one user may give ...
 orders_span_s = 10.0   # ... in this many seconds; more are refused until the span has passed
 log = "logs/web.log"   # who connected, signed in, acted in a lobby, gave an order (and the console)
