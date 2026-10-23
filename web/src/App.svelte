@@ -317,11 +317,13 @@
   }
 
   // ---- pointer ----------------------------------------------------------------------------------
+  // the mark under the cursor; a body's disk only near its centre (zoomed in, the rest of its face is a point)
+  const BODY_HIT_PX = 24;
   function markAt(x, y) {
     let best = null, bd = Infinity;
     for (const m of map.marks) {
       const d = Math.hypot(m.x - x, m.y - y);
-      if (d < m.r + 8 && d < bd) { bd = d; best = m; }
+      if (d < (m.kind === 'body' ? Math.min(m.r, BODY_HIT_PX) : m.r) + 8 && d < bd) { bd = d; best = m; }
     }
     return best;
   }
@@ -331,7 +333,7 @@
   let ruler = null;                     // { a, b }: system-frame km, b null while it follows the cursor
   function rulerPoint(x, y) {
     const m = markAt(x, y);
-    return (m && map.position({ kind: m.kind, id: m.id })) || map.planeAt(x, y);
+    return (m && map.position({ kind: m.kind, id: m.id })) || map.pointAt(x, y);
   }
   async function pointerUp(e) {
     if (ruler && down && down.b === 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) {
@@ -347,7 +349,7 @@
     if (!down || down.b !== 0 || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return;
     const m = markAt(e.clientX, e.clientY);
     if (m) { if (m.group) pickGroup(m.group, down.shift); else if (down.shift && m.kind === 'contact') pick(m.id); else select({ kind: m.kind, id: m.id }); return; }
-    const p = map.planeAt(e.clientX, e.clientY);
+    const p = map.pointAt(e.clientX, e.clientY);
     if (!p) return select(null);
     select({ kind: 'point', p });
     probe = await api.probe(systemId, p, t, playerId, bullseyeId);

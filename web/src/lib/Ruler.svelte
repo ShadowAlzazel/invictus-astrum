@@ -23,7 +23,7 @@
   }
   function here() {
     const m = markAt(cursor.x, cursor.y);
-    return (m && map.position({ kind: m.kind, id: m.id })) || map.planeAt(cursor.x, cursor.y);
+    return (m && map.position({ kind: m.kind, id: m.id })) || map.pointAt(cursor.x, cursor.y);
   }
   function tick(p, color) {
     ctx.strokeStyle = color; ctx.lineWidth = 1.4;

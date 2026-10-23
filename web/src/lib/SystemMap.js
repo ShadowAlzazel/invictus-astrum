@@ -279,6 +279,16 @@ export class SystemMap {
     return [p[0] + this.focus[0], p[1] + this.focus[1], p[2] + this.focus[2]];
   }
 
+  // the point a click means: on the bullseye's plane, unless the view is centred farther from that
+  // plane than the camera is from the centre (zoomed in on something off it), or the click misses
+  // it; then on the plane parallel to it through the centre of the view
+  pointAt(px, py) {
+    const b = this.bullseye();
+    if (!b) return null;
+    const off = Math.abs(dot(sub(this.focus, b.origin), b.axes[2]));
+    return (off <= this.camera.position.length() && this.planeAt(px, py)) || this.planeAt(px, py, this.focus);
+  }
+
   // bearing, elevation, range from the active bullseye (display geometry on server-sent axes)
   aer(p) {
     const b = this.bullseye();

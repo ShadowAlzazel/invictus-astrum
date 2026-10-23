@@ -117,7 +117,7 @@
       ctx.beginPath(); ctx.moveTo(hx + gap, hy); ctx.lineTo(W, hy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, hy - gap); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(hx, hy + gap); ctx.lineTo(hx, H); ctx.stroke();
-      if (C.notches && map?.state) notches(hx, hy, lock ? map.position(hover) : map.planeAt(mx, my), col(V, 0.5), px);
+      if (C.notches && map?.state) notches(hx, hy, lock ? map.position(hover) : map.pointAt(mx, my), col(V, 0.5), px);
     }
 
     ctx.strokeStyle = col(lock ? F : V, 0.95);
@@ -136,7 +136,7 @@
         if (p && C.readout) text(readout(p), dx + d + 8, dy + 1 + px, col(V, 0.85), px);
         tick(p, col(V, 0.8));
       } else {
-        const p = map.planeAt(mx, my);
+        const p = map.pointAt(mx, my);
         const a = p && map.aer(p);
         if (a && C.readout) text(`${bearing(a.bearing)}  ${km(a.range)}`, dx + d + 8, dy + 4, col(V, 0.6), px);
       }
