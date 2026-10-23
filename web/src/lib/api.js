@@ -74,8 +74,10 @@ export class StateStream {
     this.ws = new WebSocket(`${proto}://${location.host}/ws`);
     this.ws.onopen = () => { if (this.watching) this.ws.send(this.watching); this._send(); };
     this.ws.onmessage = (e) => {
-      const dt = (performance.now() - this._sent) / 1000;
-      this.rtt = this.rtt ? 0.8 * this.rtt + 0.2 * dt : dt;
+      if (this.busy) {                               // an answer to what was asked: its round trip (a pushed picture has none)
+        const dt = (performance.now() - this._sent) / 1000;
+        this.rtt = this.rtt ? 0.8 * this.rtt + 0.2 * dt : dt;
+      }
       this.busy = false; this.tap?.(e.data); this.onstate(JSON.parse(e.data)); this._send();
     };
     this.ws.onclose = () => { this.busy = false; setTimeout(() => this._open(), 1000); };

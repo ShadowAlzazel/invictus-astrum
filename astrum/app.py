@@ -1190,7 +1190,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             while True:
                 req = await sock.receive_json()
                 if req.get("level"):                     # a level's: watched, and sent PICTURE_HZ a second unasked
-                    w.req = {**req, "lead": 2 / hz}
+                    w.req = {**req, "lead": 2 / hz, "step": 1 / hz}      # two pushes ahead, on moments a push apart
                     watching[conn] = w
                     await send_picture(w)
                 else:                                    # a system's bodies, at the moment it says: answered once

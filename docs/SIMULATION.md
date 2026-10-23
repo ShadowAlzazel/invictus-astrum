@@ -744,9 +744,12 @@ to the simulation as level calls. Off (tests, tools), each request says its own.
 **One picture per side and moment, pushed.** A map watching a running level asks once (again
 only when what it asks for changes: its system, its picture's switches); the web process then
 sends it `picture_hz` pictures a second (20), each two of those ahead of the level's clock, one in
-flight a map at most (a slow one is skipped, not queued). A level's pictures fall on moments 50 ms
-of its wall time apart (rounded up from the moment asked), so every map of a side asks for the
-same one. It is made once (`SimHost._picture`: the ships read off the timeline, the
+flight a map at most (a slow one is skipped, not queued). A level's pictures fall on moments a push
+apart (rounded up from the moment asked), so every map of a side asks for the same one. The map
+does not time them by their round trip (a pushed picture has none): it draws a tenth of a second
+of the clock's wall time behind the newest picture it was sent, running on at the warp and eased
+onto each new one, so there is always a picture after the moment it draws, and keeps the last
+twelve to draw between. It is made once (`SimHost._picture`: the ships read off the timeline, the
 side's view and tracks, the bodies, bullseyes and units placed, the message's JSON) and kept a few
 moments; each map is then sent only what changed of the ships since its own last picture. Any
 order, a withdrawal, a dismissed track or a level action, and every new event in the order book (the

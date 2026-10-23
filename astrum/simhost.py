@@ -58,7 +58,7 @@ ORDER_BUDGET_S = 0.05         # ... and an order: past it, the order waits for t
 LOOKAHEAD_WALL_S = 3.0        # the run-ahead keeps this much of the clock's wall time ahead ...
 LOOKAHEAD_S = (600.0, 12 * 3600.0)   # ... within these (sim seconds); the timeline holds a day and a half
 LEAD_WALL_S = 0.25            # a picture is asked for at most this much of the clock's wall time ahead
-SHARE_WALL_S = 0.05           # a running level's pictures fall on moments this much of its wall time apart, shared by a side
+SHARE_WALL_S = 0.05           # a running level's pictures fall on moments this much of its wall time apart, shared by a side (else req["step"])
 SHARED_KEPT = 16              # pictures kept to share (a few moments of every side watching)
 ARRIVALS_POLL_S = 0.005       # how often the arrivals thread looks for questions
 BRAKE_SHARE = 0.9             # of what she holds, what guidance brakes with (kernels._guide): where a halt comes to rest
@@ -671,8 +671,8 @@ class SimHost:
             now = clock.now()
             warp = 0.0 if clock.paused else clock.warp
             t = now + warp * min(max(float(req.get("lead") or 0.0), 0.0), LEAD_WALL_S)
-            if warp > 0:                                 # on the side's shared moments
-                q = warp * SHARE_WALL_S
+            if warp > 0:                                 # on the side's shared moments (as far apart as the pushes, if it says)
+                q = warp * min(max(float(req.get("step") or SHARE_WALL_S), 0.005), 1.0)
                 t = math.ceil(t / q) * q
             sc = world.scenarios.get(lv.scenario_in(sid) or "")
         else:

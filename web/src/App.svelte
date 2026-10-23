@@ -70,6 +70,7 @@
   // level (a system's preview behind the menus, the workshop) the map keeps a clock of its own
   let t = 0, warpS = 3600, paused = true, last = 0, raf;
   let clockAt = null;                   // { t, warp, paused, wall }: the level's clock, as the last picture told it
+  const BUFFER_S = 0.1;                 // drawn this far behind the newest picture: two pushes (and their jitter) to draw between
   let levels = [], levelId = null, listed = null, levelNote = '';   // Play's list, the level on the map, the one chosen in the list
   $: level = levels.find((l) => l.id === levelId) ?? null;
   const scenarioIn = (lid, sid) => levels.find((l) => l.id === lid)?.systems.find((x) => x.id === sid)?.scenario ?? null;
@@ -256,7 +257,9 @@
   function onstate(s) {
     if (s.stopped) { if (s.stopped === levelId) leaveLevel(`${level?.name ?? s.stopped} is not running on the server: it was stopped, or the server started again.`); return; }
     if (s.error) { error = s.error; return; }
-    if (s.clock?.level === levelId) clockAt = { ...s.clock, wall: performance.now() - 500 * stream.rtt };   // (sent half a round trip ago)
+    // a level's clock, from the pictures themselves: the map draws BUFFER_S of the clock's wall time
+    // behind the newest it was sent, so there is always a picture after the moment it draws
+    if (s.clock?.level === levelId) clockAt = { ...s.clock, t: s.t - (s.clock.paused ? 0 : s.clock.warp * BUFFER_S), wall: performance.now() };
     if (s.system !== systemId) return;
     s.ships = mergeShips(state?.system === s.system ? state.ships : null, s.ships ?? {}, s.full);
     if (!s.tracks) s.tracks = s.full ? {} : state?.tracks ?? {};     // sent when they change
@@ -271,8 +274,8 @@
     const dt = last ? Math.min((now - last) / 1000, 0.25) : 0;
     last = now;
     if (clockAt) {                                  // the level's: on from the last picture's word, eased onto it
-      const w = clockAt.paused ? 0 : clockAt.warp, there = clockAt.t + (w * (now - clockAt.wall)) / 1000;
-      t = Math.abs(there - t) > Math.max(60, 2 * w) ? there : t + dt * w + (there - t) * Math.min(1, 4 * dt);
+      const w = clockAt.paused ? 0 : clockAt.warp, there = clockAt.t + (w * (now - clockAt.wall)) / 1000, run = t + dt * w;
+      t = Math.abs(there - run) > Math.max(60, 2 * w) ? there : run + (there - run) * Math.min(1, 4 * dt);   // (run on, then eased: no lead of a frame)
     } else if (!paused) t += dt * warpS;
     map.setClock(t);
     // a picture a round trip or two ahead of the clock, so the one after it is there: a level's, at

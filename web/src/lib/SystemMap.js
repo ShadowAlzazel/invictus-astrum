@@ -168,7 +168,7 @@ export class SystemMap {
   // once at the start of a frame, so the scene, the overlay and the cursor all draw the same instant.
   setState(state) {
     const keep = this._frames.filter((f) => f.system === state.system && f.t < state.t - 1e-6);
-    this._frames = [...keep, state].slice(-5);
+    this._frames = [...keep, state].slice(-12);         // (a third of a second of pictures pushed even 40 a second: the clock draws 0.1 s behind the newest)
   }
   setClock(t) { this._clock = t; }
   onFrame(fn) { this._hooks.add(fn); return () => this._hooks.delete(fn); }
