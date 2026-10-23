@@ -13,7 +13,9 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 234 tests (the map's math too, in node)
+python serve.py --dev                 # the same, no sign-in: straight onto config.toml [dev] level as its side
+python serve.py --dev cislunar --side jadf   # (a level's id, a scenario's or a system's; any side of it)
+python -m pytest -q tests             # 236 tests (the map's math too, in node)
 ```
 
 The map asks you to **sign in**: the users are `data/users.toml` (Halsey, Nimitz, Fabian and

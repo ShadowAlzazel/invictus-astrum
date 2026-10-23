@@ -1,5 +1,5 @@
 <script>
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { SystemMap } from './lib/SystemMap.js';
   import { api, StateStream } from './lib/api.js';
   import { cap, is, keymap } from './lib/keys.js';
@@ -98,6 +98,7 @@
   // order is made, on the server, as the lobby grants (its level, your side). With the server's
   // auth off, none of it: Play lists the levels and starts them, as one host alone
   let you = null, authOn = false, lobbySock = null, lobbies = [];
+  let devEnter = false;                 // serve.py --dev: onto the lobby's level as soon as it shows started
   $: mine = lobbies.find((lb) => lb.members.some((m) => m.user === you)) ?? null;
   $: amHost = mine?.host === you;
   $: amTimer = amHost || !!mine?.rules?.anyone_speed;      // may pause the level and set its warp (the host's rule)
@@ -632,6 +633,7 @@
   $: { clearInterval(listPoll); if (mode === 'levels' && purpose === 'play' && !authOn) listPoll = setInterval(loadLevels, 2000); }
   // in a lobby, its level behind the list
   $: if (mode === 'levels' && purpose === 'play' && mine && mine.level !== listed && levels.length) previewLevel(mine.level);
+  $: if (devEnter && mine && levels.find((l) => l.id === mine.level)?.clock) { devEnter = false; purpose = 'play'; tick().then(() => enter(mine.level)); }   // (after this update: enter's own changes then update the map)
 
   async function openWorkshop(id, copy) {
     schema ??= await api.workshop.schema();
@@ -686,7 +688,7 @@
       await loadMeta();
       await openSystem(meta.systems.find((s) => s.id === 'sol')?.id ?? meta.systems[0].id);   // behind the menu: still
       await loadLevels();
-      ({ auth: authOn, user: you, pictures: pictureMode = 'push' } = await api.me());
+      ({ auth: authOn, user: you, pictures: pictureMode = 'push', dev: devEnter = false } = await api.me());
       if (authOn && !you) mode = 'signin';
       else if (authOn) openLobby();
     } catch (e) { error = 'Cannot reach the server. Start it with: python serve.py'; }

@@ -39,7 +39,7 @@ def _members(m):
 def test_signing_in(server):
     app, c = server
     assert c.post("/api/signin", json={"name": "halsey", "password": "nope"}).status_code == 401
-    assert c.get("/api/me").json() == {"user": None, "auth": True, "lobby": None, "pictures": "push"}
+    assert c.get("/api/me").json() == {"user": None, "auth": True, "dev": False, "lobby": None, "pictures": "push"}
     h = _signed(c, "halsey")                             # (any case)
     assert c.get("/api/me", headers=h).json()["user"] == "Halsey"
     assert c.post("/api/order", json={}, headers=h).status_code != 401
@@ -200,4 +200,26 @@ def test_asked_pictures_are_answered_once_each():
                 ws.send_json({"level": "cislunar", "system": "sol", "lead": 0.02, "step": 1 / 60})
                 second = ws.receive_json()
         assert first["full"] and not second["full"] and second["t"] - first["t"] > 3600 * 0.25  # fresh: not one pushed and queued since
+    app.state.sim.close()
+
+
+def test_dev_needs_no_sign_in():
+    """serve.py --dev: every browser is [dev] user, already the host of a lobby of [dev] level (a
+    scenario's id will do), on its side, the level started; pictures as [dev] says."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    from astrum.config import load_config
+    cfg = load_config()
+    cfg["dev"] = {**cfg["dev"], "level": "sol-demo", "side": "jadf", "pictures": "ask"}
+    app = create_app(cfg, dev=True)
+    with TestClient(app) as c:
+        me = c.get("/api/me").json()
+        assert (me["user"], me["dev"], me["pictures"], me["lobby"] is not None) == ("dev", True, "ask", True)
+        with c.websocket_connect("/ws/lobby") as lobby:
+            m = _until(lobby, lambda m: _members(m).get("dev"))
+        assert _members(m)["dev"] == "jadf" and next(x for x in m["levels"] if x["id"] == "cislunar")["clock"]
+        assert c.get("/api/meta?view=arcvs").json()["scenarios"][0]["view"] == "jadf"   # as the lobby grants, whatever it says
+        with c.websocket_connect("/ws") as ws:
+            ws.send_json({"level": "cislunar", "system": "sol"})
+            assert ws.receive_json()["full"]                          # asked: answered
     app.state.sim.close()

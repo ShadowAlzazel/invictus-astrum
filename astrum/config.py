@@ -25,6 +25,7 @@ CONFIG_SCHEMA = {
     "paths": {"systems": str, "scenarios": str, "players": str, "style": str, "ships": str,
               "display": str, "settings": str, "bullseyes": str, "profiles": str, "levels": str, "users": str},
     "server": {"host": str, "port": int, "auth": bool, "pictures": str, "picture_hz": int, "orders_limit": int, "orders_span_s": float, "log": str},
+    "dev": {"user": str, "level": str, "side": str, "pictures": str},
     "live": {"check_seconds": float},
     "sim": {"start": str, "orbit_samples": int, "table_days": float, "run_ahead": bool, "ai": bool},
     "picture": None,               # astrum/switches.py: every switch, its type and range

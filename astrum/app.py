@@ -681,14 +681,18 @@ def level_dict_of(world: "World", lv: Level, clock: dict | None) -> dict:
                         for x in lv.systems]}
 
 
-def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool = False, auth: bool | None = None) -> FastAPI:
+def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool = False, auth: bool | None = None,
+               dev: bool = False) -> FastAPI:
     """The web server. The simulation answers its pictures and orders: in a process of its own
     (sim="process", as serve.py runs it), or in this one (sim="inline", sharing this world: for
     tests and tools). run_ahead: a worker keeps the fleet flown ahead of the map's clock (serve.py
     takes it from config.toml's [sim] run_ahead). auth (else [server] auth): users sign in, and
     every request is made as their lobby grants (its level, their side, its player), whatever it
-    says; off, each request says its own (tests and tools)."""
+    says; off, each request says its own (tests and tools). dev (serve.py --dev): no sign-in, every
+    browser [dev] user, host of a lobby of [dev] level on [dev] side, started as the server starts."""
     config = config or load_config()
+    if dev:
+        auth, config = True, {**config, "server": {**config["server"], "pictures": config["dev"]["pictures"]}}
     world = World(config)
     if sim == "process":
         from .simhost import ProcessSim
@@ -699,6 +703,8 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     @asynccontextmanager
     async def lifespan(_):
         pumping = asyncio.create_task(pump())
+        if dev:
+            await dev_lobby()
         yield
         pumping.cancel()
         sim.close()
@@ -717,7 +723,21 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     pushing = asyncio.Lock()                             # one push at a time: a socket is sent to by one sender
 
     def user_of(conn) -> str | None:
-        return accounts.who(conn.cookies.get(COOKIE))
+        return accounts.who(conn.cookies.get(COOKIE)) or (config["dev"]["user"] if dev else None)
+
+    async def dev_lobby() -> None:
+        """--dev: [dev] user's lobby of [dev] level (a level's id, a scenario's or a system's), on
+        [dev] side (else the level's first), its level started."""
+        d = config["dev"]
+        lv = world.levels.get(d["level"]) or world.level_of(d["level"]) or world.levels.get(f"system:{d['level']}")
+        if lv is None:
+            raise SystemExit(f"--dev: no level, scenario or system {d['level']!r} (levels: {', '.join(world.levels)})")
+        lb, _ = lobbies.make(d["user"], lv.id)
+        sides = [x["id"] for x in sides_of(lv)]
+        lb.choose(d["user"], d["side"] if d["side"] in sides else sides[0], False)
+        if not (out := await sim.call("level", {"id": lv.id, "do": "start"}))["ok"]:
+            raise SystemExit(f"--dev: {out['detail']}")
+        log.info("dev: %s hosts %s as %s", d["user"], lv.id, lb.members[d["user"]])
 
     def where(conn) -> str:
         """The machine a request or a socket comes from, for the log."""
@@ -848,7 +868,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     def me(request: Request):
         """Who this browser is signed in as (None), and whether the server asks."""
         user = user_of(request)
-        return {"user": user, "auth": auth, "lobby": (lb := lobbies.of(user)) and lb.id,
+        return {"user": user, "auth": auth, "dev": dev, "lobby": (lb := lobbies.of(user)) and lb.id,
                 "pictures": "ask" if config["server"].get("pictures") == "ask" else "push"}
 
     @app.websocket("/ws/lobby")

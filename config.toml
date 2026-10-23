@@ -26,6 +26,12 @@ orders_limit = 100     # orders one user may give ...
 orders_span_s = 10.0   # ... in this many seconds; more are refused until the span has passed
 log = "logs/web.log"   # who connected, signed in, acted in a lobby, gave an order (and the console)
 
+[dev]                  # python serve.py --dev: no sign-in, on this machine alone; every browser is this user,
+user = "dev"           # host of a lobby of this level (a level's id, or a scenario's, or a system's), on this side,
+level = "sol-demo"     # started, and the map taken at once
+side = "arcvs"
+pictures = "ask"       # as [server] pictures, for --dev
+
 [live]
 check_seconds = 2      # how often the server looks for edits to data/ and style.toml
 
