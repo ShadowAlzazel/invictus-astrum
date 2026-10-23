@@ -35,20 +35,19 @@ label = "Folding"
 declutter_px = { default = 14, min = 0, max = 60, step = 1, label = "A body folds into its parent within (px)" }
 # Units closer than aggregate_px on screen link into a cluster; a formation folds its biggest cluster
 # into its own symbol and leaves its outlying units (far pickets) drawn at their own echelon.
-aggregate_px = { default = 40, min = 0, max = 160, step = 1, label = "Units fold into their formation within (px)" }
+aggregate_px = { default = 40, min = 0, max = 160, step = 1, label = "Units fold within (px): into their formation, or into a group" }
 # A formation's symbol stands for its main body: the folded cluster must hold more than this share
 # of its ships, or the formation stays open and its parts are drawn as themselves.
 core_share   = { default = 0.5, min = 0.0, max = 0.95, step = 0.05, label = "A folded core holds more than (share of ships)" }
-
-# ---- tracks: others' ships, collapsed ---------------------------------------------------------------
-# Another side's ships come as tracks, one by one: the map knows nothing of how they are formed.
-# Tracks closer than cluster_px on screen are drawn as one symbol of the echelon their count reads
-# as (up to flight_max a flight, up to group_max a group, more a task force): the map's own reading
-# of what it sees, not the simulation's. A selected track stands out of it; zooming in resolves it.
-[tracks]
-label = "Others' ships"
-collapse   = { default = true, label = "Collapse into flights, groups and task forces" }
-cluster_px = { default = 40, min = 0, max = 160, step = 1, label = "Tracks collapse within (px)" }
+# Where the simulation does not form them together, what lies within aggregate_px is drawn as one
+# symbol of the echelon its count of ships reads as: up to flight_max a flight, up to group_max a
+# group, more a task force. The map's own reading of what it sees, not the simulation's; zooming in
+# resolves it, and a selection stands out of it.
+#   Others' ships come as tracks, one by one: the map knows nothing of how they are formed.
+#   Our own formations come together once orders have shuffled them (a ballistic run, a free
+#   coast): a click on their group selects them all, as one group (as ⇧-click picks one).
+tracks     = { default = true, label = "Others' ships collapse into flights, groups and task forces" }
+groups     = { default = true, label = "Our own formations near each other collapse into a group" }
 flight_max = { default = 5, min = 2, max = 20, step = 1, label = "A flight: up to (ships)" }
 group_max  = { default = 20, min = 3, max = 100, step = 1, label = "A group: up to (ships); more, a task force" }
 

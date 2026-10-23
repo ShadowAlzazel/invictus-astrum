@@ -5,7 +5,7 @@
   // star): two bodies only, her state read off the picture and the body's, an estimate like Eva's.
   // An ellipse whole; a hyperbola from where she is, outward. Nothing of it is asked of the server.
   // Folded as the units are, before anything is worked out: of the ships drawn inside one mark (a
-  // formation's, at this zoom) only the first is, and her path is drawn for them all. Each path is
+  // formation's, or a group's, at this zoom) only the first is, and her path is drawn for them all. Each path is
   // worked out again at most every REDO_MS (a conic moves little), and drawn about where its body
   // is drawn, every point through one projection. A conic far larger than the view about her is
   // drawn only as an arc about her, ARC views either way (worked out again as the zoom changes it);
@@ -159,8 +159,8 @@
     ctx.clearRect(0, 0, W, H);
     const st = map?.state;
     if (!st || !map.def || !style || (!on && !estimates)) return;
-    const marked = new Set();
-    for (const m of map.marks ?? []) marked.add(m.id);
+    const marked = new Map();                       // unit -> the mark it is drawn in (a group's: each of its units)
+    for (const m of map.marks ?? []) for (const id of m.group ?? [m.id]) marked.set(id, m.id);
     const friend = rgba((style.affiliation.friend ?? style.affiliation.unknown).color, 0.28);
     const friendOn = rgba((style.affiliation.friend ?? style.affiliation.unknown).color, 0.75), fuchsia = rgba(style.palette.fuchsia, 0.8);
     ctx.lineWidth = 1;
@@ -173,7 +173,7 @@
       if (free ? !on : !k) continue;
       let as = c.id;                                   // the mark she is drawn in: hers, or the formation's she is folded into
       while (as && !marked.has(as)) as = byId[as]?.parent;
-      const key = `${k ? 'k' : ''}${as ?? c.id}`;
+      const key = `${k ? 'k' : ''}${marked.get(as) ?? c.id}`;
       if (drawn.has(key)) continue;                    // one path a mark: worked out for its first ship alone
       drawn.add(key);
       const tag = `${k ? 'k' : ''}${c.id}`;

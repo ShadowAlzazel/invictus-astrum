@@ -58,7 +58,7 @@
 
   function nameOf(m) {
     if (m.kind === 'body') return map.bodies[m.id]?.name ?? m.id;
-    if (m.kind === 'contact') return map.contactName?.(m.id) ?? m.id;
+    if (m.kind === 'contact') return map.contactName?.(m.group ? m.group.join('+') : m.id) ?? m.id;
     return '';
   }
 

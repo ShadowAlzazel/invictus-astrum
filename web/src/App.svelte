@@ -247,7 +247,7 @@
     }
     return best;
   }
-  function pointerMove(e) { const m = markAt(e.clientX, e.clientY); map.hover = m ? { kind: m.kind, id: m.id } : null; }
+  function pointerMove(e) { const m = markAt(e.clientX, e.clientY); map.hover = m ? { kind: m.kind, id: m.id, group: m.group } : null; }
   function pointerDown(e) { down = { x: e.clientX, y: e.clientY, b: e.button, shift: e.shiftKey }; }
   // the ruler (L): a click sets where it starts, the next where it ends; a third starts again
   let ruler = null;                     // { a, b }: system-frame km, b null while it follows the cursor
@@ -268,7 +268,7 @@
     }
     if (!down || down.b !== 0 || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) return;
     const m = markAt(e.clientX, e.clientY);
-    if (m) { if (down.shift && m.kind === 'contact') pick(m.id); else select({ kind: m.kind, id: m.id }); return; }
+    if (m) { if (m.group) pickGroup(m.group, down.shift); else if (down.shift && m.kind === 'contact') pick(m.id); else select({ kind: m.kind, id: m.id }); return; }
     const p = map.planeAt(e.clientX, e.clientY);
     if (!p) return select(null);
     select({ kind: 'point', p });
@@ -291,6 +291,13 @@
     const now = picks ?? ((c.ancestors ?? []).includes(sel.id) ? [] : [sel.id]);
     const next = now.includes(id) ? now.filter((x) => x !== id) : [...now, id];
     picks = next.length ? next : null;
+  }
+  // a group the map drew (our own formations together, Overlay): all of it, as a group; ⇧: added to the one picked
+  function pickGroup(ids, add) {
+    const base = contacts.find((x) => x.id === sel?.id);
+    if (!add || !base || base.track) { select({ kind: 'contact', id: ids[0] }); picks = [...ids]; return; }
+    const now = picks ?? [sel.id];
+    picks = [...now, ...ids.filter((id) => !now.includes(id))];
   }
 
   // ---- orders: A on a selected ship aims one; a click gives it -----------------------------------
