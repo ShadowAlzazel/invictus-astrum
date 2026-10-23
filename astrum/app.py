@@ -16,7 +16,9 @@ Positions on the wire are kilometres in the system frame, as float64 JSON number
 """
 from __future__ import annotations
 
+import asyncio
 import itertools
+import json
 import secrets
 from contextlib import asynccontextmanager
 import math
@@ -27,7 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
-from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -47,6 +49,8 @@ from .ships import ShipRegistry, class_detail, class_summary, rules_dict
 from .entity import ShipSpec, SpecError
 from .sim import Fleet, Order
 from .level import Level, load_levels
+from .accounts import COOKIE, Accounts
+from .lobby import Lobbies, LobbyError
 from . import display
 from . import picture
 from . import profiles
@@ -673,11 +677,13 @@ def level_dict_of(world: "World", lv: Level, clock: dict | None) -> dict:
                         for x in lv.systems]}
 
 
-def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool = False) -> FastAPI:
+def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool = False, auth: bool | None = None) -> FastAPI:
     """The web server. The simulation answers its pictures and orders: in a process of its own
     (sim="process", as serve.py runs it), or in this one (sim="inline", sharing this world: for
     tests and tools). run_ahead: a worker keeps the fleet flown ahead of the map's clock (serve.py
-    takes it from config.toml's [sim] run_ahead)."""
+    takes it from config.toml's [sim] run_ahead). auth (else [server] auth): users sign in, and
+    every request is made as their lobby grants (its level, their side, its player), whatever it
+    says; off, each request says its own (tests and tools)."""
     config = config or load_config()
     world = World(config)
     if sim == "process":
@@ -694,11 +700,166 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     app = FastAPI(title="Invictus: Astrum", lifespan=lifespan)
     app.state.world, app.state.sim = world, sim
 
+    # ---- who asks, and as whom: sign-in, lobbies, and every request bound to them ------------------
+    auth = config["server"]["auth"] if auth is None else auth
+    accounts, lobbies = Accounts(config["paths"]["users"]), Lobbies()
+    app.state.accounts, app.state.lobbies = accounts, lobbies
+    hub: dict = {}                                       # each open lobby socket -> its user
+    pushing = asyncio.Lock()                             # one push at a time: a socket is sent to by one sender
+
+    def user_of(conn) -> str | None:
+        return accounts.who(conn.cookies.get(COOKIE))
+
+    def sides_of(lv: Level) -> list[dict]:
+        """What a level may be played as: any faction of its scenarios, or MASTER."""
+        ids = dict.fromkeys(f for s in lv.scenarios if s in world.scenarios for f in world.scenarios[s].factions)
+        return [*({"id": f, "label": world.factions.label(f) if f in world.factions else f} for f in ids),
+                {"id": picture.MASTER, "label": "MASTER"}]
+
+    def granted(user: str | None):
+        """What a member's lobby grants them: (the lobby, its level, their side, that side's player)."""
+        lb = lobbies.of(user) if user else None
+        lv = world.levels.get(lb.level) if lb else None
+        if lv is None:
+            return None
+        view = lb.members.get(user)
+        sc = next((world.scenarios[x] for x in lv.scenarios if x in world.scenarios), None)
+        return lb, lv, view, ((world.side_player(sc, view) if view else sc.player) if sc else None)
+
+    def bound(req: dict, user: str | None) -> dict:
+        """A request as its user may make it: as their side in their lobby's level (and of a
+        scenario of it), whatever it said of level, view, player and scenario; out of a lobby, none
+        of them (a system's bodies alone). With auth off, as it came."""
+        if not auth:
+            return req
+        out = {k: v for k, v in req.items() if k not in ("level", "view", "player", "scenario")}
+        g = granted(user)
+        if g is not None:
+            _, lv, view, player = g
+            out.update(view=view, player=player)
+            if req.get("scenario") in lv.scenarios:
+                out["scenario"] = req["scenario"]
+            if "level" in req:
+                out["level"] = lv.id
+        return out
+
+    def signed(request: Request) -> str | None:
+        """The user asking (auth on: none signed in, refused)."""
+        user = user_of(request)
+        if auth and user is None:
+            raise HTTPException(401, "sign in first")
+        return user
+
+    def levels_now(clocks: dict) -> list[dict]:
+        return sorted(({**level_dict_of(world, lv, clocks.get(lv.id)), "sides": sides_of(lv)} for lv in world.levels.values()),
+                      key=lambda d: (d["own"], d["name"]))
+
+    async def push() -> None:
+        """Every open lobby socket told how the lobbies and the levels stand (as they stand when
+        it is sent: pushes come one at a time)."""
+        async with pushing:
+            clocks = await sim.call("levels", None)
+            state = {"lobbies": lobbies.as_list(set(hub.values())), "levels": levels_now(clocks)}
+            for sock, user in list(hub.items()):
+                try:
+                    await sock.send_json({"kind": "lobby", "you": user, **state})
+                except Exception:                        # gone: it is dropped when its loop ends
+                    hub.pop(sock, None)
+
+    async def act(user: str, msg: dict) -> None:
+        """One lobby action of a user's (astrum/lobby.py); LobbyError if it may not be."""
+        do, closed = msg.get("do"), None
+        if do == "make":
+            lv = world.levels.get(msg.get("level") or "")
+            if lv is None:
+                raise LobbyError(f"no level {msg.get('level')!r}")
+            _, closed = lobbies.make(user, lv.id)
+        elif do == "join":
+            closed = lobbies.join(user, msg.get("lobby") or "")
+        elif do == "leave":
+            closed = lobbies.leave(user)
+        elif do == "side":
+            lb = lobbies.of(user)
+            if lb is None or msg.get("side") not in (x["id"] for x in sides_of(world.levels[lb.level])):
+                raise LobbyError("not a side of this level")
+            lb.members[user] = msg["side"]
+        elif do == "level":                              # the host's other choice, while it does not run
+            lb, lv = lobbies.hosted(user), world.levels.get(msg.get("level") or "")
+            if lv is None or lobbies.holding(lv.id):
+                raise LobbyError("no such level, or it has a lobby of its own")
+            if lb.level in await sim.call("levels", None):
+                raise LobbyError("stop the level first")
+            lb.level, lb.members = lv.id, dict.fromkeys(lb.members)
+        elif do in ("start", "run", "pause", "warp", "restart", "stop"):
+            out = await sim.call("level", {"id": lobbies.hosted(user).level, "do": do, "warp": msg.get("warp")})
+            if not out["ok"]:
+                raise LobbyError(out["detail"])
+        else:
+            raise LobbyError(f"no lobby action {do!r}")
+        if closed is not None:                           # its last member left: its level stops
+            await sim.call("level", {"id": closed.level, "do": "stop"})
+
+    @app.post("/api/signin")
+    async def signin(response: Response, req: dict = Body(...)):
+        got = accounts.sign_in(req.get("name"), req.get("password"))
+        if got is None:
+            raise HTTPException(401, "That name and password do not match")
+        response.set_cookie(COOKIE, got[1], httponly=True, samesite="lax")
+        return {"user": got[0]}
+
+    @app.post("/api/signout")
+    async def signout(request: Request, response: Response):
+        user = user_of(request)
+        if user is not None:
+            closed = lobbies.leave(user)
+            if closed is not None:
+                await sim.call("level", {"id": closed.level, "do": "stop"})
+            accounts.sign_out(request.cookies.get(COOKIE))
+            await push()
+        response.delete_cookie(COOKIE)
+        return {"ok": True}
+
+    @app.get("/api/me")
+    def me(request: Request):
+        """Who this browser is signed in as (None), and whether the server asks."""
+        user = user_of(request)
+        return {"user": user, "auth": auth, "lobby": (lb := lobbies.of(user)) and lb.id}
+
+    @app.websocket("/ws/lobby")
+    async def lobby_ws(sock: WebSocket):
+        """The lobbies, pushed to every signed-in user as they change; their actions come back on it."""
+        user = user_of(sock)
+        if user is None:
+            await sock.close(code=4401)
+            return
+        await sock.accept()
+        hub[sock] = user
+        await push()
+        try:
+            while True:
+                msg = await sock.receive_json()
+                try:
+                    await act(user, msg)
+                except LobbyError as e:
+                    async with pushing:
+                        await sock.send_json({"kind": "error", "detail": str(e)})
+                await push()
+        except WebSocketDisconnect:
+            pass
+        finally:
+            hub.pop(sock, None)
+            await push()
+
     @app.get("/api/meta")
-    def meta(view: str | None = None, player: str | None = None):
+    def meta(request: Request, view: str | None = None, player: str | None = None):
         """Everything the map needs to start, each scenario's units as the side asked for holds
-        them (view: one of its factions, or MASTER; else the player's)."""
+        them (view: one of its factions, or MASTER; else the player's). With auth, as the user's
+        lobby grants: the units of its level's scenarios, as their side; of any other, none."""
         world.check()
+        g = granted(user_of(request)) if auth else None
+        if auth:
+            view, player = (g[2], g[3]) if g else (None, None)
+        mine = (lambda sc: g is not None and sc.id in g[1].scenarios) if auth else (lambda sc: True)
         return {
             "version": world.version,
             "systems": [level_dict(world, s) for s in sorted(world.systems.values(), key=lambda s: s.name)],
@@ -707,11 +868,11 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
                                        for b in [*p.bullseyes.values(), *world.made.get(p.id, {}).values()]]}
                         for p in world.players.values()],
             "scenarios": [{"id": sc.id, "name": sc.name, "system": sc.system, "player": sc.player, "home": world.home(sc),
-                           "view": (side := world.side(sc, view, player)),
+                           "view": (side := world.side(sc, view, player)) if mine(sc) else None,
                            "factions": [{"id": f, "name": world.factions[f].name if f in world.factions else f,
                                          "label": world.factions.label(f), "player": world.side_player(sc, f)}
                                         for f in sc.factions],
-                           "contacts": side_contacts(world, sc, side)}
+                           "contacts": side_contacts(world, sc, side) if mine(sc) else []}
                           for sc in world.scenarios.values()],
             "specs": {cid: {**spec.as_dict(), "sensors": suite(world.ships, world.ships.classes[cid])}
                       for cid in (world.ships.classes if world.ships else {}) if (spec := world.spec(cid)) is not None},
@@ -727,17 +888,19 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         """Every level, and how each running one's clock stands: the authored ones first, then each
         system alone."""
         world.check()
-        clocks = await sim.call("levels", None)
-        return sorted((level_dict_of(world, lv, clocks.get(lv.id)) for lv in world.levels.values()),
-                      key=lambda d: (d["own"], d["name"]))
+        return levels_now(await sim.call("levels", None))
 
     @app.post("/api/level/{lid}")
-    async def level(lid: str, req: dict = Body(...)):
+    async def level(lid: str, request: Request, req: dict = Body(...)):
         """The host's hand on a level's clock (simhost.SimHost.level): start, run, pause, warp,
-        restart or stop. Answers how its clock stands."""
+        restart or stop. Answers how its clock stands. With auth, its lobby's host's alone."""
+        user = signed(request)
+        if auth and (lobbies.holding(lid) is None or lobbies.holding(lid).host != user):
+            raise HTTPException(403, "only the host of the level's lobby works its clock")
         out = await sim.call("level", {**req, "id": lid})
         if not out["ok"]:
             raise HTTPException(out["status"], out["detail"])
+        await push()
         return out
 
     @app.get("/api/status")
@@ -767,7 +930,8 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
                 for b in s if b.orbit is not None}
 
     @app.get("/api/system/{sid}/probe")
-    def probe(sid: str, x: float, y: float, z: float, t: float, player: str | None = None, bullseye: str = "system"):
+    def probe(request: Request, sid: str, x: float, y: float, z: float, t: float, player: str | None = None, bullseye: str = "system"):
+        player = bound({"player": player}, user_of(request)).get("player")
         s, eph = world.system(sid)
         pos = eph.positions(t)
         p = np.array([x, y, z]) / KM
@@ -866,8 +1030,10 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         return {"saved": path.name, "id": doc["system"]["id"], "version": world.version}
 
     @app.post("/api/bullseyes")
-    async def bullseye_make(req: dict = Body(...)):
-        """A commander's new bullseye (World.make_bullseye); the simulation's side reads it too."""
+    async def bullseye_make(request: Request, req: dict = Body(...)):
+        """A commander's new bullseye (World.make_bullseye); the simulation's side reads it too.
+        With auth, their side's player's."""
+        req = {**req, "player": bound(req, signed(request)).get("player")}
         try:
             b = world.make_bullseye(req.get("player") or "", req)
         except (BullseyeError, ValueError, TypeError) as e:
@@ -876,8 +1042,10 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         return {"ok": True, "bullseye": {"id": b.id, "name": b.name, "system": b.system, "made": True, "origin": b.origin}}
 
     @app.delete("/api/bullseyes/{player}/{bid}")
-    async def bullseye_drop(player: str, bid: str):
+    async def bullseye_drop(request: Request, player: str, bid: str):
         """Delete one: orders and stations given off it keep it (World.drop_bullseye)."""
+        if auth and player != bound({}, signed(request)).get("player"):
+            raise HTTPException(403, "not your side's bullseye")
         try:
             world.drop_bullseye(player, bid)
         except BullseyeError as e:
@@ -886,17 +1054,19 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         return {"ok": True}
 
     @app.get("/api/profiles")
-    def profile_list(player: str | None = None):
+    def profile_list(request: Request, player: str | None = None):
         """The combat profiles a player reads (the shared ones, the root first, then their own), and
         what a profile is made of: the stances, the ranges' presets, the targets."""
         world.check()
+        player = bound({"player": player}, user_of(request)).get("player")
         return {"profiles": [p.as_dict() for p in world.profiles_of(player).values()],
                 "stances": profiles.STANCES, "ranges": profiles.RANGES, "targets": list(profiles.TARGETS)}
 
     @app.post("/api/profiles")
-    async def profile_make(req: dict = Body(...)):
+    async def profile_make(request: Request, req: dict = Body(...)):
         """A commander's new profile, or one of theirs changed (World.make_profile); the simulation's
         side reads it too."""
+        req = {**req, "player": bound(req, signed(request)).get("player")}
         try:
             p = world.make_profile(req.get("player") or "", {k: v for k, v in req.items() if k != "player"})
         except ValueError as e:
@@ -905,8 +1075,10 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         return {"ok": True, "profile": p.as_dict()}
 
     @app.delete("/api/profiles/{player}/{pid}")
-    async def profile_drop(player: str, pid: str):
+    async def profile_drop(request: Request, player: str, pid: str):
         """Delete one of a commander's profiles: their units on it read the root."""
+        if auth and player != bound({}, signed(request)).get("player"):
+            raise HTTPException(403, "not your side's profile")
         try:
             world.drop_profile(player, pid)
         except ValueError as e:
@@ -915,35 +1087,42 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         return {"ok": True}
 
     @app.get("/api/engagement/{scenario}/{unit}")
-    async def engagement(scenario: str, unit: str, t: float | None = None, view: str | None = None,
+    async def engagement(request: Request, scenario: str, unit: str, t: float | None = None, view: str | None = None,
                          player: str | None = None, n: int = 3):
         """How one of the side's units stands (its stance and combat profile, and where each comes
         from) at t, and the last n orders given it."""
-        out = await sim.call("engagement", {"scenario": scenario, "unit": unit, "t": t, "view": view, "player": player, "n": n})
+        q = bound({"scenario": scenario, "unit": unit, "t": t, "view": view, "player": player, "n": n}, signed(request))
+        out = await sim.call("engagement", q)
         if not out["ok"]:
             raise HTTPException(out["status"], out["detail"])
         return out["reply"]
 
     @app.delete("/api/order/{scenario}/{order_id}")
-    async def order_withdraw(scenario: str, order_id: str, view: str | None = None, player: str | None = None):
+    async def order_withdraw(request: Request, scenario: str, order_id: str, view: str | None = None, player: str | None = None):
         """Take back an order given from the map: as if it had never been given (Fleet.withdraw);
         MASTER's alone (a side stops or decelerates instead)."""
-        got = await sim.call("withdraw", {"scenario": scenario, "order_id": order_id, "view": view, "player": player})
+        got = await sim.call("withdraw", bound({"scenario": scenario, "order_id": order_id, "view": view, "player": player}, signed(request)))
         if not got["ok"]:
             raise HTTPException(got.get("status", 404), got.get("detail") or f"no order {order_id!r} from the map in {scenario}")
         return {"ok": True}
 
     @app.delete("/api/track/{scenario}/{track}")
-    async def track_dismiss(scenario: str, track: str, view: str | None = None, player: str | None = None):
+    async def track_dismiss(request: Request, scenario: str, track: str, view: str | None = None, player: str | None = None):
         """Remove an old track from a side's picture (until she is seen again)."""
-        if not (await sim.call("dismiss", {"scenario": scenario, "track": track, "view": view, "player": player}))["ok"]:
+        if not (await sim.call("dismiss", bound({"scenario": scenario, "track": track, "view": view, "player": player}, signed(request))))["ok"]:
             raise HTTPException(404, f"no track {track!r} in {scenario}")
         return {"ok": True}
 
     @app.post("/api/order")
-    async def order(req: dict = Body(...)):
+    async def order(request: Request, req: dict = Body(...)):
         """An order at the map's clock, for one ship or for every ship under a formation: given by
-        the simulation's side (simhost.give_order), which flies again only what it touches."""
+        the simulation's side (simhost.give_order), which flies again only what it touches. With
+        auth: as the user's side, on their lobby's level, and only while it runs (at its moment)."""
+        if auth:
+            req = {k: v for k, v in bound(req, signed(request)).items() if k != "t"}
+            g = granted(user_of(request))
+            if g is None or g[1].id not in await sim.call("levels", None):
+                raise HTTPException(409, "your lobby's level is not running")
         out = await sim.call("order", req)
         if not out["ok"]:
             raise HTTPException(out["status"], out["detail"])
@@ -951,13 +1130,21 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
-        """The map's pictures: asked for and answered by the simulation's side, JSON ready to send."""
+        """The map's pictures: asked for and answered by the simulation's side, JSON ready to send.
+        With auth, each as the user's lobby grants (bound): its level, their side."""
+        user = user_of(sock)
+        if auth and user is None:
+            await sock.close(code=4401)
+            return
         await sock.accept()
         conn = next(_conn_n)
         try:
             while True:
                 req = await sock.receive_json()
-                await sock.send_text(await sim.call("frame", (req, conn)))
+                if auth and req.get("level") and granted(user) is None:      # out of the lobby: back to it
+                    await sock.send_text(json.dumps({"error": "you are in no lobby playing it", "stopped": req["level"], "system": req.get("system")}))
+                    continue
+                await sock.send_text(await sim.call("frame", (bound(req, user), conn)))
         except WebSocketDisconnect:
             return
         finally:

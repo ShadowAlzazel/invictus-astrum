@@ -732,6 +732,23 @@ and a step off the grid, step by step. To the bit what one moment at a time give
 
 ## On the wire
 
+**Who asks.** The simulation never knows a user. The web process signs them in
+(`astrum/accounts.py`: a session cookie) and keeps the lobbies (`astrum/lobby.py`); with
+`[server] auth` on, it makes every request of a user's as their lobby grants before it goes over
+the pipe: its level, their side (`view`), that side's player (its bullseyes and profiles), a
+scenario of that level, and an order with no moment of its own (the level's clock gives it, and
+only while it runs). A request with no level is a system's bodies alone. The host's clock actions
+come over the lobby socket (`/ws/lobby`, which pushes every lobby and level as they change) and go
+to the simulation as level calls. Off (tests, tools), each request says its own.
+
+**One picture per side and moment.** A running level's pictures fall on moments 50 ms of its wall
+time apart (rounded up from the moment asked, a round trip or two ahead), so every map of a side
+asks for the same one. It is made once (`SimHost._picture`: the ships read off the timeline, the
+side's view and tracks, the bodies, bullseyes and units placed, the message's JSON) and kept a few
+moments; each map is then sent only what changed of the ships since its own last picture. Any
+order, a withdrawal, a dismissed track or a level action, and every new event in the order book (the
+AI's too), makes it afresh.
+
 `/api/meta` gives each ship class's spec once (`specs`, by class id); a unit names its class and
 the map links it to that one spec. The map asks the state stream for a moment a round trip or two
 ahead of its clock (a quarter of a second at most), keeps the last few pictures, and draws its

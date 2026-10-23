@@ -13,8 +13,16 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 228 tests (the map's math too, in node)
+python -m pytest -q tests             # 231 tests (the map's math too, in node)
 ```
+
+The map asks you to **sign in**: the users are `data/users.toml` (Halsey, Nimitz, Fabian and
+Scipio, every password `1234`: test accounts for a local network; add one with
+`python -m astrum.accounts NAME PASSWORD`). To play from other machines on the network, set
+`host = "0.0.0.0"` under `[server]` in `config.toml`, let port 8010 through the firewall, and open
+`http://<this machine>:8010` there: each machine renders the map itself, and only pictures and
+orders cross the network. `auth = false` under `[server]` turns signing in off (one host, as
+before: Play lists the levels and starts them).
 
 `serve.py` says at start whether the simulation's hot loops are compiled (`kernels compiled
 (Numba …)`). If not, it says why: Numba could not be imported for this Python (often a Python too
@@ -51,6 +59,16 @@ The map opens on the main menu, over a system standing still:
    Game (the picture's switches), Combat (your combat profiles, kept on the server).
 
 ## Levels and the workshop
+
+**Simulation**, signed in, opens the **lobbies**. A lobby is made for a level by its **host**;
+others join it, and each member chooses the side they play (any of the level's factions, or
+MASTER; no rules yet). The host alone works the level's clock (start, pause, warp, restart, stop,
+from the lobby or the map's clock bar; a member's map shows it, its controls locked) and chooses
+another level while it does not run; once it runs, everyone in it takes the map. On the server,
+every picture and order of a member is made as the lobby grants: its level, their side and that
+side's player, whatever the map asked; a GHOST member cannot order an ARCVS ship, nor see one GHOST
+has not seen. The host leaving, the next member is host; the last one leaving closes the lobby
+and stops its level. One user, one lobby; one level, one lobby. With signing in off:
 
 **Simulation** opens the **level selector**. A **level** is a game (`data/levels/*.toml`): its
 clock, and the systems it is played in, each with the scenario loaded into it (each system its own
@@ -174,6 +192,7 @@ above it comes down to it.
 
 | Path | Holds |
 |---|---|
+| `data/users.toml` | who may sign in: a name and its password's hash (test accounts, every password `1234`) |
 | `data/levels/*.toml` | the levels: each a game's clock (its start and warp) and the systems it is played in, with the scenario loaded into each; the format is in `data/levels/cislunar.toml` |
 | `data/systems/*.toml` | stellar systems, each also a level of its own (no scenario); see `data/systems/README.md` for the format |
 | `data/presets.toml` | the workshop's starting bodies; add your own |
@@ -189,7 +208,7 @@ above it comes down to it.
 | `display.toml` | display rules, and every setting's default and range: text, icons, folding, selection, layers, cursor |
 | `settings.toml` | display settings over `display.toml`, if you keep one (the map keeps yours in the browser); not committed |
 | `config.toml` | paths, port, clock start, orbit sampling, the run-ahead, the AI, and what a player is shown ([picture]) |
-| `astrum/` | the simulation: the levels and their clocks (`level.py`), builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server; the fleet (`classis.py`, `sim.py`), its order book (`orders.py`), timeline (`timeline.py`), standing orders and the AI (`ai.py`, `profiles.py`), a subscriber of each side's picture (`pictures.py`) |
+| `astrum/` | the web process's signing in (`accounts.py`) and lobbies (`lobby.py`); the simulation: the levels and their clocks (`level.py`), builder, orbits, ephemeris, frames, zones, fields, bullseyes, workshop, ships, server; the fleet (`classis.py`, `sim.py`), its order book (`orders.py`), timeline (`timeline.py`), standing orders and the AI (`ai.py`, `profiles.py`), a subscriber of each side's picture (`pictures.py`) |
 | `web/` | the map (Svelte + Three.js) |
 | `tools/formation_tf2.py` | lays out the demo's Task Force 2 wedge; edit its numbers and rerun |
 | `tools/formation_tf3.py` | lays out Task Force 3, docked tight around Mars, and the Luna Strike Squadron behind Jupiter |

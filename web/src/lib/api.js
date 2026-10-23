@@ -9,6 +9,9 @@ async function get(path, params) {
 export const api = {
   meta: (view) => get('/meta', view ? { view } : undefined),
   levels: () => get('/levels'),
+  me: () => get('/me'),
+  signIn: (name, password) => post('/signin', { name, password }),
+  signOut: () => post('/signout', {}),
   level: (id, req) => post(`/level/${encodeURIComponent(id)}`, req),     // the host's hand on its clock: { do, warp }
   status: () => get('/status'),
   system: (id) => get(`/system/${id}`),

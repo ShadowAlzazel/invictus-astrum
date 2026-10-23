@@ -16,6 +16,9 @@
   import InfoPanel from './lib/InfoPanel.svelte';
   import LevelSelect from './lib/LevelSelect.svelte';
   import LevelList from './lib/LevelList.svelte';
+  import Lobby from './lib/Lobby.svelte';
+  import SignIn from './lib/SignIn.svelte';
+  import { LobbySocket } from './lib/lobby.js';
   import { stepWarp, warpLabel } from './lib/clock.js';
   import MainMenu from './lib/MainMenu.svelte';
   import ShipRegistry from './lib/ShipRegistry.svelte';
@@ -73,6 +76,7 @@
   $: scenarioId = scenarioIn(levelId, systemId);
   $: running = clockAt ? !clockAt.paused : !paused;
   $: shownWarp = clockAt ? clockAt.warp : warpS;
+  $: clockLocked = authOn && levelId && mode === 'map' && !amHost;     // a member's map shows the host's clock
   let orbitsT = null, orbitsBusy = false;
   let drules = {}, settings = null, showSettings = false, settingsStatus = '';
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
@@ -86,7 +90,28 @@
   $: try { localStorage.setItem('astrum.orderPlane', orderPlane); } catch {}
   function setPlane(p) { orderPlane = p; if (ordering) ordering = { ...ordering, plane: p, tilt: 0 }; }
   $: if (ordering && (mode !== 'map' || (state && !ordering.ships.some((id) => state.ships?.[id])))) ordering = null;
-  let mode = 'menu';                    // 'menu' | 'levels' | 'map' | 'workshop' | 'ships'
+  let mode = 'menu';                    // 'signin' | 'menu' | 'levels' | 'map' | 'workshop' | 'ships'
+  // Signed in (astrum/accounts.py, astrum/lobby.py): who this browser plays as, and the lobbies the
+  // server pushes. Play is then a lobby: its host works the level's clock, and every picture and
+  // order is made, on the server, as the lobby grants (its level, your side). With the server's
+  // auth off, none of it: Play lists the levels and starts them, as one host alone
+  let you = null, authOn = false, lobbySock = null, lobbies = [];
+  $: mine = lobbies.find((lb) => lb.members.some((m) => m.user === you)) ?? null;
+  $: amHost = mine?.host === you;
+  $: mySide = mine?.members.find((m) => m.user === you)?.side ?? null;
+  let metaSide;                         // the side the map's meta was asked as: again when the lobby changes it
+  $: if (authOn && mySide !== metaSide) { metaSide = mySide; if (meta) loadMeta(); }
+  function openLobby() {
+    lobbySock?.close();
+    lobbySock = new LobbySocket((m) => { lobbies = m.lobbies; levels = m.levels; }, (detail) => { levelNote = detail; say(detail); });
+  }
+  async function signedIn(user) { you = user; levelNote = ''; openLobby(); await loadMeta(); mode = 'menu'; }
+  async function signOut() {
+    await api.signOut().catch(() => {});
+    lobbySock?.close(); lobbySock = null; you = null; lobbies = [];
+    leaveFor('signin');
+  }
+  function lobbyAct(msg) { levelNote = ''; lobbySock?.send(msg); }
   let purpose = 'play';                 // what the level list is for: 'play' or 'build'
   let registry, shipCount = 0;
   $: inMap = mode === 'map' || mode === 'workshop';   // the screens that use the map's controls
@@ -160,6 +185,7 @@
     } catch (err) { say(String(err.message ?? err)); }
   }
   async function setSide(id) {
+    if (authOn) { select(null); ordering = null; lobbyAct({ do: 'side', side: id }); return; }   // the lobby's to grant
     sides = { ...sides, [scenario.id]: id };
     try { localStorage.setItem('astrum.sides', JSON.stringify(sides)); } catch { /* for this visit only */ }
     select(null);
@@ -226,7 +252,7 @@
   }
 
   function onstate(s) {
-    if (s.stopped) { if (s.stopped === levelId) leaveLevel(`${level?.name ?? s.stopped} is not running on the server (it was stopped, or the server started again): start it again.`); return; }
+    if (s.stopped) { if (s.stopped === levelId) leaveLevel(`${level?.name ?? s.stopped} is not running on the server: it was stopped, or the server started again.`); return; }
     if (s.error) { error = s.error; return; }
     if (s.clock?.level === levelId) clockAt = { ...s.clock, wall: performance.now() - 500 * stream.rtt };   // (sent half a round trip ago)
     if (s.system !== systemId) return;
@@ -256,6 +282,11 @@
   }
   // the clock's controls: a level's asked of the server (it answers how the clock stands), else this map's
   async function clockDo(what, extra = {}) {
+    if (authOn) {                                   // the lobby's host's: the clock comes back in the pictures
+      if (!amHost) { say(`Only the host, ${mine?.host ?? 'of the lobby'}, works the level's clock`); return; }
+      lobbyAct({ do: what, ...extra });
+      return;
+    }
     try {
       const r = await api.level(levelId, { do: what, ...extra });
       if (r.clock) { clockAt = { ...r.clock, wall: performance.now() }; if (what === 'restart') t = r.clock.t; }
@@ -547,9 +578,20 @@
     } else if (id !== systemId) await openSystem(id);
     lastLevel = id;
   }
-  // Play: the level started (nothing of it ran before), or gone back into, and the map
+  // Play: the level started (nothing of it ran before), or gone back into, and the map. Signed in:
+  // the lobby's level, once its host has started it
   async function enter(id) {
     if (purpose !== 'play') { await previewLevel(id); mode = 'map'; return; }
+    if (authOn) {
+      const l = levels.find((x) => x.id === mine?.level);
+      if (!l?.clock) return;
+      levelId = l.id; levelNote = '';
+      clockAt = { ...l.clock, wall: performance.now() }; t = l.clock.t;
+      await openSystem(l.systems[0].id, true);
+      await loadMeta();
+      mode = 'map';
+      return;
+    }
     try {
       const r = await api.level(id, { do: 'start' });
       await loadLevels();
@@ -567,8 +609,8 @@
     const was = levelId;
     leaveFor('levels');
     if (purpose === 'play') {
-      await loadLevels();
-      const back = levels.find((l) => l.id === (was ?? listed)) ?? levels[0];
+      if (!authOn) await loadLevels();
+      const back = levels.find((l) => l.id === (mine?.level ?? was ?? listed)) ?? levels[0];
       if (back) previewLevel(back.id);
       return;
     }
@@ -577,7 +619,9 @@
   }
   // the list's clocks, while it is up
   let listPoll;
-  $: { clearInterval(listPoll); if (mode === 'levels' && purpose === 'play') listPoll = setInterval(loadLevels, 2000); }
+  $: { clearInterval(listPoll); if (mode === 'levels' && purpose === 'play' && !authOn) listPoll = setInterval(loadLevels, 2000); }
+  // in a lobby, its level behind the list
+  $: if (mode === 'levels' && purpose === 'play' && mine && mine.level !== listed && levels.length) previewLevel(mine.level);
 
   async function openWorkshop(id, copy) {
     schema ??= await api.workshop.schema();
@@ -632,11 +676,14 @@
       await loadMeta();
       await openSystem(meta.systems.find((s) => s.id === 'sol')?.id ?? meta.systems[0].id);   // behind the menu: still
       await loadLevels();
+      ({ auth: authOn, user: you } = await api.me());
+      if (authOn && !you) mode = 'signin';
+      else if (authOn) openLobby();
     } catch (e) { error = 'Cannot reach the server. Start it with: python serve.py'; }
     raf = requestAnimationFrame(frame);
     poll = setInterval(checkStatus, 2000);
   });
-  onDestroy(() => { cancelAnimationFrame(raf); clearInterval(poll); clearInterval(listPoll); map?.dispose(); });
+  onDestroy(() => { cancelAnimationFrame(raf); clearInterval(poll); clearInterval(listPoll); lobbySock?.close(); map?.dispose(); });
 </script>
 
 <svelte:window on:keydown={key} on:keyup={keyUp} on:blur={() => (ranges = sensing = false)} on:pointermove={trackUI} />
@@ -654,8 +701,13 @@
 
 {#if mode === 'menu'}
   <MainMenu onchoose={choose} counts={{ levels: levels.filter((l) => !l.own).length, systems: meta?.systems.length ?? 0, ships: meta?.ship_classes ?? 0 }} />
+  {#if you}<p class="whoami" data-ui>{you} · <button on:click={signOut}>sign out</button></p>{/if}
 {:else if mode === 'ships'}
   <ShipRegistry bind:this={registry} {style} onback={toMenu} />
+{:else if mode === 'signin'}
+  <SignIn onsigned={signedIn} />
+{:else if mode === 'levels' && purpose === 'play' && authOn}
+  <Lobby {you} {lobbies} {levels} current={listed} note={levelNote} onpreview={previewLevel} onenter={enter} onact={lobbyAct} onsignout={signOut} onback={toMenu} />
 {:else if mode === 'levels' && purpose === 'play'}
   <LevelList {levels} current={listed} note={levelNote} onpreview={previewLevel} onenter={enter} onrestart={restartLevel} onstop={stopLevel} onback={toMenu} />
 {:else if mode === 'levels'}
@@ -678,7 +730,7 @@
 {/if}
 
 {#if inMap}
-<div class="clock" data-ui>
+<div class="clock" class:locked={clockLocked} data-ui title={clockLocked ? `The level's clock is the host's, ${mine?.host}` : ''}>
   <span class="utc">{state?.utc?.replace('T', ' ').replace('Z', ' UTC') ?? '—'}</span>
   {#if kernels}<span class="lag" title={kernels}>flight not compiled</span>{/if}
   {#if state?.behind_s > 30}<span class="lag" title="The simulation is catching up with the clock: the map shows the moment it has reached">sim {hms(state.behind_s)} behind</span>{/if}
@@ -796,6 +848,10 @@
   .clock button:hover { color: var(--fuchsia); }
   .clock .small { font-size: 11px; }
   .clock .small.sure { color: #ffd27a; }
+  .clock.locked button { opacity: 0.35; pointer-events: none; }
+  .whoami { position: fixed; top: 20px; right: 24px; z-index: 30; margin: 0; color: var(--ink); font-size: 12px; }
+  .whoami button { background: none; border: 0; padding: 0; color: var(--dim); font: inherit; }
+  .whoami button:hover { color: var(--fuchsia); }
   .bar .systems { background: none; border: 1px solid var(--rule); color: var(--ink); font: inherit; font-size: 12px; }
   .warp { min-width: 5.5em; text-align: center; color: var(--ink); }
   .src { color: var(--dim); font-size: 10px; }

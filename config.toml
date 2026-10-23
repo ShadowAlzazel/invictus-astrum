@@ -4,7 +4,8 @@
 [paths]
 systems   = "data/systems"
 scenarios = "data/scenarios"
-levels    = "data/levels"       # the games: each a clock and the systems (with their scenarios) it is played in
+levels    = "data/levels"
+users     = "data/users.toml"   # who may sign in (astrum/accounts.py)       # the games: each a clock and the systems (with their scenarios) it is played in
 players   = "data/players.toml"
 ships     = "data/ships"
 style     = "style.toml"
@@ -14,8 +15,9 @@ bullseyes = "bullseyes.toml"    # bullseyes commanders make on the map; written 
 profiles  = "profiles.toml"     # combat profiles commanders make on the map; written by the map; not committed
 
 [server]
-host = "127.0.0.1"
+host = "127.0.0.1"     # "0.0.0.0": every machine on the network may open the map
 port = 8010
+auth = true            # sign in (data/users.toml), and every request is made as the lobby grants: its level, your side
 
 [live]
 check_seconds = 2      # how often the server looks for edits to data/ and style.toml

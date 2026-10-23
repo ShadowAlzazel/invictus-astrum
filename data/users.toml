@@ -1,0 +1,20 @@
+# Who may sign in to the map (astrum/accounts.py): a name, and its password's hash (never the
+# password). Test accounts for a local network: every password here is 1234. Add one with
+#   python -m astrum.accounts NAME PASSWORD
+# and paste what it prints. Names are matched without case.
+
+[[user]]
+name = "Halsey"
+password = "pbkdf2_sha256$100000$5dab274fb249e449$f743ecf25a5a1fb639790077ca9bf6fd86b6c371ca038b32e964a5b0f16aa6fd"
+
+[[user]]
+name = "Nimitz"
+password = "pbkdf2_sha256$100000$4421f09bebc3fc17$0fe771ec9f88af8ac036e55f13e7d9d07be5aa8116e9ce0af3ac09140cf0013c"
+
+[[user]]
+name = "Fabian"
+password = "pbkdf2_sha256$100000$da1bfe92289707b9$d1bf5136ed37939abd202f57dee75546d6f7e4cfd8bfff5faf1c3333839d1cfa"
+
+[[user]]
+name = "Scipio"
+password = "pbkdf2_sha256$100000$33b9150bcbc3a581$be2a472fd1c89b2936d4bf6103be687e38147e44553528039074c55b1be395be"

@@ -58,6 +58,8 @@ ORDER_BUDGET_S = 0.05         # ... and an order: past it, the order waits for t
 LOOKAHEAD_WALL_S = 3.0        # the run-ahead keeps this much of the clock's wall time ahead ...
 LOOKAHEAD_S = (600.0, 12 * 3600.0)   # ... within these (sim seconds); the timeline holds a day and a half
 LEAD_WALL_S = 0.25            # a picture is asked for at most this much of the clock's wall time ahead
+SHARE_WALL_S = 0.05           # a running level's pictures fall on moments this much of its wall time apart, shared by a side
+SHARED_KEPT = 16              # pictures kept to share (a few moments of every side watching)
 ARRIVALS_POLL_S = 0.005       # how often the arrivals thread looks for questions
 BRAKE_SHARE = 0.9             # of what she holds, what guidance brakes with (kernels._guide): where a halt comes to rest
 DRIFT_S = 60.0                # how a bullseye's frame moves, read over this
@@ -494,6 +496,7 @@ class SimHost:
         self._sides: dict = {}                          # (scenario, fleet, data version, view) -> the side's table (Side)
         self._dismissed: dict = {}                      # (scenario, view) -> old tracks it removed: ship -> minute last seen
         self.clocks: dict[str, Clock] = {}              # level -> its game clock, once the host starts it
+        self._shared: dict = {}                         # (level, system, side, player, moment, switches, versions) -> a picture, made once
         self.ahead = RunAhead(self) if run_ahead else None
         self.arrivals = Arrivals(world)
         self.ai = AI(world)                             # the AI: a subscriber of each side's picture, giving orders
@@ -511,6 +514,8 @@ class SimHost:
             return {lid: c.as_dict() for lid, c in self.clocks.items()}
         if kind in ("order", "engagement"):            # on a running level: at its moment
             payload = self.at_clock(payload)
+        if kind in ("order", "withdraw", "dismiss", "level"):
+            self._shared.clear()                         # what was pictured may have changed
         if kind == "order":
             try:
                 out = {"ok": True, "reply": give_order(self.world, payload, self._side, self.ai.overrule)}
@@ -647,7 +652,9 @@ class SimHost:
         """One picture of the system for the map, as JSON text. Ships go as what changed since
         this connection's last picture (full: false); its first, and any after the system, the
         scenario or the data changed, has everything (full: true). If the fleet cannot be got to
-        the moment within FRAME_BUDGET_S, the picture is of the moment it reached (behind_s)."""
+        the moment within FRAME_BUDGET_S, the picture is of the moment it reached (behind_s).
+        A running level's picture is made once per side and moment (moments SHARE_WALL_S of its
+        wall time apart) and shared by every map of that side: only the changes are each its own."""
         world = self.world
         world.check()
         sid = req.get("system")
@@ -655,55 +662,77 @@ class SimHost:
         if got is None:
             return json.dumps({"error": f"no system {sid!r}", "system": sid})
         s, eph = got
-        lid, clock = req.get("level"), None
+        lid, clock, key = req.get("level"), None, None
         if lid is not None:                              # a level's: at its moment, and of its scenario there
             lv, clock = world.levels.get(lid), self.clocks.get(lid)
             if lv is None or clock is None or sid not in (x.id for x in lv.systems):
                 return json.dumps({"error": f"level {lid!r} is not running" if lv else f"no level {lid!r}",
                                    "system": sid, "stopped": lid})
             now = clock.now()
-            lead = 0.0 if clock.paused else clock.warp * min(max(float(req.get("lead") or 0.0), 0.0), LEAD_WALL_S)
-            asked = t = now + lead
+            warp = 0.0 if clock.paused else clock.warp
+            t = now + warp * min(max(float(req.get("lead") or 0.0), 0.0), LEAD_WALL_S)
+            if warp > 0:                                 # on the side's shared moments
+                q = warp * SHARE_WALL_S
+                t = math.ceil(t / q) * q
             sc = world.scenarios.get(lv.scenario_in(sid) or "")
         else:
-            asked = t = float(req.get("t", world.start_time(s)))
+            t = float(req.get("t", world.start_time(s)))
             sc = world.scenarios.get(req.get("scenario") or "")
         fleet = world.fleet(sc) if sc and sc.system == sid else None
+        side = self._side(sc, fleet, world.side(sc, req.get("view"), req.get("player"))) if fleet is not None else None
+        switches = resolve(world.config["picture"], req.get("picture"))
+        if clock is not None:
+            key = (lid, sid, side.view if side else None, req.get("player"), t, tuple(sorted(switches.items())),
+                   world.version, id(fleet), fleet.book.n if fleet is not None else 0)
+        pic = self._shared.get(key) if key is not None else None
+        if pic is None:
+            pic = self._picture(sid, s, eph, sc, fleet, side, t, switches, req.get("player"))
+            pic["head"] = json.dumps({**pic["head"], **({"clock": {"level": lid, **clock.as_dict(), "t": now}} if clock else {})})[:-1]
+            if key is not None:
+                if len(self._shared) >= SHARED_KEPT:
+                    self._shared.pop(next(iter(self._shared)))
+                self._shared[key] = pic
         enc = self._encoders.setdefault(conn, ShipEncoder())
-        ships, full, flown = {}, True, {}
+        ships, full, out = {}, True, {}
         if fleet is not None:
-            self.pictures.clock(sc, fleet, t)
-            side = self._side(sc, fleet, world.side(sc, req.get("view"), req.get("player")))
-            switches = resolve(world.config["picture"], req.get("picture"))
-            t, ids, cols, flown, seen = self._ships_at(fleet, t, side.own, side.view, side.friendly, switches, side.knows)
-            names, tracks = side.picture(seen)
-            ships, full = enc.encode(fleet, cols, names, (sid, sc.id, world.version, id(fleet), side.view, *sorted(switches.items())),
+            ships, full = enc.encode(fleet, pic["cols"], pic["names"], (sid, sc.id, world.version, id(fleet), side.view, *sorted(switches.items())),
                                      side.alias)
+            if full or pic["tracks"] != enc.tracks:      # its tracks as it knows them: when that changes
+                out["tracks"] = enc.tracks = pic["tracks"]
         else:
             enc.key = None
+        return pic["head"] + ", " + json.dumps({"ships": ships, "full": full, **out})[1:]
+
+    def _picture(self, sid: str, s, eph, sc, fleet, side, t: float, switches: dict, player) -> dict:
+        """A side's picture at t, all but what is each map's own: {head: the message, cols and
+        names: its ships' figures (each map is sent what changed of them), tracks}."""
+        world = self.world
+        asked, cols, names, tracks, flown = t, None, {}, {}, {}
+        if fleet is not None:
+            self.pictures.clock(sc, fleet, t)
+            t, ids, cols, flown, seen = self._ships_at(fleet, t, side.own, side.view, side.friendly, switches, side.knows)
+            names, tracks = side.picture(seen)
         table = world.table(sid)
         states = table.states(t) if hasattr(table, "states") else None    # the table: what the fleet flew among
         pos = {k: p for k, (p, _) in states.items()} if states else table.positions(t)
-        bulls = world.resolved(sid, req.get("player"), pos)
-        contacts, out = {}, {}
+        bulls = world.resolved(sid, player, pos)
+        contacts = {}
         if fleet is not None:
             # units are placed from their scenario's own bullseyes, whoever is watching;
             # ships stand where the simulation has flown them (as the view is shown them), formations follow;
             # the side is sent its own table's, and its tracks', and nothing else
             placed = world.resolved(sid, sc.player, pos)
             contacts = side.place(_km_all(*plan(sc).arrays(placed, pos, flown)), tracks)
-            if full or tracks != enc.tracks:             # its tracks as it knows them: when that changes
-                out["tracks"] = enc.tracks = tracks
-        return json.dumps({
+        head = {
             "t": t, "utc": iso(t), "behind_s": asked - t, "system": sid,
-            **({"clock": {"level": lid, **clock.as_dict(), "t": now}} if clock is not None else {}),     # the level's, now
             "version": world.version, "source": eph.source(t),
             "bodies": _km_all(list(pos), np.array(list(pos.values()))),
             **({"bodies_kms": {k: np.round(v * KM, 6).tolist() for k, (_, v) in states.items()}} if states else {}),
             "bullseyes": {bid: {"origin": _km(r.origin), "axes": r.axes.T.tolist()} for bid, r in bulls.items()},
-            "contacts": contacts, "ships": ships, "full": full, **out,
+            "contacts": contacts,
             "magnetopause_km": {b.id: round(m * KM, 1) for b in s if (m := magnetopause(s, pos, b))},
-        })
+        }
+        return {"head": head, "cols": cols, "names": names, "tracks": tracks}
 
     def _side(self, sc, fleet, view: str) -> Side:
         """The side's table of the scenario (Side), kept while the data and the fleet stand."""

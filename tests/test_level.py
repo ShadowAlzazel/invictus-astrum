@@ -63,7 +63,8 @@ def test_a_level_is_started_by_the_host_and_its_moment_is_the_servers():
     host.handle("level", {"id": "cislunar", "do": "warp", "warp": 600})
     host.handle("level", {"id": "cislunar", "do": "run"})
     m = json.loads(host.frame({**req, "lead": 0.2}))
-    assert m["t"] - m["clock"]["t"] == pytest.approx(600 * 0.2)            # a picture that much of the clock's wall time on
+    lead = m["t"] - m["clock"]["t"]                                         # that much of the clock's wall time on,
+    assert 600 * 0.2 - 1 <= lead < 600 * (0.2 + 0.05) + 1                   # up to the side's next shared moment
     o = host.handle("order", {"scenario": "sol-demo", "unit": "kiki-1", "player": "arcvs", "t": start - 1e6, "g": 0.3,
                               "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
     issued = o["reply"]["ship"]["goal"]["issued"]
@@ -99,3 +100,28 @@ def test_a_running_level_is_flown_watched_or_not():
         assert f.t >= now + 600
     finally:
         host.stop()
+
+
+def test_a_side_s_picture_is_made_once_for_every_map_of_it():
+    """Two maps of one side, asking at once, are sent one picture (one moment, made once), each
+    only what changed since its own last; another side's is its own; an order makes it again."""
+    import json
+    from astrum.app import create_app
+    from astrum.simhost import SimHost
+    world = create_app().state.world
+    host = SimHost(world)
+    host.handle("level", {"id": "cislunar", "do": "start"})
+    host.handle("level", {"id": "cislunar", "do": "pause"})
+    ask = {"level": "cislunar", "system": "sol", "view": "arcvs", "player": "arcvs", "lead": 0.1}
+    a, b = json.loads(host.frame(ask, "a")), json.loads(host.frame(ask, "b"))
+    assert a["t"] == b["t"] and a["full"] and b["full"] and a["ships"] == b["ships"] and len(host._shared) == 1
+    a2 = json.loads(host.frame(ask, "a"))
+    assert not a2["full"] and a2["ships"] == {} and len(host._shared) == 1           # made once, nothing new for it
+    g = json.loads(host.frame({**ask, "view": "ghost", "player": "ghost"}, "c"))
+    assert len(host._shared) == 2 and set(g["ships"]) != set(a["ships"])             # another side: its own
+    host.handle("order", {"scenario": "sol-demo", "unit": "kiki-1", "player": "arcvs", "view": "arcvs", "g": 0.3,
+                          "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
+    assert host._shared == {}
+    a3 = json.loads(host.frame(ask, "a"))
+    assert a3["ships"]["kiki-1"]["goal"]["label"].startswith("090°")
+    host.stop()

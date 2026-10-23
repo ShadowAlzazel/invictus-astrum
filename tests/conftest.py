@@ -25,6 +25,15 @@ def trappist():
 
 
 @pytest.fixture(autouse=True)
+def open_server(monkeypatch):
+    """Tests ask the server as tools do, each request saying its side and moment ([server] auth
+    off); the tests of signing in and lobbies turn it on for themselves (create_app(auth=True))."""
+    import astrum.app as app_module
+    real = app_module.create_app
+    monkeypatch.setattr(app_module, "create_app", lambda *a, auth=False, **kw: real(*a, auth=auth, **kw))
+
+
+@pytest.fixture(autouse=True)
 def no_background_prefill(monkeypatch, request):
     """Every app a test makes would fill its body tables in the background, all at once; tests
     fill what they read as they read it. test_the_table_is_filled_up_front checks the prefill."""
