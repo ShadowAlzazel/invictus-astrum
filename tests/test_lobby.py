@@ -82,8 +82,10 @@ def test_a_lobby_plays_a_level_as_each_member_s_side(server):
         # an order is the member's side's, at the level's moment
         o = {"scenario": "sol-demo", "unit": "kiki-1", "view": "master", "t": 0, "g": 0.3, "target": {"bullseye": "burn", "aer": [90, 0, 30000]}}
         assert b.post("/api/order", json=o, headers=hb).status_code == 403          # not GHOST's ship
-        r = a.post("/api/order", json=o, headers=ha)
+        r = a.post("/api/order", json={**o, "id": "h-1"}, headers=ha)
         assert r.status_code == 200 and r.json()["ship"]["goal"]["issued"] > 8e8
+        again = a.post("/api/order", json={**o, "id": "h-1", "g": 0.1}, headers=ha)          # a retry: its first answer
+        assert again.json()["ship"]["goal"]["order_id"] == r.json()["ship"]["goal"]["order_id"] and again.json()["ship"]["goal"]["g"] == 0.3
         # the host gone, the next is host; the last gone, the lobby closes and its level stops
         la.send_json({"do": "leave"})
         assert _until(lb, lambda m: "Halsey" not in _members(m))["lobbies"][0]["host"] == "Nimitz"
@@ -94,3 +96,81 @@ def test_a_lobby_plays_a_level_as_each_member_s_side(server):
 
 def c_post_level(client, headers, do):
     return client.post("/api/level/cislunar", json={"do": do}, headers=headers)
+
+
+def test_the_host_s_rules(server):
+    """One member to a side; sides fixed while it runs; anyone may pause it: as the host sets them."""
+    app, c = server
+    ha, hb = _signed(c, "Halsey"), _signed(c, "Nimitz")
+    with c.websocket_connect("/ws/lobby", headers=ha) as la, c.websocket_connect("/ws/lobby", headers=hb) as lb:
+        la.send_json({"do": "make", "level": "cislunar"})
+        lid = _until(lb, lambda m: m["lobbies"])["lobbies"][0]["id"]
+        lb.send_json({"do": "join", "lobby": lid})
+        lb.send_json({"do": "rules", "rules": {"anyone_speed": True}})        # not his to set
+        assert _until(lb, lambda m: False)["detail"].startswith("only the host")
+        la.send_json({"do": "rules", "rules": {"shared_sides": False, "switch_sides": False}})
+        la.send_json({"do": "side", "side": "arcvs"})
+        _until(lb, lambda m: _members(m).get("Halsey") == "arcvs" and not m["lobbies"][0]["rules"]["shared_sides"])
+        lb.send_json({"do": "side", "side": "arcvs"})
+        assert "plays that side" in _until(lb, lambda m: False)["detail"]
+        lb.send_json({"do": "side", "side": "jadf"})
+        la.send_json({"do": "start"})
+        _until(lb, lambda m: _members(m).get("Nimitz") == "jadf" and next(x for x in m["levels"] if x["id"] == "cislunar")["clock"])
+        lb.send_json({"do": "side", "side": "ghost"})
+        assert "fixed while the level runs" in _until(lb, lambda m: False)["detail"]
+        lb.send_json({"do": "pause"})
+        assert _until(lb, lambda m: False)["detail"].startswith("only the host")
+        assert c.post("/api/level/cislunar", json={"do": "pause"}, headers=hb).status_code == 403
+        la.send_json({"do": "rules", "rules": {"anyone_speed": True}})
+        _until(lb, lambda m: m["lobbies"][0]["rules"]["anyone_speed"])
+        lb.send_json({"do": "pause"})
+        _until(lb, lambda m: (next(x for x in m["levels"] if x["id"] == "cislunar")["clock"] or {}).get("paused"))
+        assert c.post("/api/level/cislunar", json={"do": "run"}, headers=hb).status_code == 200
+        assert c.post("/api/level/cislunar", json={"do": "stop"}, headers=hb).status_code == 403    # still the host's
+
+
+def test_pictures_come_unasked_and_the_server_is_healthy(server):
+    """A map watching a running level is sent PICTURE_HZ pictures a second without asking again;
+    /api/health says the simulation answers, and who is on."""
+    import time
+    app, c = server
+    h = _signed(c, "Fabian")
+    with c.websocket_connect("/ws/lobby", headers=h) as lobby:
+        lobby.send_json({"do": "make", "level": "cislunar"})
+        lobby.send_json({"do": "side", "side": "arcvs"})
+        lobby.send_json({"do": "start"})
+        _until(lobby, lambda m: next(x for x in m["levels"] if x["id"] == "cislunar")["clock"] and _members(m).get("Fabian"))
+        with c.websocket_connect("/ws", headers=h) as ws:
+            ws.send_json({"level": "cislunar", "system": "sol"})
+            start = time.monotonic()
+            got = [ws.receive_json() for _ in range(8)]
+            took = time.monotonic() - start
+        assert got[0]["full"] and all(not g["full"] for g in got[1:]) and took < 8 / 20 + 1.0
+        assert got[-1]["t"] > got[0]["t"]                                     # the clock runs on in them
+        health = c.get("/api/health").json()
+        assert health["ok"] and health["users_online"] == ["Fabian"] and "cislunar" in health["levels_running"]
+
+
+def test_an_order_is_given_once_by_its_id_and_a_user_may_not_flood():
+    """The same id again (a retry), or the same order straight after (a double click), is answered
+    as the first and not given again; past the limit in the span, refused."""
+    import asyncio
+    from astrum.gate import Busy, OrderGate
+    given = []
+
+    async def run():
+        gate = OrderGate(limit=3, span_s=10)
+        send = lambda n: (lambda: asyncio.sleep(0, result=given.append(n) or n))
+        assert await gate.give("a", "x1", {"u": 1}, send(1)) == ("given", 1)
+        assert await gate.give("a", "x1", {"u": 1}, send(2)) == ("again", 1)       # a retry
+        assert await gate.give("a", "x2", {"u": 1}, send(3)) == ("again", 1)       # a double click
+        assert await gate.give("a", "x3", {"u": 2}, send(4)) == ("given", 4)
+        assert await gate.give("a", "x4", {"u": 1}, send(5)) == ("given", 5)       # another between: given
+        try:
+            await gate.give("a", "x5", {"u": 3}, send(6))
+            raise AssertionError("not refused")
+        except Busy:
+            pass
+        assert await gate.give("b", "x5", {"u": 3}, send(7)) == ("given", 7)       # another user's own span
+    asyncio.run(run())
+    assert given == [1, 4, 5, 7]

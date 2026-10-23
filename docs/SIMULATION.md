@@ -741,13 +741,21 @@ only while it runs). A request with no level is a system's bodies alone. The hos
 come over the lobby socket (`/ws/lobby`, which pushes every lobby and level as they change) and go
 to the simulation as level calls. Off (tests, tools), each request says its own.
 
-**One picture per side and moment.** A running level's pictures fall on moments 50 ms of its wall
-time apart (rounded up from the moment asked, a round trip or two ahead), so every map of a side
-asks for the same one. It is made once (`SimHost._picture`: the ships read off the timeline, the
+**One picture per side and moment, pushed.** A map watching a running level asks once (again
+only when what it asks for changes: its system, its picture's switches); the web process then
+sends it `picture_hz` pictures a second (20), each two of those ahead of the level's clock, one in
+flight a map at most (a slow one is skipped, not queued). A level's pictures fall on moments 50 ms
+of its wall time apart (rounded up from the moment asked), so every map of a side asks for the
+same one. It is made once (`SimHost._picture`: the ships read off the timeline, the
 side's view and tracks, the bodies, bullseyes and units placed, the message's JSON) and kept a few
 moments; each map is then sent only what changed of the ships since its own last picture. Any
 order, a withdrawal, a dismissed track or a level action, and every new event in the order book (the
-AI's too), makes it afresh.
+AI's too), makes it afresh. A system's preview (no level) is still asked for, picture by picture.
+
+**Orders through the gate.** Before an order goes on to the simulation the web process
+(`astrum/gate.py`) reads its client id: an id seen again, or the same order from the same user
+straight after with nothing between (within a second), is answered as the first was and not given
+again; a user past `orders_limit` in `orders_span_s` is refused (429) until the span has passed.
 
 `/api/meta` gives each ship class's spec once (`specs`, by class id); a unit names its class and
 the map links it to that one spec. The map asks the state stream for a moment a round trip or two

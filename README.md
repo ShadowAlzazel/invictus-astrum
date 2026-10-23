@@ -13,7 +13,7 @@ folded symbols resolve into their parts: a moon out of its planet, a flight out 
 pip install -r requirements.txt
 cd web && npm install && npm run build && cd ..
 python serve.py                       # http://127.0.0.1:8010 (the simulation runs in a second process)
-python -m pytest -q tests             # 231 tests (the map's math too, in node)
+python -m pytest -q tests             # 234 tests (the map's math too, in node)
 ```
 
 The map asks you to **sign in**: the users are `data/users.toml` (Halsey, Nimitz, Fabian and
@@ -62,13 +62,21 @@ The map opens on the main menu, over a system standing still:
 
 **Simulation**, signed in, opens the **lobbies**. A lobby is made for a level by its **host**;
 others join it, and each member chooses the side they play (any of the level's factions, or
-MASTER; no rules yet). The host alone works the level's clock (start, pause, warp, restart, stop,
-from the lobby or the map's clock bar; a member's map shows it, its controls locked) and chooses
-another level while it does not run; once it runs, everyone in it takes the map. On the server,
+MASTER). The host starts, restarts and stops the level, chooses another while it does not run,
+and sets the lobby's **rules**: whether anyone may pause it and set its warp (else the host
+alone: a member's clock bar is locked), whether anyone may switch sides while it runs, and whether
+a side may be played by several (else one member each: a side taken shows whose it is). Once it
+runs, everyone in it takes the map, and the server sends each map 20 pictures a second unasked
+(`[server] picture_hz`). On the server,
 every picture and order of a member is made as the lobby grants: its level, their side and that
 side's player, whatever the map asked; a GHOST member cannot order an ARCVS ship, nor see one GHOST
 has not seen. The host leaving, the next member is host; the last one leaving closes the lobby
-and stops its level. One user, one lobby; one level, one lobby. With signing in off:
+and stops its level. One user, one lobby; one level, one lobby. Every order goes with an id of
+its own: the server gives it once (a retry, or the same order again straight after, is answered
+as the first) and refuses more than `orders_limit` from one user in `orders_span_s` (100 in 10 s).
+`/api/health` says whether the server and its simulation answer, who is on, the levels running
+and the pictures and orders sent; the web process logs who connects, signs in, acts in a lobby and
+gives an order (refused or not) to the console and `logs/web.log`. With signing in off:
 
 **Simulation** opens the **level selector**. A **level** is a game (`data/levels/*.toml`): its
 clock, and the systems it is played in, each with the scenario loaded into it (each system its own

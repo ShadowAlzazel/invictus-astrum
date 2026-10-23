@@ -2,8 +2,9 @@
   // Play, signed in: the lobbies (astrum/lobby.py), as the server pushes them. Out of one: the open
   // lobbies to join, and every level to make a new one for (it previews its first system behind,
   // still). In one: its level, its members and the side each plays (yours to choose: any of the
-  // level's, or MASTER), and, for its host alone, the level's clock: start, pause, warp, restart,
-  // stop, and another level while it does not run. Once it runs, everyone in it may take the map.
+  // level's, or MASTER), the host's rules, and the level's clock: the host starts, restarts and
+  // stops it and chooses another while it does not run; pausing it and its warp are the host's, or
+  // anyone's by the rule. Once it runs, everyone in it may take the map.
   import { utcOf, warpLabel, stepWarp } from './clock.js';
 
   export let you = null;
@@ -24,6 +25,12 @@
   $: host = mine?.host === you;
   $: side = mine?.members.find((m) => m.user === you)?.side ?? null;
   $: running = !!level?.clock;
+  $: rules = mine?.rules ?? {};
+  $: timer = host || rules.anyone_speed;
+  $: fixed = running && !host && !rules.switch_sides && !!side;
+  $: takenBy = (s) => (!rules.shared_sides && mine?.members.find((m) => m.side === s && m.user !== you)?.user) || null;
+  const RULES = [['anyone_speed', 'Anyone may pause and set the warp'], ['switch_sides', 'Anyone may switch sides while it runs'],
+                 ['shared_sides', 'A side may be played by several']];
   $: lobbyOf = (lid) => lobbies.find((lb) => lb.level === lid);
   $: games = levels.filter((l) => !l.own);
   $: alone = levels.filter((l) => l.own);
@@ -74,29 +81,39 @@
         <li><i class="dot" class:online={m.online} title={m.online ? 'connected' : 'not connected'}></i>
           <span class="name">{m.user}</span>{#if m.user === mine.host}<span class="hosttag">host</span>{/if}
           {#if m.user === you}
-            <select value={side ?? ''} on:change={(e) => onact({ do: 'side', side: e.target.value })} title="The side you play: its units, and what its ships have seen">
+            <select value={side ?? ''} on:change={(e) => onact({ do: 'side', side: e.target.value })} disabled={fixed}
+              title={fixed ? "Sides are fixed while the level runs (the host's rule)" : 'The side you play: its units, and what its ships have seen'}>
               {#if !side}<option value="">choose a side</option>{/if}
-              {#each level.sides as s (s.id)}<option value={s.id}>{s.label}</option>{/each}
+              {#each level.sides as s (s.id)}<option value={s.id} disabled={!!takenBy(s.id)}>{s.label}{takenBy(s.id) ? ` · ${takenBy(s.id)}` : ''}</option>{/each}
             </select>
           {:else}<span class="side">{sideName(level, m.side)}</span>{/if}
         </li>
       {/each}
     </ul>
 
+    <h2>Rules <span class="by">the host's</span></h2>
+    <ul class="rules">
+      {#each RULES as [k, label] (k)}
+        <li><label><input id={`rule-${k}`} type="checkbox" checked={rules[k]} disabled={!host}
+          on:change={(e) => onact({ do: 'rules', rules: { [k]: e.target.checked } })} />{label}</label></li>
+      {/each}
+    </ul>
+
     <div class="acts">
       {#if running}<button class="enter" on:click={onenter} disabled={!side} title={side ? '' : 'Choose a side first'}>Take the map ▸</button>{/if}
-      {#if host}
-        {#if !running}<button class="enter" on:click={() => onact({ do: 'start' })}>Start ▸</button>
-        {:else}
-          <button class="small" on:click={() => onact({ do: level.clock.paused ? 'run' : 'pause' })}>{level.clock.paused ? 'run' : 'pause'}</button>
-          <span class="warp"><button class="small" on:click={() => onact({ do: 'warp', warp: stepWarp(level.clock.warp, false) })}>◀</button>
-            {warpLabel(level.clock.warp)}<button class="small" on:click={() => onact({ do: 'warp', warp: stepWarp(level.clock.warp, true) })}>▶</button></span>
-          <button class="small" class:sure={sure === 'restart'} on:click={() => ask('restart')} on:blur={() => (sure = null)}
-            title="Its clock back to its start, its fleets as their scenarios have them">{sure === 'restart' ? 'restart?' : 'restart'}</button>
-          <button class="small" class:sure={sure === 'stop'} on:click={() => ask('stop')} on:blur={() => (sure = null)}
-            title="Stop its clock and drop its fleets">{sure === 'stop' ? 'stop?' : 'stop'}</button>
-        {/if}
+      {#if host && !running}<button class="enter" on:click={() => onact({ do: 'start' })}>Start ▸</button>
       {:else if !running}<span class="dim">waiting for {mine.host} to start it</span>{/if}
+      {#if running && timer}
+        <button class="small" on:click={() => onact({ do: level.clock.paused ? 'run' : 'pause' })}>{level.clock.paused ? 'run' : 'pause'}</button>
+        <span class="warp"><button class="small" on:click={() => onact({ do: 'warp', warp: stepWarp(level.clock.warp, false) })}>◀</button>
+          {warpLabel(level.clock.warp)}<button class="small" on:click={() => onact({ do: 'warp', warp: stepWarp(level.clock.warp, true) })}>▶</button></span>
+      {/if}
+      {#if running && host}
+        <button class="small" class:sure={sure === 'restart'} on:click={() => ask('restart')} on:blur={() => (sure = null)}
+          title="Its clock back to its start, its fleets as their scenarios have them">{sure === 'restart' ? 'restart?' : 'restart'}</button>
+        <button class="small" class:sure={sure === 'stop'} on:click={() => ask('stop')} on:blur={() => (sure = null)}
+          title="Stop its clock and drop its fleets">{sure === 'stop' ? 'stop?' : 'stop'}</button>
+      {/if}
     </div>
     <p class="leave"><button class="small" on:click={() => onact({ do: 'leave' })}>Leave the lobby</button>
       {#if mine.members.length === 1}<span class="dim"> · the last one out stops its level</span>{/if}</p>
@@ -182,6 +199,10 @@
   .small.sure { color: #ffd27a; }
   .warp { color: var(--ink); font-size: 11px; display: inline-flex; gap: 6px; }
   .leave { margin: 18px 0 0; font-size: 11px; }
+  .rules li { padding: 2px 0; }
+  .rules label { display: flex; gap: 8px; align-items: center; color: var(--ink); font-size: 12px; }
+  .rules input { accent-color: var(--fuchsia); }
+  h2 .by { text-transform: none; letter-spacing: 0; font-size: 10px; color: var(--dim); margin-left: 6px; }
   .dim { color: var(--dim); font-size: 11px; }
   .keys { color: var(--dim); font-size: 10px; margin: 18px 0 0; }
 </style>

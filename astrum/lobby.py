@@ -2,8 +2,10 @@
 alone: the simulation runs levels and answers requests, and never knows a lobby or a user.
 
 A signed-in user makes a lobby for a level and is its host; others join it and each chooses a side
-(any of the level's factions, or MASTER; no rules yet). The host alone works the level's clock:
-start, pause, run, warp, restart, stop, and chooses another level while it is not running. A
+(any of the level's factions, or MASTER). The host starts, restarts and stops the level, chooses
+another while it is not running, and sets the lobby's rules (RULES): whether anyone may pause it
+and set its warp (else the host alone), whether a member may switch sides while it runs, and
+whether a side may be played by more than one member. A
 user is in one lobby at most, and a level in one lobby. The host leaving, the next member is host;
 the last one leaving, the lobby closes (and its level stops: the caller says so to the
 simulation). What the lobby grants a member is what every request of theirs is made as: its level,
@@ -19,16 +21,43 @@ class LobbyError(ValueError):
     pass
 
 
+RULES = {                             # the host's to set: (default, what it allows)
+    "anyone_speed": (False, "anyone may pause the level and set its warp"),
+    "switch_sides": (True, "anyone may switch sides while it runs"),
+    "shared_sides": (True, "a side may be played by more than one"),
+}
+
+
 @dataclass
 class Lobby:
     id: str
     level: str
     host: str
     members: dict[str, str | None] = field(default_factory=dict)    # user -> the side they play (None: not chosen)
+    rules: dict[str, bool] = field(default_factory=lambda: {k: d for k, (d, _) in RULES.items()})
 
     def as_dict(self, online: set[str]) -> dict:
-        return {"id": self.id, "level": self.level, "host": self.host,
+        return {"id": self.id, "level": self.level, "host": self.host, "rules": dict(self.rules),
                 "members": [{"user": u, "side": v, "online": u in online} for u, v in self.members.items()]}
+
+    def choose(self, user: str, side: str, running: bool) -> None:
+        """A member's side, as the rules allow."""
+        if running and self.members.get(user) and not self.rules["switch_sides"] and user != self.host:
+            raise LobbyError("sides are fixed while the level runs (the host's rule)")
+        taken = next((u for u, v in self.members.items() if v == side and u != user), None)
+        if taken and not self.rules["shared_sides"]:
+            raise LobbyError(f"{taken} plays that side, and a side is one member's (the host's rule)")
+        self.members[user] = side
+
+    def set_rules(self, rules: dict) -> None:
+        bad = [k for k, v in rules.items() if k not in RULES or not isinstance(v, bool)]
+        if bad:
+            raise LobbyError(f"no rule {bad[0]!r}: the rules are {list(RULES)}, each true or false")
+        self.rules.update(rules)
+
+    def may_time(self, user: str) -> bool:
+        """Whether the user may pause it and set its warp."""
+        return user == self.host or (user in self.members and self.rules["anyone_speed"])
 
 
 class Lobbies:

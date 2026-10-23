@@ -76,7 +76,7 @@
   $: scenarioId = scenarioIn(levelId, systemId);
   $: running = clockAt ? !clockAt.paused : !paused;
   $: shownWarp = clockAt ? clockAt.warp : warpS;
-  $: clockLocked = authOn && levelId && mode === 'map' && !amHost;     // a member's map shows the host's clock
+  $: clockLocked = authOn && levelId && mode === 'map' && !amTimer;    // a member's map shows the host's clock (unless the host's rule lets anyone)
   let orbitsT = null, orbitsBusy = false;
   let drules = {}, settings = null, showSettings = false, settingsStatus = '';
   let sel = null, probe = null, overUI = false, error = null, errors = {}, version = 0;
@@ -98,6 +98,8 @@
   let you = null, authOn = false, lobbySock = null, lobbies = [];
   $: mine = lobbies.find((lb) => lb.members.some((m) => m.user === you)) ?? null;
   $: amHost = mine?.host === you;
+  $: amTimer = amHost || !!mine?.rules?.anyone_speed;      // may pause the level and set its warp (the host's rule)
+  $: sideFixed = !!mine && !amHost && !mine.rules?.switch_sides && !!levels.find((l) => l.id === mine.level)?.clock;
   $: mySide = mine?.members.find((m) => m.user === you)?.side ?? null;
   let metaSide;                         // the side the map's meta was asked as: again when the lobby changes it
   $: if (authOn && mySide !== metaSide) { metaSide = mySide; if (meta) loadMeta(); }
@@ -277,13 +279,13 @@
     // the level's moment and that much of its wall time on (the server's clock); else at this one's
     const lead = Math.min(0.25, 1.5 * stream.rtt + 1 / 60);
     if (!systemId) return;
-    if (levelId && mode === 'map') stream.request({ level: levelId, system: systemId, lead, player: playerId, view: side, picture: game });
+    if (levelId && mode === 'map') stream.watch({ level: levelId, system: systemId, player: playerId, view: side, picture: game });   // (sent unasked)
     else stream.request({ system: systemId, t: t + (paused ? 0 : warpS * lead), player: playerId, picture: game });
   }
   // the clock's controls: a level's asked of the server (it answers how the clock stands), else this map's
   async function clockDo(what, extra = {}) {
     if (authOn) {                                   // the lobby's host's: the clock comes back in the pictures
-      if (!amHost) { say(`Only the host, ${mine?.host ?? 'of the lobby'}, works the level's clock`); return; }
+      if (['start', 'restart', 'stop'].includes(what) ? !amHost : !amTimer) { say(`Only the host, ${mine?.host ?? 'of the lobby'}, works the level's clock (the host's rule)`); return; }
       lobbyAct({ do: what, ...extra });
       return;
     }
@@ -769,7 +771,7 @@
   {#if scenarioOn && views.length}
     <div class="row" title="Whose side: its own units, and what its ships have seen and reported to its flagship. MASTER sees and orders everything.">
       <span class="lbl">Player</span>
-      <select value={side} on:change={(e) => setSide(e.target.value)}>
+      <select value={side} on:change={(e) => setSide(e.target.value)} disabled={sideFixed} title={sideFixed ? 'Sides are fixed while the level runs (the host\'s rule)' : ''}>
         {#each views as v}<option value={v.id} title={v.name}>{v.label}</option>{/each}
       </select>
     </div>

@@ -18,6 +18,10 @@ profiles  = "profiles.toml"     # combat profiles commanders make on the map; wr
 host = "127.0.0.1"     # "0.0.0.0": every machine on the network may open the map
 port = 8010
 auth = true            # sign in (data/users.toml), and every request is made as the lobby grants: its level, your side
+picture_hz = 20        # pictures a second the server sends each map in a running level, unasked
+orders_limit = 100     # orders one user may give ...
+orders_span_s = 10.0   # ... in this many seconds; more are refused until the span has passed
+log = "logs/web.log"   # who connected, signed in, acted in a lobby, gave an order (and the console)
 
 [live]
 check_seconds = 2      # how often the server looks for edits to data/ and style.toml

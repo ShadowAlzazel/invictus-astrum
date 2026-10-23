@@ -21,7 +21,7 @@ export const api = {
   saveSettings: (values) => post('/display/settings', values),
   ships: () => get('/ships'),
   ship: (id) => get(`/ships/${id}`),
-  order: (o) => post('/order', o),
+  order: (o) => giveOrder(o),
   withdrawOrder: (scenario, id, view, player) => send('DELETE', `/order/${encodeURIComponent(scenario)}/${encodeURIComponent(id)}?${new URLSearchParams(Object.entries({ view, player }).filter(([, v]) => v != null))}`),
   dismissTrack: (scenario, id, view, player) => send('DELETE', `/track/${encodeURIComponent(scenario)}/${encodeURIComponent(id)}?${new URLSearchParams(Object.entries({ view, player }).filter(([, v]) => v != null))}`),
   makeBullseye: (b) => post('/bullseyes', b),
@@ -39,6 +39,16 @@ export const api = {
 };
 
 export class Rejected extends Error {}
+
+// An order goes with an id of its own: the server gives it once however often it comes (a retry
+// after a dropped answer is answered as the first), and keeps a user from flooding it (astrum/gate.py)
+let orders = 0;
+const orderId = () => `${Date.now().toString(36)}-${(++orders).toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+async function giveOrder(o) {
+  const body = { ...o, id: orderId() };
+  try { return await post('/order', body); }
+  catch (err) { if (err instanceof Rejected) throw err; return post('/order', body); }   // (the connection dropped: once more, the same id)
+}
 
 async function post(path, body) { return send('POST', path, body); }
 
@@ -62,7 +72,7 @@ export class StateStream {
   _open() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     this.ws = new WebSocket(`${proto}://${location.host}/ws`);
-    this.ws.onopen = () => this._send();
+    this.ws.onopen = () => { if (this.watching) this.ws.send(this.watching); this._send(); };
     this.ws.onmessage = (e) => {
       const dt = (performance.now() - this._sent) / 1000;
       this.rtt = this.rtt ? 0.8 * this.rtt + 0.2 * dt : dt;
@@ -70,7 +80,15 @@ export class StateStream {
     };
     this.ws.onclose = () => { this.busy = false; setTimeout(() => this._open(), 1000); };
   }
-  request(req) { this.want = req; this._send(); }
+  request(req) { this.watching = null; this.want = req; this._send(); }
+  // a level's pictures: asked for once (again only when what is asked changes), then sent by the
+  // server some 20 times a second, unasked
+  watch(req) {
+    const text = JSON.stringify(req);
+    if (text === this.watching) return;
+    this.watching = text; this.want = null;
+    if (this.ws.readyState === 1) this.ws.send(text);
+  }
   _send() {
     if (this.busy || !this.want || this.ws.readyState !== 1) return;
     this.busy = true;

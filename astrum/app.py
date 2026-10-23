@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
+import logging
 import secrets
 from contextlib import asynccontextmanager
 import math
@@ -30,7 +31,7 @@ from pathlib import Path
 
 import numpy as np
 from fastapi import Body, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import constants as k
@@ -51,6 +52,9 @@ from .sim import Fleet, Order
 from .level import Level, load_levels
 from .accounts import COOKIE, Accounts
 from .lobby import Lobbies, LobbyError
+from .gate import Busy, OrderGate
+
+log = logging.getLogger("astrum.web")         # who connected, signed in, acted in a lobby, gave an order (serve.py: console and file)
 from . import display
 from . import picture
 from . import profiles
@@ -694,7 +698,9 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         sim = InlineSim(world, run_ahead)
     @asynccontextmanager
     async def lifespan(_):
+        pumping = asyncio.create_task(pump())
         yield
+        pumping.cancel()
         sim.close()
 
     app = FastAPI(title="Invictus: Astrum", lifespan=lifespan)
@@ -705,10 +711,17 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     accounts, lobbies = Accounts(config["paths"]["users"]), Lobbies()
     app.state.accounts, app.state.lobbies = accounts, lobbies
     hub: dict = {}                                       # each open lobby socket -> its user
+    watching: dict = {}                                  # each picture socket's connection -> Watch: what it is sent, unasked
+    gate = OrderGate(config["server"]["orders_limit"], config["server"]["orders_span_s"])
+    started, pushed = time.monotonic(), [0, time.monotonic(), 0.0]   # (pictures pushed, since, the last rate a second)
     pushing = asyncio.Lock()                             # one push at a time: a socket is sent to by one sender
 
     def user_of(conn) -> str | None:
         return accounts.who(conn.cookies.get(COOKIE))
+
+    def where(conn) -> str:
+        """The machine a request or a socket comes from, for the log."""
+        return f"{conn.client.host}:{conn.client.port}" if conn.client else "?"
 
     def sides_of(lv: Level) -> list[dict]:
         """What a level may be played as: any faction of its scenarios, or MASTER."""
@@ -782,7 +795,9 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             lb = lobbies.of(user)
             if lb is None or msg.get("side") not in (x["id"] for x in sides_of(world.levels[lb.level])):
                 raise LobbyError("not a side of this level")
-            lb.members[user] = msg["side"]
+            lb.choose(user, msg["side"], lb.level in await sim.call("levels", None))
+        elif do == "rules":                              # the host's
+            lobbies.hosted(user).set_rules(msg.get("rules") or {})
         elif do == "level":                              # the host's other choice, while it does not run
             lb, lv = lobbies.hosted(user), world.levels.get(msg.get("level") or "")
             if lv is None or lobbies.holding(lv.id):
@@ -790,7 +805,14 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             if lb.level in await sim.call("levels", None):
                 raise LobbyError("stop the level first")
             lb.level, lb.members = lv.id, dict.fromkeys(lb.members)
-        elif do in ("start", "run", "pause", "warp", "restart", "stop"):
+        elif do in ("run", "pause", "warp"):             # the host's, or anyone's by the host's rule
+            lb = lobbies.of(user)
+            if lb is None or not lb.may_time(user):
+                raise LobbyError(f"only the host, {lb.host if lb else 'of the lobby'}, works the level's clock (the host's rule)")
+            out = await sim.call("level", {"id": lb.level, "do": do, "warp": msg.get("warp")})
+            if not out["ok"]:
+                raise LobbyError(out["detail"])
+        elif do in ("start", "restart", "stop"):
             out = await sim.call("level", {"id": lobbies.hosted(user).level, "do": do, "warp": msg.get("warp")})
             if not out["ok"]:
                 raise LobbyError(out["detail"])
@@ -800,10 +822,12 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             await sim.call("level", {"id": closed.level, "do": "stop"})
 
     @app.post("/api/signin")
-    async def signin(response: Response, req: dict = Body(...)):
+    async def signin(request: Request, response: Response, req: dict = Body(...)):
         got = accounts.sign_in(req.get("name"), req.get("password"))
         if got is None:
+            log.warning("sign-in refused: %r from %s", req.get("name"), where(request))
             raise HTTPException(401, "That name and password do not match")
+        log.info("signed in: %s from %s", got[0], where(request))
         response.set_cookie(COOKIE, got[1], httponly=True, samesite="lax")
         return {"user": got[0]}
 
@@ -815,6 +839,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             if closed is not None:
                 await sim.call("level", {"id": closed.level, "do": "stop"})
             accounts.sign_out(request.cookies.get(COOKIE))
+            log.info("signed out: %s from %s", user, where(request))
             await push()
         response.delete_cookie(COOKIE)
         return {"ok": True}
@@ -834,13 +859,16 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             return
         await sock.accept()
         hub[sock] = user
+        log.info("lobby socket open: %s from %s", user, where(sock))
         await push()
         try:
             while True:
                 msg = await sock.receive_json()
                 try:
                     await act(user, msg)
+                    log.info("lobby: %s %s", user, json.dumps(msg))
                 except LobbyError as e:
+                    log.info("lobby: %s %s refused: %s", user, json.dumps(msg), e)
                     async with pushing:
                         await sock.send_json({"kind": "error", "detail": str(e)})
                 await push()
@@ -848,6 +876,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             pass
         finally:
             hub.pop(sock, None)
+            log.info("lobby socket closed: %s", user)
             await push()
 
     @app.get("/api/meta")
@@ -895,8 +924,9 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         """The host's hand on a level's clock (simhost.SimHost.level): start, run, pause, warp,
         restart or stop. Answers how its clock stands. With auth, its lobby's host's alone."""
         user = signed(request)
-        if auth and (lobbies.holding(lid) is None or lobbies.holding(lid).host != user):
-            raise HTTPException(403, "only the host of the level's lobby works its clock")
+        lb = lobbies.holding(lid)
+        if auth and not (lb and (lb.host == user or (req.get("do") in ("run", "pause", "warp") and lb.may_time(user)))):
+            raise HTTPException(403, "only the host of the level's lobby works its clock (or anyone, by the host's rule)")
         out = await sim.call("level", {**req, "id": lid})
         if not out["ok"]:
             raise HTTPException(out["status"], out["detail"])
@@ -1118,15 +1148,31 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         """An order at the map's clock, for one ship or for every ship under a formation: given by
         the simulation's side (simhost.give_order), which flies again only what it touches. With
         auth: as the user's side, on their lobby's level, and only while it runs (at its moment)."""
+        user, oid = signed(request), req.get("id")
+        body = {k: v for k, v in req.items() if k != "id"}
         if auth:
-            req = {k: v for k, v in bound(req, signed(request)).items() if k != "t"}
-            g = granted(user_of(request))
+            body = {k: v for k, v in bound(body, user).items() if k != "t"}
+            g = granted(user)
             if g is None or g[1].id not in await sim.call("levels", None):
+                log.info("order refused (409, no running level): %s from %s, order %s", user, where(request), oid)
                 raise HTTPException(409, "your lobby's level is not running")
-        out = await sim.call("order", req)
-        if not out["ok"]:
-            raise HTTPException(out["status"], out["detail"])
-        return out["reply"]
+
+        async def send():
+            out = await sim.call("order", body)
+            if not out["ok"]:
+                raise HTTPException(out["status"], out["detail"])
+            return out["reply"]
+        said = f"{user} as {body.get('view')}: {body.get('unit')} {body.get('mode') or next((k for k in ('stance', 'profile', 'cold', 'active', 'free', 'halt') if k in body), 'move')} (order {oid})"
+        try:
+            how, reply = await gate.give(user, oid, body, send)
+        except Busy as e:
+            log.warning("order refused, too many: %s", said)
+            raise HTTPException(429, str(e))
+        except HTTPException as e:
+            log.info("order refused (%s %s): %s", e.status_code, e.detail, said)
+            raise
+        log.info("order %s: %s", "given" if how == "given" else "seen again, not given again", said)
+        return reply
 
     @app.websocket("/ws")
     async def ws(sock: WebSocket):
@@ -1138,17 +1184,86 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             return
         await sock.accept()
         conn = next(_conn_n)
+        log.info("picture socket open: %s from %s (#%d)", user, where(sock), conn)
+        w = Watch(sock, user, conn)
         try:
             while True:
                 req = await sock.receive_json()
-                if auth and req.get("level") and granted(user) is None:      # out of the lobby: back to it
-                    await sock.send_text(json.dumps({"error": "you are in no lobby playing it", "stopped": req["level"], "system": req.get("system")}))
-                    continue
-                await sock.send_text(await sim.call("frame", (bound(req, user), conn)))
+                if req.get("level"):                     # a level's: watched, and sent PICTURE_HZ a second unasked
+                    w.req = {**req, "lead": 2 / hz}
+                    watching[conn] = w
+                    await send_picture(w)
+                else:                                    # a system's bodies, at the moment it says: answered once
+                    watching.pop(conn, None)
+                    w.req = None
+                    text = await sim.call("frame", (bound(req, user), conn))
+                    async with w.sending:
+                        await sock.send_text(text)
         except WebSocketDisconnect:
             return
         finally:
+            watching.pop(conn, None)
+            log.info("picture socket closed: %s (#%d)", user, conn)
             await sim.call("close", conn)
+
+    # ---- pictures pushed: every map watching a running level, PICTURE_HZ a second ------------------
+    hz = config["server"]["picture_hz"]
+
+    class Watch:
+        """A map's picture socket: the level it watches, as it asked (bound again each time: the
+        lobby may have changed its side), whether a picture is on its way, and one sender at a time."""
+        def __init__(self, sock, user, conn):
+            self.sock, self.user, self.conn, self.req, self.busy, self.sending = sock, user, conn, None, False, asyncio.Lock()
+
+    async def send_picture(w: "Watch") -> None:
+        """One picture to a watching map (a side's, made once for all its maps: SimHost.frame)."""
+        req = w.req
+        if req is None or w.busy:
+            return
+        w.busy = True
+        try:
+            if auth and granted(w.user) is None:         # out of the lobby: back to it
+                text = json.dumps({"error": "you are in no lobby playing it", "stopped": req["level"], "system": req.get("system")})
+            else:
+                text = await sim.call("frame", (bound(req, w.user), w.conn))
+            if text.startswith('{"error"'):              # its level stopped: no more till asked again
+                watching.pop(w.conn, None)
+            async with w.sending:
+                await w.sock.send_text(text)
+            pushed[0] += 1
+        except Exception:                                # gone: its own loop ends it
+            watching.pop(w.conn, None)
+        finally:
+            w.busy = False
+
+    async def pump() -> None:
+        """PICTURE_HZ times a second, a picture to every watching map whose last one has gone."""
+        while True:
+            await asyncio.sleep(1 / hz)
+            for w in list(watching.values()):
+                if not w.busy:
+                    asyncio.create_task(send_picture(w))
+            now = time.monotonic()
+            if now - pushed[1] >= 5:                     # the rate, for the health check
+                pushed[:] = [0, now, pushed[0] / (now - pushed[1])]
+
+    @app.get("/api/health")
+    async def health():
+        """Whether the server and its simulation answer, and who is on it: 200 if both do, else 503."""
+        t0 = time.monotonic()
+        try:
+            clocks = await asyncio.wait_for(sim.call("levels", None), 2.0)
+            answered = round(1e3 * (time.monotonic() - t0), 1)
+        except Exception as e:
+            clocks, answered = None, f"no answer: {type(e).__name__}"
+        alive = getattr(getattr(sim, "proc", None), "is_alive", lambda: True)()
+        ok = clocks is not None and alive
+        body = {"ok": ok, "uptime_s": round(time.monotonic() - started),
+                "sim": {"answers_ms": answered, "process_alive": alive, "compiled": kernels.HAVE_NUMBA},
+                "levels_running": clocks or {}, "lobbies": len(lobbies.all),
+                "users_online": sorted(set(hub.values())), "sockets": {"lobby": len(hub), "watching_a_level": len(watching)},
+                "pictures_a_second": round(pushed[2], 1), "orders": dict(gate.counts), "auth": auth}
+        return JSONResponse(body, status_code=200 if ok else 503)
 
     dist = ROOT / "web" / "dist"
     if dist.exists():
