@@ -1130,7 +1130,7 @@ formation = "tf-3"
 
 [[contact]]
 id = "tf3-vs-1"
-callsign = "T3 Vanguard 1"
+callsign = "Hu Tao Burger"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-vs"
@@ -1139,7 +1139,7 @@ position = { body = "mars", offset_km = [9307, -17721, 0] }
 
 [[contact]]
 id = "tf3-vs-2"
-callsign = "T3 Vanguard 2"
+callsign = "Akane Enomoto"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-vs"
@@ -1148,7 +1148,7 @@ position = { body = "mars", offset_km = [10000, -17321, 240] }
 
 [[contact]]
 id = "tf3-vs-3"
-callsign = "T3 Vanguard 3"
+callsign = "Nicole Tamara"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-vs"
