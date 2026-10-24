@@ -533,6 +533,89 @@ def sightings(a, ts, R, V, best_s, best_f, best_d, best_p, best_act, best_cls, b
     return hm, hj, hs, flux, plume, d, arrive, act, r, cls, ident
 
 
+# ---- the timeline: what the step does not write at a block's samples ------------------------------
+@jit
+def _put1(dst, src, slots, rows):
+    for a in range(slots.shape[0]):
+        for q in range(rows.shape[0]):
+            dst[slots[a], rows[q]] = src[rows[q]]
+
+
+@jit
+def _put3(dst, src, slots, rows):
+    for a in range(slots.shape[0]):
+        for q in range(rows.shape[0]):
+            for x in range(3):
+                dst[slots[a], rows[q], x] = src[rows[q], x]
+
+
+@jit
+def record(slots, scope, still, held, whole, ts, sa, ta, TR, TV, TPROP, TDVS, TAIM, TTHRUST, TRNG, TCLOS, TETA1, TARRIVE,
+           TDIR, THEAT, TCOLD, r, v, t, prop, dvs, aim, thrust, rng, clos, eta1, arrive, dirn, heat, cold):
+    """Fleet._record's writes, compiled: every row in scope, when her order gets her there; the
+    rows not flown in the block (still), their state as it stands (heat and cold only if whole);
+    and those of them holding station (held), at each sample ts where they were then: by cubic
+    Hermite from the sample before the block (slot sa, at ta; sa < 0: none) to where her place has
+    her now, on from it past that."""
+    _put1(TARRIVE, arrive, slots, scope)
+    _put3(TR, r, slots, still)
+    _put3(TV, v, slots, still)
+    _put1(TPROP, prop, slots, still)
+    _put1(TDVS, dvs, slots, still)
+    _put3(TAIM, aim, slots, still)
+    _put1(TTHRUST, thrust, slots, still)
+    _put1(TRNG, rng, slots, still)
+    _put1(TCLOS, clos, slots, still)
+    _put1(TETA1, eta1, slots, still)
+    _put3(TDIR, dirn, slots, still)
+    if whole:
+        _put1(THEAT, heat, slots, still)
+        _put1(TCOLD, cold, slots, still)
+    for q in range(held.shape[0]):
+        i = held[q]
+        tb = t[i]
+        ok = sa >= 0 and tb > ta + 1e-6
+        if ok:
+            for x in range(3):
+                if not math.isfinite(TR[sa, i, x]):
+                    ok = False
+        h = tb - ta
+        for a in range(slots.shape[0]):
+            s = slots[a]
+            if ok and ts[a] <= tb + 1e-6:
+                u = min(max((ts[a] - ta) / (h if h > 1e-6 else 1.0), 0.0), 1.0)
+                u2 = u * u
+                u3 = u * u * u
+                for x in range(3):
+                    TR[s, i, x] = (2 * u3 - 3 * u2 + 1) * TR[sa, i, x] + (u3 - 2 * u2 + u) * h * TV[sa, i, x] \
+                        + (3 * u2 - 2 * u3) * r[i, x] + (u3 - u2) * h * v[i, x]
+            else:
+                for x in range(3):
+                    TR[s, i, x] = r[i, x] + v[i, x] * (ts[a] - tb)
+
+
+@jit
+def unit_steps(rows, owner, nu, X, B, gms, goal, thrust, kind, eta1, lead_kind, eta, lo, hi, burn_max, share, close_min):
+    """Fleet._unit_steps, compiled: each of nu units' step (its rows, owner: the unit of each), the
+    least its rows want: eta of the dynamical time to the nearest pull, sqrt(d^3 / GM), between lo
+    and hi; burn_max at most under thrust, on an order or a lead; share of the time left (at least
+    close_min) as an order arrives."""
+    want = np.full(nu, hi)
+    for q in range(rows.shape[0]):
+        i, u = rows[q], owner[q]
+        dyn = np.inf
+        for b in range(B.shape[0]):
+            dx, dy, dz = X[i, 0] - B[b, 0], X[i, 1] - B[b, 1], X[i, 2] - B[b, 2]
+            d2 = max(dx * dx + dy * dy + dz * dz, 1.0)
+            dyn = min(dyn, math.sqrt(d2 ** 1.5 / gms[b]))
+        want[u] = min(want[u], min(max(eta * dyn, lo), hi))
+        if goal[i] or thrust[i] > 0 or kind[i] == lead_kind:
+            want[u] = min(want[u], burn_max)
+        if goal[i] and math.isfinite(eta1[i]):
+            want[u] = min(want[u], max(share * eta1[i], close_min))
+    return want
+
+
 # ---- the fleet's step: kernels.fly flies a unit (or several) through a block --------------------
 SHIP, LEAD = 0, 1
 STATION, FREE, DEAD = 0, 1, 2
@@ -887,3 +970,10 @@ def warm_up() -> None:
     tree = (np.array([1, 0]), np.array([-1, 0]), np.array([0.0, 1.0]), np.array([1, 0]), np.zeros(0, dtype=np.int64), 1, 1.0)
     relay_delays(T3, i2.copy(), *tree)
     sightings(0, f1, T3, T3, np.zeros((1, 1), dtype=np.int64), q1, q1, q1, qb, qb, qb, i1.copy(), i2.copy(), 3e8, *tree)
+    unit_steps(i1.copy(), i1.copy(), 1, f3, f3 + 1.0, f1 + 1.0, np.zeros(1, dtype=np.bool_), f1, np.zeros(1, dtype=np.int8),
+               f1, 1, 0.005, 10.0, 600.0, 60.0, 0.02, 1.0)
+    T1, T13 = np.zeros((2, 2)), np.zeros((2, 2, 3))
+    record(i1.copy(), i1.copy(), i1.copy(), i1.copy(), True, f1, 1, 0.0, T13, T13.copy(), T1, T1.copy(), T13.copy(),
+           T1.copy(), T1.copy(), T1.copy(), T1.copy(), T1.copy(), T13.copy(), T1.copy(), T1.copy(), np.zeros((2, 3)),
+           np.zeros((2, 3)), np.zeros(2), *(np.zeros(2) for _ in range(2)), np.zeros((2, 3)),
+           *(np.zeros(2) for _ in range(5)), np.zeros((2, 3)), np.zeros(2), np.zeros(2))

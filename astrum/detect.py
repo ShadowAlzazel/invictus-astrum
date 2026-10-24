@@ -404,8 +404,7 @@ class Sweeper:
         h = side.sightings(lo, k)                        # (none in the hour: as it stood before it)
         if h is not None:
             ok = late[h[1]] & (h[6] <= t)
-            for m, j in zip(h[0][ok].tolist(), h[1][ok].tolist()):
-                src[j] = m                               # (in minute order: the newest stays)
+            np.maximum.at(src, h[1][ok], h[0][ok])       # (the newest in)
         for m in np.unique(src[late]):
             back, rows = side.summary(int(m)) if m >= 0 else _empty(len(late)), late & (src == m)
             for name in got:

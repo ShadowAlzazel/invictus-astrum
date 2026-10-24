@@ -71,7 +71,7 @@ def ship_columns(fleet, pic: dict, t: float, n: int, seen: dict | None = None) -
             "sig_w": seen["sig_w"] if seen else np.full(n, np.nan),
             "relay_s": seen["relay_s"] if seen else np.full(n, np.nan),
         }
-    cols = {k: sig6(v) for k, v in cols.items()}
+    cols = dict(zip(cols, sig6(np.array(list(cols.values())))))     # (rounded all at once: the same as one by one)
     cols["burning"] = thrust > 0
     cols["active"] = fleet.pinging(t)[:n]                # sweeping her active sensors: pinging
     cols["velocity_kms"] = sig6(pic["v"][:n] / 1e3)
@@ -87,10 +87,7 @@ def ship_columns(fleet, pic: dict, t: float, n: int, seen: dict | None = None) -
     with np.errstate(invalid="ignore"):
         rng = np.where(alive, np.linalg.norm(aim - pic["r"][:n], axis=1), pic["rng"][:n])
     cols["goal_on"] = pic["goal"][:n]
-    cols["g"] = sig6(pic["gg"][src])
-    cols["eta_s"] = sig6(eta)
-    cols["range_km"] = sig6(rng / 1e3)
-    cols["closing_kms"] = sig6(pic["clos"][src] / 1e3)
+    cols["g"], cols["eta_s"], cols["range_km"], cols["closing_kms"] = sig6(np.array([pic["gg"][src], eta, rng / 1e3, pic["clos"][src] / 1e3]))
     cols["aim_km"] = np.round(aim / 1e3, 3)
     cols["eta_flown"] = np.isfinite(arrive)
     cols["mver"] = pic["mver"][:n]
@@ -140,55 +137,60 @@ class ShipEncoder:
             if new.any():
                 for k in changed:
                     changed[k] |= new
-        static_new = changed["mver"]
         out = {}
         said = fleet.versions.said
         rows = np.flatnonzero(np.logical_or.reduce([changed[k] for k in cols]))
         if not len(rows):
             return out, full
         val = {k: _values(cols[k]) for k in (*SCALARS, *GOAL_SCALARS, "velocity_kms", "aim_km", "dir")}
-        for i in rows:
-            if ids[i] is None:
+        got: dict[int, dict] = {}
+        for k in (*SCALARS, "velocity_kms"):            # the figures alone: each to the rows it changed for
+            vk = val[k]
+            for i in np.flatnonzero(changed[k]).tolist():
+                if ids[i] is not None:
+                    got.setdefault(i, {})[k] = vk[i]
+        rest = [k for k in cols if k not in SCALARS and k != "velocity_kms"]
+        ch = {k: changed[k].tolist() for k in rest}
+        burning, goal_on = cols["burning"].tolist(), cols["goal_on"].tolist()
+        for i in np.flatnonzero(np.logical_or.reduce([changed[k] for k in rest])).tolist():
+            if ids[i] is None:                          # what else changed: as the order and the version say
                 continue
-            d = {}
-            for k in SCALARS:
-                if changed[k][i]:
-                    d[k] = val[k][i]
-            if changed["burning"][i]:
-                d["burning"] = bool(cols["burning"][i])
-            if changed["active"][i]:
+            d = got.setdefault(i, {})
+            if ch["burning"][i]:
+                d["burning"] = burning[i]
+            if ch["active"][i]:
                 d["active"] = bool(cols["active"][i])
-            if changed["cold"][i]:
+            if ch["cold"][i]:
                 d["cold"] = None if np.isnan(cols["cold"][i]) else bool(cols["cold"][i])
             for k in ("shown", "identified", "lost"):
-                if changed[k][i]:
+                if ch[k][i]:
                     d[k] = bool(cols[k][i])
-            if changed["velocity_kms"][i]:
-                d["velocity_kms"] = val["velocity_kms"][i]
-            if changed["dir"][i]:                       # (none for a ship not hers)
+            if ch["dir"][i]:                            # (none for a ship not hers)
                 d["dir"] = None if None in val["dir"][i] else val["dir"][i]
             st = said[int(cols["mver"][i])] or {}
-            if changed["mode"][i] or static_new[i]:        # on an orbit she is free, though no step flies her
+            static = ch["mver"][i]
+            if ch["mode"][i] or static:                 # on an orbit she is free, though no step flies her
                 d["mode"] = "free" if cols["mode"][i] != STATION else "orbit" if st.get("orbit_of") else "station"
-            if static_new[i] or changed["goal_on"][i]:
+            if static or ch["goal_on"][i]:
                 d["load"] = st.get("load")
-                d["burn"] = st.get("burn") if cols["burning"][i] else None
+                d["burn"] = st.get("burn") if burning[i] else None
                 d["station_at"] = st.get("station_at")
                 d["orbit_of"] = st.get("orbit_of")
-            elif changed["burning"][i]:
-                d["burn"] = st.get("burn") if cols["burning"][i] else None
-            g = st.get("goal") if cols["goal_on"][i] else None
+            elif ch["burning"][i]:
+                d["burn"] = st.get("burn") if burning[i] else None
+            g = st.get("goal") if goal_on[i] else None
             tg = (g or {}).get("target")
             if alias and isinstance(tg, dict) and tg.get("unit") in alias:    # aimed at a ship the side knows as a track
                 g = {**g, "target": {**tg, "unit": alias[tg["unit"]]}}
-            if static_new[i] or changed["goal_on"][i]:
+            if static or ch["goal_on"][i]:
                 d["goal"] = None if g is None else {**g, **self._goal_now(cols, val, i)}
             elif g is not None:
-                now = self._goal_now(cols, val, i, only={k for k in ("g", "eta_s", "range_km", "closing_kms", "aim_km", "eta_flown") if changed[k][i]})
+                now = self._goal_now(cols, val, i, only={k for k in ("g", "eta_s", "range_km", "closing_kms", "aim_km", "eta_flown") if ch[k][i]})
                 if now:
                     d["goal"] = now
-            if d:
-                out[ids[i]] = d
+        for i in sorted(got):
+            if got[i]:
+                out[ids[i]] = got[i]
         return out, full
 
     @staticmethod

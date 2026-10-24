@@ -89,7 +89,9 @@ a minute not swept yet sweeps up to it first. It is one unit with one way in (th
 samples, the book's pings, the relay) and one way out (each side's summaries), so it could as well
 run in a process of its own. It reads only the timeline: the flight writes every row's state at
 every whole minute, station ships included (by cubic Hermite between where their places have them
-at each block's ends: within 20 m of placing them, the sweep needs nothing else). Many minutes go
+at each block's ends: a median 15 m from placing them, but up to 3.4 km for ships held off Io,
+whose place's velocity is a 60 s forward difference some 21 m/s off; the sweep needs nothing
+finer, a picture places them exactly). Many minutes go
 in one compiled call (`kernels.sweep`, up to two hours), and the work is culled before any cone is
 looked at:
 
@@ -523,14 +525,18 @@ off the table's nodes), flip-and-burn for the leads and the ships on their own, 
 for the rest, the rocket equation, kick-drift-kick, the steps shrinking as an order closes in,
 arrivals marked. Python is called once per group of units per block; it settles what happened
 (arrivals take station, a formation whose lead arrived flies its last leg ship by ship, times to
-target are asked for) and goes on.
+target are asked for) and goes on. Who flies together is kept from block to block until a row's
+mode, lead, order or formation changes; each unit's step is one compiled call (`kernels.unit_steps`),
+and so is what the step does not write at the block's samples, the rows it did not fly
+(`kernels.record`).
 
 **Targets are tracks.** Before a block, every target the units fly to is made into a track the
 compiled step can read: a ship that flies is read live off her row (where she is, carried on at
 her velocity); anything else (a point off a bullseye, a body, a unit on station, a formation) is
-worked out every minute across the block, from a minute before it, and drawn straight between; how
-it falls (for the guidance) is the second difference about the minute at or before the moment, so
-it does not depend on where a block happens to end.
+worked out every minute across the block, from a minute before it, and drawn straight between
+(two hours of minutes worked out at once and kept, so the next blocks find theirs); how it falls
+(for the guidance) is the second difference about the minute at or before the moment, so it does
+not depend on where a block happens to end.
 
 **Placement is one array operation.** A scenario's contacts are placed by a plan made once
 (`astrum/placement.py`): the contacts placed directly (an AER is a fixed vector in its bullseye's

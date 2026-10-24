@@ -83,6 +83,7 @@ from .timeline import FIELDS, MAX_SAMPLES, Timeline, Versions
 STATION_S = 300.0              # station ships pay for their places on a grid this fine (finer changes the bill by < 0.2%)
 STATION_AHEAD_S = 7200.0       # ... worked out this far ahead at once: a place moves by the clock alone
 TRACK_DT = 60.0                # a target is worked out this often across a block, and drawn straight between
+TRACK_AHEAD = 120              # ... and that many TRACK_DT ahead at once, for the blocks to come
 CLOSE_SHARE, CLOSE_MIN_S = 0.02, 1.0   # an order closes in steps of this share of the time left, at least this
 SAMPLE_S = 300.0               # an ephemeris without a table is sampled this often for the step
 TIMELINE_S = 60.0              # the timeline keeps every row's state this often (BLOCK_S is a whole number of them)
@@ -267,6 +268,7 @@ class Fleet:
         self._st_ahead: tuple = (None, {})            # station ships' places ahead: (who holds what, {grid moment: ...})
         self._plans: dict[tuple, tuple] = {}    # how station ships are placed, by the versions they are on
         self._plan_rows = None                  # (the scenario's placement plan, contact -> its row, rows -> theirs)
+        self._units_kept: tuple = (None, [])     # (what the units were made from, the units: kept until it changes)
         self._pulls = [b for b in system.massive() if b.gm > 0]
         self._gms = np.array([b.gm for b in self._pulls])
         self.signature = Signature(getattr(getattr(registry, "rules", None), "signature", None))   # what she gives off
@@ -422,27 +424,15 @@ class Fleet:
         if tl is None or not len(slots) or not len(scope):
             return
         tl.grow(c.cap)
-        tl.put(slots, scope, arrive=c.arrive[scope])
-        still = scope if whole else np.setdiff1d(scope, flown)
-        if len(still):                                   # (her heat through the block is _heat's)
-            tl.put(slots, still, **{name: getattr(c, name)[still] for name in FIELDS
-                                    if name != "arrive" and (whole or name not in ("heat", "cold"))})
+        still = scope if whole else np.setdiff1d(scope, flown)           # (her heat through the block is _heat's)
         held = still[c.mode[still] == STATION] if T0 is not None else still[:0]
-        if len(held):
-            k1 = math.floor(tl.k_of(T0) + 1e-9) + 1
-            ts = tl.time(k1) + tl.dt * np.arange(len(slots))
-            tb, rb, vb = c.t[held], c.r[held], c.v[held]
-            r = rb[None] + vb[None] * (ts[:, None] - tb[None])[..., None]          # (on from her last place, if past it)
-            if tl.lo is not None and tl.lo <= k1 - 1 <= tl.hi:
-                ta = tl.time(k1 - 1)
-                ra, va = tl.r[tl.slot(k1 - 1), held], tl.v[tl.slot(k1 - 1), held]
-                h = (tb - ta)[None, :, None]
-                ok = (np.isfinite(ra).all(axis=1) & (tb > ta + 1e-6))[None, :, None] & (ts[:, None, None] <= tb[None, :, None] + 1e-6)
-                u = np.clip((ts[:, None, None] - ta) / np.where(h > 1e-6, h, 1.0), 0.0, 1.0)
-                u2, u3 = u * u, u * u * u
-                herm = (2 * u3 - 3 * u2 + 1) * ra[None] + (u3 - 2 * u2 + u) * h * va[None] + (3 * u2 - 2 * u3) * rb[None] + (u3 - u2) * h * vb[None]
-                r = np.where(ok, herm, r)
-            tl.r[np.ix_(slots, held)] = r
+        k1 = math.floor(tl.k_of(T0) + 1e-9) + 1 if T0 is not None else 0
+        ts = tl.time(k1) + tl.dt * np.arange(len(slots))
+        known = T0 is not None and tl.lo is not None and tl.lo <= k1 - 1 <= tl.hi
+        kernels.record(np.asarray(slots, dtype=np.int64), np.asarray(scope, dtype=np.int64), still.astype(np.int64),
+                       held.astype(np.int64), whole, ts, tl.slot(k1 - 1) if known else -1, tl.time(k1 - 1) if known else 0.0,
+                       *(getattr(tl, name) for name in FIELDS), c.r, c.v, c.t,
+                       *(getattr(c, name) for name in FIELDS if name not in ("r", "v")))
 
     # ---- checkpoints --------------------------------------------------------------------------
     def _snapshot(self) -> tuple:
@@ -816,6 +806,10 @@ class Fleet:
         """What steps together: a formation's lead and the ships keeping their places on it, or a
         ship on her own. Rows (only those in scope, if given)."""
         c, n = self.c, self.c.n
+        key = (c.mode[:n].tobytes(), c.lead[:n].tobytes(), c.goal[:n].tobytes(), c.solo[:n].tobytes(), c.kind[:n].tobytes(),
+               tuple(L.row for L in self.leads.values()), None if scope is None else scope.tobytes())
+        if self._units_kept[0] == key:                 # kept until a row's mode, lead, order or formation changes
+            return self._units_kept[1]
         free = (c.mode[:n] == FREE)
         lead = c.lead[:n]
         member = free & (c.kind[:n] == SHIP) & c.goal[:n] & (lead >= 0) & ~c.solo[:n]
@@ -825,6 +819,7 @@ class Fleet:
         units += [np.array([i], dtype=np.int64) for i in np.flatnonzero(free & (c.kind[:n] == SHIP) & ~member)]
         if scope is not None:
             units = [u for u in units if np.isin(u, scope).any()]
+        self._units_kept = (key, units)
         return units
 
     def _unit_steps(self, units) -> np.ndarray:
@@ -835,18 +830,9 @@ class Fleet:
         allrows = np.concatenate(units)
         owner = np.concatenate([np.full(len(u), k) for k, u in enumerate(units)])
         bodies = self._bodies(self.t)
-        X, B = c.r[allrows], np.array([bodies[b.id] for b in self._pulls])
-        D = X[:, None, :] - B[None]
-        d2 = np.maximum(np.einsum("ijk,ijk->ij", D, D), 1.0)
-        dyn = np.min(np.sqrt(d2 ** 1.5 / self._gms[None, :]), axis=1)
-        want = np.full(len(units), STEP_MAX_S)
-        np.minimum.at(want, owner, np.clip(STEP_ETA * dyn, STEP_MIN_S, STEP_MAX_S))
-        busy = c.goal[allrows] | (c.thrust[allrows] > 0) | (c.kind[allrows] == LEAD)
-        np.minimum.at(want, owner[busy], STEP_BURN_MAX_S)
-        e = c.eta1[allrows]
-        flying = c.goal[allrows] & np.isfinite(e)
-        np.minimum.at(want, owner[flying], np.maximum(CLOSE_SHARE * e[flying], CLOSE_MIN_S))
-        return want
+        B = np.array([bodies[b.id] for b in self._pulls])
+        return kernels.unit_steps(allrows, owner, len(units), c.r, B, self._gms, c.goal, c.thrust, c.kind, c.eta1, LEAD,
+                                  STEP_ETA, STEP_MIN_S, STEP_MAX_S, STEP_BURN_MAX_S, CLOSE_SHARE, CLOSE_MIN_S)
 
     def _fly(self, T0: float, T1: float, steer_only: bool = False, scope: np.ndarray | None = None) -> tuple:
         """Fly every flying unit from T0 to T1, each in as many equal steps as it wants (block time
@@ -1016,7 +1002,7 @@ class Fleet:
                 if j is not None and c.mode[j] == FREE:
                     kinds.append(1); trow.append(j); knots.append(np.zeros((K, 3)))
                 else:
-                    pts = self._points(spec, [k0 + k * TRACK_DT for k in range(K)])
+                    pts = self._points(spec, [k0 + k * TRACK_DT for k in range(K)], ahead=TRACK_AHEAD)
                     if any(p is None for p in pts):
                         keys[key] = -1
                         continue
@@ -1382,14 +1368,18 @@ class Fleet:
             return placed[u] + off if u in placed else None
         return None
 
-    def _points(self, spec: dict, ts: list[float]) -> list:
+    def _points(self, spec: dict, ts: list[float], ahead: int = 0) -> list:
         """_point at many moments: a bullseye's or a body's point worked out for all of those not
-        kept yet at once (bullseyes_many, the table's positions_many), the rest one by one."""
+        kept yet at once (bullseyes_many, the table's positions_many), the rest one by one. ahead:
+        on a miss, that many moments more on the same grid after the last are worked out with them
+        (the next blocks' knots: each moment's point the same bits however many are asked at once)."""
         if not ("bullseye" in spec or "body" in spec) or not ts:
             return [self._point(spec, t) for t in ts]
         key = (spec.get("player"), spec.get("bullseye"), tuple(spec.get("aer") or ()), spec.get("body"))
         cache = self._point_cache
         miss = [t for t in ts if key + (t,) not in cache]
+        if miss and ahead and len(ts) > 1:
+            miss += [t for j in range(1, ahead + 1) if key + ((t := ts[-1] + j * (ts[1] - ts[0])),) not in cache]
         if len(miss) > 1 and hasattr(self.eph, "positions_many"):
             if "body" in spec:
                 P = self.eph.positions_many(miss, np.array([self.eph.ids.index(spec["body"])]))[:, 0]

@@ -761,7 +761,8 @@ class SimHost:
             ids = fleet.c.ids[:n]
             seen = picture.view(fleet, pic, t, own, switches or self.world.config["picture"], view, friendly, knows)
             cols = ship_columns(fleet, pic, t, n, seen)
-            flown = {ids[i]: pic["r"][i] for i in range(n) if np.isfinite(pic["r"][i]).all()}
+            ok = np.flatnonzero(np.isfinite(pic["r"][:n]).all(axis=1))
+            flown = dict(zip((ids[i] for i in ok), pic["r"][ok]))
         return t, ids, cols, flown, seen
 
 
