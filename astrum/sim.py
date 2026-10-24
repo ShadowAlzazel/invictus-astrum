@@ -1662,7 +1662,7 @@ class Fleet:
             self._leave_station(i, at)
             self._coast(i)
         elif kind == GO_FREE:
-            self._go_free(i, at)
+            self._go_free(i, at, paid=not (g.source == "scenario" and at <= self.t0))   # a scenario's start: on it already
         elif kind == COLD:
             if c.coldt[i] <= 0:
                 self.findings.append(f"{c.ids[i]}: her rads do not fold; she cannot run cold")
@@ -1682,12 +1682,13 @@ class Fleet:
         b = self.system[classify(self.system, self._bodies(t), r)["dominant"]]
         return None if b.gm <= 0 or (b.kind == "star" and not star) else b
 
-    def _go_free(self, i: int, t: float, star: bool = True) -> None:
+    def _go_free(self, i: int, t: float, star: bool = True, paid: bool = True) -> None:
         """Free: she gives up her place (or her order) and holds nothing. In a body's well (out in a
         star's own space, the star's) she goes onto a circular orbit about it at the height she is
         at, prograde about the system's up, paying the burn onto it (if she has it); an orbit is free
         fall, and costs nothing after. Short of the burn, she coasts as she goes; so does a ship at
-        bingo (star False) out in a star's space, keeping what she has left."""
+        bingo (star False) out in a star's space, keeping what she has left. A scenario that starts
+        her on her orbit (not paid) pays nothing: she is on it already."""
         c = self.c
         self._leave_station(i, t)
         b = self._well(c.r[i], t, star)
@@ -1700,12 +1701,13 @@ class Fleet:
         up = np.array([0.0, 0.0, 1.0]) if abs(rel[2]) < 0.95 * R else np.array([1.0, 0.0, 0.0])
         along = np.cross(up, rel)
         v0 = math.sqrt(b.gm / R) * along / np.linalg.norm(along)
-        burn = float(np.linalg.norm(v0 - (c.v[i] - V)))
-        if c.ve[i] <= 0 or c.ve[i] * math.log(c.mass(i) / c.dry[i]) < burn:
+        burn = float(np.linalg.norm(v0 - (c.v[i] - V))) if paid else 0.0
+        if paid and (c.ve[i] <= 0 or c.ve[i] * math.log(c.mass(i) / c.dry[i]) < burn):
             self.findings.append(f"{c.ids[i]}: not the Δv to go onto an orbit of {b.name}; she coasts")
             self._coast(i)
             return
-        self._pay(np.array([i]), np.array([burn]))
+        if burn:
+            self._pay(np.array([i]), np.array([burn]))
         c.places.append({"body": b.id, "orbit": {"r0": rel.tolist(), "v0": v0.tolist(), "t0": t},
                          "label": f"orbit of {b.name}, {R / 1e3:,.0f} km"})
         c.place[i] = len(c.places) - 1

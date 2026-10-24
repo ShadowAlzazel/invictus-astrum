@@ -140,3 +140,4 @@ def test_trappist_places_task_force_3_on_orbits_and_its_next_ship_leads():
     assert f.c.ids[R.flagship] == "tf3-lf4-bs-1" and sc.contacts["tf3-lf4-bs-1"].callsign == "Shima Rin"
     i = f.c.row["luna-strike-1"]
     assert np.linalg.norm(f.c.r[i] - f._bodies(f.t)["trappist-1"]) == pytest.approx(0.5 * 1.495978707e11, rel=1e-3)
+    assert f.c.dvs[i] == 0 and f.c.dvs[f.c.row["tf3-lf4-bs-1"]] == 0           # started on their orbits: nothing paid

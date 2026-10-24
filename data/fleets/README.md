@@ -55,8 +55,8 @@ status = ["cold"]              # as she starts
 ```
 
 It may also say `mode = "free"` (fly from the start instead of holding station), `mode = "orbit"`
-(go free at the start: onto a circular orbit of the body whose well she is in, out in a star's
-own space the star's, paying the burn onto it from her tanks), `propellant = 0.8`
+(she starts on a circular orbit of the body whose well she is in, out in a star's own space the
+star's, at the height she is placed: on it already, nothing paid), `propellant = 0.8`
 (the share of her tanks she starts with), `load = "light"` (her ammunition load, one of her class's
 hull masses), and a `stance` or `profile` of its own. A formation needs no placement: it stands
 where it is placed, if it is, else at the mean of its members. A formation's flag not placed, it

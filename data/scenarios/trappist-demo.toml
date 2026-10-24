@@ -13,7 +13,7 @@ factions = ["arcvs"]
 [[fleet]]
 id = "luna-classis-1"
 
-# ---- Task Force 3: as it stood off Mars, about TRAPPIST-1 f, each ship going free onto her orbit ------
+# ---- Task Force 3: as it stood off Mars, about TRAPPIST-1 f, each ship starting on her orbit -----------
 
 [[contact]]
 fleet = "luna-classis-1"
@@ -284,7 +284,7 @@ unit = "tf3-lp2-3"
 position = { body = "trappist-1f", offset_km = [60000, 800, -8000] }
 mode = "orbit"
 
-# ---- the Luna Strike Squadron: half an AU from TRAPPIST-1, in a line 2,000 km apart, going free ----------
+# ---- the Luna Strike Squadron: half an AU from TRAPPIST-1, in a line 2,000 km apart, on orbits ------------
 
 [[contact]]
 fleet = "luna-classis-1"
