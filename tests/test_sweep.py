@@ -18,8 +18,8 @@ def _fleet(hours=30):
 
 
 def test_the_culling_never_hides_what_a_sensor_sees():
-    """The groups' spheres and each ship's own pass over only what no sensor of theirs could see:
-    the same hits as every sensor against every ship."""
+    """The groups' spheres and each ship's own pass over only what no sensor of theirs could see,
+    and the bound only what could not be kept: the same sightings as every sensor against every ship."""
     w, f = _fleet(6)
     tl, S, sig, c = f.timeline, f.sensors, f.signature, f.c
     n = len(c.row)
@@ -27,16 +27,16 @@ def test_the_culling_never_hides_what_a_sensor_sees():
     for view, side in f.sweeper.sides.items():
         T, Q = len(X["km"]), len(side.tgt)
 
-        def run(thr_min):
+        def run(thr_min, bound):
             best = (np.empty((T, Q), dtype=np.int64), np.empty((T, Q)), np.empty((T, Q)), np.empty((T, Q)),
                     np.empty((T, Q), dtype=bool), np.empty((T, Q), dtype=bool), np.empty((T, Q), dtype=bool))
             got = kernels.sweep(X["km"], X["r"], X["v"], X["dir"], X["thrust"], X["cold"], X["heat"], X["ping"], c.ve[:n],
                                 c.quiet[:n], S.emit, sig.aspect_deg, sig.aspect_share, sig.cold_share, sig.recover,
                                 side.cl_start, side.cl_rows, S.s_start, S.body, S.cos, S.thr, S._every, S._at, S.active,
-                                S.reach, side.tgt, thr_min, S.act_reach, S.classify, S.identify, *best)
+                                S.reach, side.tgt, thr_min, S.act_reach, S.classify, S.identify, bound, *best)
             return got, [np.where(best[0] >= 0, x, 0) for x in best]
-        (k1, a), (k2, b) = run(S.thr_min), run(np.full(n, 1e-300))   # (a floor that low: every sphere passes)
-        assert k1 == k2 and all(np.array_equal(x, y) for x, y in zip(a, b)), view
+        (k1, a), (k2, b) = run(S.thr_min, True), run(np.full(n, 1e-300), False)   # (a floor that low: every sphere passes)
+        assert k1 <= k2 and all(np.array_equal(x, y) for x, y in zip(a, b)), view
 
 
 def test_a_summary_from_the_hourly_whole_ones_is_the_one_laid_minute_by_minute():

@@ -374,7 +374,7 @@ class Sweeper:
         kernels.sweep(X["km"], X["r"], X["v"], X["dir"], X["thrust"], X["cold"], X["heat"], X["ping"], c.ve[:n], c.quiet[:n],
                       S.emit, sig.aspect_deg, sig.aspect_share, sig.cold_share, sig.recover, side.cl_start, side.cl_rows,
                       S.s_start, S.body, S.cos, S.thr, S._every, S._at, S.active, S.reach, side.tgt, S.thr_min, S.act_reach,
-                      S.classify, S.identify, *best)
+                      S.classify, S.identify, True, *best)
         cols = kernels.sightings(a, X["ts"], X["r"], X["v"], *best, side.tgt, S.row, C, *relay(f, side.view, side.own).tree)
         side.add(a, b, cols if len(cols[0]) else None)
 

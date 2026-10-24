@@ -99,11 +99,17 @@ looked at:
   sphere about its ships, made fresh each minute (linear in the ships): a group whose sphere is
   farther from her than its most sensitive sensor (or its pings) could reach is passed over whole;
 - then each ship of a group that is near, by her own most sensitive sensor; then her cones, each
-  only on the minute its sweep comes round.
+  only on the minute its sweep comes round, its axis worked out once that minute for every target;
+- only the brightest sighting of each ship a minute is kept, and whether any made out her class or
+  who she is: so once she is seen, the near groups go brightest first (the most of her plume toward
+  any point of a group's sphere: the share at the least angle off her tail the sphere spans), and a
+  group, or a ship, that could not see her brighter, nor make out what is not made out yet, is
+  passed over. A burn is seen across the system (Task Force 3 under way: JADF's sensors at Jupiter
+  find 191,000 sightings of her an hour, some 3,000 of them kept), so this is what culls it.
 
 The kernel keeps, for each minute and each ship, the brightest sighting and whether any sighting
-then made out her class or who she is; nothing culled is ever a sighting lost (a test sweeps every
-sensor against every ship and finds the same). ARCVS's 106 ships against six: 4 µs a minute culled,
+then made out her class or who she is; nothing culled or passed over is ever a sighting lost (a
+test sweeps every sensor against every ship and finds the same). ARCVS's 106 ships against six: 4 µs a minute culled,
 80 µs without. What each side has made of every ship is its summary: each minute's sightings, kept
 in runs; the summary whole every hour; and as of the newest minute swept. Any minute's is the
 hour's with the minutes since laid over (`kernels.fold`). An order flown again, or a setback,
