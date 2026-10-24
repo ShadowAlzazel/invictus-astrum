@@ -159,8 +159,12 @@ is placed on, else its first ship. The leader of the side's top formation is the
 | any other ship | her leader | 0.3 c |
 | any other ship | the nearest Vigil, then the flagship, if that comes in sooner | c |
 
-The hops are fixed by the scenario; their lengths are taken where everyone stands at the scan, for
-every ship at once. Each sighting carries when it arrives, and a picture shows of each ship the
+The hops are fixed by the scenario, and they make a tree rooted at the flagship, one node a ship
+(ARCVS: 283 hops on 106 paths, 106 nodes). Their lengths are taken where everyone stands at the
+scan, in the same compiled pass that turns the sweep's sightings into columns (`kernels.sightings`):
+up the tree from the ship that saw, each node's time to the flagship worked out once a minute and
+the walk ending at the first node already known, so a second report that minute, or one from under
+a ship already heard from, costs a lookup. Each sighting carries when it arrives, and a picture shows of each ship the
 newest sighting that has arrived: Task Force 3, near Mars, reports some 13 minutes late; the Luna
 Strike Squadron behind Jupiter, some 47. Where her own ships are, a side knows at once (for now).
 

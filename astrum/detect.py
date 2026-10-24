@@ -375,18 +375,8 @@ class Sweeper:
                       S.emit, sig.aspect_deg, sig.aspect_share, sig.cold_share, sig.recover, side.cl_start, side.cl_rows,
                       S.s_start, S.body, S.cos, S.thr, S._every, S._at, S.active, S.reach, side.tgt, S.thr_min, S.act_reach,
                       S.classify, S.identify, *best)
-        bs, flux, d, plume, act, cls, ident = best
-        hm, hq = np.nonzero(bs >= 0)                                    # (in minute order, then ship)
-        cols = None
-        if len(hm):
-            hs, hj = bs[hm, hq], side.tgt[hq]
-            ms, at = np.unique(hm, return_inverse=True)                 # the report's way up: only the minutes seen in
-            late = relay(f, side.view, side.own).delays_many(X["r"][ms], np.unique(S.row[hs]))
-            arrive = X["ts"][hm] + np.nan_to_num(late[at, S.row[hs]])
-            dd = d[hm, hq]
-            r = X["r"][hm, hj] - X["v"][hm, hj] * (dd / C)[:, None]     # where she was when that light left her
-            cols = (hm + a, hj, hs, flux[hm, hq], plume[hm, hq], dd, arrive, act[hm, hq], r, cls[hm, hq], ident[hm, hq])
-        side.add(a, b, cols)
+        cols = kernels.sightings(a, X["ts"], X["r"], X["v"], *best, side.tgt, S.row, C, *relay(f, side.view, side.own).tree)
+        side.add(a, b, cols if len(cols[0]) else None)
 
     # ---- what pictures read ------------------------------------------------------------------------
     def side(self, view: str, own: np.ndarray) -> SideSweep:

@@ -11,12 +11,17 @@ hop by hop: from her formation's leader to the next formation's, and so on to th
     from any other ship       to her leader at `slow` times c, or through the nearest Vigil (at
                               `fast`) if that comes in sooner
 
-The hops are fixed by the scenario (Relay); how long they take is worked out at the moment of each
-report, from where everyone is then, every ship at once (Relay.delays).
+The hops are fixed by the scenario (Relay), and they make a tree: every ship's path ends at the
+flagship, and two that meet go on the same way. How long they take is worked out at the moment of
+each report, from where everyone is then (Relay.delays, kernels.relay_delays): up the tree from
+the ship's node, each node's time worked out once a minute, so a report from a ship already heard
+from that minute, or under one, costs a lookup.
 """
 from __future__ import annotations
 
 import numpy as np
+
+from . import kernels
 
 C = 299_792_458.0           # m/s
 
@@ -95,53 +100,38 @@ class Relay:
         self.speed, self.owner = np.array(speed, dtype=float), np.array(owner, dtype=np.int64)
         self.fast = fast
         self.mine = np.array([rows[sid] for sid in mine], dtype=np.int64)
+        # the tree: node 0 the flagship; each node a ship on some path, its parent the next hop up,
+        # the time over that hop per metre; parents before children; each ship of the side at the
+        # node her own path starts from (-1: not the side's)
+        node_row, node_up, node_inv = [self.flagship if self.flagship is not None else -1], [-1], [0.0]
+        at, child = np.full(n, -1, dtype=np.int64), {}
+        at[self.mine] = 0
+        hops: dict[int, list] = {}
+        for a, b, v, o in zip(src, dst, speed, owner):
+            hops.setdefault(o, []).append((a, v))
+        for o, path in hops.items():
+            k = 0
+            for a, v in reversed(path):                     # from the flagship down to her
+                up, k = k, child.get((k, a))
+                if k is None:
+                    k = child[(up, a)] = len(node_row)
+                    node_row.append(a)
+                    node_up.append(up)
+                    node_inv.append(1.0 / (C * v))
+            at[o] = k
+        self.tree = (np.array(node_row, dtype=np.int64), np.array(node_up, dtype=np.int64), np.array(node_inv),
+                     at, self.vigils, self.flagship if self.flagship is not None else -1, 1.0 / (C * fast))
 
     def delays(self, r: np.ndarray) -> np.ndarray:
         """How long a report from each of the side's ships takes to reach the flagship, with
         everyone where r has them (NaN for ships not the side's; none at all: 0)."""
-        out = np.full(self.n, np.nan)
-        if self.flagship is None:
-            out[self.mine] = 0.0
-            return out
-        hop = np.linalg.norm(r[self.src] - r[self.dst], axis=1) / (C * self.speed)
-        out[self.mine] = 0.0
-        out[self.mine] = np.bincount(self.owner, weights=hop, minlength=self.n)[self.mine]
-        if len(self.vigils):                             # through the nearest Vigil, if sooner
-            F = r[self.flagship]
-            to_v = np.linalg.norm(r[self.mine][:, None, :] - r[self.vigils][None, :, :], axis=2)
-            v_to_f = np.linalg.norm(r[self.vigils] - F, axis=1)
-            via = np.min(to_v + v_to_f[None, :], axis=1) / (C * self.fast)
-            out[self.mine] = np.minimum(out[self.mine], via)
-        out[self.flagship] = 0.0
-        return out
+        return self.delays_many(r[None])[0]
 
-
-def _delays_many(self, R: np.ndarray, rows: np.ndarray | None = None) -> np.ndarray:
-    """delays at many moments at once (R: every row at each, T x n x 3) -> T x n; only for the
-    given rows of the side (the rest NaN), if given: the ships whose reports are asked about."""
-    T = R.shape[0]
-    out = np.full((T, self.n), np.nan)
-    mine = self.mine if rows is None else np.intersect1d(self.mine, rows)
-    out[:, mine] = 0.0
-    if self.flagship is None or not len(mine):
-        return out
-    hops = np.flatnonzero(np.isin(self.owner, mine)) if rows is not None else np.arange(len(self.src))
-    if len(hops):
-        hop = np.linalg.norm(R[:, self.src[hops]] - R[:, self.dst[hops]], axis=2) / (C * self.speed[hops])
-        M = np.zeros((len(hops), self.n))
-        M[np.arange(len(hops)), self.owner[hops]] = 1.0
-        out[:, mine] = (hop @ M)[:, mine]
-    if len(self.vigils):
-        F = R[:, self.flagship]
-        to_v = np.linalg.norm(R[:, mine][:, :, None, :] - R[:, self.vigils][:, None, :, :], axis=3)
-        v_to_f = np.linalg.norm(R[:, self.vigils] - F[:, None], axis=2)
-        out[:, mine] = np.minimum(out[:, mine], np.min(to_v + v_to_f[:, None, :], axis=2) / (C * self.fast))
-    if self.flagship in mine:
-        out[:, self.flagship] = 0.0
-    return out
-
-
-Relay.delays_many = _delays_many
+    def delays_many(self, R: np.ndarray, rows: np.ndarray | None = None) -> np.ndarray:
+        """delays at many moments at once (R: every row at each, T x n x 3) -> T x n; only for the
+        given rows (the rest NaN), if given: the ships whose reports are asked about."""
+        ask = self.mine if rows is None else np.asarray(rows, dtype=np.int64)
+        return kernels.relay_delays(np.ascontiguousarray(R[:, :self.n], dtype=float), ask, *self.tree)
 
 
 def relay(fleet, view: str, own: np.ndarray) -> Relay:

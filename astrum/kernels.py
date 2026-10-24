@@ -396,6 +396,103 @@ def fold(hm, hj, hs, hflux, hplume, hd, harr, hact, hr, hcls, hident, hold,
         r[j, 0], r[j, 1], r[j, 2] = hr[q, 0], hr[q, 1], hr[q, 2]
 
 
+# ---- the relay: a side's chain of command as a tree, rooted at its fleet flagship ----------------
+@jit
+def _gap(R, t, a, b):
+    dx, dy, dz = R[t, a, 0] - R[t, b, 0], R[t, a, 1] - R[t, b, 1], R[t, a, 2] - R[t, b, 2]
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+
+@jit
+def _relayed(i, t, R, node_row, node_up, node_inv, at, vigils, flag, inv_fast, dnode, nstamp, drow, rstamp, path):
+    """How long ship i's report at minute t takes to reach the flagship (astrum/relay.py): up the
+    tree from her node, each hop worked out once a minute (nstamp), the first node already known
+    ending the walk; through the nearest Vigil if sooner. Hers kept for the minute too (rstamp), so
+    her next sighting asks nothing. NaN: not the side's."""
+    k = at[i]
+    if k < 0:
+        return math.nan
+    if rstamp[i] == t:
+        return drow[i]
+    if flag < 0:
+        drow[i], rstamp[i] = 0.0, t
+        return 0.0
+    m = 0
+    while k > 0 and nstamp[k] != t:
+        path[m] = k
+        m += 1
+        k = node_up[k]
+    for j in range(m - 1, -1, -1):
+        q = path[j]
+        up = node_up[q]
+        dnode[q] = dnode[up] + _gap(R, t, node_row[q], node_row[up]) * node_inv[q]
+        nstamp[q] = t
+    best = dnode[at[i]]
+    for v in range(vigils.shape[0]):
+        w = vigils[v]
+        via = (_gap(R, t, i, w) + _gap(R, t, w, flag)) * inv_fast
+        if via < best:
+            best = via
+    if i == flag:
+        best = 0.0
+    drow[i], rstamp[i] = best, t
+    return best
+
+
+@jit
+def relay_delays(R, ask, node_row, node_up, node_inv, at, vigils, flag, inv_fast):
+    """Relay.delays_many, compiled: each asked row's report delay at each moment of R (T x n x 3)
+    -> T x n, NaN for rows not asked or not the side's."""
+    T, n, N = R.shape[0], R.shape[1], node_row.shape[0]
+    out = np.full((T, n), np.nan)
+    dnode, nstamp, path = np.zeros(N), np.full(N, -1, dtype=np.int64), np.zeros(N, dtype=np.int64)
+    drow, rstamp = np.zeros(n), np.full(n, -1, dtype=np.int64)
+    for t in range(T):
+        for q in range(ask.shape[0]):
+            out[t, ask[q]] = _relayed(ask[q], t, R, node_row, node_up, node_inv, at, vigils, flag, inv_fast,
+                                      dnode, nstamp, drow, rstamp, path)
+    return out
+
+
+@jit
+def sightings(a, ts, R, V, best_s, best_f, best_d, best_p, best_act, best_cls, best_ident, tgt, srow, c,
+              node_row, node_up, node_inv, at, vigils, flag, inv_fast):
+    """A sweep's best sightings (kernels.sweep: minute x target, the brightest sensor or -1) as
+    columns in minute order, then target: the minute, the ship, the sensor, flux, plume, distance,
+    when the report reaches the flagship (the relay, above), actively, where she was when that
+    light left her (R - V d/c), class and identity made out."""
+    T, Q, n, N = best_s.shape[0], best_s.shape[1], R.shape[1], node_row.shape[0]
+    H = 0
+    for t in range(T):
+        for q in range(Q):
+            if best_s[t, q] >= 0:
+                H += 1
+    hm, hj, hs = np.empty(H, dtype=np.int64), np.empty(H, dtype=np.int64), np.empty(H, dtype=np.int64)
+    flux, plume, d, arrive = np.empty(H), np.empty(H), np.empty(H), np.empty(H)
+    act, cls, ident = np.empty(H, dtype=np.bool_), np.empty(H, dtype=np.bool_), np.empty(H, dtype=np.bool_)
+    r = np.empty((H, 3))
+    dnode, nstamp, path = np.zeros(N), np.full(N, -1, dtype=np.int64), np.zeros(N, dtype=np.int64)
+    drow, rstamp = np.zeros(n), np.full(n, -1, dtype=np.int64)
+    h = 0
+    for t in range(T):
+        for q in range(Q):
+            s = best_s[t, q]
+            if s < 0:
+                continue
+            j = tgt[q]
+            late = _relayed(srow[s], t, R, node_row, node_up, node_inv, at, vigils, flag, inv_fast,
+                            dnode, nstamp, drow, rstamp, path)
+            hm[h], hj[h], hs[h] = a + t, j, s
+            flux[h], plume[h], d[h] = best_f[t, q], best_p[t, q], best_d[t, q]
+            arrive[h] = ts[t] + (0.0 if math.isnan(late) else late)
+            act[h], cls[h], ident[h] = best_act[t, q], best_cls[t, q], best_ident[t, q]
+            lag = best_d[t, q] / c
+            for x in range(3):
+                r[h, x] = R[t, j, x] - V[t, j, x] * lag
+            h += 1
+    return hm, hj, hs, flux, plume, d, arrive, act, r, cls, ident
+
+
 # ---- the fleet's step: kernels.fly flies a unit (or several) through a block --------------------
 SHIP, LEAD = 0, 1
 STATION, FREE, DEAD = 0, 1, 2
@@ -747,3 +844,6 @@ def warm_up() -> None:
     fold(i1, i1, i1, f1, f1, f1, f1, np.zeros(1, dtype=np.bool_), f3, np.zeros(1, dtype=np.bool_), np.zeros(1, dtype=np.bool_),
          60, i2.copy() - 1, i2.copy(), np.zeros(2), np.zeros(2), np.zeros(2), np.zeros(2), np.zeros(2, dtype=np.bool_),
          np.zeros((2, 3)), i2.copy(), np.zeros(2, dtype=np.bool_), np.zeros(2, dtype=np.bool_))
+    tree = (np.array([1, 0]), np.array([-1, 0]), np.array([0.0, 1.0]), np.array([1, 0]), np.zeros(0, dtype=np.int64), 1, 1.0)
+    relay_delays(T3, i2.copy(), *tree)
+    sightings(0, f1, T3, T3, np.zeros((1, 1), dtype=np.int64), q1, q1, q1, qb, qb, qb, i1.copy(), i2.copy(), 3e8, *tree)

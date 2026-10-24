@@ -1260,6 +1260,34 @@ def test_reports_come_up_the_leaders_to_the_fleet_flagship():
     assert now["arrive"][g] > t >= held["arrive"][g] and held["k"][g] < now["k"][g]    # the newest is on its way
 
 
+def test_the_relay_is_a_tree_of_its_paths():
+    """A side's paths to its flagship make a tree, one node a ship: a report's delay is still its
+    path's hops summed (or through the nearest Vigil, if sooner), whoever else was heard from."""
+    from astrum.app import create_app
+    from astrum import picture
+    from astrum.relay import C, relay
+    w = create_app().state.world
+    f = _demo(w)
+    rng = np.random.default_rng(7)
+    for view in ("arcvs", "jadf"):
+        own = picture.own_rows(f, w.factions, view)
+        R = relay(f, view, own)
+        assert len(R.tree[0]) == own.sum() and len(R.src) > own.sum()          # each hop once, not once a path
+        P = rng.normal(size=(5, R.n, 3)) * 1e11
+        want = np.full((5, R.n), np.nan)
+        want[:, R.mine] = 0.0
+        hop = np.linalg.norm(P[:, R.src] - P[:, R.dst], axis=2) / (C * R.speed)
+        np.add.at(want, (slice(None), R.owner), hop)
+        for v in R.vigils:
+            via = (np.linalg.norm(P[:, R.mine] - P[:, [v]], axis=2) + np.linalg.norm(P[:, [v]] - P[:, [R.flagship]], axis=2)) / C
+            want[:, R.mine] = np.minimum(want[:, R.mine], via)
+        want[:, R.flagship] = 0.0
+        assert np.allclose(R.delays_many(P), want, rtol=1e-12, equal_nan=True)
+        some = R.mine[::4]
+        got = R.delays_many(P, some)
+        assert np.allclose(got[:, some], want[:, some], rtol=1e-12) and np.isnan(np.delete(got, some, axis=1)).all()
+
+
 def test_each_side_plays_and_each_map_switches_its_own_picture():
     """Every faction of a scenario plays (as its player in players.toml, else as itself, with no
     bullseyes of its own yet); the map switches the picture's functions for its own pictures."""

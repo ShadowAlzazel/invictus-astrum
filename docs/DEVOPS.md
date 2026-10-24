@@ -12,7 +12,7 @@ cheapest check to the slowest.
 | the web process (`app.py`, `lobby.py`, `gate.py`, `accounts.py`) | `pytest tests/test_lobby.py` (~5 s) | `python serve.py --dev` in the browser |
 | the map (`web/src`) | `cd web && npm run build` | `python serve.py --dev`, or `npm run dev` for live reload |
 
-Then, before a commit, the whole suite: `python -m pytest -q` (about 1.5 minutes, 243 tests).
+Then, before a commit, the whole suite: `python -m pytest -q` (about 2 minutes, 244 tests).
 
 ## The dev server
 
