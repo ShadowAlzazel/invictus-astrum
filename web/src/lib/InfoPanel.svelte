@@ -124,7 +124,7 @@
   // each unit selected, and again once a new order is flown
   let eng = null, engAsked = '';
   $: ownUnit = contact && (ship ? !seenOnly : under.some((id) => state?.ships?.[id]?.mass_t != null));
-  $: engKey = ownUnit ? `${chosen}|${ship?.goal?.order_id ?? orders.map((o) => o.id).join()}|${ship?.active}|${ship?.cold}` : '';
+  $: engKey = ownUnit ? `${chosen}|${ship?.goal?.order_id ?? orders.map((o) => o.id).join()}|${ship?.active}|${ship?.cold}|${ship?.quarters}` : '';
   $: if (engKey !== engAsked) { engAsked = engKey; askEngagement(); }
   async function askEngagement() {
     const key = engAsked;
@@ -133,6 +133,8 @@
   }
   async function stance(change) { await onstance(chosen, change); engAsked = ''; }
   const short = (label) => label?.split(':')[0] ?? '';
+  const ROMAN = { 1: 'I', 2: 'II', 3: 'III' };
+  const ENDS = { keep: 'A, keep station', pursue: 'B, pursue', pass: 'C, pass' };
   const whence = (f) => !f ? '' : f.from === 'ordered' ? `ordered to ${nameOf(f.by)}` : f.from === 'written' ? `written for ${nameOf(f.by)}`
     : f.from === 'profile' ? "the profile's" : f.gone ? `the root (${f.gone} deleted)` : 'the root';
   const SAID = { coast: 'Stop: drive cut', cold: 'Run cold', warm: 'Spread wings', active: 'Ping', passive: 'Go quiet' };
@@ -423,6 +425,14 @@
             {#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></dd>
           {#if eng.profile_from}<dt class="sub">from</dt><dd class="sub">{whence(eng.profile_from)}</dd>{/if}
           <dt title="Her crew's tier">Crew</dt><dd>{eng.veterancy ?? 'rated'}</dd>
+          {#if eng.combat}
+            <dt title="I general quarters (pinging, engaging by her stance), II moving to attack, III watching">Readiness</dt>
+            <dd class:gq={eng.combat.quarters === 1}>{ROMAN[eng.combat.quarters]} · {eng.combat.state ?? eng.combat.quarters_name}</dd>
+          {/if}
+          {#if eng.automaton_name}<dt title="Her ship AI: the state map her profile names">Automaton</dt>
+            <dd>{eng.automaton_name}{#if eng.end} <span class="dim">· ends {ENDS[eng.end]}</span>{/if}</dd>{/if}
+          {#if eng.combat?.weapons.length}<dt title="Her batteries that fire, and how they stand">Weapons</dt>
+            <dd>{#each eng.combat.weapons as w, k}<span class:off={w.state !== 'ready'} title={`${w.kind}${w.engage_km ? `, engages at ${w.engage_km.toLocaleString()} km` : ''}: ${w.state}`}>{k ? ' · ' : ''}{w.label} {w.count}</span>{/each}</dd>{/if}
         </dl>
         {#if eng.ledger.length}
           <h3>Last orders</h3>
@@ -541,6 +551,8 @@
   /* the chain of command, read upward: a ladder of rungs joined by a rail */
   .engage select { background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: inherit; max-width: 100%; }
   .point { color: var(--ink); font-weight: 400; }
+  .engage dd.gq { color: var(--engage, #ff3046); }
+  .engage dd span.off { color: var(--dim); text-decoration: line-through; }
   .ledger { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
   .ledger li { display: flex; justify-content: space-between; gap: 10px; padding-left: 10px; border-left: 1px solid var(--rule); }
   .ledger li.now { border-left-color: var(--cyan, #9ff0ff); }

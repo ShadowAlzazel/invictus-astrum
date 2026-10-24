@@ -35,7 +35,7 @@ C = 299_792_458.0           # m/s
 MASTER = "master"
 STAGES = ("", "detected", "tracked", "classified", "identified")
 PRIVATE = ("mass_t", "dry_t", "propellant_t", "propellant_share", "dv_left_kms", "dv_spent_kms",
-           "max_accel_g", "accel_g", "thrust_mn", "jet_pw", "heat_share", "cold_left_h", "cold")
+           "max_accel_g", "accel_g", "thrust_mn", "jet_pw", "heat_share", "cold_left_h", "cold", "quarters")
 
 
 def known_units(sc, factions: Factions, view: str | None, home: str | None) -> set:

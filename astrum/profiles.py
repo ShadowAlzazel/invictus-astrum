@@ -29,6 +29,12 @@ RANGES = {                     # a ship's own figures a range may be read off (a
     "weapons": "her focus battery's engagement range",
 }
 TARGETS = ("hostile", "unknown")   # whom it engages: identified hostiles; and bogeys, unknown
+ENDS = {                       # how an engagement ends (docs/COMBAT.md): her stance's own way, or
+    "": "as her stance has it",
+    "keep": "A: she holds station on her target; when it is gone, back to her post",
+    "pursue": "B: she pursues while her side sees it, out of range or not",
+    "pass": "C: she passes through it, burning half the way, and coasts on",
+}
 ROOT = "root"
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -41,16 +47,19 @@ class Profile:
     stance: str = "return-fire"               # the stance of a unit none is given for
     range: dict = field(default_factory=dict)  # stance -> a RANGES preset, or km
     player: str = ""                          # whose ("": the root)
+    automaton: str = "default"                # her ship AI's state map (data/automata.toml)
+    end: str = ""                             # how an engagement ends (ENDS)
 
     def as_dict(self) -> dict:
         return {"id": self.id, "name": self.name, "targets": list(self.targets), "stance": self.stance,
-                "range": dict(self.range), "player": self.player, "root": self.id == ROOT}
+                "range": dict(self.range), "player": self.player, "root": self.id == ROOT,
+                "automaton": self.automaton, "end": self.end}
 
 
 def check(d: dict) -> list[str]:
     """What is wrong with a profile as written."""
     p = []
-    for k in set(d) - {"id", "name", "targets", "stance", "range", "player"}:
+    for k in set(d) - {"id", "name", "targets", "stance", "range", "player", "automaton", "end"}:
         p.append(f"unknown key {k!r}")
     if not isinstance(d.get("name"), str) or not d["name"].strip():
         p.append("a profile needs a name")
@@ -58,6 +67,10 @@ def check(d: dict) -> list[str]:
         p.append(f"targets are among {list(TARGETS)}")
     if d.get("stance") not in STANCES:
         p.append(f"stance is one of {list(STANCES)}")
+    if d.get("end", "") not in ENDS:
+        p.append(f"end is one of {[e for e in ENDS if e]}, or none")
+    if not ID_RE.match(str(d.get("automaton", "default"))):
+        p.append("automaton: an automaton's id")
     for s, r in (d.get("range") or {}).items():
         if s not in STANCES:
             p.append(f"range: no stance {s!r}")
@@ -68,7 +81,7 @@ def check(d: dict) -> list[str]:
 
 def make(d: dict, player: str = "") -> Profile:
     return Profile(str(d.get("id", "")), d["name"].strip(), tuple(d.get("targets") or ("hostile",)), d["stance"],
-                   dict(d.get("range") or {}), player)
+                   dict(d.get("range") or {}), player, str(d.get("automaton") or "default"), str(d.get("end") or ""))
 
 
 def load_shared(path: str | Path) -> dict[str, Profile]:
@@ -114,7 +127,8 @@ def save_made(path: str | Path, made: dict[str, dict[str, Profile]]) -> None:
         for p in ps.values():
             lines += ["[[profile]]", f"player = {val(player)}"]
             lines += [f"{k} = {val(v)}" for k, v in (("id", p.id), ("name", p.name), ("targets", list(p.targets)),
-                                                      ("stance", p.stance), ("range", p.range))]
+                                                      ("stance", p.stance), ("range", p.range),
+                                                      ("automaton", p.automaton), ("end", p.end))]
             lines.append("")
     path = Path(path)
     tmp = path.with_suffix(".tmp")

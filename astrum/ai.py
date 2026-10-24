@@ -17,6 +17,13 @@ aggressive the whole way; a patrol on guard), and not holding fire:
     hold          her hull turned on the nearest target in range while she does not burn; never moves
     return-fire   a ship engaging her within range (she knows by being fired on): engaged; then back
 
+Each ship runs her profile's automaton (astrum/shipai, data/automata.toml): its states include her
+quarters, so a ship watching engages nothing and only waits for a threat (a hostile or a bogey known
+within her sensor range: seen by her own sensors at once, reported to her side, or firing on her);
+general quarters pings, and engages by her stance; a quiet day stands her down. Entering a state
+gives its orders (quarters, active or passive). How an engagement ends is her profile's (ENDS: her
+stance's way, A keep, B pursue, C pass).
+
 A target is hostile only once identified (Side.hostile: unknown is a bogey). Its orders are facts of
 the book, like a player's: a replay gives them again as given, and the AI's clock only moves on
 (it decides for each ship from where it last did). An order of the map's given in the past strikes
@@ -32,12 +39,15 @@ from .classis import DEAD, SHIP, STATION
 from .entity import G0
 from .orders import GOTO, KIND, STANCE
 from .profiles import ROOT
+from .shipai import Machine
+from .frames import to_aer
 from .sim import Order
 
 NAMES = {v: k for k, v in KIND.items()}
 WARM_W = 30e6                 # the warm ship a sensor's range is read against (profiles.RANGES "sensor")
 SEEING = ("aggressive", "attack", "guard", "hold")   # what needs the side's tracks
 FACE_DEG = 10.0               # her hull turned again once the target has moved off it by this much
+PASS_MISS = 0.25              # est.: a pass corrected once its miss is more than this share of her engage range
 
 
 def player_of(world, sc, cid: str) -> str | None:
@@ -73,8 +83,10 @@ def standing(world, sc, fleet, sid: str, t: float) -> dict:
     stance, sfrom = find("stance")
     if stance is None:
         stance, sfrom = prof.stance, {"from": "profile"}
+    auto = world.automata.get(prof.automaton) or world.automata.get("default")
     return {"stance": stance, "stance_from": sfrom, "profile": prof.id, "profile_name": prof.name,
-            "profile_from": pfrom if prof.id == pid or pid is None else {"from": "root", "gone": pid}}
+            "profile_from": pfrom if prof.id == pid or pid is None else {"from": "root", "gone": pid},
+            "automaton": auto.id, "automaton_name": auto.name, "end": prof.end}
 
 
 def ledger(fleet, sids: list[str], t: float, n: int | None = 3) -> list[dict]:
@@ -122,6 +134,8 @@ class Mind:
         self.dazzle_m = np.array([km(i, "dazzle_km") for i in range(n)])
         self.engage_m = np.array([km(i, "engage_km") for i in range(n)])
         self.until = np.full(n, -np.inf)                 # each ship decided for up to here: its clock only moves on
+        self.machines: list[Machine | None] = [None] * n  # each ship's automaton, running
+        self.t0 = fleet.t0
         self._stood = (None, None)
         self._moving = (0, set(), np.inf)                # (book events looked at, ships ever given an attack-move or
                                                          # a patrol, the first engage order's moment)
@@ -175,10 +189,15 @@ class Mind:
         stance = self.standing(B, t)[0]
         out: dict[str, bool] = {}
         for i, (v, s) in enumerate(zip(self.view, stance)):
-            if s in SEEING or i in moving:
+            m = self.machines[i]
+            if s in SEEING or i in moving or (m is not None and m.state.id != m.automaton.start):
                 out[v] = True
             elif s == "return-fire" and first <= t:
                 out.setdefault(v, False)
+        k = int(np.floor((t - fleet.t0) / 60.0 + 1e-9))
+        for v, side in fleet.sweeper.sides.items():     # a side its sweep has just seen something for: its automata look
+            if v not in out and v in self.view and (side.head["k"][~side.own] >= k - 1).any():
+                out[v] = False
         return out
 
     # ---- a picture: what each of the side's ships does ---------------------------------------------
@@ -189,10 +208,20 @@ class Mind:
         rows = [i for i in np.flatnonzero(side.own).tolist() if c.kind[i] == SHIP and c.mode[i] != DEAD
                 and c.fmax[i] > 0 and t >= self.until[i] - 1e-6]
         out, seeing = [], []
+        threat = self._threats(sp, rows)
+        ping = fleet.pinging(t)
         for i in rows:
             said = sp.said.get(i) or {}
             goal = said.get("goal")
             tg = goal["target"] if goal else {}
+            m = self._machine(i, prof[i])
+            new = m.step(t, i in threat, bool(goal) and bool(tg.get("attack") or tg.get("patrol") or tg.get("engage")), not goal)
+            if new is not None:
+                out += self._enter(sp, i, new, ping[i])
+            if not m.state.engage:                        # watching, or on the way: nothing engaged
+                if tg.get("engage") and goal["source"] == "ai":
+                    out.append(self._end(sp, i, goal))
+                continue
             if goal and goal["source"] not in ("ai", "auto") and not (tg.get("attack") or tg.get("patrol")):
                 continue                                  # a plain order of the map's or the scenario's
             back = tg.get("resume") or {}
@@ -231,18 +260,28 @@ class Mind:
         reach = np.array([self.reach_m(i, "aggressive" if m == "attack" else m, prof[i]) for i, m, _, _ in items])
         near = want & (D <= reach[:, None])
         out = []
+        for a, (i, *_) in enumerate(items):               # a target she has passed (end C), since she entered her state: left;
+            if prof[i].end == "pass":                     # and none other while she closes on the one she passes
+                passed = self._passed(fleet, i)
+                near[a, passed] = False
+                j = passed[-1] if passed else None
+                if j is not None and np.isfinite(sp.v[j]).all() and float((sp.reckoned(j) - sp.r[i]) @ (sp.v[j] - sp.v[i])) < 0:
+                    near[a] = False
+                    if not sp.burning[i]:
+                        out.append(self._correct(sp, i, j))
         for a, (i, mode, goal, engaging) in enumerate(items):
             tg = goal["target"] if goal else {}
             if engaging:                                  # on, onto the next in range, or over
                 j = c.row.get(tg["unit"])
-                home = tg.get("resume", {}).get("target") if mode == "guard" else None
+                home = tg.get("resume", {}).get("target") if mode == "guard" and prof[i].end != "pursue" else None
                 leash = fleet._point(home, t) if home else None
                 if j is not None and want[a, j] and (leash is None or _d(sp.r[j], leash) <= reach[a]):
                     continue
                 nxt = np.flatnonzero(near[a] & (np.arange(n) != (j if j is not None else -1)))
                 if len(nxt):
                     k = int(nxt[np.argmin(D[a][nxt])])
-                    out.append(self._engage(sp, i, k, "engage hostile" if sp.identified[k] else "engage bogey", tg.get("resume"), goal))
+                    out.append(self._engage(sp, i, k, "engage hostile" if sp.identified[k] else "engage bogey", tg.get("resume"), goal,
+                                            prof[i].end))
                 else:
                     out.append(self._end(sp, i, goal))
                 continue
@@ -262,9 +301,61 @@ class Mind:
             elif tg.get("attack") or tg.get("patrol"):    # on with the attack-move or the patrol leg, after
                 back = {"target": {k: v for k, v in tg.items() if k != "offset_m"}, "g": goal["g"], "by": goal["by"],
                         "slot": tg.get("offset_m", [0.0, 0.0, 0.0])}
-            elif mode == "guard":
+            elif mode == "guard" or prof[i].end == "keep":
                 back = self._home(sp, i, frame[i])
-            out.append(self._engage(sp, i, j, "engage hostile" if sp.identified[j] else "engage bogey", back, goal))
+            out.append(self._engage(sp, i, j, "engage hostile" if sp.identified[j] else "engage bogey", back, goal, prof[i].end))
+        return out
+
+    def _passed(self, fleet, i: int) -> list[int]:
+        """The targets she has passed (a pass burn of the AI's) since she entered her state."""
+        B = fleet.book
+        q = B.queue[B.ai[B.queue]]
+        q = q[(B.ship[q] == i) & (B.kind[q] == KIND["burn"]) & (B.at[q] >= self.machines[i].since() - 1e-6)]
+        return [j for j in (fleet.c.row.get(B.of(e).burn.get("pass")) for e in q) if j is not None]
+
+    # ---- the automaton -------------------------------------------------------------------------------
+    def _machine(self, i: int, prof) -> Machine:
+        m = self.machines[i]
+        auto = self.world.automata.get(prof.automaton) or self.world.automata.get("default")
+        if m is None or m.automaton is not auto:
+            m = self.machines[i] = Machine(auto, self.t0)
+        return m
+
+    def _enter(self, sp, i: int, state, pinging: bool) -> list[Order]:
+        """The orders a state gives as she enters it: her quarters, her sensors."""
+        c, t, m = sp.fleet.c, sp.t, self.machines[i]
+        sid, was = c.ids[i], m.automaton.states[m.history[-2][1]]
+        out = []
+        if was.quarters != state.quarters:
+            out.append(Order(sid, t, "quarters", target={"level": state.quarters, "label": state.label}, source="ai",
+                             order_id=f"{sid}:ai-q@{t:.0f}", by=sid))
+        if state.sensors == "active" and not pinging:
+            out.append(Order(sid, t, "active", source="ai", order_id=f"{sid}:ai-ping@{t:.0f}", by=sid))
+        elif state.sensors == "passive" and pinging and m.history[-2][3]:      # only a ping of her automaton's own
+            out.append(Order(sid, t, "passive", source="ai", order_id=f"{sid}:ai-ping@{t:.0f}", by=sid))
+        return out
+
+    def _threats(self, sp, rows: list) -> set:
+        """The ships among rows a threat is known to: a hostile or a bogey her side's picture shows
+        within her sensor range, one her own sensors see now (no relay), or one firing on her."""
+        fleet, side = sp.fleet, sp.side
+        if not rows:
+            return set()
+        own, friendly = side.own, side.friendly
+        out = {i for i in rows if sp.fired_on.get(i)}
+        live = sp.shown & ~sp.old & ~own & ~friendly & (~sp.identified | side.hostile)
+        T = np.flatnonzero(live)
+        if len(T):
+            R = np.array(rows)
+            D = np.linalg.norm(sp.r[T][None] - sp.r[R][:, None], axis=2)
+            out |= set(R[(D <= self.sensor_m[R][:, None]).any(axis=1)].tolist())
+        k = int(np.floor((sp.t - fleet.t0) / 60.0 + 1e-9))
+        sw = fleet.sweeper.sides.get(side.view)
+        h = sw.sightings(k - 1, k) if sw is not None else None
+        if h is not None:                                 # her own sensors: at once
+            by, at = fleet.sensors.row[h[2]], h[1]
+            seen = ~own[at] & ~friendly[at]
+            out |= set(np.intersect1d(by[seen], rows).tolist())
         return out
 
     # ---- the orders it gives -----------------------------------------------------------------------
@@ -275,14 +366,48 @@ class Mind:
     def _cruise(self, c, i: int) -> float:
         return c.spec[i].cruise_g[1] if c.spec[i] is not None and c.spec[i].cruise_g else 0.5 * c.max_accel(i) / G0
 
-    def _engage(self, sp, i: int, j: int, label: str, back: dict | None, goal) -> Order:
-        """Engage: a go-to on her, held at her focus battery's range (Fleet._apply)."""
+    def _engage(self, sp, i: int, j: int, label: str, back: dict | None, goal, end: str = "") -> Order:
+        """Engage: a go-to on her, held at her focus battery's range, burning to keep with her
+        (Fleet._apply); or, to pass (end C), a burn through where she will be, half the way, then on
+        at the speed reached (as a ballistic move is aimed: from what the side sees of her)."""
         c = sp.fleet.c
         g = goal["g"] if goal and goal.get("g") else self._cruise(c, i)
+        if end == "pass":
+            a, T = g * G0, 0.0
+            if a > 0 and np.isfinite(sp.r[j]).all():
+                rj, vj = sp.reckoned(j), np.nan_to_num(sp.v[j])
+                for _ in range(30):
+                    D = rj + vj * T - sp.r[i] - sp.v[i] * T
+                    tb, was = math.sqrt(float(np.linalg.norm(D)) / a), T
+                    T = 1.5 * tb
+                    if abs(T - was) < 1e-9 * max(T, 1.0):
+                        break
+                brg, el, _ = to_aer(D)
+                burn = {"bullseye": "system", "bearing": math.degrees(brg), "elevation": math.degrees(el), "g": g,
+                        "duration_s": tb, "pass": c.ids[j], "label": f"pass {label[7:] if label.startswith('engage ') else label}"}
+                sid = c.ids[i]
+                return Order(sid, sp.t, "burn", burn=burn, source="ai", order_id=f"{sid}:ai@{sp.t:.0f}", by=sid)
         target = {"unit": c.ids[j], "engage": True, "label": label}
         if back is not None:
             target["resume"] = back
         return self._order(sp, i, target, g)
+
+    def _correct(self, sp, i: int, j: int) -> Order | None:
+        """A pass on its way: if, as they move now, she would miss her by more than PASS_MISS of
+        her engage range, a burn that takes the miss out by the closest approach."""
+        c = sp.fleet.c
+        r, v = sp.reckoned(j) - sp.r[i], sp.v[j] - sp.v[i]
+        T = -float(r @ v) / max(float(v @ v), 1e-9)                       # to the closest approach
+        miss = r + v * T
+        if T <= 0 or float(np.linalg.norm(miss)) <= PASS_MISS * self.engage_m[i]:
+            return None
+        dv = miss / T
+        a = self._cruise(c, i) * G0
+        brg, el, _ = to_aer(dv)
+        sid = c.ids[i]
+        burn = {"bullseye": "system", "bearing": math.degrees(brg), "elevation": math.degrees(el), "g": a / G0,
+                "duration_s": float(np.linalg.norm(dv)) / a, "pass": c.ids[j], "label": "pass: correction"}
+        return Order(sid, sp.t, "burn", burn=burn, source="ai", order_id=f"{sid}:ai@{sp.t:.0f}", by=sid)
 
     def _end(self, sp, i: int, goal) -> Order:
         """An engagement over: back to what she was doing, or her post; else the drive cut. If she
@@ -369,6 +494,9 @@ class AI:
         m = self.mind(sc, fleet)
         rows = [fleet.c.row[s] for s in ships]
         m.until[rows] = np.minimum(m.until[rows], t)
+        for i in rows:
+            if m.machines[i] is not None:
+                m.machines[i].back_to(t)
 
 
 def _d(a, b) -> float:

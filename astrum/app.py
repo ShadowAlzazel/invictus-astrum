@@ -62,6 +62,7 @@ log = logging.getLogger("astrum.web")         # who connected, signed in, acted 
 from . import display
 from . import picture
 from . import profiles
+from .shipai import load_automata
 from .profiles import Profile
 from . import switches
 from .detect import suite, unsimulated
@@ -93,6 +94,7 @@ class World:
         self.made: dict[str, dict[str, Bullseye]] = {}     # player -> bullseyes commanders made on the map
         self.retired: dict[str, dict[str, Bullseye]] = {}  # ... and deleted: still flown to, never listed
         self.profiles: dict[str, Profile] = {}              # the shared combat profiles (data/profiles.toml), by id
+        self.automata: dict = {}                            # the ship AI's state maps (data/automata.toml), by id
         self.profiles_made: dict[str, dict[str, Profile]] = {}  # player -> combat profiles made on the map
         self.tables: dict[str, Tabled] = {}      # system id -> its body table, filled up front (see _prefill)
         self.style = {}
@@ -107,7 +109,7 @@ class World:
         files = [f for k in ("systems", "scenarios", "fleets", "levels") for f in Path(p[k]).glob("*.toml")]
         files += list(Path(p["ships"]).glob("*.toml")) + list((Path(p["ships"]) / "classes").glob("*.toml"))
         return files + [Path(p["players"]), Path(p["players"]).parent / "factions.toml",
-                        Path(p["players"]).parent / "profiles.toml", Path(p["style"]),
+                        Path(p["players"]).parent / "profiles.toml", Path(p["players"]).parent / "automata.toml", Path(p["style"]),
                         Path(p["display"]), Path(p["settings"])]
 
     def _mtimes(self):
@@ -137,6 +139,13 @@ class World:
             shared = profiles.load_shared(Path(p["players"]).parent / "profiles.toml")
         except (OSError, ValueError, tomllib.TOMLDecodeError) as e:
             errors["profiles.toml"] = str(e)
+        automata = self.automata
+        try:
+            automata = load_automata(Path(p["players"]).parent / "automata.toml")
+        except (OSError, ValueError, tomllib.TOMLDecodeError) as e:
+            errors["automata.toml"] = str(e)
+        errors.update({f"profiles.toml/{x.id}": f"no automaton {x.automaton!r} in automata.toml"
+                       for x in shared.values() if automata and x.automaton not in automata})
         style = self.style
         try:
             style = load_style(p["style"])
@@ -239,7 +248,7 @@ class World:
             self.players, self.style, self.errors, self.ships = players, style, errors, ships
             self.factions = factions
             self.made, self.retired = made, {}
-            self.profiles, self.profiles_made = shared, made_profiles
+            self.profiles, self.profiles_made, self.automata = shared, made_profiles, automata
             self.display_rules, self.settings, self.trees = rules, settings, trees
             self.levels = levels
             self.fleets = {k: f for k, f in self.fleets.items() if any(k in h for h in self.held.values())}

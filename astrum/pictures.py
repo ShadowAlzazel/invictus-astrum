@@ -48,6 +48,12 @@ class SidePicture:
     old: np.ndarray                   # an old track: where she was last seen, long ago
     said: dict = field(default_factory=dict)        # own row -> what she was given (Fleet versions': goal, with its g; place)
     fired_on: dict = field(default_factory=dict)    # own row -> the rows flying an engage order on her
+    age: np.ndarray | None = None                   # how old what is shown of each is (s; own: 0)
+
+    def reckoned(self, j: int) -> np.ndarray:
+        """Where she is now, as the side reckons it: where she was seen, on at her velocity then."""
+        age = 0.0 if self.age is None or not np.isfinite(self.age[j]) else float(self.age[j])
+        return self.r[j] + np.nan_to_num(self.v[j]) * age
 
 
 class Pictures:
@@ -148,12 +154,13 @@ class Pictures:
         if tracks:
             with fleet.lock:
                 seen = picture.view(fleet, pic, t, own, self.world.config["picture"], view, side.friendly, side.knows)
-            shown, ident, old = seen["shown"], seen["identified"], seen["old"]
+            shown, ident, old, age = seen["shown"], seen["identified"], seen["old"], np.where(own, 0.0, seen["seen_s"])
         else:
-            shown, ident, old = own.copy(), own.copy(), np.zeros(n, dtype=bool)
+            shown, ident, old, age = own.copy(), own.copy(), np.zeros(n, dtype=bool), np.where(own, 0.0, np.nan)
         hide = lambda x: np.where(shown.reshape(-1, *([1] * (x.ndim - 1))), x, np.nan)   # nothing of a ship not shown
         r = hide(pic["r"][:n])
         for attackers in on.values():                # a ship engaging one of ours shows where she is by it
             r[attackers] = true_r[attackers]
+            age[attackers] = 0.0
         return SidePicture(sc, fleet, side, t, r, hide(pic["v"][:n]), hide(pic["dir"][:n]), shown & (pic["thrust"][:n] > 0),
-                           shown, ident, old, said, on)
+                           shown, ident, old, said, on, age)

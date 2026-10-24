@@ -117,6 +117,32 @@ the ships at II and I (her own sightings, what was relayed to her, the combat bo
 with orders for the next block, which land in the future. Readiness sets the cost: a ship at III
 costs nothing, woken by the sweep; at II, one look a block; at I, fine steps while in combat.
 
+## As built
+
+**1a** the combat book (`astrum/combat.py`): weapons by kind from her class, her combat state as
+columns of the Classis, the log, the damage function and the combat step (both empty); `fire` and
+`quarters` orders; an engage held (she flies it on, burning to keep with her target); engage red.
+
+**1b** the automaton (`astrum/shipai`, `data/automata.toml`): states with her quarters, her sensors
+and whether she engages, and the events between them (`threat`, `quiet`, `attack`, `done`). A
+profile names its automaton and its ending; `search-and-destroy`, `hold-the-line` and `pursuit` are
+shared. The AI (`astrum/ai.py`) runs a machine per ship and gives what a state says as orders on
+entering it (quarters; active or passive, turning off only a ping of its own); a ship watching or on
+her way engages nothing. A threat is a hostile or a bogey her side's picture shows within her
+sensor range, one her own sensors saw this minute, or one engaging her; a side whose sweep has just
+seen something is pictured for its automata (without tracks, unless a ship of it needs them).
+
+| End | As built |
+|---|---|
+| A keep | an engage with her post to come back to |
+| B pursue | an engage with no leash to her post |
+| C pass | a burn through where the side reckons the target will be (seen place on at its velocity for the track's age), half the way then on; once her burn is done, corrected while the miss is over `PASS_MISS` (est. 0.25) of her engage range; each target passed once while she stays in the state |
+
+In sol-demo, TF-3 on Search and Destroy passes GHOST 1 at 708 km after 32 h, against an engage range
+of 40,000 km (aimed at the track as last seen, uncorrected: 45,700 km). Her quarters reach the map
+in the frame (`quarters`, off the book at the picture's moment) and in the ship's Engagement panel
+with her automaton's state and her weapons.
+
 ## Slates
 
 1. **Structure, nothing fired:** the combat book; readiness raised by the sweep, general quarters

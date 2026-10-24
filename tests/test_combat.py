@@ -6,6 +6,8 @@ from astrum.config import ROOT, load_config
 from astrum.orders import KIND
 from astrum.profiles import ROOT as ROOT_PROFILE, check, load_made, load_shared, make, save_made
 
+SHARED = ["root", "search-and-destroy", "hold-the-line", "pursuit"]    # data/profiles.toml
+
 
 def _app(tmp_path):
     from fastapi.testclient import TestClient
@@ -45,7 +47,7 @@ def test_every_ship_is_rated_unless_written_otherwise(tmp_path):
 def test_commanders_make_change_and_delete_profiles(tmp_path):
     c, world = _app(tmp_path)
     got = c.get("/api/profiles", params={"player": "arcvs"}).json()
-    assert [p["id"] for p in got["profiles"]] == ["root"] and got["profiles"][0]["root"]
+    assert [p["id"] for p in got["profiles"]] == SHARED and got["profiles"][0]["root"]
     p = c.post("/api/profiles", json={"player": "arcvs", "name": "Picket line", "stance": "guard",
                                       "targets": ["hostile", "unknown"], "range": {"guard": 90000}}).json()["profile"]
     assert p["id"] == "picket-line" and (tmp_path / "profiles.toml").exists()
@@ -56,7 +58,7 @@ def test_commanders_make_change_and_delete_profiles(tmp_path):
     assert load_made(tmp_path / "profiles.toml")["arcvs"]["picket-line"].stance == "hold"
     assert c.delete("/api/profiles/arcvs/root").status_code == 400
     assert c.delete("/api/profiles/arcvs/picket-line").status_code == 200
-    assert [p["id"] for p in c.get("/api/profiles", params={"player": "arcvs"}).json()["profiles"]] == ["root"]
+    assert [p["id"] for p in c.get("/api/profiles", params={"player": "arcvs"}).json()["profiles"]] == SHARED
 
 
 def test_a_stance_is_ordered_inherited_and_kept_in_the_ledger(tmp_path):
@@ -129,6 +131,13 @@ def _ai(fleet):
             for e in B.queue[B.ai[B.queue]]]
 
 
+def _moves(fleet, sid):
+    """Her AI orders that move or turn her (not her quarters or her sensors)."""
+    B = fleet.book
+    return [e for e in B.queue[B.ai[B.queue]] if fleet.c.ids[B.ship[e]] == sid
+            and B.kind[e] not in (KIND["quarters"], KIND["active"], KIND["passive"])]
+
+
 def _hunt(c, t, stance="aggressive", unit="tf-3", **range_km):
     c.post("/api/profiles", json={"player": "arcvs", "name": "Hunters", "stance": stance,
                                   "targets": ["hostile", "unknown"], "range": range_km})
@@ -158,7 +167,8 @@ def test_the_ai_reads_only_its_sides_picture(tmp_path):
     assert np.isfinite(sp.r[own]).all() and set(sp.said) == set(np.flatnonzero(own).tolist())
     unseen = ~own & ~sp.shown
     assert unseen.any() and np.isnan(sp.r[unseen]).all() and np.isnan(sp.v[unseen]).all()
-    assert host.ai.wants(sc, fleet, t) == {}           # everyone on return fire, no engage order anywhere: nothing pictured
+    assert host.ai.wants(sc, fleet, t) == {"arcvs": False, "jadf": False}   # on return fire, no engage order: only the
+                                                                            # sides whose sweep saw something, without tracks
     assert host.pictures.publish(sc, fleet, t) == []
 
 
@@ -187,7 +197,7 @@ def test_a_map_order_overrules_the_ais_later_orders(tmp_path):
     c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": "tf3-es-1", "t": t + 300, "g": 0})
     assert not mine("tf3-es-1") and mine("tf3-es-2")    # hers after it go; the others' stand
     _drive(c, t + 300, t + 3600)                     # and it decides for her again from there
-    assert [x[2] for x in mine("tf3-es-1")] == ["engage bogey"] and mine("tf3-es-1")[0][0] > t + 300
+    assert [x[2] for x in mine("tf3-es-1")] == ["General quarters", None, "engage bogey"] and mine("tf3-es-1")[0][0] > t + 300
 
 
 def test_guards_go_back_to_their_post(tmp_path):
@@ -197,7 +207,7 @@ def test_guards_go_back_to_their_post(tmp_path):
     assert _hunt(c, t, "guard", guard="sensor") == 200
     _drive(c, t, t + 86400 * 1.5)
     B = fleet.book
-    ev = [e for e in B.queue[B.ai[B.queue]] if fleet.c.ids[B.ship[e]] == "tf3-es-1"]
+    ev = _moves(fleet, "tf3-es-1")
     assert B.of(ev[0]).target["engage"] and B.of(ev[0]).target["resume"]["target"]["label"].startswith("back to")
     assert any("back to" in B.of(e).label for e in ev[1:]) and not any("brake, then brake" in B.of(e).label for e in ev)
 
@@ -212,7 +222,7 @@ def test_return_fire_answers_an_engage_order_within_range(tmp_path):
     assert r.json()["ship"]["goal"]["target"]["engage"]
     _drive(c, t, t + 3600)
     assert ("tf3-es-1", "engage attacker", "ghost-1") in {x[1:] for x in _ai(fleet)}
-    assert not any(x[1] == "tf3-es-2" for x in _ai(fleet))     # not named: holds her fire
+    assert not any(x[1] == "tf3-es-2" and x[3] for x in _ai(fleet))     # not named: at quarters, she holds her fire
 
 
 def test_hold_faces_its_target_and_never_moves(tmp_path):
@@ -222,7 +232,7 @@ def test_hold_faces_its_target_and_never_moves(tmp_path):
     assert _hunt(c, t, "hold", hold="sensor") == 200
     _drive(c, t, t + 3600)
     B = fleet.book
-    mine = [e for e in B.queue[B.ai[B.queue]] if fleet.c.ids[B.ship[e]] == "tf3-es-1"]
+    mine = _moves(fleet, "tf3-es-1")
     assert mine and all(B.kind[e] == KIND["face"] for e in mine)
     i, j = fleet.c.row["tf3-es-1"], fleet.c.row["ghost-1"]
     u = fleet.c.r[j] - fleet.c.r[i]

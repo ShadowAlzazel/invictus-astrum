@@ -20,6 +20,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .constants import C
+from .orders import QUARTERS as QUARTERS_ORDER
 
 ENERGY, KINETIC, PROPELLED = "energy", "kinetic", "propelled"
 KIND_OF = {"stack": ENERGY, "strip": ENERGY, "dome": ENERGY, "panel": ENERGY, "turret": KINETIC, "cell": PROPELLED}
@@ -123,14 +124,20 @@ class CombatBook:
             self.log = keep
             self.changed()
 
-    def state(self, fleet, i: int) -> dict:
-        """Her combat state, as the map reads it."""
-        c = fleet.c
+    def state(self, fleet, i: int, t: float | None = None) -> dict:
+        """Her combat state, as the map reads it: at t, her quarters as her last quarters order
+        before it set them (with the label it gave them: her automaton's state); else as flown."""
+        c, label = fleet.c, None
         weapons = [{"id": w.id, "label": w.label, "kind": w.kind, "count": w.count, "engage_km": w.engage_km,
                     "state": "disabled" if c.wdisabled[i] >> w.n & 1 else "damaged" if c.wdamaged[i] >> w.n & 1 else "ready"}
                    for w in (self.weapons[i] if i < len(self.weapons) else [])]
         q = int(c.quarters[i])
-        return {"quarters": q, "quarters_name": QUARTERS.get(q, ""), "damage": float(c.damage[i]), "weapons": weapons}
+        if t is not None:
+            q = int(fleet.quarters_at(t)[i])
+            ships, last = fleet.book.last_of((QUARTERS_ORDER,), t)
+            k = np.flatnonzero(ships == i)
+            label = fleet.book.of(last[k[0]]).target.get("label") if len(k) else None
+        return {"quarters": q, "quarters_name": QUARTERS.get(q, ""), "state": label, "damage": float(c.damage[i]), "weapons": weapons}
 
 
 def damage(fleet, event: Event, target: int, t: float) -> None:

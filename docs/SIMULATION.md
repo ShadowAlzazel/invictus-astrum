@@ -290,6 +290,12 @@ post. Its orders are facts of the book: a replay gives them as given. A map's or
 strikes the AI's later orders to those ships. A target is hostile only once identified. `[sim] ai =
 false` turns it off.
 
+**Readiness** is each ship's automaton (`astrum/shipai`, `data/automata.toml`, named by her profile):
+watching (III) she engages nothing; a hostile or a bogey known within her sensor range sends her to
+general quarters (I: pinging, engaging by her stance); a quiet day stands her down; an attack-move
+takes her to II. Each change is orders (`quarters`, `active`, `passive`), so a replay gives it again.
+How an engagement ends is her profile's (`end`: keep, pursue, pass; docs/COMBAT.md).
+
 ## Time
 
 **The clock is a level's.** A level (`data/levels/*.toml`, `astrum/level.py`) holds a game's clock

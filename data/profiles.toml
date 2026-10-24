@@ -7,9 +7,31 @@
 #   range     for each stance, what sets it off: "sensor" (her passive suite's reach against a warm
 #             ship, 30 MW), "half-sensor", "dazzle" (her dazzle range), "weapons" (her focus
 #             battery's engagement range), or a number of km
+#   automaton her ship AI's state map (data/automata.toml); default "default"
+#   end       how an engagement ends: "keep" (A: hold station on it; gone, back to her post),
+#             "pursue" (B: after it while her side sees it), "pass" (C: through it and on), or her
+#             stance's own way (left out)
 
 [profile.root]
 name = "Standing orders"
 targets = ["hostile"]
 stance = "return-fire"
 range = { aggressive = "sensor", guard = "half-sensor", hold = "dazzle", return-fire = "dazzle" }
+
+[profile.search-and-destroy]
+name = "Search and Destroy"
+targets = ["hostile", "unknown"]
+stance = "aggressive"
+end = "pass"
+
+[profile.hold-the-line]
+name = "Hold the line"
+targets = ["hostile", "unknown"]
+stance = "guard"
+end = "keep"
+
+[profile.pursuit]
+name = "Pursuit"
+targets = ["hostile", "unknown"]
+stance = "aggressive"
+end = "pursue"

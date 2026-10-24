@@ -224,6 +224,11 @@ _NO_SAMPLES = (0.0, 0.0, np.zeros(0, dtype=np.int64), np.zeros((1, 1, 3)), np.ze
                np.zeros((1, 1)), np.zeros((1, 1)), np.zeros((1, 1)), np.zeros((1, 1, 3)))
 
 
+def quarters_level(g) -> int:
+    """The quarters a quarters order sets: 1 general quarters, 2 attack, 3 watching."""
+    return min(max(int(g.target.get("level", combat.WATCH)), combat.GQ), combat.WATCH)
+
+
 class Fleet:
     """A scenario's ships, as a Classis (astrum/classis.py): a row per hull and per formation lead.
     `place(t)` gives (body positions, contact positions, resolved bullseyes) at t, as the map
@@ -391,6 +396,13 @@ class Fleet:
         out = np.zeros(len(self.c.row), dtype=bool)
         ships, last = self.book.last_of((ACTIVE, PASSIVE), t)
         out[ships] = self.book.kind[last] == ACTIVE
+        return out
+
+    def quarters_at(self, t: float) -> np.ndarray:
+        """Each row's quarters at t: as her last quarters order before it says (none: watching)."""
+        out = np.full(len(self.c.row), combat.WATCH, dtype=np.int8)
+        ships, last = self.book.last_of((QUARTERS,), t)
+        out[ships] = [quarters_level(self.book.of(e)) for e in last]
         return out
 
     def pinging_many(self, ts: np.ndarray) -> np.ndarray:
@@ -1707,7 +1719,7 @@ class Fleet:
         elif kind == FIRE:                            # a WeaponEngageOrder: the combat book resolves it
             self.combat.fire(self, i, at, g)
         elif kind == QUARTERS:                        # her readiness: 1 general quarters, 2 attack, 3 watching
-            c.quarters[i] = min(max(int(g.target.get("level", 3)), 1), 3)
+            c.quarters[i] = quarters_level(g)
             self.combat.changed()
         elif kind == REFUEL:                          # propellant taken on (a tender, a tug, a station): her tanks
             took = min(max(float(g.target.get("kg", 0.0)), 0.0), max(c.pmax[i] - c.prop[i], 0.0))
