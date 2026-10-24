@@ -7,12 +7,12 @@
   const ITEMS = [
     { id: 'play', title: 'Simulation', text: 'Choose a level and start it: its clock runs on the server, true scale, tactical picture.' },
     { id: 'build', title: 'System workshop', text: 'Build a stellar system, or copy one and change it. Every saved system is also a level of its own.' },
-    { id: 'command', title: 'Fleet command', text: 'The fleets, the ship classes they are built from, and the builder.', items: [
+    { id: 'command', title: 'Fleet command', text: 'The fleets, the ship classes they are built from, their combat profiles, and the builder.', items: [
       { id: 'fleets', title: 'Fleets', text: 'Every fleet, its ships by class and its order of battle. An admin renames and refits them.' },
       { id: 'ships', title: 'Ship registry', text: 'The classes of the fleet: particulars, batteries, reaches by crew, and what is still blank.' },
+      { id: 'profiles', title: 'Combat profiles', text: 'Each profile as its automaton: the states a ship goes through, what wakes her, and where her stance comes in.' },
       { id: 'shipyard', title: 'Ship builder', text: 'Design ship classes.', soon: true },
     ] },
-    { id: 'profiles', title: 'Combat profiles', text: 'Each profile as its automaton: the states a ship goes through, what wakes her, and where her stance comes in.' },
     { id: 'settings', title: 'Settings', text: 'Text and icon sizes, folding, what a selection shows. Saved on this machine.' },
   ];
   $: open = ITEMS.find((it) => it.id === group && it.items);

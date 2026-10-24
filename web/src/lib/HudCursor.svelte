@@ -10,6 +10,7 @@
   export let style = null;
   export let overUI = false;    // pointer is over a panel: hide hairlines
   export let settings = null;   // display settings: hairlines, notches, readout, text sizes
+  export let scaled = false;    // in the simulation: the scale notches on the hairlines (the menus: plain hairlines)
 
   let canvas, ctx, unhook;
   let W = 0, H = 0, dpr = 1;
@@ -117,7 +118,7 @@
       ctx.beginPath(); ctx.moveTo(hx + gap, hy); ctx.lineTo(W, hy); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, hy - gap); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(hx, hy + gap); ctx.lineTo(hx, H); ctx.stroke();
-      if (C.notches && map?.state) notches(hx, hy, lock ? map.position(hover) : map.pointAt(mx, my), col(V, 0.5), px);
+      if (scaled && C.notches && map?.state) notches(hx, hy, lock ? map.position(hover) : map.pointAt(mx, my), col(V, 0.5), px);
     }
 
     ctx.strokeStyle = col(lock ? F : V, 0.95);

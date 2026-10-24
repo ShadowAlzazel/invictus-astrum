@@ -766,7 +766,7 @@
 {/if}
 <Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} sensing={sensing && mode === 'map'}
   watched={mode === 'map' ? watched : new Set()} />
-<HudCursor {map} {style} {settings} {overUI} />
+<HudCursor {map} {style} {settings} {overUI} scaled={mode === 'map'} />
 {#if mode === 'map' && scenarioOn && scenario}<Paths {map} {style} on={settings?.layers.paths ?? true} estimates={settings?.layers.path_estimates ?? true}
   contacts={scenario.contacts} {chosen} {ordering} aim={() => orderTool?.aim()} {motion} />{/if}
 {#if ruler && mode === 'map'}<Ruler {map} {style} {ruler} {markAt} />{/if}

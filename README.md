@@ -70,14 +70,14 @@ The map opens on the main menu, over a system standing still:
       started: an edit is played from the next start (or a restart), never in a game already
       running.
    2. **Ship registry**: the classes of the fleet.
-   3. **Ship builder**: next.
-4. **Combat profiles**: each profile drawn as its automaton (`data/automata.toml`): its states
-   with her readiness, the events between them, and in the state that engages, the profile's
-   stance, range, targets and ending. A **stance** is what she does with a target, ordered to a
-   ship or a formation and passed down its chain; a **profile** is the rules a stance reads (how
-   far, at whom), her automaton and how an engagement ends, and gives the stance she has when
-   none is ordered. Profiles are made in Settings, Combat.
-5. **Settings** (also `,` anywhere), kept in this browser: Display (text and icon sizes, folding,
+   3. **Combat profiles**: each profile drawn as its automaton (`data/automata.toml`): its states
+      with her readiness, the events between them, and in the state that engages, the profile's
+      stance, range, targets and ending. A **stance** is what she does with a target, ordered to a
+      ship or a formation and passed down its chain; a **profile** is the rules a stance reads (how
+      far, at whom), her automaton and how an engagement ends, and gives the stance she has when
+      none is ordered. Profiles are made in Settings, Combat.
+   4. **Ship builder**: next.
+4. **Settings** (also `,` anywhere), kept in this browser: Display (text and icon sizes, folding,
    what a selection shows), Hotkeys (every key below, rebound by clicking it and pressing another),
    Game (the picture's switches: in a lobby, its host's), Combat (your combat profiles, kept on the server).
 
