@@ -18,8 +18,9 @@ Where it is going:
 - **Later:** saving and resuming, combat resolved on the server, the networking corona, real
   accounts. Not before they are asked for.
 
-`README.md` is how to run it; `docs/SIMULATION.md` how the simulation works; `docs/DEVOPS.md` the
-development loop; `docs/NOTES.md` the owner's own notes and ideas.
+`README.md` is how to run it; `docs/SIMULATION.md` how the simulation works; `docs/COMBAT.md` where
+combat and the ship AI are going; `docs/DEVOPS.md` the development loop; `docs/NOTES.md` the owner's
+own notes and ideas.
 
 ## How we work
 
