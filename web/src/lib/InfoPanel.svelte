@@ -134,6 +134,14 @@
   async function stance(change) { await onstance(chosen, change); engAsked = ''; }
   const short = (label) => label?.split(':')[0] ?? '';
   const ROMAN = { 1: 'I', 2: 'II', 3: 'III' };
+  // her batteries, each with its reaches (her class's ranges) and how it stands (her combat state)
+  $: arms = ship && !seenOnly ? battery(spec?.ranges ?? [], eng?.combat?.weapons ?? []) : [];
+  function battery(ranges, weapons) {
+    const same = (a, b) => a?.toLowerCase() === b?.toLowerCase();
+    const out = weapons.map((w) => ({ ...w, reach: ranges.filter((r) => same(r.battery, w.label)) }));
+    for (const r of ranges) if (!weapons.some((w) => same(w.label, r.battery))) out.push({ label: r.battery, reach: [r] });
+    return out;
+  }
   const ENDS = { keep: 'A, keep station', pursue: 'B, pursue', pass: 'C, pass' };
   const whence = (f) => !f ? '' : f.from === 'ordered' ? `ordered to ${nameOf(f.by)}` : f.from === 'written' ? `written for ${nameOf(f.by)}`
     : f.from === 'profile' ? "the profile's" : f.gone ? `the root (${f.gone} deleted)` : 'the root';
@@ -395,14 +403,6 @@
           title={ship.active ? 'Stop the active sweep: passive only' : 'Sweep her active sensors: any hull in reach is seen and made out, and every ping shows her far beyond'}>{ship.active ? 'Go quiet' : 'Ping'} <kbd>{cap($keymap.ping)}</kbd></button>
         {#if spec?.sensors?.length}<button class="act" class:on={watched.has(sel.id)} on:click={() => onwatch(sel.id)}
           title="Draw her sensors on the map always: each one's reach, and the narrow ones as cones along her hull">{watched.has(sel.id) ? 'Hide sensors' : 'Show sensors'} <kbd>{cap($keymap.watch)}</kbd></button>{/if}
-        {#if spec?.ranges?.length}
-          <h3><button class="fold" class:shut={shut.weapons} on:click={() => flip('weapons')}><i></i>Weapons</button>{#if shut.weapons} <span class="dim">{spec.ranges.map((r) => `${r.what} ${km(r.km)}`).join(' · ')}</span>{/if}</h3>
-          {#if !shut.weapons}
-          <dl class="tight">
-            {#each spec.ranges as r}<dt title={r.note}>{r.what[0].toUpperCase() + r.what.slice(1)}</dt><dd title={r.note}>{km(r.km)}</dd><dt class="sub">{r.battery.toLowerCase()}</dt><dd class="sub">{r.note}</dd>{/each}
-          </dl>
-          {/if}
-        {/if}
         {#if spec?.has_drive}<p class="dim hint"><kbd>{cap($keymap.order)}</kbd> move <kbd>{cap($keymap.attack)}</kbd> attack <kbd>{cap($keymap.patrol)}</kbd> patrol <kbd>{cap($keymap.turn)}</kbd> turn{#if ship.goal} · <kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph{/if}{#if spec.ranges?.length} · hold <kbd>{cap($keymap.ranges)}</kbd> weapon ranges{/if}{#if spec.sensors?.length} · <kbd>{cap($keymap.sensing)}</kbd> detection{/if}</p>{/if}
       </section>
     {:else if spec && !spec.has_drive}
@@ -410,31 +410,31 @@
     {/if}
     {#if ownUnit}
       <section class="engage">
-        <h2><button class="fold" class:shut={!shut.engage_open} on:click={() => flip('engage_open')}><i></i>Engagement</button>{#if eng}
-          <span class="dim">{eng.stance ? short(stances[eng.stance]) : 'mixed stances'} · {eng.profile_name ?? 'mixed profiles'}</span>{/if}</h2>
+        <h2><button class="fold" class:shut={!shut.engage_open} on:click={() => flip('engage_open')}><i></i>Combat</button>{#if eng}
+          <span class="dim">{eng.combat ? `${ROMAN[eng.combat.quarters]} · ` : ''}{eng.stance ? short(stances[eng.stance]) : 'mixed stances'} · {eng.profile_name ?? 'mixed profiles'}</span>{/if}</h2>
         {#if shut.engage_open && eng}
         <dl class="tight">
-          <dt title={stances[eng.stance] ?? 'Its ships stand in more than one'}>Stance</dt>
-          <dd><select value={eng.stance ?? ''} on:change={(e) => stance({ stance: e.target.value })}>
+          {#if eng.combat}<dt title="I general quarters (pinging, engaging by her stance), II moving to attack, III watching">Readiness</dt>
+            <dd class:gq={eng.combat.quarters === 1}>{ROMAN[eng.combat.quarters]} · {eng.combat.state ?? eng.combat.quarters_name}</dd>{/if}
+          <dt title={`What she does with a target: ${stances[eng.stance] ?? 'its ships stand in more than one'}. ${whence(eng.stance_from)}`}>Stance</dt>
+          <dd><select value={eng.stance ?? ''} title={whence(eng.stance_from)} on:change={(e) => stance({ stance: e.target.value })}>
             {#if !eng.stance}<option value="" disabled>mixed: {Object.entries(eng.stances).map(([s, k]) => `${k} ${short(stances[s])}`).join(', ')}</option>{/if}
             {#each Object.entries(stances) as [k, label]}<option value={k} title={label}>{short(label)}</option>{/each}</select></dd>
-          {#if eng.stance_from}<dt class="sub">from</dt><dd class="sub">{whence(eng.stance_from)}</dd>{/if}
-          <dt title="The rules its stance reads: ranges and targets (Settings, Combat)">Profile</dt>
-          <dd><select value={eng.profile ?? ''} on:change={(e) => stance({ profile: e.target.value })}>
+          <dt title={`The rules her stance reads: how far, at whom, her automaton and how an engagement ends (Combat profiles). ${whence(eng.profile_from)}`}>Profile</dt>
+          <dd><select value={eng.profile ?? ''} title={whence(eng.profile_from)} on:change={(e) => stance({ profile: e.target.value })}>
             {#if !eng.profile}<option value="" disabled>mixed</option>{/if}
             {#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></dd>
-          {#if eng.profile_from}<dt class="sub">from</dt><dd class="sub">{whence(eng.profile_from)}</dd>{/if}
+          {#if eng.automaton_name}<dt class="sub">automaton</dt><dd class="sub">{eng.automaton_name}{#if eng.end} · ends {ENDS[eng.end]}{/if}</dd>{/if}
           <dt title="Her crew's tier">Crew</dt><dd>{eng.veterancy ?? 'rated'}</dd>
-          {#if eng.combat}
-            <dt title="I general quarters (pinging, engaging by her stance), II moving to attack, III watching">Readiness</dt>
-            <dd class:gq={eng.combat.quarters === 1}>{ROMAN[eng.combat.quarters]} · {eng.combat.state ?? eng.combat.quarters_name}</dd>
-          {/if}
-          {#if eng.automaton_name}<dt title="Her ship AI: the state map her profile names">Automaton</dt>
-            <dd>{eng.automaton_name}{#if eng.end} <span class="dim">· ends {ENDS[eng.end]}</span>{/if}</dd>{/if}
-          {#if eng.combat?.weapons.length}<dt title="Her batteries that fire, and how they stand">Weapons</dt>
-            <dd>{#each eng.combat.weapons as w, k}<span class:off={w.state !== 'ready'} title={`${w.kind}${w.engage_km ? `, engages at ${w.engage_km.toLocaleString()} km` : ''}: ${w.state}`}>{k ? ' · ' : ''}{w.label} {w.count}</span>{/each}</dd>{/if}
         </dl>
-        {#if eng.ledger.length}
+        {/if}
+        {#if shut.engage_open && arms.length}
+        <dl class="tight arms">
+          {#each arms as w}<dt class:off={w.state && w.state !== 'ready'} title={`${w.kind ?? ''}${w.state ? `: ${w.state}` : ''}`}>{w.label}{#if w.count}<span class="dim">&nbsp;×{w.count}</span>{/if}</dt>
+            <dd>{#each w.reach as r, k}<span title={r.note}>{k ? ' · ' : ''}{r.what} {km(r.km)}</span>{:else}<span class="dim">{w.kind ?? ''}</span>{/each}</dd>{/each}
+        </dl>
+        {/if}
+        {#if shut.engage_open && eng?.ledger.length}
           <h3>Last orders</h3>
           <ol class="ledger">
             {#each eng.ledger as o (o.id)}
@@ -442,7 +442,6 @@
                 <span>{said(o)}{#if o.by !== chosen} <i class="dim">· {nameOf(o.by)}</i>{/if}</span><span class="dim">{state ? `${age(state.t - o.at)} ago` : ''}</span></li>
             {/each}
           </ol>
-        {/if}
         {/if}
       </section>
     {/if}
@@ -552,7 +551,8 @@
   .engage select { background: var(--void); color: var(--ink); border: 1px solid var(--rule); font: inherit; max-width: 100%; }
   .point { color: var(--ink); font-weight: 400; }
   .engage dd.gq { color: var(--engage, #ff3046); }
-  .engage dd span.off { color: var(--dim); text-decoration: line-through; }
+  .engage .arms { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--rule); }
+  .engage .arms dt.off { color: var(--dim); text-decoration: line-through; }
   .ledger { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
   .ledger li { display: flex; justify-content: space-between; gap: 10px; padding-left: 10px; border-left: 1px solid var(--rule); }
   .ledger li.now { border-left-color: var(--cyan, #9ff0ff); }

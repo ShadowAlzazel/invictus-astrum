@@ -138,10 +138,16 @@ seen something is pictured for its automata (without tracks, unless a ship of it
 | B pursue | an engage with no leash to her post |
 | C pass | a burn through where the side reckons the target will be (seen place on at its velocity for the track's age), half the way then on; once her burn is done, corrected while the miss is over `PASS_MISS` (est. 0.25) of her engage range; each target passed once while she stays in the state |
 
+A pass is dear: half the way at her cruise g is about 367 km/s against GHOST 1 from 27 Gm (half a
+go-to's Δv there). Kept for now; how hard she burns into a pass is to be a setting of her
+automaton's.
+
 In sol-demo, TF-3 on Search and Destroy passes GHOST 1 at 708 km after 32 h, against an engage range
 of 40,000 km (aimed at the track as last seen, uncorrected: 45,700 km). Her quarters reach the map
 in the frame (`quarters`, off the book at the picture's moment) and in the ship's Engagement panel
-with her automaton's state and her weapons.
+with her automaton's state and her weapons: the panel's one Combat section (readiness, stance,
+profile, crew, each battery with its reaches). The main menu's Combat profiles screen draws each
+profile's automaton as its state map, the stance and the ending in the state that engages.
 
 ## Slates
 

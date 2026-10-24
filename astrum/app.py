@@ -62,7 +62,7 @@ log = logging.getLogger("astrum.web")         # who connected, signed in, acted 
 from . import display
 from . import picture
 from . import profiles
-from .shipai import load_automata
+from .shipai import EVENTS, load_automata
 from .profiles import Profile
 from . import switches
 from .detect import suite, unsimulated
@@ -1239,11 +1239,13 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     @app.get("/api/profiles")
     def profile_list(request: Request, player: str | None = None):
         """The combat profiles a player reads (the shared ones, the root first, then their own), and
-        what a profile is made of: the stances, the ranges' presets, the targets."""
+        what a profile is made of: the stances, the ranges' presets, the targets, the endings, and the
+        automata they name with the events between their states."""
         world.check()
         player = bound({"player": player}, user_of(request)).get("player")
         return {"profiles": [p.as_dict() for p in world.profiles_of(player).values()],
-                "stances": profiles.STANCES, "ranges": profiles.RANGES, "targets": list(profiles.TARGETS)}
+                "stances": profiles.STANCES, "ranges": profiles.RANGES, "targets": list(profiles.TARGETS),
+                "ends": profiles.ENDS, "automata": {k: a.as_dict() for k, a in world.automata.items()}, "events": EVENTS}
 
     @app.post("/api/profiles")
     async def profile_make(request: Request, req: dict = Body(...)):

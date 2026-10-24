@@ -22,6 +22,7 @@
   import { LobbySocket } from './lib/lobby.js';
   import { stepWarp, warpLabel } from './lib/clock.js';
   import MainMenu from './lib/MainMenu.svelte';
+  import CombatProfiles from './lib/CombatProfiles.svelte';
   import ShipRegistry from './lib/ShipRegistry.svelte';
   import FleetManager from './lib/FleetManager.svelte';
   import Settings from './lib/Settings.svelte';
@@ -94,7 +95,8 @@
   $: try { localStorage.setItem('astrum.orderPlane', orderPlane); } catch {}
   function setPlane(p) { orderPlane = p; if (ordering) ordering = { ...ordering, plane: p, tilt: 0 }; }
   $: if (ordering && (mode !== 'map' || (state && !ordering.ships.some((id) => state.ships?.[id])))) ordering = null;
-  let mode = 'menu';                    // 'signin' | 'menu' | 'levels' | 'map' | 'workshop' | 'ships' | 'fleets'
+  let mode = 'menu';                    // 'signin' | 'menu' | 'levels' | 'map' | 'workshop' | 'ships' | 'fleets' | 'profiles'
+  let menuGroup = null;                 // the menu open within the main one (Fleet command), kept on coming back
   // Signed in (astrum/accounts.py, astrum/lobby.py): who this browser plays as, and the lobbies the
   // server pushes. Play is then a lobby: its host works the level's clock, and every picture and
   // order is made, on the server, as the lobby grants (its level, your side). With the server's
@@ -627,6 +629,7 @@
     if (what === 'play' || what === 'build') { purpose = what; toLevels(); }
     if (what === 'ships') mode = 'ships';
     if (what === 'fleets') mode = 'fleets';
+    if (what === 'profiles') mode = 'profiles';
     if (what === 'settings') showSettings = true;
   }
   // out of a level: it runs on on the server; behind the menus, its system stands still
@@ -772,12 +775,14 @@
 {/if}
 
 {#if mode === 'menu'}
-  <MainMenu onchoose={choose} counts={{ levels: levels.filter((l) => !l.own).length, systems: meta?.systems.length ?? 0, ships: meta?.ship_classes ?? 0 }} />
+  <MainMenu onchoose={choose} bind:group={menuGroup} counts={{ levels: levels.filter((l) => !l.own).length, systems: meta?.systems.length ?? 0, ships: meta?.ship_classes ?? 0 }} />
   {#if you}<p class="whoami" data-ui>{you} · <button on:click={signOut}>sign out</button></p>{/if}
 {:else if mode === 'ships'}
   <ShipRegistry bind:this={registry} {style} onback={toMenu} />
 {:else if mode === 'fleets'}
   <FleetManager {style} onback={toMenu} />
+{:else if mode === 'profiles'}
+  <CombatProfiles player={playerId} onback={toMenu} />
 {:else if mode === 'signin'}
   <SignIn onsigned={signedIn} />
 {:else if mode === 'levels' && purpose === 'play' && authOn}

@@ -99,3 +99,14 @@ def test_the_map_is_told_her_readiness(tmp_path):
     assert [w["id"] for w in e["combat"]["weapons"]] and "combat" not in c.get(
         "/api/engagement/sol-demo/tf-3", params={"player": "arcvs", "t": t + 3600}).json()
     assert c.get("/api/engagement/sol-demo/tf3-es-1", params={"player": "arcvs", "t": t}).json()["combat"]["quarters"] == 3
+
+
+def test_the_profiles_say_their_automata_for_the_map(tmp_path):
+    """/api/profiles carries what the Combat profiles screen draws: each automaton named, its
+    states and the events between them, and the endings."""
+    c, _ = _app(tmp_path)
+    got = c.get("/api/profiles", params={"player": "arcvs"}).json()
+    auto = got["automata"]["default"]
+    assert {p["automaton"] for p in got["profiles"]} <= set(got["automata"]) and set(got["ends"]) >= {"keep", "pursue", "pass"}
+    assert auto["states"]["watch"]["on"] == {"threat": "gq", "attack": "attack"} and auto["quiet_h"] == 24
+    assert all(ev in got["events"] for s in auto["states"].values() for ev in s["on"])

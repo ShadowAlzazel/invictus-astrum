@@ -60,16 +60,24 @@ The map opens on the main menu, over a system standing still:
 
 1. **Simulation**: choose a level and start it.
 2. **System workshop**: build a system, or copy one and change it.
-3. **Ship registry**: the classes of the fleet.
-4. **Fleets**: every fleet (`data/fleets`), its ships by class and its order of battle, as a chart
-   in the NATO manner (the map's own symbols, each unit under the one above it, a formation's
-   symbol making it the chart's top; ships shown or tallied by class) or as a table. An admin
-   (`role = "admin"` in `data/users.toml`: Fabian, and the `--dev` user) renames its units and
-   changes a ship's hull number or class; the edit is written into the fleet's file. A level
-   plays a copy of its scenarios and fleets as they stood when it started: an edit is played
-   from the next start (or a restart), never in a game already running.
-5. **Ship workshop**: next.
-6. **Settings** (also `,` anywhere), kept in this browser: Display (text and icon sizes, folding,
+3. **Fleet command**, a menu of its own (Esc back):
+   1. **Fleets**: every fleet (`data/fleets`), its ships by class and its order of battle, as a
+      chart in the NATO manner (the map's own symbols, each unit under the one above it, a
+      formation's symbol making it the chart's top; ships shown or tallied by class) or as a
+      table. An admin (`role = "admin"` in `data/users.toml`: Fabian, and the `--dev` user)
+      renames its units and changes a ship's hull number or class; the edit is written into the
+      fleet's file. A level plays a copy of its scenarios and fleets as they stood when it
+      started: an edit is played from the next start (or a restart), never in a game already
+      running.
+   2. **Ship registry**: the classes of the fleet.
+   3. **Ship builder**: next.
+4. **Combat profiles**: each profile drawn as its automaton (`data/automata.toml`): its states
+   with her readiness, the events between them, and in the state that engages, the profile's
+   stance, range, targets and ending. A **stance** is what she does with a target, ordered to a
+   ship or a formation and passed down its chain; a **profile** is the rules a stance reads (how
+   far, at whom), her automaton and how an engagement ends, and gives the stance she has when
+   none is ordered. Profiles are made in Settings, Combat.
+5. **Settings** (also `,` anywhere), kept in this browser: Display (text and icon sizes, folding,
    what a selection shows), Hotkeys (every key below, rebound by clicking it and pressing another),
    Game (the picture's switches: in a lobby, its host's), Combat (your combat profiles, kept on the server).
 
