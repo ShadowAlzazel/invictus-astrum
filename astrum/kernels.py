@@ -77,6 +77,15 @@ def gravity(X, B, gm, oblate, oblate_k, oblate_E, use_j2):
 
 
 @jit
+def gravity_times(X, B, gm, oblate, oblate_k, oblate_E, use_j2):
+    """gravity at T moments at once: X (T × N × 3) from the bodies at B (T × M × 3)."""
+    out = np.empty_like(X)
+    for t in range(X.shape[0]):
+        out[t] = gravity(X[t], B[t], gm, oblate, oblate_k, oblate_E, use_j2)
+    return out
+
+
+@jit
 def eta_1d(d, closing, lateral, a):
     """sim.eta_s: time to stop at a point d away, bang-bang along the line."""
     if a <= 0.0:
@@ -554,9 +563,9 @@ def record(slots, scope, still, held, whole, ts, sa, ta, TR, TV, TPROP, TDVS, TA
            TDIR, THEAT, TCOLD, r, v, t, prop, dvs, aim, thrust, rng, clos, eta1, arrive, dirn, heat, cold):
     """Fleet._record's writes, compiled: every row in scope, when her order gets her there; the
     rows not flown in the block (still), their state as it stands (heat and cold only if whole);
-    and those of them holding station (held), at each sample ts where they were then: by cubic
-    Hermite from the sample before the block (slot sa, at ta; sa < 0: none) to where her place has
-    her now, on from it past that."""
+    and those of them holding station (held), at each sample ts where they were then and how fast:
+    by cubic Hermite from the sample before the block (slot sa, at ta; sa < 0: none) to where her
+    place has her now, and its derivative; on from it past that."""
     _put1(TARRIVE, arrive, slots, scope)
     _put3(TR, r, slots, still)
     _put3(TV, v, slots, still)
@@ -589,6 +598,8 @@ def record(slots, scope, still, held, whole, ts, sa, ta, TR, TV, TPROP, TDVS, TA
                 for x in range(3):
                     TR[s, i, x] = (2 * u3 - 3 * u2 + 1) * TR[sa, i, x] + (u3 - 2 * u2 + u) * h * TV[sa, i, x] \
                         + (3 * u2 - 2 * u3) * r[i, x] + (u3 - u2) * h * v[i, x]
+                    TV[s, i, x] = ((6 * u2 - 6 * u) * TR[sa, i, x] + (6 * u - 6 * u2) * r[i, x]) / h \
+                        + (3 * u2 - 4 * u + 1) * TV[sa, i, x] + (3 * u2 - 2 * u) * v[i, x]
             else:
                 for x in range(3):
                     TR[s, i, x] = r[i, x] + v[i, x] * (ts[a] - tb)
@@ -952,6 +963,7 @@ def warm_up() -> None:
         return
     z3, one = np.zeros((1, 3)), np.ones(1)
     gravity(z3 + 1.0, z3, one, np.zeros(0, dtype=np.int64), np.zeros(0), np.zeros((0, 3, 3)), True)
+    gravity_times((z3 + 1.0)[None], z3[None], one, np.zeros(0, dtype=np.int64), np.zeros(0), np.zeros((0, 3, 3)), True)
     predict(np.zeros(3), np.zeros(3), 1.0, 0.0, np.ones(3) * 1e3, np.zeros(3), True, np.zeros((2, 3)), 0.0, 600.0, 0.0,
             0.0, 600.0, np.zeros((3, 1, 3)), np.zeros((3, 1, 3)), np.zeros(1), np.zeros(1),
             0.9, 2000.0, 10.0, 0.02, 1.0, 120.0, 1200.0, 10)

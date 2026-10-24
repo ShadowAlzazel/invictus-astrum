@@ -1571,8 +1571,8 @@ def test_station_charges_summed_as_stepped():
 
             def no_sums(self, kept, *a):
                 ahead(self, kept, *a)
-                for n, (P1, P2, V1, dv) in kept.items():
-                    kept[n] = (P1, P2, V1, np.full_like(dv, np.nan))
+                for n, (P1, V1, dv) in kept.items():
+                    kept[n] = (P1, V1, np.full_like(dv, np.nan))
             f._station_ahead = no_sums.__get__(f)
         f.at(f.t0 + 26 * 3600)
         return f.c.prop[: f.c.n].copy(), f.c.dvs[: f.c.n].copy()
@@ -1580,6 +1580,26 @@ def test_station_charges_summed_as_stepped():
     (p1, d1), (p2, d2) = flown(False), flown(True)
     assert np.allclose(p1, p2, rtol=1e-12, atol=1e-6) and np.allclose(d1, d2, rtol=1e-12, atol=1e-9)
     assert (d1 > 0).sum() > 20                         # (they do pay)
+
+
+def test_the_timeline_holds_station_ships_where_their_places_are():
+    """Between a block's ends a station ship's samples follow her place, where and how fast (the
+    Home Force off Io, 17 km/s about Jupiter, included): a picture reads them as they are."""
+    from astrum.app import create_app
+    world = create_app().state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    f.keep_timeline()
+    f.reach(f.t0 + 6 * 3600)
+    c, worst = f.c, [0.0, 0.0]
+    for k in range(40):
+        t = f.t0 + 3600 + k * 449.3                  # (within what is flown)
+        pic, ver = f.timeline.at(t, c.n, f.versions)
+        rows, P = f._station_positions(t, ver=ver[: len(c.row)])
+        _, Pa = f._station_positions(t + 0.5, ver=ver[: len(c.row)])
+        _, Pb = f._station_positions(t - 0.5, ver=ver[: len(c.row)])
+        worst = [max(worst[0], np.linalg.norm(pic["r"][rows] - P, axis=1).max()),
+                 max(worst[1], np.linalg.norm(pic["v"][rows] - (Pa - Pb), axis=1).max())]
+    assert c.row["jove-fs1-2"] in rows and worst[0] < 5.0 and worst[1] < 0.1         # metres, m/s
 
 
 def test_taking_station_from_an_orbit_leaves_it_where_she_is():

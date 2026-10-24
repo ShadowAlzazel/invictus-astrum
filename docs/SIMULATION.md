@@ -88,10 +88,11 @@ as the fleet is flown: the run-ahead calls it after each stretch it flies, and a
 a minute not swept yet sweeps up to it first. It is one unit with one way in (the timeline's minute
 samples, the book's pings, the relay) and one way out (each side's summaries), so it could as well
 run in a process of its own. It reads only the timeline: the flight writes every row's state at
-every whole minute, station ships included (by cubic Hermite between where their places have them
-at each block's ends: a median 15 m from placing them, but up to 3.4 km for ships held off Io,
-whose place's velocity is a 60 s forward difference some 21 m/s off; the sweep needs nothing
-finer, a picture places them exactly). Many minutes go
+every whole minute, station ships included (where and how fast: by cubic Hermite between where
+their places have them at each block's ends, and its derivative; a place's velocity is its
+central difference 60 s either side). Within a metre of placing them and 2 cm/s, the Home Force
+off Io at 17 km/s included (before: up to 3.4 km and 367 m/s, the velocity a forward difference
+and held through the block), so the sweep and the pictures read them as they are. Many minutes go
 in one compiled call (`kernels.sweep`, up to two hours), and the work is culled before any cone is
 looked at:
 
@@ -745,6 +746,11 @@ block's steps are paid summed, once (the rocket equation's integral); the first 
 and a step off the grid, step by step. To the bit what one moment at a time gives
 (`unit` is written out so a bullseye resolved alone and among many rounds alike). Station-keeping:
 221 → 121 ms a game day here, the flight as a whole 494 → 392 ms.
+
+Since again: each place's velocity a central difference (to the scenario's start, leaving station,
+an orbit's body, an order's target); what holding a place costs is the same to a hundredth of a
+percent (the forward difference's bias all but cancels from one grid moment to the next), and
+gravity at every step's middle for the two hours ahead is one compiled call (`kernels.gravity_times`).
 
 ## On the wire
 
