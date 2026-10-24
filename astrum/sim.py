@@ -74,7 +74,7 @@ from .entity import G0, Ship, ShipSpec, SpecError
 from .frames import from_aer
 from .orbits import drift_many
 from .placement import plan
-from .orders import ACTIVE, BURN, COAST, COLD, FACE, FREE as GO_FREE, GOTO, KIND, PASSIVE, SETG, WARM, Given, OrderBook
+from .orders import ACTIVE, BURN, COAST, COLD, FACE, FREE as GO_FREE, GOTO, KIND, PASSIVE, REFUEL, SETG, WARM, Given, OrderBook
 from .zones import classify
 from .detect import Sensors, Sweeper
 from .signature import Signature
@@ -175,7 +175,8 @@ class Order:
                                    # or combat profile: target {stance, profile}; read by astrum/ai.py),
                                    # "queue" (a go-to given once she has carried out the order target.after),
                                    # "face" (her hull on target.dir while she does not burn), "free"
-                                   # (no place held: an orbit of the body whose well she is in, else coasting)
+                                   # (no place held: an orbit of the body whose well she is in, else coasting),
+                                   # "refuel" (target.kg of propellant taken on, up to her tanks)
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s
     target: dict | None = None     # goto: {bullseye, player, aer: [deg, deg, m]} | {unit} | {body}, and a label
     g: float | None = None         # goto: the acceleration to hold, capped at her most
@@ -494,6 +495,11 @@ class Fleet:
                 return {self.c.ids[B.ship[e]]: self.c.ship(B.ship[e]) for e in given}
             self._qi += int((B.at[given] < self.t).sum())   # given before where the fleet is: flown again below
             return self._refly({self.c.ids[B.ship[e]] for e in given}, t_o, set(given), float(B.at[given].max()))
+
+    def refuel(self, ship: str, t: float, kg: float, source: str = "map") -> dict[str, Ship] | None:
+        """Propellant taken on by a ship at t, up to her tanks: an order like any other, so a fleet
+        flown again from before it (an order into the past, a setback) takes it on again."""
+        return self.command(Order(ship, t, "refuel", target={"kg": kg}, source=source))
 
     def overrule(self, ships: list[str], t: float) -> None:
         """The AI's orders to these ships after t struck: an order of the map's at t stands over them
@@ -1157,8 +1163,8 @@ class Fleet:
             if key[0] == "b":
                 got = self._bulls_at(key[1], key[2], ts)
                 if got is not None:
-                    for j, (O, A) in enumerate(zip(*got)):
-                        P[j, ks] = O + L @ A.T + off
+                    O, A = got
+                    P[:, ks] = np.asarray(O)[:, None, :] + np.matmul(L[None], np.swapaxes(A, 1, 2)) + off
             elif key[0] == "k":
                 R0, V0, T0 = L
                 P[:, ks] = self._bodies_at(ts)[key[1]][:, None, :] + drift_many(R0[None], V0[None], self.system[key[1]].gm,
@@ -1200,11 +1206,11 @@ class Fleet:
                 _room(self._base_cache, 64)
                 self._base_cache[ts[0]] = base
         W = pl.W[ks[ok]]
-        for j, B in enumerate(base):
-            unplaced = np.isnan(B).any(axis=1)
-            X = W @ np.where(unplaced[:, None], 0.0, B)
-            X[(W[:, unplaced] != 0).any(axis=1)] = np.nan
-            out[j, ok] = X
+        unplaced = np.isnan(base).any(axis=2)            # every moment's product at once (the same bits as one by one)
+        X = np.matmul(W[None], np.where(unplaced[..., None], 0.0, base))
+        for j in np.flatnonzero(unplaced.any(axis=1)):
+            X[j, (W[:, unplaced[j]] != 0).any(axis=1)] = np.nan
+        out[:, ok] = X
         return out
 
     def _stations_to(self, t_end: float, partial: bool = False) -> None:
@@ -1679,6 +1685,11 @@ class Fleet:
             c.cold[i] = False
         elif kind == FACE and c.thrust[i] <= 0:      # her hull on a target, while she does not burn
             c.dir[i] = g.target["dir"]
+            self._touch(i)
+        elif kind == REFUEL:                          # propellant taken on (a tender, a tug, a station): her tanks
+            took = min(max(float(g.target.get("kg", 0.0)), 0.0), max(c.pmax[i] - c.prop[i], 0.0))
+            c.prop[i] += took
+            self._st_ahead = (None, {})              # (what holding her place costs is worked out again from here)
             self._touch(i)
 
     def _well(self, r: np.ndarray, t: float, star: bool = True):

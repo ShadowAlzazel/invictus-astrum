@@ -88,9 +88,9 @@ class Placement:
         bodies as {id: T × 3}. Each moment is worked out as base_positions works out one: the same bits."""
         P = np.full((T, len(self.base), 3), np.nan)
         for bid, (rows, L) in self.by_bull.items():
-            if bid in bullseyes:
-                for j, (O, A) in enumerate(zip(*bullseyes[bid])):
-                    P[j, rows] = O + L @ A.T
+            if bid in bullseyes:                         # (every moment's product at once: the same bits)
+                O, A = bullseyes[bid]
+                P[:, rows] = np.asarray(O)[:, None, :] + np.matmul(L[None], np.swapaxes(A, 1, 2))
         for body, (rows, off) in self.by_body.items():
             if body in bodies:
                 P[:, rows] = np.asarray(bodies[body])[:, None, :] + off

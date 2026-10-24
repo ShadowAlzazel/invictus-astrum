@@ -345,6 +345,12 @@ hold: it is free fall. Off it (a move, decelerate) she leaves from where it has 
 speed. The map draws every free ship's conic about the body whose well she is in, off its picture
 (the bodies' velocities ride in it, `bodies_kms`): nothing is asked of the server.
 
+**REFUEL.** `Fleet.refuel(ship, t, kg)`: propellant taken on, up to her tanks (`pmax`), a `refuel`
+order of the book like any other, so a fleet flown again from before it takes it on again in order.
+It raises her propellant and nothing else of her (Δv spent stays what she has spent); what holding
+her place costs is worked out again from that moment. For tenders, tugs and stations to come; not
+on the map yet.
+
 **BALLISTIC.** A move given ballistic (K while aiming cycles station, free, ballistic) does not
 brake: the server aims one burn (`simhost.ballistic_order`) from the ships' mean along a line in
 the system's frame, for half the way by distance, and she coasts on through the target at the
@@ -750,7 +756,9 @@ and a step off the grid, step by step. To the bit what one moment at a time give
 Since again: each place's velocity a central difference (to the scenario's start, leaving station,
 an orbit's body, an order's target); what holding a place costs is the same to a hundredth of a
 percent (the forward difference's bias all but cancels from one grid moment to the next), and
-gravity at every step's middle for the two hours ahead is one compiled call (`kernels.gravity_times`).
+gravity at every step's middle for the two hours ahead is one compiled call (`kernels.gravity_times`). Every
+moment's matrix products at once (each bullseye's, and the plan's), the same bits as one by one:
+a two-hour look-ahead 4.9–7.5 → 3.2 ms here, run side by side with the code before.
 
 ## On the wire
 

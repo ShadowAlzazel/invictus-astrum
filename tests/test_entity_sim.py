@@ -1602,6 +1602,33 @@ def test_the_timeline_holds_station_ships_where_their_places_are():
     assert c.row["jove-fs1-2"] in rows and worst[0] < 5.0 and worst[1] < 0.1         # metres, m/s
 
 
+def test_a_refuel_fills_her_tanks_and_is_taken_on_again_when_flown_again():
+    """Propellant taken on is an order: her tanks rise (up to full) and nothing else of her; given
+    into the past, the fleet flown again from before it takes it on as it does in order."""
+    from astrum.app import create_app
+    sid = "tf3-lf6-ls-2"                                 # holding a point off Mars: she pays as she holds it
+
+    def flown(late):
+        world = create_app().state.world
+        f = world.fleet(world.scenarios["sol-demo"])
+        i, t = f.c.row[sid], f.t0 + 2 * 3600
+        if not late:
+            f.at(t)
+            spent, dvs = f.c.pmax[i] - f.c.prop[i], f.c.dvs[i]
+            f.refuel(sid, t, spent / 2)
+            assert f.c.prop[i] == pytest.approx(f.c.pmax[i] - spent / 2) and f.c.dvs[i] == dvs
+            f.refuel(sid, t, 1e12)
+            assert f.c.prop[i] == f.c.pmax[i]                                     # (no more than her tanks)
+        f.at(t + 3 * 3600)
+        if late:                                         # given after the fleet flew past it
+            f.refuel(sid, t, 1e12)
+            f.at(t + 3 * 3600)
+        return f.c.prop[i], f.c.dvs[i]
+
+    (p1, d1), (p2, d2) = flown(False), flown(True)
+    assert p1 == pytest.approx(p2, rel=1e-9) and d1 == pytest.approx(d2, rel=1e-9) and d1 > 0
+
+
 def test_taking_station_from_an_orbit_leaves_it_where_she_is():
     """Off an orbit (decelerate, to take station), she leaves from where the orbit has carried her,
     at its speed: not from the body's centre."""
