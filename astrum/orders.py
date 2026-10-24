@@ -20,10 +20,10 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE, STANCE, QUEUE, FACE, FREE, REFUEL = range(13)
+GOTO, BURN, SETG, COAST, COLD, WARM, ACTIVE, PASSIVE, STANCE, QUEUE, FACE, FREE, REFUEL, FIRE, QUARTERS = range(15)
 KIND = {"goto": GOTO, "burn": BURN, "setg": SETG, "coast": COAST, "cold": COLD, "warm": WARM,
         "active": ACTIVE, "passive": PASSIVE, "stance": STANCE, "queue": QUEUE, "face": FACE, "free": FREE,
-        "refuel": REFUEL}
+        "refuel": REFUEL, "fire": FIRE, "quarters": QUARTERS}
 
 
 @dataclass(frozen=True)
@@ -38,6 +38,8 @@ class Given:
                                                    # queue: a go-to's target, and after: the order it follows;
                                                    # face: dir, where her hull is to point while she does not burn
                                                    # refuel: kg, the propellant taken on (up to her tanks)
+                                                   # fire (a WeaponEngageOrder): weapon, dir, targets
+                                                   # quarters: level, 1 general quarters, 2 attack, 3 watching
     label: str | None = None
     g: float = 0.0                 # goto: held; setg: the new g
     burn: dict = field(default_factory=dict)       # burn: g or throttle, bullseye, bearing, elevation, duration_s

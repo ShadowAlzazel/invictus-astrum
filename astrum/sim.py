@@ -68,13 +68,14 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from . import kernels
+from . import combat, kernels
 from .classis import COLUMNS, BURN_G, BURN_NONE, BURN_THROTTLE, DEAD, FREE, LEAD, SHIP, STATION, Classis, LeadView, ship_view
 from .entity import G0, Ship, ShipSpec, SpecError
 from .frames import from_aer
 from .orbits import drift_many
 from .placement import plan
-from .orders import ACTIVE, BURN, COAST, COLD, FACE, FREE as GO_FREE, GOTO, KIND, PASSIVE, REFUEL, SETG, WARM, Given, OrderBook
+from .orders import (ACTIVE, BURN, COAST, COLD, FACE, FIRE, FREE as GO_FREE, GOTO, KIND, PASSIVE, QUARTERS, REFUEL, SETG,
+                     WARM, Given, OrderBook)
 from .zones import classify
 from .detect import Sensors, Sweeper
 from .signature import Signature
@@ -85,6 +86,7 @@ STATION_AHEAD_S = 7200.0       # ... worked out this far ahead at once: a place 
 TRACK_DT = 60.0                # a target is worked out this often across a block, and drawn straight between
 TRACK_AHEAD = 120              # ... and that many TRACK_DT ahead at once, for the blocks to come
 CLOSE_SHARE, CLOSE_MIN_S = 0.02, 1.0   # an order closes in steps of this share of the time left, at least this
+KEEP_MIN_S = 10.0              # ... an engage held on her target, at least this (est.: steady on a target that moves)
 SAMPLE_S = 300.0               # an ephemeris without a table is sampled this often for the step
 TIMELINE_S = 60.0              # the timeline keeps every row's state this often (BLOCK_S is a whole number of them)
 STEP_MIN_S, STEP_MAX_S = 10.0, 600.0
@@ -299,6 +301,7 @@ class Fleet:
         self._checkpoints: list[tuple] = [(t0, self._snapshot(), t0)]    # (t, the rows then, station ships paid to)
         self.sensors = Sensors(self, registry)              # every ship's sensors, a cone each (astrum/detect.py)
         self.sweeper = Sweeper(self)                        # ... and every side's sweeps, as it is flown
+        self.combat = combat.CombatBook(self, registry)     # her weapons, and what happened (astrum/combat.py)
 
     # ---- the timeline: what the map reads ----------------------------------------------------
     def keep_timeline(self) -> Timeline:
@@ -463,6 +466,7 @@ class Fleet:
         self.mending, self._spare = None, []
         self.asked.clear()
         self.sweeper.forget(math.floor((t - self.t0) / TIMELINE_S))
+        self.combat.forget(t)
         self._setback[-1] = self._setback.get(-1, 0) + 1
         unanswered = np.isnan(self.c.arrive_at[: self.c.n])    # asked before the checkpoint, answered after: ask again
         self.c.predicted[: self.c.n][unanswered] = math.nan
@@ -546,6 +550,7 @@ class Fleet:
                 break
             rows |= more
         scope = np.array(sorted(rows), dtype=np.int64)
+        self.combat.forget(t_k, scope)                    # what they did from there on: done again as they fly
         self._strike_auto(t_k, scope)
         replay = B.given_since(t_k, self._qi, scope)
         self._free_leads(snap[0]["n"], {B.of(e).oid for e in replay if B.kind[e] == GOTO})
@@ -672,6 +677,7 @@ class Fleet:
             m.st_t = self._station_grid(m.st_t, T1, m.scope)
             self._record(slots, m.scope, flown, T0=m.t)
             self._heat(m.t, T1, m.scope, slots)
+            self._combat_step(m.t, T1, m.scope)
             for cp in [cp for cp in self._checkpoints if m.t + 1e-9 < cp[0] <= T1 + 1e-9]:
                 if abs(cp[0] - T1) < 1e-6:
                     self._patch(cp[1], m.scope)
@@ -808,11 +814,22 @@ class Fleet:
             self._stations_to(t1)
             self._record(slots, np.arange(c.n), flown, T0=T0)
             self._heat(T0, t1, np.arange(c.n), slots)
+            self._combat_step(T0, t1)
             cps = self._checkpoints
             if self.t - cps[-1][0] >= CHECKPOINT_S - 1e-6:
                 cps.append((self.t, self._snapshot(), self._station_t))
                 while len(cps) > 2 and cps[1][0] < self.t - CHECKPOINT_KEEP_S:
                     del cps[1]                          # the scenario's start stays: further back flies from there
+
+    def _combat_step(self, T0: float, T1: float, scope: np.ndarray | None = None) -> None:
+        """The combat step (astrum/combat.py) for every ship engaging (among scope, if given)."""
+        c, B = self.c, self.book
+        rows = np.flatnonzero(c.goal[: c.n] & (c.order[: c.n] >= 0))
+        if scope is not None:
+            rows = rows[np.isin(rows, scope)]
+        rows = np.array([i for i in rows.tolist() if B.of(int(c.order[i])).target.get("engage")], dtype=np.int64)
+        if len(rows):
+            combat.step(self, T0, T1, rows)
 
     def _grid_next(self, t: float) -> float:
         """The next block boundary after t: blocks lie on a grid from the scenario's start, so
@@ -850,8 +867,8 @@ class Fleet:
         owner = np.concatenate([np.full(len(u), k) for k, u in enumerate(units)])
         bodies = self._bodies(self.t)
         B = np.array([bodies[b.id] for b in self._pulls])
-        return kernels.unit_steps(allrows, owner, len(units), c.r, B, self._gms, c.goal, c.thrust, c.kind, c.eta1, LEAD,
-                                  STEP_ETA, STEP_MIN_S, STEP_MAX_S, STEP_BURN_MAX_S, CLOSE_SHARE, CLOSE_MIN_S)
+        return kernels.unit_steps(allrows, owner, len(units), c.r, B, self._gms, c.goal, c.thrust, c.kind, c.eta1, c.keep, LEAD,
+                                  STEP_ETA, STEP_MIN_S, STEP_MAX_S, STEP_BURN_MAX_S, CLOSE_SHARE, CLOSE_MIN_S, KEEP_MIN_S)
 
     def _fly(self, T0: float, T1: float, steer_only: bool = False, scope: np.ndarray | None = None) -> tuple:
         """Fly every flying unit from T0 to T1, each in as many equal steps as it wants (block time
@@ -895,10 +912,10 @@ class Fleet:
         for n, (us, base) in sorted(groups.items()):
             kernels.fly(np.concatenate(us), T0, T1, base, steer_only,
                         c.r, c.v, c.t, c.kind, c.mode, c.prop, c.dry, c.fmax, c.ve, c.dvs, c.thrust, c.dir, c.acc,
-                        c.burn, c.bval, c.buntil, c.goal, c.gg, c.track, c.off, c.stand, c.hold, c.hashold,
+                        c.burn, c.bval, c.buntil, c.goal, c.gg, c.track, c.off, c.stand, c.hold, c.hashold, c.keep,
                         c.lead, c.solo, c.amax, c.aim, c.rng, c.clos, c.eta1, c.arr_t, *tracks,
                         node_t0, node_h, NP, NV, self._gms, *self._oblate, self._rad,
-                        G0, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS, FORM_T_STEPS, FORM_T_MIN_S, CLOSE_SHARE, CLOSE_MIN_S, *smp)
+                        G0, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS, FORM_T_STEPS, FORM_T_MIN_S, CLOSE_SHARE, CLOSE_MIN_S, KEEP_MIN_S, *smp)
         self._settle(T1 if not steer_only else T0, scope)
         return slots, np.concatenate(units)
 
@@ -1634,6 +1651,7 @@ class Fleet:
             c.mode[i], c.burn[i], c.thrust[i], c.t[i] = FREE, BURN_NONE, 0.0, at
             c.place[i], c.burn_ev[i], c.order[i] = -1, -1, e
             c.goal[i], c.gg[i], c.stand[i] = True, g.g, stand
+            c.keep[i] = bool(tg.get("engage")) and tg.get("mode", "hold") == "hold"   # an engage held: she flies it on
             c.off[i] = B.slot[e]
             c.hashold[i], c.solo[i], c.lead[i], c.eta1[i], c.eta[i] = False, False, -1, math.inf, math.nan
             c.arrive_at[i] = c.predicted[i] = math.nan
@@ -1643,7 +1661,7 @@ class Fleet:
                 if L is None or B.at[c.order[L.row]] != at:
                     j = c.add(g.oid, LEAD, reuse=self._spare.pop() if self._spare else None)
                     c.mode[j], c.r[j], c.v[j], c.t[j], c.order[j], c.nmem[j] = FREE, c.r[i] - slot, c.v[i], at, e, 1
-                    c.goal[j], c.gg[j], c.stand[j], c.eta1[j] = True, g.g, stand, math.inf
+                    c.goal[j], c.gg[j], c.stand[j], c.eta1[j], c.keep[j] = True, g.g, stand, math.inf, c.keep[i]
                     self.leads[g.oid] = L = LeadView(c, j)
                     self._touch(j)
                 else:                                 # the formation's point: the mean of its ships' less their offsets
@@ -1686,6 +1704,11 @@ class Fleet:
         elif kind == FACE and c.thrust[i] <= 0:      # her hull on a target, while she does not burn
             c.dir[i] = g.target["dir"]
             self._touch(i)
+        elif kind == FIRE:                            # a WeaponEngageOrder: the combat book resolves it
+            self.combat.fire(self, i, at, g)
+        elif kind == QUARTERS:                        # her readiness: 1 general quarters, 2 attack, 3 watching
+            c.quarters[i] = min(max(int(g.target.get("level", 3)), 1), 3)
+            self.combat.changed()
         elif kind == REFUEL:                          # propellant taken on (a tender, a tug, a station): her tanks
             took = min(max(float(g.target.get("kg", 0.0)), 0.0), max(c.pmax[i] - c.prop[i], 0.0))
             c.prop[i] += took

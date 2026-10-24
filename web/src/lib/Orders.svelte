@@ -87,16 +87,16 @@
   function draw() {
     ctx.clearRect(0, 0, W, H);
     if (!map?.state || !style) return;
-    const F = style.palette.fuchsia, C = style.palette.cyan ?? '#9ff0ff';
+    const F = style.palette.fuchsia, C = style.palette.cyan ?? '#9ff0ff', E = style.palette.engage ?? '#ff3046';
     // orders being flown: every ship's vector, the selected one bright with its time to target
     for (const [id, s] of Object.entries(state?.ships ?? {})) {
       if (!s.goal?.aim_km) continue;
       const a = map.project(map.position({ kind: 'contact', id })), b = map.project(s.goal.aim_km);
       if (!a || !b) continue;
-      const on = selShips.has(id);
-      line(a, b, col(C, on ? 0.85 : 0.3), on ? 1.4 : 1, [6, 4]);
-      diamond(b, on ? 5 : 3.5, col(C, on ? 0.9 : 0.35));
-      if (on && !ordering && sel?.id === id) label([`${s.goal.label}`, `ETA ${hms(s.goal.eta_s)} · ${s.goal.g} g`, `${km(s.goal.range_km)} to go`], b.x, b.y, C);
+      const on = selShips.has(id), hue = s.goal.target?.engage ? E : C;      // an engage in red
+      line(a, b, col(hue, on ? 0.85 : 0.3), on ? 1.4 : 1, [6, 4]);
+      diamond(b, on ? 5 : 3.5, col(hue, on ? 0.9 : 0.35));
+      if (on && !ordering && sel?.id === id) label([`${s.goal.label}`, `ETA ${hms(s.goal.eta_s)} · ${s.goal.g} g`, `${km(s.goal.range_km)} to go`], b.x, b.y, hue);
     }
     // the order being aimed
     const aimed = aim();

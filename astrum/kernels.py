@@ -606,11 +606,12 @@ def record(slots, scope, still, held, whole, ts, sa, ta, TR, TV, TPROP, TDVS, TA
 
 
 @jit
-def unit_steps(rows, owner, nu, X, B, gms, goal, thrust, kind, eta1, lead_kind, eta, lo, hi, burn_max, share, close_min):
+def unit_steps(rows, owner, nu, X, B, gms, goal, thrust, kind, eta1, keep, lead_kind, eta, lo, hi, burn_max, share, close_min,
+               keep_min):
     """Fleet._unit_steps, compiled: each of nu units' step (its rows, owner: the unit of each), the
     least its rows want: eta of the dynamical time to the nearest pull, sqrt(d^3 / GM), between lo
     and hi; burn_max at most under thrust, on an order or a lead; share of the time left (at least
-    close_min) as an order arrives."""
+    close_min; keep_min for an engage held on her target) as an order arrives."""
     want = np.full(nu, hi)
     for q in range(rows.shape[0]):
         i, u = rows[q], owner[q]
@@ -623,7 +624,7 @@ def unit_steps(rows, owner, nu, X, B, gms, goal, thrust, kind, eta1, lead_kind, 
         if goal[i] or thrust[i] > 0 or kind[i] == lead_kind:
             want[u] = min(want[u], burn_max)
         if goal[i] and math.isfinite(eta1[i]):
-            want[u] = min(want[u], max(share * eta1[i], close_min))
+            want[u] = min(want[u], max(share * eta1[i], keep_min if keep[i] else close_min))
     return want
 
 
@@ -718,7 +719,7 @@ def _set_thrust(i, cx, cy, cz, n, prop, dry, fmax, ve, thrust, dirn, burn, bval,
 
 @jit
 def _steer_flyer(i, t, h, r, v, tt, kind, mode, prop, dry, fmax, ve, thrust, dirn, acc, burn, bval,
-                 gg, track, off, stand, hold, hashold, lead, solo, amax, aim, rng, clos, eta1, arr_t,
+                 gg, track, off, stand, hold, hashold, keep, lead, solo, amax, aim, rng, clos, eta1, arr_t,
                  trk_kind, trk_row, trk_knots, trk_n, trk_t0, trk_dt, trk_hold, R, V, A, P, gs,
                  B, gm, oblate, oblate_k, oblate_E, G0, brake, arrive_m, arrive_ms):
     """Flip-and-burn for a ship on her own or a formation's lead (_guide): steer the velocity
@@ -750,8 +751,8 @@ def _steer_flyer(i, t, h, r, v, tt, kind, mode, prop, dry, fmax, ve, thrust, dir
     aim[i, 0], aim[i, 1], aim[i, 2] = ax_, ay_, az_
     rng[i], clos[i] = d, closing
     eta1[i] = eta_1d(d, closing, math.sqrt(lx * lx + ly * ly + lz * lz), a)
-    if d < arrive_m and qx * qx + qy * qy + qz * qz < arrive_ms * arrive_ms:
-        arr_t[i] = t                            # there: the fleet takes it from here
+    if d < arrive_m and qx * qx + qy * qy + qz * qz < arrive_ms * arrive_ms and not keep[i]:
+        arr_t[i] = t                            # there: the fleet takes it from here (an engage held: never, she keeps flying it)
         if kind[i] == LEAD:
             # her ships fly the last of the way to their own places: the stop point plus their offset
             if trk_hold[track[i]]:
@@ -820,10 +821,10 @@ def _burn(i, h, t1, prop, dry, fmax, ve, dvs, thrust, burn, bval, buntil, G0):
 @jit
 def fly(rows, T0, T1, base, steer_only,
         r, v, tt, kind, mode, prop, dry, fmax, ve, dvs, thrust, dirn, acc, burn, bval, buntil,
-        goal, gg, track, off, stand, hold, hashold, lead, solo, amax, aim, rng, clos, eta1, arr_t,
+        goal, gg, track, off, stand, hold, hashold, keep, lead, solo, amax, aim, rng, clos, eta1, arr_t,
         trk_kind, trk_row, trk_knots, trk_n, trk_t0, trk_dt, trk_hold,
         node_t0, node_h, NP, NV, gm, oblate, oblate_k, oblate_E, rad,
-        G0, brake, arrive_m, arrive_ms, form_t_steps, form_t_min, close_share, close_min,
+        G0, brake, arrive_m, arrive_ms, form_t_steps, form_t_min, close_share, close_min, keep_min,
         smp_dt, smp_first, smp_slots, tl_r, tl_v, tl_prop, tl_dvs, tl_thrust, tl_aim, tl_rng, tl_clos, tl_eta1, tl_dir):
     """Fly the given rows (whole units: a formation's lead with its ships, or ships on their own)
     from T0 to T1, in steps of `base` that shrink to a fiftieth of the time left as an order
@@ -860,7 +861,7 @@ def fly(rows, T0, T1, base, steer_only,
             i = rows[k]
             if mode[i] == FREE and goal[i] and (kind[i] == LEAD or lead[i] < 0 or solo[i] or mode[lead[i]] != FREE):
                 if eta1[i] < 1e300:
-                    h = min(h, max(close_share * eta1[i], close_min))
+                    h = min(h, max(close_share * eta1[i], keep_min if keep[i] else close_min))
         if not steer_only and end - t - h < 0.25 * h:  # no sliver of a step at the end
             h = end - t
         _bodies_at(t, node_t0, node_h, NP, NV, B)
@@ -879,7 +880,7 @@ def fly(rows, T0, T1, base, steer_only,
                 if pas == 1 and (kind[i] == LEAD or (lead[i] >= 0 and not solo[i] and mode[lead[i]] == FREE)):
                     continue
                 _steer_flyer(i, t, h, r, v, tt, kind, mode, prop, dry, fmax, ve, thrust, dirn, acc, burn, bval,
-                             gg, track, off, stand, hold, hashold, lead, solo, amax, aim, rng, clos, eta1, arr_t,
+                             gg, track, off, stand, hold, hashold, keep, lead, solo, amax, aim, rng, clos, eta1, arr_t,
                              trk_kind, trk_row, trk_knots, trk_n, trk_t0, trk_dt, trk_hold, R, V, A, P, g0[k],
                              B, gm, oblate, oblate_k, oblate_E, G0, brake, arrive_m, arrive_ms)
         # the ships in formation: their places on the lead
@@ -983,7 +984,7 @@ def warm_up() -> None:
     relay_delays(T3, i2.copy(), *tree)
     sightings(0, f1, T3, T3, np.zeros((1, 1), dtype=np.int64), q1, q1, q1, qb, qb, qb, i1.copy(), i2.copy(), 3e8, *tree)
     unit_steps(i1.copy(), i1.copy(), 1, f3, f3 + 1.0, f1 + 1.0, np.zeros(1, dtype=np.bool_), f1, np.zeros(1, dtype=np.int8),
-               f1, 1, 0.005, 10.0, 600.0, 60.0, 0.02, 1.0)
+               f1, np.zeros(1, dtype=np.bool_), 1, 0.005, 10.0, 600.0, 60.0, 0.02, 1.0, 10.0)
     T1, T13 = np.zeros((2, 2)), np.zeros((2, 2, 3))
     record(i1.copy(), i1.copy(), i1.copy(), i1.copy(), True, f1, 1, 0.0, T13, T13.copy(), T1, T1.copy(), T13.copy(),
            T1.copy(), T1.copy(), T1.copy(), T1.copy(), T1.copy(), T13.copy(), T1.copy(), T1.copy(), np.zeros((2, 3)),
