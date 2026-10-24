@@ -147,6 +147,10 @@ the author*. The format is in `data/ships/README.md`.
 | T | turn: point the selection's hulls at the cursor, a unit or a body; nothing flown (a ship flying an order drops it, her drive cut) |
 | L | ruler: click where to measure from, then where to; it reads the length, the light time, and the bearing and elevation in the active bullseye's axes (on a unit or a body, from it). L again or a right click puts it away |
 | Shift-click | (aiming) queue the order after what the selection flies; aiming goes on |
+| W / S | the telegraph: Full, Cruise (the doctrine band), Cruise floor, Half, Slow, Dead slow, Stop (Shift: 0.01 g). Aiming, the g it will hold; a ship flying an order, hers; a formation's order block in its panel, that order for all its ships |
+| E / Q | (aiming at a point) tilt it toward Eve or Haid in 5° steps, as seen from her |
+| B | (aiming) Eve and Haid from the chosen bullseye's plane instead of hers; it stays until switched back |
+| Hold G | weapon ranges: a dotted ring for each kind (de-mast, dazzle, guns) of every armed ship, where it is at least 14 px across (display.toml `[ranges]`) |
 | Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
 | V | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond); a formation: every ship under it |
 | K | station or free: a ship (or every ship under a formation) holding station goes free, onto an orbit of the body whose well she is in (paying only the burn onto it), else coasting; a free one takes station (decelerate, as X). Aiming a move, how it ends, cycled: holding station there, free there (at a body, an orbit of it), or ballistic (no braking: half the way burning, then on through it) |

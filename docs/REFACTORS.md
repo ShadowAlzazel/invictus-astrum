@@ -1,39 +1,50 @@
 # Refactors worth doing
 
-What has been measured and left for later, biggest gain first. Figures are the demo's (sol-demo,
-~110 ships, four sides) unless said; `docs/SIMULATION.md` "Where the time goes" has the rest.
+What has been measured and left for later, biggest gain first. Figures are sol-demo (154 ships,
+four sides) on the owner's machine, 24 October, unless said; `docs/SIMULATION.md` "Where the time
+goes" has the rest. Compare a change side by side with the code before it, on one machine.
 
 ## Speed
 
 | # | Refactor | What it buys | What it costs |
 |---|---|---|---|
-| 2 | **The run-ahead in its own process.** It and the pictures share one interpreter: at ≥ 12 h/s they contend, and a picture flies the fleet itself when the run-ahead lags (`Fleet.reach` within the frame budget). | Pictures no longer wait on flight; the fastest warps steadier. | The fleet's state shared between processes (timeline and versions in shared memory, or the run-ahead owning the fleet and pictures read from snapshots). Large. |
-| 4 | **Encoder vectorized.** `ShipEncoder.encode` and `Side.picture` loop over changed rows in Python. | Fine at 100s of ships (~1 ms); needed for 1000s. | Columns diffed and packed as arrays; descriptors built per stage, not per row. |
-| 5 | **Binary pictures.** JSON text (8–30 KiB a picture) through the process pipe and the socket. | Less parsing on both ends (0.4 ms encode, 0.2 ms parse today); smaller at 1000s of ships. | A typed-array format for the map; JSON kept for tools. |
-| 6 | **A grid under the groups.** The sweep culls by formation spheres, then by ship: the groups against every target are still all pairs. | For thousands of ships: groups only against targets in nearby cells. | A coarse grid of the groups' spheres per minute in the kernel. |
-| 7 | **The map's clustering on a grid.** The overlay links units and tracks pairwise every frame. | Fine at 100s (the overlay is 2 ms a frame); needed for 1000s on screen. | Screen-space buckets for `clusters`. |
+| 16 | **Time to target.** `Fleet._predict` flies each order ahead in its own thread: 3.5% of a core at 1 h/s during a long burn, a quarter of the sim process; reading the bodies' nodes and the target's points is 40% of it. | The largest share not yet worked on. | Nodes and points read once per question in the kernel; or asked less often on a long leg. |
+| 17 | **Station keeping, the rest.** Still the flight's largest step (27–34%). Each look-ahead places every station ship at three moments a grid point (the central difference), and `base_many` loops over bodies in Python. | Roughly half of what is left of it. | The bodies' velocities off the table (its Hermite's derivative) and the bullseyes' rates, so one moment a grid point; the bodies' loop batched. |
+| 4 | **Encoder, the rest.** The figures go column by column now; `Side.picture` (the tracks) and the per-ship dicts are still a Python loop, and the JSON is 0.9 ms of a picture. | The pictures are half the sim process at 1 h/s. | Tracks built per stage, not per row; with 5, the dicts go. |
+| 5 | **Binary pictures.** JSON text (35 KiB a picture after the first) through the pipe and the socket. | Less to build and parse on both ends; smaller at 1000s of ships. | A typed-array format for the map; JSON kept for tools. |
+| 2 | **The run-ahead in its own process.** It and the pictures share one interpreter: at ≥ 12 h/s they contend, and a picture flies the fleet itself when the run-ahead lags. | Pictures no longer wait on flight; the fastest warps steadier. | The fleet's state shared between processes (shared memory, or the run-ahead owning the fleet and pictures read from snapshots). Large. |
+| 6 | **A grid under the groups.** The sweep culls by formation spheres and a brightness bound, but groups against every target are still all pairs. | For thousands of ships: groups only against targets in nearby cells. | A coarse grid of the groups' spheres per minute in the kernel. |
+| 7 | **The map's clustering on a grid.** The overlay links units and tracks pairwise every frame. | Fine at 100s (2 ms a frame); needed for 1000s on screen. | Screen-space buckets for `clusters`. |
 
 ## Clarity
 
 | # | Refactor | Why |
 |---|---|---|
 | 10 | **Old-track removals kept.** They live in the sim's memory (`SimHost._dismissed`): a restart brings them back. | Write them beside `bullseyes.toml`, per player. |
-| 15 | **Holding on a unit is placed, not flown.** A ship that arrives on a unit (an engage) holds station on it: carried as it moves, burning or not. | An engaged ship that burns away should be chased under thrust; today the AI only notices at its next picture, and only if she is lost. | The kernel keeps flying a go-to on a unit (a hold that steers), or the AI re-engages a target that burns. |
-| 12 | **`Versions` as arrays.** Per-row Python lists, flattened for `at` when they change. | Kept flat (append-only arrays with a per-row cut) would drop the rebuild and the lists. |
+| 15 | **Holding on a unit is placed, not flown.** A ship that arrives on a unit (an engage) holds station on it, carried as it moves. | An engaged ship that burns away should be chased under thrust; today the AI only notices at its next picture. The kernel would keep flying a go-to on a unit, or the AI re-engage a target that burns. |
+| 12 | **`Versions` as arrays.** Per-row Python lists, flattened for `at` when they change. | Append-only arrays with a per-row cut would drop the rebuild and the lists. |
 
 ## Done
 
-- **8. One home for the picture's switches** (`astrum/switches.py`): one table (key, default and so
-  type, label, range) that `config.toml [picture]` is checked against, a map's own choice is read
-  through (`resolve`), and the Game tab is drawn from (`described`).
+- **Station keeping** (`a014217`, `6f51411`): a place's velocity is its central difference (it was a
+  60 s forward difference, 21 m/s off by Io), and a station ship's samples carry the Hermite's
+  derivative (they held the block's end velocity, up to 426 m/s off): within a metre and 2 cm/s of
+  their places, so pictures read them off the timeline. Gravity for the look-ahead in one call, every
+  moment's products batched: a look-ahead 4.9–7.5 → 3.2 ms, the bill unchanged.
+- **Bookkeeping** (`0acf9cd`): the timeline's writes one compiled call (`kernels.record`), each
+  unit's step another (`kernels.unit_steps`), units kept until a row's mode, lead, order or
+  formation changes, targets' knots two hours at a time; pictures rounded in two calls, the encoder
+  by column over only what changed (half of 4). A game day 450–501 → 341–405 ms; the map's pictures 15–25% less.
+- **The sweep's bound** (`d06c698`): each minute's cones made once; once a ship is seen, groups
+  brightest first, and whatever could not see her brighter nor make out more is passed over. The
+  compiled sweep with TF-3 under way 48–61 → 19–21 ms a game hour, the same sightings.
+- **The relay as a tree** (`81d24dd`): one node a ship, each worked out once a minute in the compiled
+  pass that builds the sightings (`kernels.sightings`). The relay and the columns 80 → 11 ms in 12 game hours.
+- **Refuel** (`6f51411`): a `refuel` order raises her propellant up to her tanks.
+- **8. One home for the picture's switches** (`astrum/switches.py`): one table that `config.toml
+  [picture]` is checked against, a map's choice is read through, and the Game tab is drawn from.
 - **13. Faction data in one shape** (`astrum/factions.py`): a `Faction` per entry and `Factions`, a
-  dict by id, that answers `head`, `owner`, `mine`, `label`, `journal` and `for_map`; the loader
-  with it. `picture.root`, `picture.mine`, `picture.side_label` and `app.root_of` are gone, and so
-  are the derived `parent` and `member` keys.
+  dict by id, that answers `head`, `owner`, `mine`, `label`, `journal` and `for_map`.
 - **1, 3, 9, 11, 14. The sensor sweeper** (`detect.Sweeper`): every side swept every minute as the
-  fleet is flown, off the timeline's samples alone (station ships written exactly into them), many
-  minutes in one compiled call culled by the formations' spheres (`kernels.sweep`), the brightest
-  sighting kept per ship a minute in the kernel; each side's summaries as runs of sightings and a
-  whole one every hour (`SideSweep`), so any minute is constant work; forgotten from a minute an
-  order flies again. `detect.scan`, `detect.latest`, the stride and `Fleet.past_sample` are gone,
-  and `Fleet.past` reads the timeline. Clock jumps no longer skip sweeps.
+  fleet is flown, off the timeline's samples, many minutes in one compiled call; each side's summaries
+  as runs of sightings and a whole one every hour; forgotten from a minute an order flies again.
