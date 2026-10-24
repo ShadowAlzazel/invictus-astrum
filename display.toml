@@ -81,6 +81,15 @@ hairlines = { default = true, label = "Full-screen hairlines" }
 notches   = { default = true, label = "Scale notches on the hairlines" }
 readout   = { default = true, label = "Bearing and range readout" }
 
+# ---- mouse ---------------------------------------------------------------------------------------
+# left_drag: "select" draws a selection box (⇧ adds to the selection) and the middle button pans;
+# "pan" pans with the left (⇧-drag draws the box). Right-drag turns the view either way.
+# right_click: a move to the point, ending ballistic, on station or free; or nothing.
+[mouse]
+label = "Mouse"
+left_drag   = { default = "select", choices = ["select", "pan"], label = "Left drag: a selection box, or pan the view" }
+right_click = { default = "ballistic", choices = ["ballistic", "station", "free", "off"], label = "Right click: a move there, ending so (off: nothing)" }
+
 # ---- weapon ranges: hold G -------------------------------------------------------------------------
 # Rings where each kind of weapon starts to matter (a ship class's ranges). A selected ship's are
 # drawn in fuchsia; a selected formation's units' (its own ships, or those of the units under it) in

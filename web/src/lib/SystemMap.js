@@ -260,6 +260,12 @@ export class SystemMap {
     return s ? (r / s.depth) * this._pxPerRad : 0;
   }
 
+  // which button does what to the view: left pans, or (a selection box drawn with it) the middle does
+  setLeftDrag(how) {
+    this.controls.mouseButtons = how === 'pan' ? { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE }
+      : { LEFT: -1, MIDDLE: THREE.MOUSE.PAN, RIGHT: THREE.MOUSE.ROTATE };
+  }
+
   // screen pixels a kilometre spans at p (km, system frame), else at the centre of the view
   pxPerKm(p = this.focus) { return this.pxRadius(p, 1); }
 

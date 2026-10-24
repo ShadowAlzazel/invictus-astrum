@@ -130,7 +130,9 @@ the author*. The format is in `data/ships/README.md`.
 
 | Input | Does |
 |---|---|
-| Left-drag / right-drag / wheel | pan / rotate / zoom (in toward the cursor; out about the centre; never inside a body) |
+| Middle-drag / right-drag / wheel | pan / rotate / zoom (in toward the cursor; out about the centre; never inside a body) |
+| Left-drag | a selection box: our units inside it (a formation's mark as the formation) become the selection, several as a group; Shift-drag adds them to it. Settings, Mouse, Left drag: "pan" puts the pan back on the left button and the box on Shift-drag |
+| Right click | a move of the selection to the point (as M, then a click), ending ballistic; Settings, Mouse, Right click: ending on station, free, or off |
 | Click | select a body or unit; on empty space, probe the point (zone, gravity, field) |
 | Click a formation | it opens: the units that answer to it are shown, highlighted and joined to it; the formation it answers to is marked; the rest dims |
 | Shift-click a unit | a group, ordered as one: a unit under the selected formation (on the map, or in its panel's Under its command) picks it, and only those picked take the formation's orders, the rest at 30% (Display, Selection); any other unit joins the selection (again: leaves it). Every order, stance and switch then goes to the group; a click starts over |

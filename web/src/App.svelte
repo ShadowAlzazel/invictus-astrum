@@ -11,7 +11,7 @@
   import { config as adjutantConfig } from './lib/adjutant.js';
   import Orders from './lib/Orders.svelte';
   import Bullseyes from './lib/Bullseyes.svelte';
-  import { group, hms, named, nextThen, orderGroups, shipsUnder, stepG } from './lib/orders.js';
+  import { aimAt, group, hms, named, nextThen, orderGroups, shipsUnder, stepG } from './lib/orders.js';
   import { Motion } from './lib/motion.js';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
@@ -142,6 +142,7 @@
     if (!settings) return;
     document.documentElement.style.setProperty('--ui-scale', settings.text.panel_scale);
     if (map) for (const [k, v] of Object.entries(settings.layers)) map.setLayer(k, v);
+    map?.setLeftDrag(settings.mouse?.left_drag ?? 'select');
   }
   function keepSettings() {
     try { localStorage.setItem('astrum.display', JSON.stringify(settings)); settingsStatus = 'Kept in this browser'; }
@@ -335,8 +336,32 @@
     }
     return best;
   }
-  function pointerMove(e) { const m = markAt(e.clientX, e.clientY); map.hover = m ? { kind: m.kind, id: m.id, group: m.group } : null; }
-  function pointerDown(e) { down = { x: e.clientX, y: e.clientY, b: e.button, shift: e.shiftKey }; }
+  function pointerMove(e) {
+    if (box) { box = { ...box, x1: e.clientX, y1: e.clientY }; return; }
+    const m = markAt(e.clientX, e.clientY); map.hover = m ? { kind: m.kind, id: m.id, group: m.group } : null;
+  }
+  function pointerDown(e) {
+    down = { x: e.clientX, y: e.clientY, b: e.button, shift: e.shiftKey };
+    const pan = (settings?.mouse?.left_drag ?? 'select') === 'pan';
+    if (e.button === 0 && !ordering && !ruler && mode === 'map' && (!pan || e.shiftKey)) {
+      box = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, add: e.shiftKey };
+      canvas.setPointerCapture(e.pointerId);
+      if (pan) e.stopImmediatePropagation();         // (⇧ with the left would turn the view)
+    }
+  }
+  // the selection box (left drag; ⇧: added to the selection): our own units whose marks are in it
+  let box = null;                       // { x0, y0, x1, y1, add }: screen px
+  $: boxShown = box && Math.hypot(box.x1 - box.x0, box.y1 - box.y0) > 4;
+  function boxSelect(b) {
+    const [x0, x1] = [Math.min(b.x0, b.x1), Math.max(b.x0, b.x1)], [y0, y1] = [Math.min(b.y0, b.y1), Math.max(b.y0, b.y1)];
+    const ours = (id) => !contacts.find((x) => x.id === id)?.track && shipsUnder(contacts, state, id).length > 0;   // ships of ours under it
+    const ids = [...new Set(map.marks.filter((m) => m.kind === 'contact' && m.x >= x0 && m.x <= x1 && m.y >= y0 && m.y <= y1)
+      .flatMap((m) => m.group ?? [m.id]))].filter(ours);
+    if (!ids.length) { if (!b.add) select(null); return; }
+    if (ids.length === 1 && !b.add) return select({ kind: 'contact', id: ids[0] });
+    pickGroup(ids, b.add);
+    say(`${ids.length} units selected${b.add ? ', added' : ''}`);
+  }
   // the ruler (L): a click sets where it starts, the next where it ends; a third starts again
   let ruler = null;                     // { a, b }: system-frame km, b null while it follows the cursor
   function rulerPoint(x, y) {
@@ -344,6 +369,15 @@
     return (m && map.position({ kind: m.kind, id: m.id })) || map.pointAt(x, y);
   }
   async function pointerUp(e) {
+    if (box) {
+      const b = box;
+      box = null;
+      if (Math.hypot(b.x1 - b.x0, b.y1 - b.y0) > 4) return boxSelect(b);
+    }
+    const click = down && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4;
+    if (click && down.b === 2 && !ruler && !ordering && (settings?.mouse?.right_click ?? 'ballistic') !== 'off') {
+      return quickMove(e.clientX, e.clientY, settings?.mouse?.right_click ?? 'ballistic');
+    }
     if (ruler && down && down.b === 0 && Math.hypot(e.clientX - down.x, e.clientY - down.y) <= 4) {
       const p = rulerPoint(e.clientX, e.clientY);
       if (p) ruler = !ruler.a || ruler.b ? { a: p, b: null } : { ...ruler, b: p };
@@ -478,9 +512,19 @@
   }
   // a click gives the order aimed; Shift-click queues it after what they fly (and keeps aiming)
   async function giveOrder(queue = false) {
-    const aim = orderTool?.aim();
-    if (!aim || !scenario) return say('Nothing to aim at there.');
-    const o = ordering;
+    if (await sendOrder(ordering, orderTool?.aim(), queue) && !queue) ordering = null;
+  }
+  // right click: the selection moves there, at once, ending as the setting says (orders.js THEN)
+  function quickMove(x, y, then) {
+    if (sel?.kind !== 'contact' || contacts.find((c) => c.id === sel.id)?.track) return;
+    const able = selShips.filter((id) => contacts.find((c) => c.id === id)?.ship?.has_drive);
+    if (!able.length) return say('No ship there has a drive stated; they cannot be ordered to move.');
+    const grp = group(state, contacts, able);
+    const o = { unit: chosen, ships: able, g: grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG), tilt: 0, plane: orderPlane, mode: 'move', then };
+    return sendOrder(o, aimAt(map, o.unit, o.ships, { x, y }, 0, o.plane), false);
+  }
+  async function sendOrder(o, aim, queue) {
+    if (!aim || !scenario) { say('Nothing to aim at there.'); return false; }
     try {
       const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId, view: side,
                                   target: aim.target, mode: o.mode, queue, free: o.mode === 'move' && o.then === 'free' ? true : undefined,
@@ -490,9 +534,10 @@
       say(o.mode === 'turn' ? `${who}: turned to ${aim.kind === 'point' ? 'the point' : aim.label}` : o.g <= 0 ? `${who}: drive cut`
         : r.ballistic ? `${who}: ${r.ballistic.label}, burning ${hms(r.ballistic.burn_s)}, there in ${hms(r.ballistic.there_s)}`
         : queue ? `${who}: queued, then ${aim.label}` : `${who}: ${goal?.label ?? aim.label} at ${o.g.toFixed(2)} g`);
-      if (!queue) ordering = null;
+      return true;
     } catch (err) {
       say(String(err.message ?? err));
+      return false;
     }
   }
 
@@ -713,6 +758,9 @@
 <svelte:window on:keydown={key} on:keyup={keyUp} on:blur={() => (ranges = sensing = false)} on:pointermove={trackUI} />
 
 <canvas class="map" bind:this={canvas}></canvas>
+{#if boxShown}
+  <div class="selbox" class:add={box.add} style="left: {Math.min(box.x0, box.x1)}px; top: {Math.min(box.y0, box.y1)}px; width: {Math.abs(box.x1 - box.x0)}px; height: {Math.abs(box.y1 - box.y0)}px"></div>
+{/if}
 <Overlay {map} {style} {settings} {drules} {contacts} ranges={ranges && mode === 'map'} sensing={sensing && mode === 'map'}
   watched={mode === 'map' ? watched : new Set()} />
 <HudCursor {map} {style} {settings} {overUI} />
@@ -870,6 +918,8 @@
   .bar button { background: none; border: 0; padding: 2px 0; color: var(--dim); font-family: var(--display); font-size: 14px; }
   .bar button:hover { color: var(--ink); }
 
+  .selbox { position: fixed; z-index: 15; pointer-events: none; border: 1px solid var(--fuchsia); background: rgba(250, 31, 153, 0.07); }
+  .selbox.add { border-style: dashed; }
   .clock { position: fixed; top: 20px; right: 20px; z-index: 30; display: flex; gap: 10px; align-items: center;
            background: var(--panel); border-left: 1px solid var(--violet); padding: 7px 14px; }
   .clock .utc { font-family: var(--display); font-size: 14px; font-variant-numeric: tabular-nums; }
