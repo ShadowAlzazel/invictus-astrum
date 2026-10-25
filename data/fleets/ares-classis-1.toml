@@ -17,7 +17,7 @@ flag = "tf1-lf1-bs-1"
 
 [[unit]]
 id = "tf1"
-callsign = "Task Force 1"
+callsign = "Mars Task Force I"
 affiliation = "friend"
 echelon = "task-force"
 formation = "ares-classis-1"
@@ -38,7 +38,7 @@ formation = "tf1-lf1"
 
 [[unit]]
 id = "tf1-lf1-bs-1"
-callsign = "Battle Squadron 1 1"
+callsign = "Hugo Sanchez"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf1-lf1-bs"
@@ -509,7 +509,7 @@ class = "aeshna"
 
 [[unit]]
 id = "tf2"
-callsign = "Task Force 2"
+callsign = "Mars Task Force II"
 affiliation = "friend"
 echelon = "task-force"
 formation = "ares-classis-1"
@@ -1001,7 +1001,7 @@ class = "aeshna"
 
 [[unit]]
 id = "tf3"
-callsign = "Task Force 3"
+callsign = "Mars Task Force III"
 affiliation = "friend"
 echelon = "task-force"
 formation = "ares-classis-1"
@@ -1022,7 +1022,7 @@ formation = "tf3-lf1"
 
 [[unit]]
 id = "tf3-lf1-bs-1"
-callsign = "Battle Squadron 1 1"
+callsign = "John Paul Jones"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-bs"
@@ -1030,7 +1030,7 @@ class = "papilion"
 
 [[unit]]
 id = "tf3-lf1-bs-2"
-callsign = "Battle Squadron 1 2"
+callsign = "Smaug"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-bs"
@@ -1038,7 +1038,7 @@ class = "papilion"
 
 [[unit]]
 id = "tf3-lf1-bs-3"
-callsign = "Battle Squadron 1 3"
+callsign = "Intrepid"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-bs"
@@ -1046,7 +1046,15 @@ class = "papilion"
 
 [[unit]]
 id = "tf3-lf1-bs-4"
-callsign = "Battle Squadron 1 4"
+callsign = "Gilgamesh"
+affiliation = "friend"
+echelon = "ship"
+formation = "tf3-lf1-bs"
+class = "papilion"
+
+[[unit]]
+id = "tf3-lf1-bs-5"
+callsign = "Unreachable"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-bs"
@@ -1061,7 +1069,7 @@ formation = "tf3-lf1"
 
 [[unit]]
 id = "tf3-lf1-ls-1"
-callsign = "Line Squadron 1 1"
+callsign = "Taipei Dos"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-ls"
@@ -1069,7 +1077,7 @@ class = "phalaena"
 
 [[unit]]
 id = "tf3-lf1-ls-2"
-callsign = "Line Squadron 1 2"
+callsign = "Real del Elysium"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-ls"
@@ -1077,7 +1085,7 @@ class = "phalaena"
 
 [[unit]]
 id = "tf3-lf1-ls-3"
-callsign = "Line Squadron 1 3"
+callsign = "Neo-Osaka"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-ls"
@@ -1092,7 +1100,7 @@ formation = "tf3-lf1"
 
 [[unit]]
 id = "tf3-lf1-p1-1"
-callsign = "Picket Squadron 1A 1"
+callsign = "San Diego"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-p1"
@@ -1100,7 +1108,7 @@ class = "phalaena"
 
 [[unit]]
 id = "tf3-lf1-p1-2"
-callsign = "Picket Squadron 1A 2"
+callsign = "New Eridu"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-p1"
@@ -1115,7 +1123,7 @@ formation = "tf3-lf1"
 
 [[unit]]
 id = "tf3-lf1-p2-1"
-callsign = "Picket Squadron 1B 1"
+callsign = "Sahagun"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-p2"
@@ -1123,7 +1131,7 @@ class = "phalaena"
 
 [[unit]]
 id = "tf3-lf1-p2-2"
-callsign = "Picket Squadron 1B 2"
+callsign = "Alexandria"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf1-p2"
@@ -1145,7 +1153,7 @@ formation = "tf3-lf2"
 
 [[unit]]
 id = "tf3-lf2-bs-1"
-callsign = "Battle Squadron 2 1"
+callsign = "Red Sky"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf2-bs"
@@ -1153,7 +1161,7 @@ class = "papilion"
 
 [[unit]]
 id = "tf3-lf2-bs-2"
-callsign = "Battle Squadron 2 2"
+callsign = "Crimson Dawn"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf2-bs"
@@ -1161,7 +1169,7 @@ class = "papilion"
 
 [[unit]]
 id = "tf3-lf2-bs-3"
-callsign = "Battle Squadron 2 3"
+callsign = "Perseverance"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf2-bs"
@@ -1169,7 +1177,7 @@ class = "papilion"
 
 [[unit]]
 id = "tf3-lf2-bs-4"
-callsign = "Battle Squadron 2 4"
+callsign = "Curiosity"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf2-bs"
@@ -1184,7 +1192,7 @@ formation = "tf3-lf2"
 
 [[unit]]
 id = "tf3-lf2-ls-1"
-callsign = "Line Squadron 2 1"
+callsign = "Nova Londres"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf2-ls"
@@ -1268,7 +1276,7 @@ formation = "tf3-lf3"
 
 [[unit]]
 id = "tf3-lf3-bs-1"
-callsign = "Battle Squadron 3 1"
+callsign = "Sojourner"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf3-bs"
@@ -1276,7 +1284,7 @@ class = "papilion"
 
 [[unit]]
 id = "tf3-lf3-bs-2"
-callsign = "Battle Squadron 3 2"
+callsign = "Mark Watney"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf3-bs"
@@ -1284,7 +1292,7 @@ class = "papilion"
 
 [[unit]]
 id = "tf3-lf3-bs-3"
-callsign = "Battle Squadron 3 3"
+callsign = "Spirit"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf3-bs"
@@ -1292,7 +1300,7 @@ class = "papilion"
 
 [[unit]]
 id = "tf3-lf3-bs-4"
-callsign = "Battle Squadron 3 4"
+callsign = "Opportunity"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lf3-bs"
@@ -1785,7 +1793,7 @@ formation = "fleet-picket-group"
 
 [[unit]]
 id = "fleet-picket-1-1"
-callsign = "Fleet Picket Squadron 1 1"
+callsign = "Nova Alamo"
 affiliation = "friend"
 echelon = "ship"
 formation = "fleet-picket-1"
@@ -1793,7 +1801,7 @@ class = "phalaena"
 
 [[unit]]
 id = "fleet-picket-1-2"
-callsign = "Fleet Picket Squadron 1 2"
+callsign = "Jazero City"
 affiliation = "friend"
 echelon = "ship"
 formation = "fleet-picket-1"
@@ -1801,7 +1809,7 @@ class = "phalaena"
 
 [[unit]]
 id = "fleet-picket-1-3"
-callsign = "Fleet Picket Squadron 1 3"
+callsign = "Syrtisium"
 affiliation = "friend"
 echelon = "ship"
 formation = "fleet-picket-1"

@@ -123,6 +123,7 @@ affiliation = "friend"
 echelon = "task-force"
 formation = "luna-classis-1"
 stance = "return-fire"
+role = "line"
 
 [[unit]]
 id = "tf2-lf1"
@@ -621,6 +622,7 @@ callsign = "Task Force 3"
 affiliation = "friend"
 echelon = "task-force"
 formation = "luna-classis-1"
+role = "line"
 
 [[unit]]
 id = "tf3-lf4"
@@ -1070,7 +1072,7 @@ class = "phalaena"
 
 [[unit]]
 id = "tf3-lp1-3"
-callsign = "Alexandria"
+callsign = "Nova Paris"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf3-lp1"
