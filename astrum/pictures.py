@@ -71,8 +71,15 @@ class Pictures:
             self._thread.start()
 
     def subscribe(self, sub) -> None:
-        """sub.wants(sc, fleet, t) -> {view: whether it needs the side's tracks}; sub(SidePicture)."""
+        """sub.wants(sc, fleet, t) -> {view: whether it needs the side's tracks}; sub(SidePicture);
+        sub.step(sc, fleet), if it has one: a finer step it wants the scenario pictured at, or None."""
         self.subscribers.append(sub)
+
+    def step(self, sc, fleet) -> float:
+        """How far the clock moves before the scenario is pictured again: PICTURE_STEP_S, or finer
+        while a subscriber wants it (the ship AI, while a ship is engaged)."""
+        steps = [s for s in (getattr(sub, "step", lambda *a: None)(sc, fleet) for sub in self.subscribers) if s]
+        return min([PICTURE_STEP_S, *steps])
 
     def clock(self, sc, fleet, t: float) -> None:
         """The map asked for a picture of the scenario at t."""
@@ -105,7 +112,7 @@ class Pictures:
                 due = []
                 for sid, (sc, fleet, t) in self._clock.items():
                     t0, ready = self._done.get(sid, (None, 0.0))
-                    if time.monotonic() >= ready and (t0 is None or abs(t - t0) >= PICTURE_STEP_S or sid in self._poked):
+                    if time.monotonic() >= ready and (t0 is None or abs(t - t0) >= self.step(sc, fleet) or sid in self._poked):
                         due.append((sc, fleet, t))
                         self._poked.discard(sid)
             for sc, fleet, t in due:
@@ -162,5 +169,6 @@ class Pictures:
         for attackers in on.values():                # a ship engaging one of ours shows where she is by it
             r[attackers] = true_r[attackers]
             age[attackers] = 0.0
+            shown[attackers] = True
         return SidePicture(sc, fleet, side, t, r, hide(pic["v"][:n]), hide(pic["dir"][:n]), shown & (pic["thrust"][:n] > 0),
                            shown, ident, old, said, on, age)

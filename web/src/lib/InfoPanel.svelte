@@ -142,12 +142,11 @@
     for (const r of ranges) if (!weapons.some((w) => same(w.label, r.battery))) out.push({ label: r.battery, reach: [r] });
     return out;
   }
-  const ENDS = { keep: 'A, keep station', pursue: 'B, pursue', pass: 'C, pass' };
   const whence = (f) => !f ? '' : f.from === 'ordered' ? `ordered to ${nameOf(f.by)}` : f.from === 'written' ? `written for ${nameOf(f.by)}`
-    : f.from === 'profile' ? "the profile's" : f.gone ? `the root (${f.gone} deleted)` : 'the root';
+    : f.from === 'profile' ? "the profile's" : f.from === 'minerva' ? 'the MINERVA\'s default' : f.gone ? `the root (${f.gone} deleted)` : 'the root';
   const SAID = { coast: 'Stop: drive cut', cold: 'Run cold', warm: 'Spread wings', active: 'Ping', passive: 'Go quiet' };
   const upper = (s) => s[0].toUpperCase() + s.slice(1);
-  const goes = (label) => /^(engage|patrol|attack|hold|back)/.test(label ?? '') ? upper(label) : `To ${label}`;
+  const goes = (label) => /^(engage|patrol|attack|hold|back|station|brake|out of)/.test(label ?? '') ? upper(label) : `To ${label}`;
   const said = (o) => o.kind === 'setg' ? `Telegraph ${o.g ? `${o.g.toFixed(2)} g` : 'cut'}` : o.kind === 'goto' ? goes(o.label)
     : o.kind === 'queue' ? `Then ${o.label}` : o.kind === 'coast' && o.label ? upper(o.label)
     : o.kind === 'stance' ? o.label.replace(/(stance|profile) ([\w-]+)/g, (_, k, v) => k === 'stance' ? short(stances[v]) || v
@@ -416,15 +415,16 @@
         <dl class="tight">
           {#if eng.combat}<dt title="I general quarters (pinging, engaging by her stance), II moving to attack, III watching">Readiness</dt>
             <dd class:gq={eng.combat.quarters === 1}>{ROMAN[eng.combat.quarters]} · {eng.combat.state ?? eng.combat.quarters_name}</dd>{/if}
-          <dt title={`What she does with a target: ${stances[eng.stance] ?? 'its ships stand in more than one'}. ${whence(eng.stance_from)}`}>Stance</dt>
+          <dt title={`Her ReadyStance, where she stands out of combat: ${stances[eng.stance] ?? 'its ships stand in more than one'}. ${whence(eng.stance_from)}`}>Stance</dt>
           <dd><select value={eng.stance ?? ''} title={whence(eng.stance_from)} on:change={(e) => stance({ stance: e.target.value })}>
             {#if !eng.stance}<option value="" disabled>mixed: {Object.entries(eng.stances).map(([s, k]) => `${k} ${short(stances[s])}`).join(', ')}</option>{/if}
             {#each Object.entries(stances) as [k, label]}<option value={k} title={label}>{short(label)}</option>{/each}</select></dd>
-          <dt title={`The rules her stance reads: how far, at whom, her automaton and how an engagement ends (Combat profiles). ${whence(eng.profile_from)}`}>Profile</dt>
+          <dt title={`What she does in combat: her engagement's map, whom she engages and how far out (Combat profiles). ${whence(eng.profile_from)}`}>Profile</dt>
           <dd><select value={eng.profile ?? ''} title={whence(eng.profile_from)} on:change={(e) => stance({ profile: e.target.value })}>
             {#if !eng.profile}<option value="" disabled>mixed</option>{/if}
             {#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></dd>
-          {#if eng.automaton_name}<dt class="sub">automaton</dt><dd class="sub">{eng.automaton_name}{#if eng.end} · ends {ENDS[eng.end]}{/if}</dd>{/if}
+          {#if eng.minerva}<dt class="sub" title="Her ship AI: out of combat at her ReadyStance, or engaged in her profile's map (Fleet command, Combat profiles)">MINERVA</dt>
+            <dd class="sub" class:gq={eng.minerva.engaged}>{eng.minerva.engaged ? eng.minerva.label : 'ready'} · after: {eng.after}</dd>{/if}
           <dt title="Her crew's tier">Crew</dt><dd>{eng.veterancy ?? 'rated'}</dd>
         </dl>
         {/if}

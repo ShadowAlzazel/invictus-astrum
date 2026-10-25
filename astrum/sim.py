@@ -509,6 +509,13 @@ class Fleet:
             if t_o >= self.t - 1e-9 and self.mending is None:   # at the fleet's own moment: given now
                 self._run(self.t)
                 return {self.c.ids[B.ship[e]]: self.c.ship(B.ship[e]) for e in given}
+            if self.mending is None and all(int(B.kind[e]) == FIRE for e in given):   # shots move no ship: one the
+                for e in sorted(given, key=lambda e: B.at[e]):                       # fleet has passed is fired where
+                    if B.at[e] < self.t - 1e-9:                                      # it falls, and nothing flies again
+                        self._qi += 1
+                        self._apply(int(e))
+                self._run(self.t)
+                return {self.c.ids[B.ship[e]]: self.c.ship(B.ship[e]) for e in given}
             self._qi += int((B.at[given] < self.t).sum())   # given before where the fleet is: flown again below
             return self._refly({self.c.ids[B.ship[e]] for e in given}, t_o, set(given), float(B.at[given].max()))
 

@@ -62,7 +62,7 @@ log = logging.getLogger("astrum.web")         # who connected, signed in, acted 
 from . import display
 from . import picture
 from . import profiles
-from .shipai import EVENTS, load_automata
+from .shipai import ACTIONS, AFTERS, CONDITIONS, WEAPONS, Minerva, load_minerva
 from .profiles import Profile
 from . import switches
 from .detect import suite, unsimulated
@@ -94,7 +94,7 @@ class World:
         self.made: dict[str, dict[str, Bullseye]] = {}     # player -> bullseyes commanders made on the map
         self.retired: dict[str, dict[str, Bullseye]] = {}  # ... and deleted: still flown to, never listed
         self.profiles: dict[str, Profile] = {}              # the shared combat profiles (data/profiles.toml), by id
-        self.automata: dict = {}                            # the ship AI's state maps (data/automata.toml), by id
+        self.minerva: Minerva | None = None                 # the ship AI's MINERVA: its ReadyStances, its figures (data/minerva.toml)
         self.profiles_made: dict[str, dict[str, Profile]] = {}  # player -> combat profiles made on the map
         self.tables: dict[str, Tabled] = {}      # system id -> its body table, filled up front (see _prefill)
         self.style = {}
@@ -109,7 +109,7 @@ class World:
         files = [f for k in ("systems", "scenarios", "fleets", "levels") for f in Path(p[k]).glob("*.toml")]
         files += list(Path(p["ships"]).glob("*.toml")) + list((Path(p["ships"]) / "classes").glob("*.toml"))
         return files + [Path(p["players"]), Path(p["players"]).parent / "factions.toml",
-                        Path(p["players"]).parent / "profiles.toml", Path(p["players"]).parent / "automata.toml", Path(p["style"]),
+                        Path(p["players"]).parent / "profiles.toml", Path(p["players"]).parent / "minerva.toml", Path(p["style"]),
                         Path(p["display"]), Path(p["settings"])]
 
     def _mtimes(self):
@@ -139,13 +139,11 @@ class World:
             shared = profiles.load_shared(Path(p["players"]).parent / "profiles.toml")
         except (OSError, ValueError, tomllib.TOMLDecodeError) as e:
             errors["profiles.toml"] = str(e)
-        automata = self.automata
+        minerva = self.minerva
         try:
-            automata = load_automata(Path(p["players"]).parent / "automata.toml")
+            minerva = load_minerva(Path(p["players"]).parent / "minerva.toml")
         except (OSError, ValueError, tomllib.TOMLDecodeError) as e:
-            errors["automata.toml"] = str(e)
-        errors.update({f"profiles.toml/{x.id}": f"no automaton {x.automaton!r} in automata.toml"
-                       for x in shared.values() if automata and x.automaton not in automata})
+            errors["minerva.toml"] = str(e)
         style = self.style
         try:
             style = load_style(p["style"])
@@ -248,7 +246,7 @@ class World:
             self.players, self.style, self.errors, self.ships = players, style, errors, ships
             self.factions = factions
             self.made, self.retired = made, {}
-            self.profiles, self.profiles_made, self.automata = shared, made_profiles, automata
+            self.profiles, self.profiles_made, self.minerva = shared, made_profiles, minerva
             self.display_rules, self.settings, self.trees = rules, settings, trees
             self.levels = levels
             self.fleets = {k: f for k, f in self.fleets.items() if any(k in h for h in self.held.values())}
@@ -421,9 +419,14 @@ class World:
         """A profile by id, the player's own first; the root if there is none by that id (deleted)."""
         return self.profiles_of(player).get(pid or "") or self.profiles[profiles.ROOT]
 
+    def engagement(self, prof: Profile):
+        """The engagement a profile flies: its own map, else the shared one it names, else the root's."""
+        return prof.engagement or (self.profiles.get(prof.map) or self.profiles[profiles.ROOT]).engagement
+
     def make_profile(self, player: str, d: dict, save: bool = True) -> Profile:
         """A commander's new profile, or one of theirs changed (d: id to change one; name, targets,
-        stance, range). The shared ones are not changed on the map."""
+        range, map: the shared profile whose engagement it flies). The shared ones are not changed on
+        the map."""
         import re
         if player not in self.players:
             raise ValueError(f"no player {player!r}")
@@ -431,6 +434,8 @@ class World:
         if problems:
             raise ValueError("; ".join(problems))
         pid, own = d.get("id"), self.profiles_made.get(player, {})
+        if d.get("map") and d["map"] not in self.profiles:
+            raise ValueError(f"map: no shared profile {d['map']!r} to fly the engagement of")
         if pid in self.profiles:
             raise ValueError(f"{pid!r} is shared, and not changed on the map: make a profile of your own")
         if not pid:
@@ -1239,13 +1244,15 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
     @app.get("/api/profiles")
     def profile_list(request: Request, player: str | None = None):
         """The combat profiles a player reads (the shared ones, the root first, then their own), and
-        what a profile is made of: the stances, the ranges' presets, the targets, the endings, and the
-        automata they name with the events between their states."""
+        what a profile is made of: the MINERVA's ReadyStances (stances: each one's label), the ranges'
+        presets, the targets, and what an engagement's nodes may do and wait on."""
         world.check()
         player = bound({"player": player}, user_of(request)).get("player")
+        M = world.minerva
         return {"profiles": [p.as_dict() for p in world.profiles_of(player).values()],
-                "stances": profiles.STANCES, "ranges": profiles.RANGES, "targets": list(profiles.TARGETS),
-                "ends": profiles.ENDS, "automata": {k: a.as_dict() for k, a in world.automata.items()}, "events": EVENTS}
+                "stances": {k: f"{s.label}: {s.text}" for k, s in M.stances.items()}, "minerva": M.as_dict(),
+                "ranges": profiles.RANGES, "targets": list(profiles.TARGETS), "afters": AFTERS, "actions": ACTIONS,
+                "conditions": CONDITIONS, "weapons": list(WEAPONS)}
 
     @app.post("/api/profiles")
     async def profile_make(request: Request, req: dict = Body(...)):

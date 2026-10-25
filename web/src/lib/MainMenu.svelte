@@ -10,7 +10,7 @@
     { id: 'command', title: 'Fleet command', text: 'The fleets, the ship classes they are built from, their combat profiles, and the builder.', items: [
       { id: 'fleets', title: 'Fleets', text: 'Every fleet, its ships by class and its order of battle. An admin renames and refits them.' },
       { id: 'ships', title: 'Ship registry', text: 'The classes of the fleet: particulars, batteries, reaches by crew, and what is still blank.' },
-      { id: 'profiles', title: 'Combat profiles', text: 'Each profile as its automaton: the states a ship goes through, what wakes her, and where her stance comes in.' },
+      { id: 'profiles', title: 'Combat profiles', text: 'Each profile as the MINERVA it makes: her ReadyStance, the engagement it flies, and what she does after.' },
       { id: 'shipyard', title: 'Ship builder', text: 'Design ship classes.', soon: true },
     ] },
     { id: 'settings', title: 'Settings', text: 'Text and icon sizes, folding, what a selection shows. Saved on this machine.' },

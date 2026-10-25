@@ -1,37 +1,110 @@
-# Combat profiles (astrum/profiles.py). The root profile is every unit's fallback and the start of
-# every commander's own: nobody changes it on the map. Commanders' own profiles are kept by the
-# server in profiles.toml beside bullseyes.toml.
+# Combat profiles (astrum/profiles.py): what a ship does in combat, the engagement of her MINERVA
+# (data/minerva.toml). The root is every ship's fallback; commanders copy a shared one on the map and
+# change its targets and ranges (profiles.toml beside bullseyes.toml, not committed).
 #
-#   targets   whom its stances engage: "hostile" (identified as hostile), "unknown" (bogeys)
-#   stance    the stance of a unit none is given for: aggressive, guard, hold, return-fire, hold-fire
-#   range     for each stance, what sets it off: "sensor" (her passive suite's reach against a warm
-#             ship, 30 MW), "half-sensor", "dazzle" (her dazzle range), "weapons" (her focus
-#             battery's engagement range), or a number of km
-#   automaton her ship AI's state map (data/automata.toml); default "default"
-#   end       how an engagement ends: "keep" (A: hold station on it; gone, back to her post),
-#             "pursue" (B: after it while her side sees it), "pass" (C: through it and on), or her
-#             stance's own way (left out)
+#   targets   whom she engages: "hostile" (identified as hostile), "unknown" (bogeys)
+#   range     for a stance, how far out a target takes her into combat (as in minerva.toml); left
+#             out, the stance's own
+#   after     out of combat, this instead of her stance's (minerva.toml): "resume", "post", "hold",
+#             "coast" (on as she goes, the drive cut)
+#   start     the engagement's first node
+#   node      the engagement's nodes. Entering one, she does what it says (do); from the next tick
+#             on, the first of its ways out (on) whose condition holds takes her on ("exit": out of
+#             combat, to her stance's after). A node may wait (wait_s) before any way out is taken.
+#
+#   do        "station" (on the target at the battery's envelope, keeping with her), "hold" (hold
+#             station where she is on the target; with none, where she is), "face" (her hull on the
+#             target), "fire" (the battery, a WeaponEngageOrder: the combat function), "pass" (a
+#             burn through where the target will be), "correct" (a pass's course corrected)
+#   weapon    which battery a node's actions and conditions read: "focus" (her focus battery), a
+#             battery's kind ("stack": the spinal battery; "strip", "dome", "panel", "turret",
+#             "cell"); one she lacks is read as her focus battery
+#   if        "always", "far" (beyond the battery's envelope), "in-envelope", "lost" (out of her
+#             side's picture, or of her stance's range), "gone" (out of the picture), "alive",
+#             "destroyed", "passed" (going away from her after a pass), "fired-on"
 
 [profile.root]
 name = "Standing orders"
 targets = ["hostile"]
-stance = "return-fire"
-range = { aggressive = "sensor", guard = "half-sensor", hold = "dazzle", return-fire = "dazzle" }
+start = "close"
 
-[profile.search-and-destroy]
-name = "Search and Destroy"
-targets = ["hostile", "unknown"]
-stance = "aggressive"
-end = "pass"
+[profile.root.node.close]
+label = "Close to station"
+do = ["station"]
+weapon = "stack"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-envelope", go = "fire" }]
+
+[profile.root.node.fire]
+label = "Fire spinal battery"
+do = ["fire"]
+weapon = "stack"
+on = [{ if = "always", go = "await" }]
+
+[profile.root.node.await]
+label = "Await next tick"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "alive", go = "hold" }]
+
+[profile.root.node.hold]
+label = "Hold station, fire"
+do = ["hold", "fire"]
+weapon = "stack"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "far", go = "close" }, { if = "alive", go = "await" }]
+
+[profile.root.node.lost]
+label = "Target lost: hold, wait"
+do = ["hold"]
+wait_s = 600              # TESTING: a delay before she leaves combat, to see what she does
+on = [{ if = "always", go = "exit" }]
 
 [profile.hold-the-line]
 name = "Hold the line"
 targets = ["hostile", "unknown"]
-stance = "guard"
-end = "keep"
+start = "close"
+
+[profile.hold-the-line.node.close]
+label = "Close to station"
+do = ["station"]
+on = [{ if = "lost", go = "exit" }, { if = "in-envelope", go = "fire" }]
+
+[profile.hold-the-line.node.fire]
+label = "Hold station, fire"
+do = ["hold", "fire"]
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "exit" }, { if = "far", go = "close" }, { if = "alive", go = "fire" }]
 
 [profile.pursuit]
 name = "Pursuit"
 targets = ["hostile", "unknown"]
-stance = "aggressive"
-end = "pursue"
+start = "close"
+
+[profile.pursuit.node.close]
+label = "Close to station"
+do = ["station"]
+weapon = "stack"
+on = [{ if = "gone", go = "exit" }, { if = "in-envelope", go = "fire" }]
+
+[profile.pursuit.node.fire]
+label = "Keep station, fire"
+do = ["station", "fire"]
+weapon = "stack"
+on = [{ if = "destroyed", go = "exit" }, { if = "gone", go = "exit" }, { if = "far", go = "close" }, { if = "alive", go = "fire" }]
+
+[profile.search-and-destroy]
+name = "Search and Destroy"
+targets = ["hostile", "unknown"]
+after = "coast"           # through her and on: no braking back
+start = "pass"
+
+[profile.search-and-destroy.node.pass]
+label = "Pass through her"
+do = ["pass"]
+on = [{ if = "passed", go = "exit" }, { if = "in-envelope", go = "fire" }, { if = "always", go = "run" }]
+
+[profile.search-and-destroy.node.run]
+label = "On the run in"
+do = ["correct"]
+on = [{ if = "passed", go = "exit" }, { if = "in-envelope", go = "fire" }, { if = "always", go = "run" }]
+
+[profile.search-and-destroy.node.fire]
+label = "Fire as she passes"
+do = ["fire"]
+on = [{ if = "passed", go = "exit" }, { if = "always", go = "fire" }]

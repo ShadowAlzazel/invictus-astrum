@@ -255,46 +255,41 @@ once per class (`ships.py` `_ranges`); **G** on the map shows them:
 with the body whose space it is in) and kept in `bullseyes.toml`. A deleted one takes no new orders,
 but those already given off it keep it. `POST /api/bullseyes`, `DELETE /api/bullseyes/{player}/{id}`.
 
-## Combat: stances and standing orders
+## Combat: the ship AI
 
-No weapon is fired yet: an engagement is where a ship goes and what she faces. Every ship stands in
-a **stance**, read with a **combat profile** (`astrum/profiles.py`):
+No weapon does harm yet: a shot is logged, and the damage function does nothing. Every ship's AI is
+one automaton, her **MINERVA** (`astrum/shipai`, docs/COMBAT.md): out of combat she stands in a
+**ReadyStance** (`data/minerva.toml`: her readiness, what takes her into combat, what she does
+after); in combat she flies her **combat profile**'s engagement (`data/profiles.toml`: nodes, what
+each does, the conditions between them).
 
-| Stance | Does | Root range |
-|---|---|---|
-| aggressive | a target in its side's picture within range is engaged, and followed while it is in it | her passive suite's reach against a warm ship (30 MW) |
-| guard | a target within range is engaged; once lost or out of range of her post, back to her post | half that |
-| hold ground | faces the nearest target in range; never moves | her dazzle range |
-| return fire | a ship flying an engage order on her within range is engaged | her dazzle range |
-| hold fire | nothing | |
+| ReadyStance | Readiness | Enters combat on | After |
+|---|---|---|---|
+| aggressive | I (pinging) | a target seen within her passive reach on a warm ship (30 MW) | resume her move, else hold |
+| guard | I | one seen within half that | back to her post |
+| hold ground (default) | II | one seen within her dazzle range; never moves | hold |
+| return fire | II | a ship engaging her, within her dazzle range | back to her post |
+| hold fire | III | never | hold |
 
-`data/profiles.toml` holds the shared profiles (the root states every range); commanders make their
-own on the map (`profiles.toml`): a stance, a range per stance (`sensor`, `half-sensor`, `dazzle`,
-`weapons`, or km) and targets (`hostile`, `unknown`). A ship's stance is the last ordered to her or a
-formation above her, else the scenario's, else her profile's.
+A ship's stance and profile are each the last ordered to her or a formation above her, else the
+scenario's, else the MINERVA's default and the root profile. Commanders make their own profiles on
+the map (`profiles.toml`): a shared one's map, with targets (`hostile`, `unknown`) and ranges.
 
-**The AI** (`astrum/ai.py`) is a subscriber of the picture processor (`astrum/pictures.py`), as a
-browser is of its side's pictures: at most four times a wall second, once the clock has moved a game
-minute, each side is pictured with the same functions as the map's, and the AI answers with orders
-(source `ai`) through the order book. It reads only what is in the picture.
+**The CAPTAIN** (`astrum/shipai/captain.py`, handed pictures by `astrum/ai.py`) is a subscriber of
+the picture processor (`astrum/pictures.py`), as a browser is of its side's pictures: each side is
+pictured with the same functions as the map's, and it answers with orders (source `ai`) through the
+order book. It reads only what is in the picture. A ready ship looks once a block (or at once when
+fired on); an engaged one every 10 s near her envelope, else by how soon she gets there.
 
 ```
-simulation (flight, order book) -> picture processor (each side's picture) -> subscribers (the AI)
+simulation (flight, order book) -> picture processor (each side's picture) -> subscribers (the CAPTAIN)
           ^------------------------------- orders -----------------------------------'
 ```
 
 A ship acts unless she flies a plain go-to of the map's or the scenario's; an attack-move (**A**) is
-aggressive the whole way, a patrol (**P**) on guard. She engages at her focus battery's farthest
-range (`ShipSpec.engage_km`), then goes on to the next target, or back to what she was doing or her
-post. Its orders are facts of the book: a replay gives them as given. A map's order in the past
-strikes the AI's later orders to those ships. A target is hostile only once identified. `[sim] ai =
-false` turns it off.
-
-**Readiness** is each ship's automaton (`astrum/shipai`, `data/automata.toml`, named by her profile):
-watching (III) she engages nothing; a hostile or a bogey known within her sensor range sends her to
-general quarters (I: pinging, engaging by her stance); a quiet day stands her down; an attack-move
-takes her to II. Each change is orders (`quarters`, `active`, `passive`), so a replay gives it again.
-How an engagement ends is her profile's (`end`: keep, pursue, pass; docs/COMBAT.md).
+aggressive the whole way, a patrol (**P**) on guard. Its orders are facts of the book: a replay
+gives them as given. A map's order in the past strikes the CAPTAIN's later orders to those ships
+and sets their MINERVA back. A target is hostile only once identified. `[sim] ai = false` turns it off.
 
 ## Time
 

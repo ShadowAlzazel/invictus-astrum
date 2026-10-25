@@ -40,121 +40,108 @@ system: drive, sensors, weapons, rads, a mast).
 
 ## Orders
 
-**WeaponEngageOrder**: a ship, a weapon (a mount or battery), the moment, the direction it was
+**WeaponEngageOrder** (`fire`): a ship, a weapon (a battery), the moment, the direction it was
 aimed, and its targets if any. It goes into the order book like every other order, so a replay
-fires the same shots. The sim resolves it: energy lands then; a projectile becomes a row.
+fires the same shots. The sim resolves it: energy lands then; a projectile becomes a row. A shot
+moves no ship, so one given into the flight's past is fired where it falls and nothing flies again.
 
-**The attack is a composite order**: move and engage, with conditions.
+Engage is drawn red on the map. The book already has orders that follow on from others
+(attack-move and patrol fly on after an engagement, queued orders, the braking leg's "then", given
+by the fleet itself as `auto` and struck when it is set back).
 
-1. Move to station on the target, at the engage range.
-2. Engage: hold station on her, burning to keep it (a ship engaging today is carried along with
-   her target, not flown: REFACTORS 15), and fire.
-3. End, on the first condition met:
-   - **A.** Target destroyed: keep station.
-   - **B.** Target leaves the envelope: pursue (a new move), or back to her post.
-   - **C.** Continue past the target: a ballistic pass, firing as she goes.
+## The ship AI: MINERVA and the CAPTAIN
 
-Engage is its own order, drawn red on the map. The book already has orders that follow on from
-others (attack-move and patrol fly on after an engagement, queued orders, the braking leg's
-"then", given by the fleet itself as `auto` and struck when it is set back); the composite order
-grows from them.
-
-## The ship AI is an automaton
-
-Each ship's AI is a state machine in plain Python classes: states, the events between them, and
-the orders each transition gives. It only reads, and only answers with orders. Its readiness is
-states of it like any other:
-
-| | State | What she checks |
-|---|---|---|
-| III | **Cruising / watching**, on station | nothing of her weapons: only whether anything wakes her |
-| II | **Moving with an attack order** | her target: where it is, in or out of her envelope |
-| I | **General quarters / battle stations** | every weapon: ready, in arc, in range, a target to fire at |
+Each ship's AI is **one automaton, her MINERVA** (`astrum/shipai/minerva.py`). Its entry and exit
+are her **ReadyStance**; the middle is her **combat profile**'s engagement. The **CAPTAIN**
+(`astrum/shipai/captain.py`) runs it: it reads her side's picture, says which conditions hold,
+moves her MINERVA on, and gives each node's actions as orders to the book.
 
 ```
-III watch ──hostile or bogey known──> I GQ ──in envelope──> engage, fire
-   ^          attack order ──> II attack (move) ──┘              │
-   └──── a day with none known ────── A destroyed: keep station ─┤
-                                       B exits: pursue / post ───┤
-                                       C pass: continue ─────────┘
+ READYSTANCE (data/minerva.toml)       ENGAGEMENT (her profile, data/profiles.toml)            AFTER
+ readiness, what enters combat ──enter──> close ─in-envelope─> fire ─always─> await ─alive─> hold ──┐
+        ^                                   │  lost                          ^   (fire)            │
+        │                                   v                               └─────alive───────────┘
+        │                                 lost: hold, wait 10 min ─always─> exit ──> resume / post / hold
+        └──────────────────────────────── back to her ReadyStance ───────────────────────────────┘
 ```
 
-The default automaton raises her to general quarters when a hostile or a bogey is known within her
-sensor range, and stands her down after a day with none. Known means seen by her own sensors (at
-once, no relay) or reported to her through the relay tree (`astrum/relay.py`: the same nodes,
-cheap). A ship that does not know what is near her does not go to general quarters.
+| ReadyStance | Readiness | Enters combat on | After |
+|---|---|---|---|
+| Aggressive | I | a target seen within her sensor reach | resume the attack-move or patrol, else hold station |
+| Guard | I | a target seen within half of it | back to her post |
+| Hold ground (the default) | II | a target seen within her dazzle range | hold where she is; she never moves (her moves are her hull turned) |
+| Return fire | II | a ship engaging her, within her dazzle range | back to her post |
+| Hold fire | III | never | hold |
 
-**General quarters costs her: her sensors ping actively**, to find cold targets. She sees any hull
-in her active reach, however cold, and gives off `emit_mw` to everyone's passive sensors while she
-pings: going to battle stations shows her.
+Readiness I is general quarters: her sensors ping, to find cold targets, and every passive sensor
+sees her doing it. A ReadyStance is ordered to a ship or a formation and passed down its chain. An
+attack-move is Aggressive the whole way, a patrol Guard.
 
-## Combat profiles, reworked
+A **profile** is what she does in combat: its nodes (each with what she does entering it: station,
+hold, face, fire, pass, correct; the battery it reads), the conditions between them (far,
+in-envelope, lost, gone, alive, destroyed, passed, fired-on, always), whom she engages (targets)
+and, if it says, its own ranges and after. A node's ways out are taken from the next tick on, the
+first whose condition holds; a node may wait first. A commander's profile flies a shared one's
+map with its own targets and ranges. Shared: **Standing orders** (the root: close to station at her
+spinal battery's envelope, fire it once a cycle, hold; target lost, hold and wait, then exit),
+**Hold the line**, **Pursuit** (on until the target is out of the picture), **Search and Destroy**
+(a pass through her, firing as she passes, then on: after = coast).
 
-A combat profile becomes what a commander crafts: stance, ranges and targets (as now), and its
-**quarters** and **automaton**. Ready-made ones cover the common cases by how they end:
-**Search and Destroy** (C), **Hold the line** (A), **Pursuit** (B). The Combat tab gets a **state
-map** of a profile's automaton, editable; each ship flies the profile she is given. Making an
-automaton from nothing comes later. **Open:** whether the stance stays its own setting or becomes
-a state of the automaton.
+**Ticks.** A ship at her ReadyStance looks for combat once a block (`block_s`), or at once when
+fired on. A ship in combat is on the CAPTAIN's **engaged** list: looked at every `engaged_s`
+(est. 10 s) once near the farthest envelope her engagement acts at, and short of it a quarter of the
+time she takes to close on it (at most a block); while any is, her side is pictured that often.
 
 ## Control
 
 | | |
 |---|---|
-| **Automaton** | the ship AI flies her profile's state map; every transition is orders |
-| **Semi-direct** | the commander forces a transition ("fire main battery", "evasive burn"): the automaton enters that state and carries on from it |
-| **Direct** | her automaton switched off; every order is the commander's |
+| **CAPTAIN** | runs her MINERVA; every move between nodes is orders |
+| **Semi-direct** | the commander puts her in a node ("fire main battery", "evasive burn"): the CAPTAIN carries on from it |
+| **Direct** | the CAPTAIN switched off for her; every order is the commander's |
 
-A commander's order and the automaton's are the same order; only the source differs (`map`, `ai`).
+A commander's order and the CAPTAIN's are the same order; only the source differs (`map`, `ai`).
+A plain go-to of the map's takes her out of combat, and the CAPTAIN leaves her to it.
 
 ## Where it runs
 
-The ship AI is its own module, in a process of its own, and can be turned off (`[sim] ai`). It must
-not tie down astrum-sim. The fleet flies ahead of the clock, so an order at the clock lands in the
-flight's past and its ships fly again from a checkpoint; a stream of fire orders would re-fly it
-constantly. So the ship AI runs at the flight's front edge: the sim hands it each block's state of
-the ships at II and I (her own sightings, what was relayed to her, the combat book) and it answers
-with orders for the next block, which land in the future. Readiness sets the cost: a ship at III
-costs nothing, woken by the sweep; at II, one look a block; at I, fine steps while in combat.
+The ship AI is its own module and can be turned off (`[sim] ai`); in slate 1c, a process of its
+own. The fleet flies ahead of the clock, so an order at the clock lands in the flight's past and its
+ships fly again from a checkpoint (shots excepted: they move no ship). So the CAPTAIN is to run at
+the flight's front edge: the sim hands it each block's state of the engaged ships and those due to
+look, and it answers with orders for the next block, which land in the future.
 
 ## As built
 
-**1a** the combat book (`astrum/combat.py`): weapons by kind from her class, her combat state as
-columns of the Classis, the log, the damage function and the combat step (both empty); `fire` and
-`quarters` orders; an engage held (she flies it on, burning to keep with her target); engage red.
+**1a** the combat book (`astrum/combat.py`): weapons by kind and mount from her class, her combat
+state as columns of the Classis, the log, the damage function and the combat step (both empty);
+`fire` and `quarters` orders; an engage held (she flies it on, burning to keep with her target);
+engage red.
 
-**1b** the automaton (`astrum/shipai`, `data/automata.toml`): states with her quarters, her sensors
-and whether she engages, and the events between them (`threat`, `quiet`, `attack`, `done`). A
-profile names its automaton and its ending; `search-and-destroy`, `hold-the-line` and `pursuit` are
-shared. The AI (`astrum/ai.py`) runs a machine per ship and gives what a state says as orders on
-entering it (quarters; active or passive, turning off only a ping of its own); a ship watching or on
-her way engages nothing. A threat is a hostile or a bogey her side's picture shows within her
-sensor range, one her own sensors saw this minute, or one engaging her; a side whose sweep has just
-seen something is pictured for its automata (without tracks, unless a ship of it needs them).
+**1b, MINERVA** (`astrum/shipai`, `data/minerva.toml`, `data/profiles.toml`): the five ReadyStances
+and the four shared profiles above; the CAPTAIN gives readiness orders when it changes (quarters,
+ping) and each node's actions; each target passed is left (Search and Destroy). The side's picture
+carries each track's age, so a target is aimed at where the side reckons she is now. The map shows
+her readiness in the frame (`quarters`), and in her Combat section her ReadyStance, profile and
+where her MINERVA stands; Fleet command, Combat profiles draws each profile as the MINERVA it
+makes, at each ReadyStance.
 
-| End | As built |
+| In sol-demo | |
 |---|---|
-| A keep | an engage with her post to come back to |
-| B pursue | an engage with no leash to her post |
-| C pass | a burn through where the side reckons the target will be (seen place on at its velocity for the track's age), half the way then on; once her burn is done, corrected while the miss is over `PASS_MISS` (est. 0.25) of her engage range; each target passed once while she stays in the state |
+| TF-3 escort, Aggressive, Standing orders (bogeys too), GHOST 1 sent at her | closes for 40 h, station at 1,395 km (0.9 of her spinal battery's 1,550 km at a rated crew), then fires it every 60 s (`cycle_s`, TEMPORARY) |
+| the same, looked at | 3,910 pictures over 44 h, 10.3 s (each tick: 17,230, 51.5 s) |
+| Search and Destroy | passes GHOST 1 at 708 km after 32.6 h, one correction (her reach 40,000 km) |
+| a day of the map's clock, 1b vs now | hunting 7.32 → 1.01 ms a picture; quiet 0.09 → 0.99 ms (every ship at Hold ground looks once a block) |
 
-A pass is dear: half the way at her cruise g is about 367 km/s against GHOST 1 from 27 Gm (half a
-go-to's Δv there). Kept for now; how hard she burns into a pass is to be a setting of her
-automaton's.
-
-In sol-demo, TF-3 on Search and Destroy passes GHOST 1 at 708 km after 32 h, against an engage range
-of 40,000 km (aimed at the track as last seen, uncorrected: 45,700 km). Her quarters reach the map
-in the frame (`quarters`, off the book at the picture's moment) and in the ship's Engagement panel
-with her automaton's state and her weapons: the panel's one Combat section (readiness, stance,
-profile, crew, each battery with its reaches). The main menu's Combat profiles screen draws each
-profile's automaton as its state map, the stance and the ending in the state that engages.
+A pass is dear: half the way at her cruise g is about 367 km/s against GHOST 1 from 27 Gm. Kept
+for now; how hard she burns into a pass is to be a setting of her profile's.
 
 ## Slates
 
-1. **Structure, nothing fired:** the combat book; readiness raised by the sweep, general quarters
-   pinging; the WeaponEngageOrder and the composite attack in the book; the automaton framework,
-   its process and the default automaton; profiles with quarters and an automaton, and the three
-   ready-made ones; engage drawn red; the combat step called for every engaging ship, doing nothing.
-2. **The state map** on the Combat tab; semi-direct and direct control.
-3. **Energy weapons:** optics and UREB as events; what a hit does.
+1. **Structure, nothing fired:** the combat book; the WeaponEngageOrder; MINERVA (ReadyStances,
+   profiles as engagement maps) and the CAPTAIN; the readiness orders, general quarters pinging;
+   the four shared profiles; engage drawn red; the combat step, doing nothing. **1c:** the CAPTAIN
+   in its own process at the flight's front edge.
+2. **The map editable** on Combat profiles; semi-direct and direct control.
+3. **Energy weapons:** optics and UREB as events; what a hit does (`destroyed` can then hold).
 4. **Projectiles:** kinetic and propelled rows, on-nearby bursts, point defence.

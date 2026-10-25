@@ -70,12 +70,12 @@ The map opens on the main menu, over a system standing still:
       started: an edit is played from the next start (or a restart), never in a game already
       running.
    2. **Ship registry**: the classes of the fleet.
-   3. **Combat profiles**: each profile drawn as its automaton (`data/automata.toml`): its states
-      with her readiness, the events between them, and in the state that engages, the profile's
-      stance, range, targets and ending. A **stance** is what she does with a target, ordered to a
-      ship or a formation and passed down its chain; a **profile** is the rules a stance reads (how
-      far, at whom), her automaton and how an engagement ends, and gives the stance she has when
-      none is ordered. Profiles are made in Settings, Combat.
+   3. **Combat profiles**: each profile drawn as the MINERVA it makes (each ship's AI, one
+      automaton): her **ReadyStance** (picked above the map: her readiness, what takes her into
+      combat; `data/minerva.toml`), the profile's engagement in the middle (its nodes and the
+      conditions between them; `data/profiles.toml`), and what she does after, back to her
+      ReadyStance. The stance is where she stands out of combat, ordered on the map; the profile
+      is what she does in it. Commanders' own profiles are made in Settings, Combat.
    4. **Ship builder**: next.
 4. **Settings** (also `,` anywhere), kept in this browser: Display (text and icon sizes, folding,
    what a selection shows), Hotkeys (every key below, rebound by clicking it and pressing another),

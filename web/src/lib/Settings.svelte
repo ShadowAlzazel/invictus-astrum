@@ -22,7 +22,7 @@
   export let gameBy = null;            // in a lobby: 'host' (yours to set), else its host's name (shown, not set)
   export let tab = 'display';
   export let profiles = [];            // the player's: the shared ones (root first), then their own
-  export let profileRules = {};        // { stances: {id: label}, ranges: {id: what}, targets: [...] }
+  export let profileRules = {};        // { stances: {id: label}, minerva: {stances}, ranges: {id: what}, targets: [...] }
   export let onprofile = async () => {};      // (profile): saved (a new one has no id); resolves to the saved one
   export let ondropprofile = async () => {};  // (id)
   export let adjutant = DEFAULTS;      // lib/adjutant.js config()
@@ -38,12 +38,14 @@
   $: shown = profiles.find((p) => p.id === pick) ?? profiles[0];
   $: if (shown) edit(shown);
   function edit(p) { draft = p.player ? structuredClone(p) : null; problem = ''; }
-  function copy(p) { draft = { ...structuredClone(p), id: undefined, name: `${p.name} (mine)`, copy: true, player: '' }; problem = ''; }
+  function copy(p) { draft = { ...structuredClone(p), id: undefined, name: `${p.name} (mine)`, copy: true, player: '', map: p.engagement ? p.id : p.map }; problem = ''; }
+  $: maps = profiles.filter((p) => p.engagement);                    // the shared ones: each flies its own map
+  const stanceRange = (k) => profileRules.minerva?.stances?.[k]?.range;
   const fixed = (r) => typeof r === 'number';
   async function save() {
-    const { id, name, targets, stance, range } = draft;
+    const { id, name, targets, range, map } = draft;
     try {
-      const p = await onprofile({ id, name, targets, stance, range });
+      const p = await onprofile({ id, name, targets, range, map });
       pick = p.id;
     } catch (err) { problem = String(err.message ?? err); }
   }
@@ -131,18 +133,18 @@
     {#if draft}
       <section>
         <label class="f"><span>Name</span><input class="name" bind:value={draft.name} /></label>
-        <label class="f"><span title="Each unit standing in this profile, when none is ordered">Stance</span>
-          <select bind:value={draft.stance}>{#each Object.entries(profileRules.stances ?? {}) as [k, label]}<option value={k} title={label}>{short(label)}</option>{/each}</select></label>
+        <label class="f"><span title="The engagement it flies: a shared profile's map (Combat profiles shows each)">Flies</span>
+          <select bind:value={draft.map}>{#each maps as m}<option value={m.id}>{m.name}</option>{/each}</select></label>
         <div class="f"><span title="Whom its stances engage">Targets</span>
           <div class="checks">{#each profileRules.targets ?? [] as k}
             <button class="toggle" class:on={draft.targets.includes(k)}
               on:click={() => (draft.targets = draft.targets.includes(k) ? draft.targets.filter((x) => x !== k) : [...draft.targets, k])}><i></i>{k}</button>{/each}</div></div>
-        <h2>Ranges <span class="dim">what sets each stance off</span></h2>
+        <h2>Ranges <span class="dim">how far out a target takes her into combat, at each stance</span></h2>
         {#each Object.entries(profileRules.stances ?? {}).filter(([k]) => k !== 'hold-fire') as [k, label]}
           <label class="f rng" class:mod={draft.range[k] != null}><span title={label}>{short(label)}</span>
             <select value={draft.range[k] == null ? '' : fixed(draft.range[k]) ? 'km' : draft.range[k]}
               on:change={(e) => { const v = e.target.value; draft.range[k] = v === '' ? undefined : v === 'km' ? 50000 : v; draft = draft; }}>
-              <option value="">the root's ({profiles[0]?.range[k]})</option>
+              <option value="">the stance's ({stanceRange(k)})</option>
               {#each Object.entries(profileRules.ranges ?? {}) as [r, what]}<option value={r} title={what}>{r}</option>{/each}
               <option value="km">km</option>
             </select>
@@ -158,7 +160,7 @@
     {:else if shown}
       <section>
         <dl>
-          <dt>Stance</dt><dd>{short(profileRules.stances?.[shown.stance])}</dd>
+          <dt>Flies</dt><dd>{shown.engagement ? 'its own map' : maps.find((m) => m.id === shown.map)?.name ?? shown.map}</dd>
           <dt>Targets</dt><dd>{shown.targets.join(', ')}</dd>
           {#each Object.entries(shown.range) as [k, r]}<dt class="sub">{short(profileRules.stances?.[k])}</dt><dd>{fixed(r) ? `${r.toLocaleString()} km` : r}</dd>{/each}
         </dl>
@@ -166,6 +168,7 @@
       <footer><span></span><button class="save" on:click={() => copy(shown)}>Make a copy of my own</button></footer>
     {/if}
     <p class="hint">Kept by the server, for this commander. {shown?.root ? 'The root is every unit\'s fallback and is not changed here. ' : ''}A
+      profile is what she does in combat (its map: Fleet command, Combat profiles); her stance, ordered on the map, is where she stands out of it. A
       range is read off each ship's own figures (sensor: her passive reach on a warm ship; dazzle; weapons: her focus battery's reach), or set in km.</p>
   {:else if tab === 'adjutant'}
     <section>

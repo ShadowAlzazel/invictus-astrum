@@ -31,13 +31,16 @@ QUARTERS = {GQ: "general quarters", ATTACK: "attack", WATCH: "watching"}
 @dataclass(frozen=True)
 class Weapon:
     """One of a class's batteries, as combat reads it: which (its index among the class's
-    batteries, its id and label), what kind, how many barrels or cells, and where it engages."""
+    batteries, its id and label), what kind (in the physics, and its mount: stack, strip, dome,
+    panel, turret, cell), how many barrels or cells, where it engages, and whether it is her focus."""
     n: int
     id: str
     label: str
     kind: str
     count: int
     engage_km: float | None
+    mount: str = ""
+    focus: bool = False
 
 
 @dataclass
@@ -64,7 +67,8 @@ def weapons_of(sc) -> list[Weapon]:
         raw = b.get("raw") or {}
         q = (b.get("engage") or {}).get("q")
         out.append(Weapon(n, str(raw.get("id") or n), raw.get("label") or str(raw.get("id") or n), kind,
-                          int(b.get("count") or 1), float(q.hi) if q is not None and q.hi else None))
+                          int(b.get("count") or 1), float(q.hi) if q is not None and q.hi else None, b.get("kind", ""),
+                          bool(b.get("focus"))))
     return out
 
 
@@ -103,9 +107,12 @@ class CombatBook:
         lands = None
         if w.kind == ENERGY:
             lands = t
-            if targets:
-                at = lambda k: c.r[k] + c.v[k] * (t - c.t[k])
-                lands = t + float(np.linalg.norm(at(targets[0]) - at(i))) / C
+            if targets:                                 # where both were at t: as flown, if the fleet is past it
+                if t < fleet.t - 1e-6:
+                    r = fleet.past(np.array([t, t]), np.array([i, targets[0]]))["r"]
+                else:
+                    r = np.array([c.r[k] + c.v[k] * (t - c.t[k]) for k in (i, targets[0])])
+                lands = t + float(np.linalg.norm(r[1] - r[0])) / C
         ev = Event(t, i, w.id, w.kind, tuple(tg.get("dir") or (0.0, 0.0, 0.0)), targets, lands,
                    "fired" if w.kind == ENERGY else "launched", g.source)
         self.log.append(ev)

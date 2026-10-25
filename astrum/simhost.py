@@ -597,9 +597,10 @@ class SimHost:
             **{k: (each[0][k] if all(s[k] == each[0][k] for s in each) else None) for k in ("stance", "profile")},
             "stances": {s: sum(x["stance"] == s for x in each) for s in dict.fromkeys(x["stance"] for x in each)},
             "profile_name": each[0]["profile_name"] if all(x["profile"] == each[0]["profile"] for x in each) else None}
-        if len(ships) == 1:                              # her combat state at t (astrum/combat.py)
+        if len(ships) == 1:                              # her combat state at t (astrum/combat.py), and her MINERVA's node
             with fleet.lock:
                 out["combat"] = fleet.combat.state(fleet, fleet.c.row[ships[0]], t)
+            out["minerva"] = self.ai.place(sc, fleet, ships[0], t)
         return {**out, "unit": unit, "ships": len(ships), "veterancy": sc.contacts[unit].veterancy if unit in sc.contacts else None, "ledger": orders}
 
     # ---- the levels ------------------------------------------------------------------------------

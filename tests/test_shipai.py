@@ -1,90 +1,94 @@
-"""The ship AI's automata (astrum/shipai): read from data, run per ship, and the readiness and
-endings the AI gives by them."""
+"""The ship AI (astrum/shipai): each ship's MINERVA, its ReadyStances and her profile's engagement,
+run by the CAPTAIN; what it fires, how it is paced, and what the map is told."""
+import json
+
 import numpy as np
 import pytest
 
 from astrum.config import ROOT
-from astrum.orders import KIND
-from astrum.shipai import Machine, load_automata
+from astrum.shipai import EXIT, READY, Machine, Node, load_minerva
 from test_combat import _ai, _app, _drive, _hunt
 
 
-def test_the_default_watches_goes_to_quarters_on_a_threat_and_stands_down_after_a_quiet_day():
-    auto = load_automata(ROOT / "data" / "automata.toml")["default"]
-    m = Machine(auto, 0.0)
-    assert (m.state.id, m.state.quarters, m.pinging) == ("watch", 3, False)
-    assert m.step(600, False, False, True) is None                       # nothing near her: she watches
-    assert m.step(1200, True, False, True).id == "gq" and m.pinging and m.state.engage
-    assert m.step(1200 + 23 * 3600, False, False, True) is None          # quiet, but not for a day
-    assert m.step(1200 + 24 * 3600, False, False, True).id == "watch" and not m.pinging
-    assert m.step(1200 + 25 * 3600, False, True, False).id == "attack" and m.state.quarters == 2
-    assert m.step(1200 + 26 * 3600, False, False, True).id == "watch"
-    m.back_to(1800)                                                       # set back: as it stood then
-    assert (m.state.id, m.since(), len(m.history)) == ("gq", 1200, 2)
-
-
-def test_an_automaton_written_wrong_is_refused(tmp_path):
-    f = tmp_path / "a.toml"
-    f.write_text('[automaton.default]\nname = "x"\nstart = "a"\nquiet_h = 0\n'
-                 '[automaton.default.state.a]\nquarters = 4\nsensors = "loud"\non = { boom = "b" }\n')
+def test_the_minerva_holds_each_stances_readiness_and_holds_ground_by_default(tmp_path):
+    M = load_minerva(ROOT / "data" / "minerva.toml")
+    assert M.stance == "hold"
+    assert {k: s.readiness for k, s in M.stances.items()} == {"aggressive": 1, "guard": 1, "hold": 2, "return-fire": 2, "hold-fire": 3}
+    assert M.stances["hold"].moves is False and M.stances["hold-fire"].enter == "never"
+    f = tmp_path / "m.toml"
+    f.write_text('[minerva]\nstance = "charge"\nblock_s = 0\n[stance.aggressive]\nreadiness = 4\nenter = "seen"\nafter = "home"\n')
     with pytest.raises(ValueError) as e:
-        load_automata(f)
-    for x in ("quiet_h", "quarters is 1, 2 or 3", "sensors is active or passive", "no event 'boom'", "goes to 'b'"):
+        load_minerva(f)
+    for x in ("stance is one of", "block_s", "[stance.guard] is needed", "readiness is 1, 2 or 3", "after is one of", "range is one of"):
         assert x in str(e.value)
 
 
-def test_a_threat_seen_sends_her_to_general_quarters_pinging_and_only_then_she_engages(tmp_path):
+def test_a_node_is_left_from_the_next_tick_and_after_its_wait():
+    m = Machine(0.0)
+    node = Node("lost", "lost", ("hold",), wait_s=600.0, on=(("always", EXIT),))
+    m.move(100.0, node="lost", target=3)
+    assert m.engaged and m.next(100.0, node, lambda c: True) is None             # not the tick she entered it
+    assert m.next(650.0, node, lambda c: True) is None and m.next(700.0, node, lambda c: True) == EXIT
+    tick = Node("await", "await", on=(("destroyed", EXIT), ("alive", "hold")))
+    m.move(800.0, node="await")
+    assert m.next(810.0, tick, {"destroyed": False, "alive": True}.get) == "hold"
+    m.back_to(200.0)                                                              # set back: as she stood then
+    assert (m.at.node, m.at.since) == ("lost", 100.0)
+    m.back_to(50.0)
+    assert m.at.node == READY and not m.engaged
+
+
+def test_the_spinal_loop_closes_fires_each_cycle_and_is_paced(tmp_path):
+    """The root's map, flown at bogeys too: she closes to station at her spinal battery's envelope,
+    fires it once a cycle (each shot a WeaponEngageOrder in the book, logged by the combat book),
+    holding station between. Looked at a quarter of the way in while she closes, every tick once there."""
     c, world = _app(tmp_path)
     fleet = world.fleet(world.scenarios["sol-demo"])
     t = fleet.t0 + 600
-    assert _hunt(c, t) == 200
-    _drive(c, t, t + 3600)
-    B, i = fleet.book, fleet.c.row["tf3-es-1"]
-    mine = [(float(B.at[e]), int(B.kind[e])) for e in B.queue[B.ai[B.queue]] if B.ship[e] == i]
-    kinds = [k for _, k in mine]
-    assert kinds[:3] == [KIND["quarters"], KIND["active"], KIND["goto"]] and len({a for a, _ in mine[:3]}) == 1
-    assert fleet.c.quarters[i] == 1 and fleet.pinging(t + 3600)[i]
-    far = [x for x in _ai(fleet) if x[1].startswith("kiki")]            # nothing near them: they do not know of it
-    assert not far
+    assert _hunt(c, t, "aggressive", unit="tf3-es-1", map="root") == 200
+    c.post("/api/order", json={"scenario": "sol-demo", "view": "master", "unit": "ghost-1", "t": t, "g": 0.3,
+                               "target": {"unit": "tf3-es-1"}})
+    host, sc = c.app.state.sim.host, world.scenarios["sol-demo"]
+    n, T = 0, t
+    while T < t + 44 * 3600:
+        fleet.reach(T)
+        host.pictures.publish(sc, fleet, T)
+        T += host.pictures.step(sc, fleet)
+        n += 1
+    i = fleet.c.row["tf3-es-1"]
+    cap = host.ai.captain(sc, fleet)
+    path = [p.node for p in cap.machines[i].history]
+    assert path[path.index("close"):path.index("close") + 5] == ["close", "fire", "await", "hold", "await"]
+    shots = [e for e in fleet.combat.log if e.ship == i]
+    gaps = np.diff([e.t for e in shots])
+    assert len(shots) > 100 and gaps.min() >= world.minerva.cycle_s - 1e-6 and np.median(gaps) == world.minerva.cycle_s
+    assert {(e.weapon, e.kind) for e in shots} == {("spinal", "energy")} and all(e.targets == (fleet.c.row["ghost-1"],) for e in shots)
+    assert len(_ai(fleet, ("fire",))) == len(shots) and fleet.c.stand[i] == pytest.approx(0.9 * 1550e3)
+    assert n < 5000                                   # 44 h at 10 s would be 15,840
 
 
-def test_an_engagement_ends_as_her_profile_says(tmp_path):
-    """C pass: a burn through where the target will be, and she does not turn on it again (the next
-    she passes, each once); A keep:
-    an engage with her post to come back to."""
+def test_search_and_destroy_passes_each_target_once_and_coasts_on(tmp_path):
+    """Search and Destroy: a burn through where the side reckons the target will be, corrected after
+    the burn while the miss is over PASS_MISS of her reach; out of combat once going away from it,
+    on as she goes (the profile's after: coast), and that target left."""
     c, world = _app(tmp_path)
     fleet = world.fleet(world.scenarios["sol-demo"])
     t = fleet.t0 + 600
-    c.post("/api/profiles", json={"player": "arcvs", "name": "Raid", "stance": "aggressive", "end": "pass",
-                                  "targets": ["hostile", "unknown"], "range": {}})
     assert c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": "tf3-es-1", "t": t,
-                                      "profile": "raid", "stance": "aggressive"}).status_code == 200
-    c.post("/api/profiles", json={"player": "arcvs", "name": "Wall", "stance": "aggressive", "end": "keep",
-                                  "targets": ["hostile", "unknown"], "range": {}})
-    assert c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": "tf3-es-2", "t": t,
-                                      "profile": "wall", "stance": "aggressive"}).status_code == 200
-    _drive(c, t, t + 6 * 3600)
-    B = fleet.book
-    of = lambda sid: [B.of(e) for e in B.queue[B.ai[B.queue]] if fleet.c.ids[B.ship[e]] == sid]
-    passes = [g for g in of("tf3-es-1") if g.burn]
-    on = [g.burn["pass"] for g in passes]
-    assert on[0] == "ghost-1" and len(set(on)) == len(on) and all(g.burn["label"].startswith("pass") for g in passes)
-    assert not any(g.target.get("engage") for g in of("tf3-es-1"))
-    held = [g for g in of("tf3-es-2") if g.target.get("engage")]
-    assert held and held[0].target["resume"]["target"]["label"].startswith("back to")
-    _drive(c, t + 6 * 3600, t + 34 * 3600)
+                                      "profile": "search-and-destroy", "stance": "aggressive"}).status_code == 200
+    _drive(c, t, t + 34 * 3600)
+    burns = [x for x in _ai(fleet, ("burn",)) if x[1] == "tf3-es-1"]
+    assert burns and burns[0][3] == "pass the bogey"
     i, j = fleet.c.row["tf3-es-1"], fleet.c.row["ghost-1"]
     pos = [fleet.positions_at(x) for x in np.arange(t + 30 * 3600, t + 34 * 3600, 60.0)]
     miss = min(np.linalg.norm(p["tf3-es-1"] - p["ghost-1"]) for p in pos)
-    assert miss < 0.25 * fleet.c.spec[i].engage_km * 1e3                  # through her, within her reach (ai.PASS_MISS) ...
-    assert np.linalg.norm(fleet.c.v[i] - fleet.c.v[j]) > 1e5              # ... and on
+    assert miss < 0.25 * fleet.c.spec[i].engage_km * 1e3
+    assert np.linalg.norm(fleet.c.v[i] - fleet.c.v[j]) > 1e5                    # through her, and on
+    cap = c.app.state.sim.host.ai.captain(world.scenarios["sol-demo"], fleet)
+    assert j in cap.machines[i].at.left and not any(x[2] == "goto" for x in _ai(fleet) if x[1] == "tf3-es-1")
 
 
-def test_the_map_is_told_her_readiness(tmp_path):
-    """Her quarters at the picture's moment (off the book, so a re-fly or a run-ahead does not
-    change them): in her side's frame when they change, and in her engagement with her
-    automaton's state and her weapons."""
-    import json
+def test_the_map_is_told_her_readiness_and_where_her_minerva_stands(tmp_path):
     c, world = _app(tmp_path)
     host = c.app.state.sim.host
     fleet = world.fleet(world.scenarios["sol-demo"])
@@ -93,20 +97,19 @@ def test_the_map_is_told_her_readiness(tmp_path):
     _drive(c, t, t + 3600)
     q = lambda T: json.loads(host.frame({"system": "sol", "t": T, "scenario": "sol-demo", "view": "arcvs"},
                                         conn=("arcvs", "q")))["ships"].get("tf3-es-1", {}).get("quarters")
-    assert q(t) == 3 and q(t + 3600) == 1
+    assert q(t - 300) == 3 and q(t + 3600) == 1
     e = c.get("/api/engagement/sol-demo/tf3-es-1", params={"player": "arcvs", "t": t + 3600}).json()
-    assert (e["combat"]["quarters"], e["combat"]["state"], e["automaton_name"]) == (1, "General quarters", "Standing watch")
-    assert [w["id"] for w in e["combat"]["weapons"]] and "combat" not in c.get(
-        "/api/engagement/sol-demo/tf-3", params={"player": "arcvs", "t": t + 3600}).json()
-    assert c.get("/api/engagement/sol-demo/tf3-es-1", params={"player": "arcvs", "t": t}).json()["combat"]["quarters"] == 3
+    assert (e["combat"]["quarters"], e["combat"]["state"], e["readiness"]) == (1, "Aggressive: readiness I", 1)
+    assert e["minerva"] == {"node": "close", "label": "Close to station", "engaged": True}
+    assert "combat" not in c.get("/api/engagement/sol-demo/tf-3", params={"player": "arcvs", "t": t + 3600}).json()
 
 
-def test_the_profiles_say_their_automata_for_the_map(tmp_path):
-    """/api/profiles carries what the Combat profiles screen draws: each automaton named, its
-    states and the events between them, and the endings."""
+def test_the_profiles_say_their_engagements_and_the_minerva_for_the_map(tmp_path):
     c, _ = _app(tmp_path)
     got = c.get("/api/profiles", params={"player": "arcvs"}).json()
-    auto = got["automata"]["default"]
-    assert {p["automaton"] for p in got["profiles"]} <= set(got["automata"]) and set(got["ends"]) >= {"keep", "pursue", "pass"}
-    assert auto["states"]["watch"]["on"] == {"threat": "gq", "attack": "attack"} and auto["quiet_h"] == 24
-    assert all(ev in got["events"] for s in auto["states"].values() for ev in s["on"])
+    root = got["profiles"][0]
+    assert root["root"] and root["engagement"]["start"] == "close" and set(root["engagement"]["nodes"]) >= {"close", "fire", "lost"}
+    assert got["minerva"]["stance"] == "hold" and got["minerva"]["stances"]["aggressive"]["readiness"] == 1
+    assert got["stances"]["hold"].startswith("Hold ground:") and {"station", "fire"} <= set(got["actions"])
+    used = {w["if"] for p in got["profiles"] for n in p["engagement"]["nodes"].values() for w in n["on"]}
+    assert used <= set(got["conditions"])

@@ -1,0 +1,61 @@
+# MINERVA: each ship's AI, one automaton (astrum/shipai, docs/COMBAT.md). Its ReadyStances are where
+# she enters combat from and goes back to; the engagement between is her combat profile's map
+# (data/profiles.toml). The CAPTAIN runs it: moves her between its nodes and gives its orders.
+
+[minerva]
+stance = "hold"           # the ReadyStance of a ship none is ordered or written for
+block_s = 600             # est.: a ship at a ReadyStance looks for combat once a block (the flight's)
+engaged_s = 10            # est.: while any ship is engaged, her side is pictured this often (game s)
+cycle_s = 60              # TEMPORARY: a battery fires again after this long; no canon cycle time yet
+station_share = 0.9       # est.: station on a target is taken this far into a battery's envelope
+
+# A ReadyStance:
+#   readiness  1 general quarters (her sensors ping actively), 2 attack, 3 watching
+#   enter      what takes her into combat: "seen" (a target of her profile's in her side's picture,
+#              within range), "fired-on" (a ship engaging her, within range), "never"
+#   range      how far out: "sensor" (her passive suite's reach against a warm ship, 30 MW),
+#              "half-sensor", "dazzle" (her dazzle range), "weapons" (her focus battery's reach), or
+#              km; a profile may set its own
+#   after      what she does once out of combat: "resume" (the attack-move or patrol she was on,
+#              else hold station), "post" (back to her post), "hold" (hold station where she is)
+#   moves      false: she never moves; the engagement's moves are her hull turned on the target
+
+[stance.aggressive]
+label = "Aggressive"
+text = "anything in range, engaged, then on with her move"
+readiness = 1
+enter = "seen"
+range = "sensor"
+after = "resume"
+
+[stance.guard]
+label = "Guard"
+text = "engaged in range, then back to her post"
+readiness = 1
+enter = "seen"
+range = "half-sensor"
+after = "post"
+
+[stance.hold]
+label = "Hold ground"
+text = "engaged in range where she stands; never moves"
+readiness = 2
+enter = "seen"
+range = "dazzle"
+after = "hold"
+moves = false
+
+[stance.return-fire]
+label = "Return fire"
+text = "engages whoever engages her, in range; then back to her post"
+readiness = 2
+enter = "fired-on"
+range = "dazzle"
+after = "post"
+
+[stance.hold-fire]
+label = "Hold fire"
+text = "nothing"
+readiness = 3
+enter = "never"
+after = "hold"
