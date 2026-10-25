@@ -776,17 +776,26 @@ class Fleet:
                 else:
                     done = self._run(t, time.monotonic() + CHUNK_S)
                 if done or time.monotonic() >= deadline:
-                    self._show(self.t)
-                    return self.t, view(self.ships)
+                    shown = self._show(self.t)
+                    try:
+                        return self.t, view(self.ships)
+                    finally:                          # (back where the grid has them: a row's r goes with its t)
+                        if shown is not None:
+                            self.c.r[shown[0]] = shown[1]
 
-    def _show(self, t: float) -> None:
-        """Station ships stand at their place at t for the map: one placement, all of them. What
-        holding it costs is paid on the station grid (_stations_to), not here."""
+    def _show(self, t: float) -> tuple | None:
+        """Station ships stand at their place at t for the view of them: one placement, all of
+        them. What holding it costs is paid on the station grid (_stations_to), not here, and so
+        each is put back where the grid has her after (returned: her rows, and where). Left at t,
+        her position would run ahead of her own moment (c.t) and be carried on from it twice."""
         if t - self._station_t < 1e-6:
-            return
+            return None
         rows, P = self._station_positions(t)
-        if len(rows):
-            self.c.r[rows] = P
+        if not len(rows):
+            return None
+        was = self.c.r[rows].copy()
+        self.c.r[rows] = P
+        return rows, was
 
     def _before_start(self, t: float) -> dict[str, Ship]:
         """Before the scenario starts, everyone is on station with the tanks she starts with."""

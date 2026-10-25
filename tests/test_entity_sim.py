@@ -1721,3 +1721,26 @@ def test_a_group_of_units_is_given_one_order():
     with pytest.raises(OrderRefused):
         give_order(world, {"scenario": "sol-demo", "unit": "kiki+nobody", "player": "arcvs", "t": t + 600, "g": 0.3,
                            "target": {"bullseye": "burn", "aer": [90, 0, 3e5]}})
+
+
+def test_flown_a_minute_at_a_time_the_timeline_holds_what_it_does_flown_at_once():
+    """A station ship is shown at her place between her station steps (for the view), and put back
+    where the grid has her: flown in steps shorter than the grid, her samples are the same as flown
+    in one go, but for the newest, carried on straight from her last station step until the next
+    (a few minutes' curve: 16 km off Jupiter). Before, her shown position was carried on from her
+    own moment again: a sample ran a minute's flight further ahead each block (GHOST 1: 1,395 km)."""
+    from astrum.app import World
+    from astrum.config import load_config
+    flown = []
+    for step in (60.0, 3600.0):
+        w = World(load_config())
+        f = w.fleet(w.scenarios["sol-demo"])
+        f.keep_timeline()
+        t = f.t0 + 600
+        f.reach(t)
+        T = t
+        while T < t + 3600:
+            T += step
+            f.reach(T)
+        flown.append(f.timeline.r[: f.timeline.hi + 1, : f.c.n].copy())
+    assert np.nanmax(np.abs(flown[0] - flown[1])) < 20e3
