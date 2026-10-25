@@ -93,7 +93,7 @@ formation = "jupiter-home"
 
 [[unit]]
 id = "jove-bs1-1"
-callsign = "Jove Yggdrasil 1"
+callsign = "Mount Everest"
 affiliation = "friend"
 echelon = "ship"
 formation = "jove-bs1"

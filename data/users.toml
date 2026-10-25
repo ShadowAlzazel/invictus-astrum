@@ -24,3 +24,7 @@ password = "pbkdf2_sha256$100000$33b9150bcbc3a581$be2a472fd1c89b2936d4bf6103be68
 [[user]]
 name = "Kylo"
 password = "pbkdf2_sha256$100000$82713d07ae175f09$6fa5b5344fc6fabe851d02d95f81b534015bc496689fb9c05a916b3b42648849"
+
+[[user]]
+name = "Marles"
+password = "pbkdf2_sha256$100000$98d0ea9f2c0052b0$4aa582842e6a7cf144315cbd42c71d58f8991152344ca1c5e68034640f586bab"

@@ -302,7 +302,7 @@ formation = "tf2-lf2"
 
 [[unit]]
 id = "tf2-lf2-ls-1"
-callsign = "L2 Line 1"
+callsign = "Fontaine"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf2-ls"
@@ -310,7 +310,7 @@ class = "phalaena"
 
 [[unit]]
 id = "tf2-lf2-ls-2"
-callsign = "L2 Line 2"
+callsign = "Monstadt"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf2-ls"
@@ -318,7 +318,7 @@ class = "phalaena"
 
 [[unit]]
 id = "tf2-lf2-ls-3"
-callsign = "L2 Line 3"
+callsign = "Snezhnograd"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf2-ls"
@@ -333,7 +333,7 @@ formation = "tf2-lf2"
 
 [[unit]]
 id = "tf2-lf2-pa-1"
-callsign = "L2 Picket A 1"
+callsign = "Florence"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf2-pa"
@@ -341,7 +341,7 @@ class = "phalaena"
 
 [[unit]]
 id = "tf2-lf2-pa-2"
-callsign = "L2 Picket A 2"
+callsign = "Las Vegas"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf2-lf2-pa"
