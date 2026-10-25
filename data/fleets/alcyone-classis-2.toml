@@ -13,7 +13,7 @@ callsign = "Alcyone Classis II"
 affiliation = "friend"
 faction = "avc"
 echelon = "classis"
-flag = "styx-helix"   
+flag = "tf1-lf1-bs-1"
 
 [[unit]]
 id = "tf1"
@@ -37,8 +37,8 @@ echelon = "squadron"
 formation = "tf1-lf1"
 
 [[unit]]
-id = "styx-helix"
-callsign = "Styx Helix"
+id = "tf1-lf1-bs-1"
+callsign = "Battle Squadron 1 1"
 affiliation = "friend"
 echelon = "ship"
 formation = "tf1-lf1-bs"
@@ -1692,6 +1692,37 @@ formation = "escort-flotilla-es2"
 class = "aeshna"
 
 [[unit]]
+id = "escort-flotilla-es3"
+callsign = "Escort Squadron 3-OF"
+affiliation = "friend"
+echelon = "squadron"
+formation = "escort-flotilla"
+
+[[unit]]
+id = "escort-flotilla-es3-1"
+callsign = "Escort Squadron 3 1"
+affiliation = "friend"
+echelon = "ship"
+formation = "escort-flotilla-es3"
+class = "holzweiber"
+
+[[unit]]
+id = "escort-flotilla-es3-2"
+callsign = "Escort Squadron 3 2"
+affiliation = "friend"
+echelon = "ship"
+formation = "escort-flotilla-es3"
+class = "holzweiber"
+
+[[unit]]
+id = "escort-flotilla-es3-3"
+callsign = "Escort Squadron 3 3"
+affiliation = "friend"
+echelon = "ship"
+formation = "escort-flotilla-es3"
+class = "holzweiber"
+
+[[unit]]
 id = "escort-flotilla-les1"
 callsign = "Light Escort Squadron 1"
 affiliation = "friend"
@@ -1754,103 +1785,103 @@ formation = "escort-flotilla-les2"
 class = "phalaena"
 
 [[unit]]
-id = "tf-picket-group"
+id = "fleet-picket-group"
 callsign = "Fleet Picket Group"
 affiliation = "friend"
 echelon = "group"
 formation = "alcyone-classis-2"
 
 [[unit]]
-id = "tf-picket-1"
-callsign = "TF Picket Squadron 1"
+id = "fleet-picket-1"
+callsign = "Fleet Picket Squadron 1"
 affiliation = "friend"
 echelon = "squadron"
-formation = "tf-picket-group"
+formation = "fleet-picket-group"
 
 [[unit]]
-id = "tf-picket-1-1"
-callsign = "TF Picket Squadron 1 1"
+id = "fleet-picket-1-1"
+callsign = "Fleet Picket Squadron 1 1"
 affiliation = "friend"
 echelon = "ship"
-formation = "tf-picket-1"
+formation = "fleet-picket-1"
 class = "phalaena"
 
 [[unit]]
-id = "tf-picket-1-2"
-callsign = "TF Picket Squadron 1 2"
+id = "fleet-picket-1-2"
+callsign = "Fleet Picket Squadron 1 2"
 affiliation = "friend"
 echelon = "ship"
-formation = "tf-picket-1"
+formation = "fleet-picket-1"
 class = "phalaena"
 
 [[unit]]
-id = "tf-picket-1-3"
-callsign = "TF Picket Squadron 1 3"
+id = "fleet-picket-1-3"
+callsign = "Fleet Picket Squadron 1 3"
 affiliation = "friend"
 echelon = "ship"
-formation = "tf-picket-1"
+formation = "fleet-picket-1"
 class = "phalaena"
 
 [[unit]]
-id = "tf-picket-2"
-callsign = "TF Picket Squadron 2"
+id = "fleet-picket-2"
+callsign = "Fleet Picket Squadron 2"
 affiliation = "friend"
 echelon = "squadron"
-formation = "tf-picket-group"
+formation = "fleet-picket-group"
 
 [[unit]]
-id = "tf-picket-2-1"
-callsign = "TF Picket Squadron 2 1"
+id = "fleet-picket-2-1"
+callsign = "Fleet Picket Squadron 2 1"
 affiliation = "friend"
 echelon = "ship"
-formation = "tf-picket-2"
+formation = "fleet-picket-2"
 class = "phalaena"
 
 [[unit]]
-id = "tf-picket-2-2"
-callsign = "TF Picket Squadron 2 2"
+id = "fleet-picket-2-2"
+callsign = "Fleet Picket Squadron 2 2"
 affiliation = "friend"
 echelon = "ship"
-formation = "tf-picket-2"
+formation = "fleet-picket-2"
 class = "phalaena"
 
 [[unit]]
-id = "tf-picket-2-3"
-callsign = "TF Picket Squadron 2 3"
+id = "fleet-picket-2-3"
+callsign = "Fleet Picket Squadron 2 3"
 affiliation = "friend"
 echelon = "ship"
-formation = "tf-picket-2"
+formation = "fleet-picket-2"
 class = "phalaena"
 
 [[unit]]
-id = "tf-picket-3"
-callsign = "TF Picket Squadron 3"
+id = "fleet-picket-3"
+callsign = "Fleet Picket Squadron 3"
 affiliation = "friend"
 echelon = "squadron"
-formation = "tf-picket-group"
+formation = "fleet-picket-group"
 
 [[unit]]
-id = "tf-picket-3-1"
-callsign = "TF Picket Squadron 3 1"
+id = "fleet-picket-3-1"
+callsign = "Fleet Picket Squadron 3 1"
 affiliation = "friend"
 echelon = "ship"
-formation = "tf-picket-3"
+formation = "fleet-picket-3"
 class = "phalaena"
 
 [[unit]]
-id = "tf-picket-3-2"
-callsign = "TF Picket Squadron 3 2"
+id = "fleet-picket-3-2"
+callsign = "Fleet Picket Squadron 3 2"
 affiliation = "friend"
 echelon = "ship"
-formation = "tf-picket-3"
+formation = "fleet-picket-3"
 class = "phalaena"
 
 [[unit]]
-id = "tf-picket-3-3"
-callsign = "TF Picket Squadron 3 3"
+id = "fleet-picket-3-3"
+callsign = "Fleet Picket Squadron 3 3"
 affiliation = "friend"
 echelon = "ship"
-formation = "tf-picket-3"
+formation = "fleet-picket-3"
 class = "phalaena"
 
 [[unit]]
@@ -1909,14 +1940,14 @@ formation = "alcyone-classis-2"
 
 [[unit]]
 id = "aux-tender-1"
-callsign = "Coccinella Mollitrix Tender Squadron 1"
+callsign = "Tender Squadron 1"
 affiliation = "friend"
 echelon = "squadron"
 formation = "aux"
 
 [[unit]]
 id = "aux-tender-1-1"
-callsign = "Coccinella Mollitrix Tender 1"
+callsign = "Tender 1"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-1"
@@ -1924,7 +1955,7 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-1-2"
-callsign = "Coccinella Mollitrix Tender 2"
+callsign = "Tender 2"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-1"
@@ -1932,7 +1963,7 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-1-3"
-callsign = "Coccinella Mollitrix Tender 3"
+callsign = "Tender 3"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-1"
@@ -1940,14 +1971,14 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-2"
-callsign = "Coccinella Mollitrix Tender Squadron 2"
+callsign = "Tender Squadron 2"
 affiliation = "friend"
 echelon = "squadron"
 formation = "aux"
 
 [[unit]]
 id = "aux-tender-2-1"
-callsign = "Coccinella Mollitrix Tender 1"
+callsign = "Tender 1"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-2"
@@ -1955,7 +1986,7 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-2-2"
-callsign = "Coccinella Mollitrix Tender 2"
+callsign = "Tender 2"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-2"
@@ -1963,7 +1994,7 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-2-3"
-callsign = "Coccinella Mollitrix Tender 3"
+callsign = "Tender 3"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-2"
@@ -1971,14 +2002,14 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-3"
-callsign = "Coccinella Mollitrix Tender Squadron 3"
+callsign = "Tender Squadron 3"
 affiliation = "friend"
 echelon = "squadron"
 formation = "aux"
 
 [[unit]]
 id = "aux-tender-3-1"
-callsign = "Coccinella Mollitrix Tender 1"
+callsign = "Tender 1"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-3"
@@ -1986,7 +2017,7 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-3-2"
-callsign = "Coccinella Mollitrix Tender 2"
+callsign = "Tender 2"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-3"
@@ -1994,7 +2025,7 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-3-3"
-callsign = "Coccinella Mollitrix Tender 3"
+callsign = "Tender 3"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-3"
@@ -2002,14 +2033,14 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-4"
-callsign = "Coccinella Mollitrix Tender Squadron 4"
+callsign = "Tender Squadron 4"
 affiliation = "friend"
 echelon = "squadron"
 formation = "aux"
 
 [[unit]]
 id = "aux-tender-4-1"
-callsign = "Coccinella Mollitrix Tender 1"
+callsign = "Tender 1"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-4"
@@ -2017,7 +2048,7 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-4-2"
-callsign = "Coccinella Mollitrix Tender 2"
+callsign = "Tender 2"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-4"
@@ -2025,7 +2056,7 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-tender-4-3"
-callsign = "Coccinella Mollitrix Tender 3"
+callsign = "Tender 3"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-tender-4"
@@ -2033,14 +2064,14 @@ class = "coccinella"
 
 [[unit]]
 id = "aux-repair-1"
-callsign = "Tarantulae Nutrix Repair Ship Squadron 1"
+callsign = "Repair Squadron 1"
 affiliation = "friend"
 echelon = "squadron"
 formation = "aux"
 
 [[unit]]
 id = "aux-repair-1-1"
-callsign = "Tarantulae Nutrix Repair Ship 1"
+callsign = "Repair 1"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-repair-1"
@@ -2048,7 +2079,7 @@ class = "tarantulae"
 
 [[unit]]
 id = "aux-repair-1-2"
-callsign = "Tarantulae Nutrix Repair Ship 2"
+callsign = "Repair 2"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-repair-1"
@@ -2056,14 +2087,14 @@ class = "tarantulae"
 
 [[unit]]
 id = "aux-watch-1"
-callsign = "Salticidae Vigil Watch and Relay Squadron 1"
+callsign = "Early Warning Squadron 1"
 affiliation = "friend"
 echelon = "squadron"
 formation = "aux"
 
 [[unit]]
 id = "aux-watch-1-1"
-callsign = "Salticidae Vigil Watch and Relay 1"
+callsign = "Early Warning 1"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-watch-1"
@@ -2071,7 +2102,7 @@ class = "salticidae"
 
 [[unit]]
 id = "aux-watch-1-2"
-callsign = "Salticidae Vigil Watch and Relay 2"
+callsign = "Early Warning 2"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-watch-1"
@@ -2079,7 +2110,7 @@ class = "salticidae"
 
 [[unit]]
 id = "aux-watch-1-3"
-callsign = "Salticidae Vigil Watch and Relay 3"
+callsign = "Early Warning 3"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-watch-1"
@@ -2087,14 +2118,14 @@ class = "salticidae"
 
 [[unit]]
 id = "aux-watch-2"
-callsign = "Salticidae Vigil Watch and Relay Squadron 2"
+callsign = "Early Warning Squadron 2"
 affiliation = "friend"
 echelon = "squadron"
 formation = "aux"
 
 [[unit]]
 id = "aux-watch-2-1"
-callsign = "Salticidae Vigil Watch and Relay 1"
+callsign = "Early Warning 1"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-watch-2"
@@ -2102,93 +2133,93 @@ class = "salticidae"
 
 [[unit]]
 id = "aux-watch-2-2"
-callsign = "Salticidae Vigil Watch and Relay 2"
+callsign = "Early Warning 2"
 affiliation = "friend"
 echelon = "ship"
 formation = "aux-watch-2"
 class = "salticidae"
 
 [[unit]]
-id = "aux-guard-1"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard Squadron 1"
+id = "aux-patrol-1"
+callsign = "Patrol Squadron 1"
 affiliation = "friend"
 echelon = "squadron"
 formation = "aux"
 
 [[unit]]
-id = "aux-guard-1-1"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard 1"
+id = "aux-patrol-1-1"
+callsign = "Patrol 1"
 affiliation = "friend"
 echelon = "ship"
-formation = "aux-guard-1"
+formation = "aux-patrol-1"
 class = "bacillus"
 
 [[unit]]
-id = "aux-guard-1-2"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard 2"
+id = "aux-patrol-1-2"
+callsign = "Patrol 2"
 affiliation = "friend"
 echelon = "ship"
-formation = "aux-guard-1"
+formation = "aux-patrol-1"
 class = "bacillus"
 
 [[unit]]
-id = "aux-guard-1-3"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard 3"
+id = "aux-patrol-1-3"
+callsign = "Patrol 3"
 affiliation = "friend"
 echelon = "ship"
-formation = "aux-guard-1"
+formation = "aux-patrol-1"
 class = "bacillus"
 
 [[unit]]
-id = "aux-guard-2"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard Squadron 2"
+id = "aux-patrol-2"
+callsign = "Patrol Squadron 2"
 affiliation = "friend"
 echelon = "squadron"
 formation = "aux"
 
 [[unit]]
-id = "aux-guard-2-1"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard 1"
+id = "aux-patrol-2-1"
+callsign = "Patrol 1"
 affiliation = "friend"
 echelon = "ship"
-formation = "aux-guard-2"
+formation = "aux-patrol-2"
 class = "bacillus"
 
 [[unit]]
-id = "aux-guard-2-2"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard 2"
+id = "aux-patrol-2-2"
+callsign = "Patrol 2"
 affiliation = "friend"
 echelon = "ship"
-formation = "aux-guard-2"
+formation = "aux-patrol-2"
 class = "bacillus"
 
 [[unit]]
-id = "aux-guard-2-3"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard 3"
+id = "aux-patrol-2-3"
+callsign = "Patrol 3"
 affiliation = "friend"
 echelon = "ship"
-formation = "aux-guard-2"
+formation = "aux-patrol-2"
 class = "bacillus"
 
 [[unit]]
-id = "aux-guard-3"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard Squadron 3"
+id = "aux-patrol-3"
+callsign = "Patrol Squadron 3"
 affiliation = "friend"
 echelon = "squadron"
 formation = "aux"
 
 [[unit]]
-id = "aux-guard-3-1"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard 1"
+id = "aux-patrol-3-1"
+callsign = "Patrol 1"
 affiliation = "friend"
 echelon = "ship"
-formation = "aux-guard-3"
+formation = "aux-patrol-3"
 class = "bacillus"
 
 [[unit]]
-id = "aux-guard-3-2"
-callsign = "Bacillus Lictrix Headquarters and Transport Guard 2"
+id = "aux-patrol-3-2"
+callsign = "Patrol 2"
 affiliation = "friend"
 echelon = "ship"
-formation = "aux-guard-3"
+formation = "aux-patrol-3"
 class = "bacillus"

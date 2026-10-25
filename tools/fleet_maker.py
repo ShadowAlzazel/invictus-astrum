@@ -113,19 +113,19 @@ def add_forward(f: Fleet) -> None:
     ])
     f.unit("fleet-picket-group", "Fleet Picket Group", "group", f.fleet_id)
     for n in range(1, 4):
-        f.squadron(f"tf-picket-{n}", f"TF Picket Squadron {n}", "fleet-picket-group", "phalaena", (3, 4))
+        f.squadron(f"fleet-picket-{n}", f"Fleet Picket Squadron {n}", "fleet-picket-group", "phalaena", (3, 4))
     f.squadron("strike-squadron", "Strike Squadron", f.fleet_id, "papilion", (5, 5))
-    add_auxiliaries(f, "aux", f.fleet_id, tender=(12, 16), repair=(2, 2), watch=(5, 6), guard=(8, 12))
+    add_auxiliaries(f, "aux", f.fleet_id, tender=(12, 16), repair=(2, 2), watch=(5, 6), patrol=(8, 12))
 
 
 def add_auxiliaries(f: Fleet, prefix: str, parent: str, tender: tuple[int, int], repair: tuple[int, int],
-                    watch: tuple[int, int], guard: tuple[int, int]) -> None:
+                    watch: tuple[int, int], patrol: tuple[int, int]) -> None:
     f.unit(prefix, "Auxiliary Group", "group", parent)
     for slug, label, cls, counts in [
-        ("tender", "Coccinella Mollitrix Tender", "coccinella", tender),
-        ("repair", "Tarantulae Nutrix Repair Ship", "tarantulae", repair),
-        ("watch", "Salticidae Vigil Watch and Relay", "salticidae", watch),
-        ("guard", "Bacillus Lictrix Headquarters and Transport Guard", "bacillus", guard),
+        ("tender", "Tender", "coccinella", tender),
+        ("repair", "Repair", "tarantulae", repair),
+        ("watch", "Early Warning", "salticidae", watch),
+        ("patrol", "Patrol", "bacillus", patrol),
     ]:
         total = f.ship_count(*counts)
         # Keep every auxiliary squadron at two or three ships. If taking a group
@@ -183,7 +183,7 @@ def add_reserve(f: Fleet) -> None:
     f.flotilla("old-forest-tf-dryad-picket", "Dryad Picket Flotilla", old, [
         (f"picket{s}", f"Picket Squadron {s}", "dryad", (2, 3)) for s in range(1, 6)
     ])
-    add_auxiliaries(f, "aux", f.fleet_id, tender=(12, 16), repair=(2, 2), watch=(5, 6), guard=(8, 12))
+    add_auxiliaries(f, "aux", f.fleet_id, tender=(12, 16), repair=(2, 2), watch=(5, 6), patrol=(8, 12))
 
 
 def main() -> int:

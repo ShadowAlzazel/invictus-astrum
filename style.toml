@@ -140,19 +140,24 @@ label = "Escort, Point Defence"
 blocks = ["pd", "escort"]
 words = ["Escort"]
 
+[formation_role.light-escort]
+label = "Light-Escort, Picket, Scout"
+blocks = ["escort", "picket"]
+words = ["Light-Escort", "Light Escort"]
+
 [formation_role.point-defence]
 blocks = ["pd"]
 words = ["PD"]
 
 [formation_role.scout]
 label = "Scout"
-blocks = ["escort", "picket"]
+blocks = ["forward", "picket"]
 words = ["Scout"]
 
 [formation_role.relay]
-label = "Relay, Communications"
+label = "Relay, Communications, Early Warning"
 blocks = ["escort", "signal"]
-words = ["Relay"]
+words = ["Relay", "Early Warning"]
 
 [formation_role.supply]
 label = "Supply, Tender"
