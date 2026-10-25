@@ -122,6 +122,7 @@ callsign = "Task Force 2"
 affiliation = "friend"
 echelon = "task-force"
 formation = "luna-classis-1"
+stance = "return-fire"
 
 [[unit]]
 id = "tf2-lf1"

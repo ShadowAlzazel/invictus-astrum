@@ -77,6 +77,7 @@ squadron("tf2-vs", "Vanguard Squadron 2", "tf-2", "papilion", 3, mid(lead, stbd)
 squadron("tf2-lp1", "TF Picket 1", "tf-2", "phalaena", 3, (1_850_000, 350_000, 120_000), "TF Picket 1")
 squadron("tf2-lp2", "TF Picket 2", "tf-2", "phalaena", 3, (1_600_000, -700_000, -150_000), "TF Picket 2")
 
+STANCE = {"tf-2": "return-fire"}             # the home fleet answers fire; it does not go looking
 lines = [BEGIN, "# Placeholder callsigns. Positions are AER from the Wedge Bullseye (data/players.toml).", ""]
 places = list(lines)                         # where they start: the scenario's
 for uid, name, ech, parent, cls, pos in units:
@@ -84,6 +85,8 @@ for uid, name, ech, parent, cls, pos in units:
               f'formation = "{parent}"']
     if cls:
         lines.append(f'class = "{cls}"')
+    if uid in STANCE:
+        lines.append(f'stance = "{STANCE[uid]}"')
     lines.append("")
     if uid == "tf-2":                            # the task force is where its flag is
         places += ["[[contact]]", 'fleet = "luna-classis-1"', f'unit = "{uid}"', 'position = { unit = "tf2-lf1-bs-1" }', ""]

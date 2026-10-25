@@ -278,8 +278,9 @@ the map (`profiles.toml`): a shared one's map, with targets (`hostile`, `unknown
 **The CAPTAIN** (`astrum/shipai/captain.py`, handed pictures by `astrum/ai.py`) is a subscriber of
 the picture processor (`astrum/pictures.py`), as a browser is of its side's pictures: each side is
 pictured with the same functions as the map's, and it answers with orders (source `ai`) through the
-order book. It reads only what is in the picture. A ready ship looks once a block (or at once when
-fired on); an engaged one every 10 s near her envelope, else by how soon she gets there.
+order book. It reads only what is in the picture. A ready ship looks once a block, if her side's
+sweep holds a ship within her reach (or at once when fired on); an engaged one every 10 s near her
+envelope, else by how soon she gets there. Task Force 2 (Earth) is written on return fire.
 
 ```
 simulation (flight, order book) -> picture processor (each side's picture) -> subscribers (the CAPTAIN)

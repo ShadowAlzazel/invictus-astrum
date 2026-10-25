@@ -113,3 +113,24 @@ def test_the_profiles_say_their_engagements_and_the_minerva_for_the_map(tmp_path
     assert got["stances"]["hold"].startswith("Hold ground:") and {"station", "fire"} <= set(got["actions"])
     used = {w["if"] for p in got["profiles"] for n in p["engagement"]["nodes"].values() for w in n["on"]}
     assert used <= set(got["conditions"])
+
+
+def test_a_quiet_scenario_is_not_pictured_for_the_ship_ai(tmp_path, monkeypatch):
+    """Ready ships look once a block only if the sweep holds a ship within reach of one (_near):
+    with nothing near anyone, no side is pictured with its tracks, and after the readiness orders
+    nobody is decided for. Task Force 2 is written on return fire."""
+    from astrum import pictures as P
+    c, world = _app(tmp_path)
+    host, sc = c.app.state.sim.host, world.scenarios["sol-demo"]
+    fleet = world.fleet(sc)
+    seen = []
+    real = P.Pictures.side_picture
+    monkeypatch.setattr(P.Pictures, "side_picture", lambda self, sc, fl, view, t, pic, tracks=True:
+                        seen.append((view, tracks)) or real(self, sc, fl, view, t, pic, tracks))
+    t = fleet.t0 + 600
+    for T in np.arange(t, t + 6 * 3600, 60.0):
+        fleet.reach(float(T))
+        fleet.sweeper.catch_up(int((float(T) - fleet.t0) // 60))
+        host.pictures.publish(sc, fleet, float(T))
+    assert not any(tr for _, tr in seen) and len(seen) == 3                    # once each side, for its readiness
+    assert {x[3] for x in _ai(fleet, ("quarters",)) if x[1].startswith("tf2")} == {"Return fire: readiness II"}

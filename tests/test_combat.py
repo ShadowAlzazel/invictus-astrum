@@ -174,8 +174,8 @@ def test_the_ai_reads_only_its_sides_picture(tmp_path):
     assert np.isfinite(sp.r[own]).all() and set(sp.said) == set(np.flatnonzero(own).tolist())
     unseen = ~own & ~sp.shown
     assert unseen.any() and np.isnan(sp.r[unseen]).all() and np.isnan(sp.v[unseen]).all()
-    assert host.ai.wants(sc, fleet, t) == {"arcvs": True, "jadf": True, "ghost": True}   # the first block: every ship
-    got = host.pictures.publish(sc, fleet, t)                                             # looks, at hold ground
+    assert host.ai.wants(sc, fleet, t) == {"arcvs": False, "jadf": False, "ghost": False}   # the first block: readiness
+    got = host.pictures.publish(sc, fleet, t)       # to order; nothing the sweep holds is near any ship, so no tracks
     assert got and {o.kind for o in got} == {"quarters"} and {o.target["level"] for o in got} == {2}
     assert host.ai.wants(sc, fleet, t + 60) == {}                                          # and not again this block
 

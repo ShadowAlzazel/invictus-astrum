@@ -113,6 +113,7 @@ class AI:
         k = int(np.floor((t - m.t0) / self.world.minerva.block_s + 1e-9))
         for v in {m.view[i] for i in rows}:              # their side looks again from t's block
             m.looked[v] = min(m.looked.get(v, -1), k - 1)
+        m.readied[rows] = 0                              # (her readiness looked at again)
         for i in rows:
             if m.machines[i] is not None:
                 m.machines[i].back_to(t)

@@ -21,6 +21,7 @@ import math
 import numpy as np
 
 from ..classis import DEAD, SHIP
+from ..detect import SAMPLE_S
 from ..entity import G0
 from ..frames import to_aer
 from ..orders import GOTO, STANCE
@@ -30,6 +31,7 @@ from .minerva import EXIT, READY, Machine
 WARM_W = 30e6                 # the warm ship a sensor's range is read against (RANGES "sensor")
 FACE_DEG = 10.0               # her hull turned again once the target has moved off it by this much
 PASS_MISS = 0.25              # est.: a pass corrected once its miss is more than this share of her engage range
+NEAR_SLACK = 0.1              # est.: a ready ship looks if a sighting is within her reach and this share more
 ROMAN = {1: "I", 2: "II", 3: "III"}
 _n = itertools.count()
 
@@ -75,6 +77,9 @@ class Captain:
         self.engaged: set[int] = set()
         self.due = np.full(n, -np.inf)                   # an engaged ship is looked at again from here (pace)
         self.last_t = -np.inf
+        self.ships = np.array([c.kind[i] == SHIP for i in range(n)])
+        self.readied = np.zeros(n, dtype=np.int8)        # the readiness her orders last set (0: none yet)
+        self.near: dict[str, tuple] = {}                 # side -> (block, its ready rows a sighting is in reach of)
         self.t0 = fleet.t0
         self.looked: dict[str, int] = {}                 # side -> the last block its ready ships looked in
         self._stood = (None, None)
@@ -82,9 +87,9 @@ class Captain:
         self._reach: dict = {}                           # a patrol, the first engage order's moment)
 
     # ---- what each stands in ---------------------------------------------------------------------
-    def standing(self, B, t: float) -> tuple[list, list, list]:
-        """Every ship's ReadyStance, profile and the frame her stance was ordered in, at t (kept
-        until a stance is ordered, or a profile changed)."""
+    def standing(self, B, t: float) -> tuple[list, list, list, np.ndarray]:
+        """Every ship's ReadyStance, profile, the frame her stance was ordered in, and the readiness
+        her stance sets, at t (kept until a stance is ordered, or a profile changed)."""
         q = B.queue[: B.before(t + 2e-6)]
         st = q[B.kind[q] == STANCE]
         key = (st.tobytes(), id(self.world.profiles_made))
@@ -99,7 +104,8 @@ class Captain:
             if "profile" in g.target:
                 prof[i] = g.target["profile"]
         prof = [self.world.profile(self.player[v], p) for v, p in zip(self.view, prof)]
-        got = ([s or self.minerva.stance for s in stance], prof, frame)
+        stance = [s or self.minerva.stance for s in stance]
+        got = (stance, prof, frame, np.array([self.minerva.stances[x].readiness for x in stance], dtype=np.int8))
         self._stood = (key, got)
         return got
 
@@ -135,8 +141,9 @@ class Captain:
     # ---- what to picture -------------------------------------------------------------------------
     def wants(self, fleet, t: float) -> dict[str, bool]:
         """The sides to picture at t, and whether each needs its tracks (what it sees): those with a
-        ship engaged; those whose ready ships look this block (with tracks if one enters combat on
-        what she sees); those with a ship returning fire, once an engage order is given."""
+        ship engaged and due; those whose ready ships look this block and the sweep holds something
+        in reach of (_near); those with readiness to order; those with a ship returning fire that
+        a ship of another side flies an engage on (no tracks: being fired on shows her where)."""
         B = fleet.book
         n0, moving, first = self._moving
         for e in range(n0, B.n):
@@ -146,33 +153,81 @@ class Captain:
             if tg.get("engage"):
                 first = min(first, float(B.at[e]))
         self._moving = (B.n, moving, first)
-        stance = self.standing(B, t)[0]
+        stance, prof, _, ready = self.standing(B, t)
         k = int(np.floor((t - self.t0) / self.minerva.block_s + 1e-9))
         out: dict[str, bool] = {}
+        n = len(self.view)
+        pending = self.ships & (self.readied != ready)    # readiness her stance sets, not yet ordered
+        c, targeted = fleet.c, set()                      # the sides a ship of another's flies an engage on
+        for g in np.flatnonzero(c.goal[:n] & (c.order[:n] >= 0)):
+            tg = B.of(int(c.order[g])).target
+            u = c.row.get(tg.get("unit")) if tg.get("engage") else None
+            if u is not None and u < n and self.view[u] != self.view[g]:
+                targeted.add(self.view[u])
+        look: dict[str, list] = {}
         for i, (v, s) in enumerate(zip(self.view, stance)):
+            if not self.ships[i]:
+                continue
             if i in self.engaged:
                 if t >= self.due[i] - 1e-6:
                     out[v] = True
                 continue
-            enter = self.minerva.stances["aggressive" if i in moving else s].enter
-            if k > self.looked.get(v, -1):
-                if enter == "seen":
-                    out[v] = True
-                else:
-                    out.setdefault(v, False)
-            elif enter == "fired-on" and first <= t:
+            if pending[i] or i in moving:
                 out.setdefault(v, False)
+            s = "aggressive" if i in moving else s
+            enter = self.minerva.stances[s].enter
+            if enter == "seen" and k > self.looked.get(v, -1):
+                look.setdefault(v, []).append((i, s))
+            elif enter == "fired-on" and v in targeted:
+                out.setdefault(v, False)
+        for v, rows in look.items():                      # ready ships look once a block, if the sweep has put
+            near = self._near(fleet, v, t, rows, prof, n)     # anything within reach of one
+            self.near[v] = (k, near)
+            if len(near):
+                out[v] = True
+            else:
+                self.looked[v] = k
         return out
+
+    def _near(self, fleet, v: str, t: float, items: list, prof: list, n: int) -> np.ndarray:
+        """The side's ready rows a ship its sweep has a live sighting of is within reach of, by where
+        she was seen (the sweep's newest: every sighting the relay tree has brought the flagship, and
+        those still on their way). A bound, cheap: whom she engages, and from what has reached the
+        flagship, the look at the side's picture says."""
+        rows = np.array([i for i, _ in items])
+        own = np.array([x == v for x in self.view[:n]])
+        S = fleet.sweeper
+        k = int(np.floor((t - fleet.t0) / SAMPLE_S + 1e-9))
+        side = S.side(v, own)
+        S.catch_up(k)
+        got = side.summary(k)
+        live = (got["k"] >= 0) & (t - (fleet.t0 + got["k"] * SAMPLE_S) <= fleet.sensors.hold_s) & ~own
+        if not live.any():
+            return rows[:0]
+        c = fleet.c
+        dt = t - c.t[rows]
+        R = c.r[rows] + c.v[rows] * dt[:, None]          # where she is at t, straight on from her row
+        slack = NEAR_SLACK * np.array([self.reach_m(i, s, prof[i]) for i, s in items]) + 0.5 * G0 * dt * dt
+        reach = np.array([self.reach_m(i, s, prof[i]) for i, s in items]) + slack
+        D = np.linalg.norm(got["r"][live][None] - R[:, None], axis=2)
+        return rows[(D <= reach[:, None]).any(axis=1)]
 
     # ---- a picture: what each of the side's ships does ---------------------------------------------
     def decide(self, sp) -> list[Order]:
         fleet, side, t = sp.fleet, sp.side, sp.t
         c = fleet.c
-        stance, prof, frame = self.standing(fleet.book, t)
-        rows = [i for i in np.flatnonzero(side.own).tolist() if c.kind[i] == SHIP and c.mode[i] != DEAD
-                and c.fmax[i] > 0 and t >= self.until[i] - 1e-6]
+        stance, prof, frame, ready = self.standing(fleet.book, t)
         k = int(np.floor((t - self.t0) / self.minerva.block_s + 1e-9))
         block = k > self.looked.get(side.view, -1)
+        near = self.near.get(side.view, (None, ()))
+        near = set(near[1].tolist()) if block and near[0] == k else set()
+        n = len(self.readied)
+        mine = np.flatnonzero(side.own[:n] & self.ships)
+        visit = (self.engaged | set(sp.fired_on) | near | self._moving[1]
+                 | set(mine[self.readied[mine] != ready[mine]].tolist()))
+        idle = mine[(c.mode[mine] == DEAD) | (c.fmax[mine] <= 0)]
+        self.readied[idle] = ready[idle]                  # (nothing to order her)
+        rows = [i for i in mine.tolist() if i in visit and c.mode[i] != DEAD and c.fmax[i] > 0 and t >= self.until[i] - 1e-6]
         ping = fleet.pinging(t)
         out, looking = [], []
         for i in rows:
@@ -182,6 +237,7 @@ class Captain:
             plain = bool(goal) and goal["source"] not in ("ai", "auto") and not (tg.get("attack") or tg.get("patrol"))
             rs = self.minerva.stances[self._stance(i, m, tg, stance[i])]
             out += self._readiness(sp, i, m, rs, bool(ping[i]))
+            self.readied[i] = rs.readiness if rs.id == stance[i] else 0       # (on a move of her own: looked at each time)
             if m.engaged:
                 if plain:                                 # a map's order of her own: it stands, she is out of combat
                     m.move(t, node=READY, target=-1, back=None, post=None)
@@ -200,9 +256,9 @@ class Captain:
                     j = min(foes, key=lambda a: _d(sp.r[a], sp.r[i]))
                     out += self._enter(sp, i, m, j, goal, frame[i], prof[i], rs)
                     self.due[i] = t + self._pace(sp, i, m, prof[i])
-            elif block:
+            elif block and i in near:
                 looking.append((i, rs, goal))
-        self.until[rows] = t
+        self.until[mine] = np.maximum(self.until[mine], t)    # (the rest had nothing to decide)
         if looking:
             out += self._look(sp, looking, prof, frame)
         if block:

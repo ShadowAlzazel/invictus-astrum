@@ -88,7 +88,10 @@ spinal battery's envelope, fire it once a cycle, hold; target lost, hold and wai
 (a pass through her, firing as she passes, then on: after = coast).
 
 **Ticks.** A ship at her ReadyStance looks for combat once a block (`block_s`), or at once when
-fired on. A ship in combat is on the CAPTAIN's **engaged** list: looked at every `engaged_s`
+fired on; and she looks only if her side's sweep holds a live sighting within her reach (and a
+tenth more, `NEAR_SLACK`): the sweep's newest, a bound on what the relay tree has brought her
+flagship, which the look itself reads off her side's picture. A side with a ship on return fire is
+pictured (without tracks) only while a ship of another side flies an engage on one of its ships. A ship in combat is on the CAPTAIN's **engaged** list: looked at every `engaged_s`
 (est. 10 s) once near the farthest envelope her engagement acts at, and short of it a quarter of the
 time she takes to close on it (at most a block); while any is, her side is pictured that often.
 
@@ -131,7 +134,7 @@ makes, at each ReadyStance.
 | TF-3 escort, Aggressive, Standing orders (bogeys too), GHOST 1 sent at her | closes for 40 h, station at 1,395 km (0.9 of her spinal battery's 1,550 km at a rated crew), then fires it every 60 s (`cycle_s`, TEMPORARY) |
 | the same, looked at | 3,910 pictures over 44 h, 10.3 s (each tick: 17,230, 51.5 s) |
 | Search and Destroy | passes GHOST 1 at 708 km after 32.6 h, one correction (her reach 40,000 km) |
-| a day of the map's clock, 1b vs now | hunting 7.32 → 1.01 ms a picture; quiet 0.09 → 0.99 ms (every ship at Hold ground looks once a block) |
+| a day of the map's clock (the sweep caught up, as the map's own pictures have it), 1b / MINERVA / now | hunting 7.78 / 1.08 / 0.77 ms a picture; quiet 7.49 / 1.09 / 0.25 ms |
 
 A pass is dear: half the way at her cruise g is about 367 km/s against GHOST 1 from 27 Gm. Kept
 for now; how hard she burns into a pass is to be a setting of her profile's.
