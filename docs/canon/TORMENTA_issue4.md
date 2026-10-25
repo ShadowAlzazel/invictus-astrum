@@ -3,7 +3,7 @@
 ## The weapons standard
 
 Guns, UREB channels, other particle weapons, optics, ammunition.
-First edition of the 30,000 series, issue 4. Reconciled against MATERIA, ARCVS and TELVM issue 3. Issue 4 adds prompt upset (§8.5).
+First edition of the 30,000 series, issue 4. Reconciled against MATERIA, ARCVS and TELVM issue 3. Issue 4 adds prompt upset (§8.5) and the uses of light besides killing missiles (§6.7).
 
 TORMENTA is the parts catalogue. It states what each weapon and each round is, what it costs, and what it does on its own. Every part carries the same four figures, mass, energy, heat into the hull and reaction, so that an armament can be assembled and costed before a hull is drawn.
 
@@ -31,7 +31,7 @@ Figures marked *est.* are estimates, not ratings; do not task a part on one. Sup
 |---|---|---|---|
 | Guns | At 10 km/s. Can be dodged. Hard to see; cannot be deflected or shot down. | Rod length | The killing weapon inside 65 km, and the certain weapon against anything already blinded |
 | UREB channels | At c. Cannot be dodged. | Gamma, bought in metres of accelerator | The deciding weapon of a fleet action, and the longest reach against electronics, through plate and shutter |
-| Optics | At c, in a spot smaller than the aim error. Reach is unlimited; dwell is not. | Aperture | Point defence and sensor suppression. Nothing else. |
+| Optics | At c, in a spot smaller than the aim error. Reach is unlimited; dwell is not. | Aperture | Point defence, sensor suppression, and radiators and manes wherever the loop closes (§6.7). Never a hull. |
 
 ### The governing laws
 
@@ -858,9 +858,9 @@ The hull figures above are nominal and are not achievable, because the spot is s
 | | PANEL III on a woven hull | SPECVLVM, best in fleet |
 |---|---|---|
 | Spot at 1,000 km | 0.25 m | 0.63 m |
-| Open-loop pointing | 9 µrad = 9.0 m | 4 µrad = 4.0 m |
-| Dilution, (error/spot)² | ~1,300 | ~40 |
-| True dwell to open a hull at 1,000 km | about five minutes | seventeen minutes |
+| Open-loop pointing | 6.5 µrad = 6.5 m, line rate fit | 4 µrad = 4.0 m |
+| Dilution, (error/spot)² | ~680 | ~40 |
+| True dwell to open a hull at 1,000 km | about two and a half minutes | seventeen minutes |
 
 An open-loop beam wanders across the target and dilutes its own irradiance by (error/spot)². A laser cannot be an anti-ship weapon, and the reason is the mount, not the optics.
 
@@ -892,6 +892,37 @@ That is a statement about tracking (§1.2), not about seeing or ranging. A thin 
 The whole array is 0.96% of what the target is already shedding. A laser cannot heat a ship. It can only ruin a place on one.
 
 At 1,000 km the local irradiance is thirty thousand times the solar constant, and whatever occupies that sixty-three centimetres is destroyed. Everything optics are good for follows from that one sentence: they are a weapon against small exposed things, at any range, for as long as you can hold them.
+
+### 6.7 What light does besides kill missiles
+
+A missile is the hardest thing light is asked to do: 30 MJ/m², on a target that is closing. Almost every other use needs less fluence, or offers a better loop, or both. Three questions decide each one:
+
+- Does the target give the loop something to close on? Hot structure does, and so does a sensor looking at you. A cold hull does not.
+- Is the target's sensor in band? Visible, near-infrared, star references and 1.03 µm glass are. Thermal-infrared sensors are not.
+- How long can the beam be held?
+
+One panel on one target, closed loop, est.:
+
+| Effect | Threshold at the target, est. | PANEL II | PANEL III | Twelve PANEL III on one target |
+|---|---|---|---|---|
+| Dazzle, in-band sensor | microjoules at the focal plane | not power-limited inside a system; limited by finding the aperture | same | same |
+| Focal-plane damage, in band, against a slow shutter | ~0.01 W/m² at the aperture | not power-limited; aim-limited | same | same |
+| Thermal-infrared sensor blinded by heating its window | ~1 W/cm², sustained | ~13,900 km | ~55,600 km | ~193,000 km |
+| Sensor window or dome cracked | ~1 kW/cm² | ~440 km | ~1,760 km | ~6,100 km |
+| Mane ruined, held 10 s / 100 s | 0.8 MJ/m² | 4,900 / 15,600 km | 19,700 / 62,200 km | 68,000 / 216,000 km |
+| Radiator ruined, held 10 s / 100 s | 1.2 MJ/m² | 4,000 / 12,700 km | 16,100 / 50,800 km | 55,600 / 176,000 km |
+| Sensor mast, held 10 s, if hot or retroreflective | 2.91 MJ/m² | 2,600 km | 10,300 km | 35,700 km |
+| Missile tankage, held 10 s, for comparison | ~30 MJ/m² | 800 km | 3,200 km | 11,100 km |
+
+6.7.1 Radiators and manes. The loop closes on their heat, and they fail at a twenty-fifth to a fortieth of a missile's fluence. Held for 100 s, one PANEL III ruins a mane at about 62,000 km. A target that feels it folds or turns its radiators away, and goes onto its store. Against a navy that fights cold behind folding radiators, that is the use.
+
+6.7.2 In-band sensors. A sensor looking at you in its own band retroreflects your light and locates itself for the loop. Dazzle, and focal-plane damage against a slow shutter, then reach as far as the aperture can be found and held. The dazzle envelope of about 40,000 km is a finding-and-holding limit, not a power limit.
+
+6.7.3 Thermal-infrared sensors. These are the sensors that find a cold woven hull, and 1.03 µm is out of their band: they cannot be dazzled. Their windows can be heated until they go blind; germanium absorbs at 1 µm and loses its infrared transmission when hot. An out-of-band sensor does not retroreflect, so the loop must close on its housing. Open loop, the beam spreads its power over the aim disc whatever the aperture, and all twelve PANEL III reach about 1 W/cm² only to about 7,400 km at 6.5 µrad.
+
+6.7.4 Dazzle is an aim weapon. Shutter discipline costs a target 30 to 40% of its integration time and degrades its pointing by about a quarter, which pulls its walls in by about a fifth (TELVM §1.3). Glass that works at 1.03 µm is the easiest dazzle target of all, so between hulls that carry it, dazzling the aiming references is an attack on the other ship's aim.
+
+6.7.5 Radio and microwave. Light acts only in optical and infrared bands. Disturbance of radio, microwave and electronics through plate is the channel's work: prompt upset (§8.5).
 
 ---
 
@@ -1311,7 +1342,7 @@ Beam and optical reaction are not design quantities. A beam carries E/c of momen
 | H⁻ binding | 0.754 eV | strips on gas and on its own bending field; the current ceiling of every neutral battery |
 | Panel phase tolerance | λ/20 across the aperture | coherence lost; the panel becomes N emitters and loses D |
 | Coherent combination | within a panel, or a dome's single bench | anything wider is never one aperture |
-| Optical against open-loop pointing | 9 µrad on a woven hull; 4 µrad best in fleet | any spot smaller is diluted by (error/spot)² |
+| Optical against open-loop pointing | 6.5 µrad line fit, 5.5 µrad picket fit; 4 µrad best in fleet | any spot smaller is diluted by (error/spot)² |
 | Optical against a cold rod | 54 nrad, no emission | no loop to close; not trackable at any range |
 
 ---
@@ -1368,6 +1399,8 @@ Beam and optical reaction are not design quantities. A beam carries E/c of momen
 | What a neutral beam kills | the crew, through unopened armour |
 | To kill missiles | an optical panel on a closed loop |
 | To blind an aperture | any panel, at any range it can reach |
+| To ruin a radiator or mane by light | one PANEL III, held 100 s: ~51,000 / ~62,000 km, est. (§6.7) |
+| To blind a thermal-infrared sensor | heat its window, ~1 W/cm²: ~56,000 km closed loop, one PANEL III, est. (§6.7) |
 | To upset electronics through plate and shutter | one channel: ~100,000 km at 19 GeV, ~60,000 km at 15 GeV, est. (§8.5) |
 | To kill a ship with light | nothing in this book |
 | To kill a rod | nothing in this book |
@@ -1492,6 +1525,8 @@ The earlier array, SPECVLVM:
 12. "A rod cannot be seen." Overstated, and a guideline rather than a rating. It holds for a laser's tracking loop, which has nothing to close on. It does not hold for a cued cryogenic infrared telescope of the 6.5 m class, which can see a cold dart at tens to hundreds of thousands of kilometres, est. Once seen, a rod can be ranged by an active panel. It still cannot be tracked, deflected, or shot down. The words see, range and track are fixed in §1.2.
 
 13. Issue 3 rated electronics only at 100 Gy, which is damage. Delivered inside the 0.8 µs pulse, about 1 Gy upsets them. Issue 4 enters prompt upset as a threshold (§8, §8.5). It reaches about five times further than any effect that ruins.
+
+14. Issue 3 rated optics for point defence and sensor suppression only. Issue 4 sets out what else light does where the loop closes, and against which sensors (§6.7). The ruin of radiators and manes by light, held, reaches further than any stack's.
 
 ---
 
