@@ -3,7 +3,7 @@
 ## The weapons standard
 
 Guns, UREB channels, other particle weapons, optics, ammunition.
-First edition of the 30,000 series, issue 3. Reconciled against MATERIA, ARCVS and TELVM issue 3.
+First edition of the 30,000 series, issue 4. Reconciled against MATERIA, ARCVS and TELVM issue 3. Issue 4 adds prompt upset (§8.5).
 
 TORMENTA is the parts catalogue. It states what each weapon and each round is, what it costs, and what it does on its own. Every part carries the same four figures, mass, energy, heat into the hull and reaction, so that an armament can be assembled and costed before a hull is drawn.
 
@@ -30,7 +30,7 @@ Figures marked *est.* are estimates, not ratings; do not task a part on one. Sup
 | | How it arrives | What buys it | What it is for |
 |---|---|---|---|
 | Guns | At 10 km/s. Can be dodged. Hard to see; cannot be deflected or shot down. | Rod length | The killing weapon inside 65 km, and the certain weapon against anything already blinded |
-| UREB channels | At c. Cannot be dodged. | Gamma, bought in metres of accelerator | The deciding weapon of a fleet action |
+| UREB channels | At c. Cannot be dodged. | Gamma, bought in metres of accelerator | The deciding weapon of a fleet action, and the longest reach against electronics, through plate and shutter |
 | Optics | At c, in a spot smaller than the aim error. Reach is unlimited; dwell is not. | Aperture | Point defence and sensor suppression. Nothing else. |
 
 ### The governing laws
@@ -619,8 +619,10 @@ NERVVS Mk.2 at 19 GeV, in 5 nT.
 | 7,700 km | 7.10 m | 2.20 m | ~1.9 MJ/m² | ~2,500 Gy |
 | 10,000 km | 11.8 m | 3.0 m | ~0.82 MJ/m² | ~1,100 Gy |
 | 20,000 km | 46 m | 6.7 m | ~0.094 MJ/m² | ~130 Gy |
+| 100,000 km, est. | ~1,150 m | ~34 m | ~750 J/m² | ~1 Gy |
+| 216,000 km, est. | ~5,400 m | ~72 m | ~75 J/m² | ~0.1 Gy |
 
-Close in, one spot is a hole. From about 5,000 km, one spot is metres long and still delivers thousands of gray. At 20,000 km one channel's streak is about ninety metres long and still delivers over a hundred gray.
+Close in, one spot is a hole. From about 5,000 km, one spot is metres long and still delivers thousands of gray. At 20,000 km one channel's streak is about ninety metres long and still delivers over a hundred gray. At 100,000 km it is a streak more than two kilometres long, and it still upsets electronics (§8.5).
 
 ### 4.9 What a beam cannot do
 
@@ -1167,6 +1169,8 @@ The same thresholds serve every weapon in this book.
 | Electronics ruined, ~100 Gy | ~0.075 MJ/m² |
 | Crew incapacitated in minutes to hours, ~50 Gy | ~0.0375 MJ/m² |
 | Crew killed within weeks untreated, ~5 Gy | ~0.0038 MJ/m² |
+| Unhardened electronics upset, prompt, ~1 Gy, est. | ~750 J/m² |
+| Sensor focal planes and star references flooded, prompt, ~0.1 Gy, est. | ~75 J/m² |
 
 The dose figures take about a third of the shower energy crossing a person as absorbed, over about 250 kg per square metre of body, so one gray takes roughly 750 J/m².
 
@@ -1178,7 +1182,24 @@ The dose figures take about a third of the shower energy crossing a person as ab
 
 8.4 Opened and mission-killed are different results. A shower that reaches the interior through intact plate kills the electronics and the people in its path. De-masting is the only beam effect that does not reach the crew, because a mast is external structure.
 
-8.5 Constants.
+8.5 Prompt upset: the long reach. A channel delivers its whole dose inside 0.8 µs. Electronics fail at about 100 Gy, but they upset at about a hundredth of that when the dose arrives that fast: processors drop state, detectors flood, wiring carries photo-Compton currents. The beam does this through intact plate and through a closed shutter, which no optical dazzle can.
+
+One channel on one spot, in 5 nT, est.:
+
+| Channel | Ruins electronics, ~100 Gy | Upsets electronics, ~1 Gy | Floods sensors, ~0.1 Gy |
+|---|---|---|---|
+| FILVM Mk.2, 15 GeV | ~13,000 km | ~60,000 km | ~130,000 km |
+| NERVVS Mk.2, 19 GeV | ~21,500 km | ~100,000 km | ~216,000 km |
+
+8.5.1 What it does. An upset is a tax, not a kill. The target reboots, re-acquires and re-lays, in seconds to minutes. Its crew takes about a gray at most and fights on. Repeated, it keeps a ship deaf and slow to answer. It reaches about five times further than any beam effect that ruins.
+
+8.5.2 Aim. At these ranges aim no longer limits it the way it limits a kill. At 100,000 km one channel's streak is more than two kilometres long, against about 650 m of aim error at 6.5 µrad. A citadel inside the error lies under the streak more often than not. It works as an area effect.
+
+8.5.3 Seeing the result. The flash goes into the target, not back toward the firing ship; at these ranges the firing ship cannot see it land. A forward ship near the target can.
+
+8.5.4 No new part. Every channel in this book already does this. A long-range sounding beam of milliamps and a thousandfold tighter energy spread is a different machine, and it is not in this book.
+
+8.6 Constants.
 
 | | |
 |---|---|
@@ -1285,6 +1306,7 @@ Beam and optical reaction are not design quantities. A beam carries E/c of momen
 | Trim at zero | — | an open bore into the least repairable structure |
 | Beam self-pinch | γ ≫ 1 | below it the beam's own space charge blows it apart; there is no low-energy particle weapon |
 | Space charge against dispersion | ~1,750 km, 19 GeV NERVVS Mk.2 in 5 nT | beyond it the field, not the beam, sets the spot's length |
+| Prompt upset | ~1 Gy, ~750 J/m², est. | beyond it a channel no longer upsets unhardened electronics: ~100,000 km at 19 GeV, ~60,000 km at 15 GeV |
 | Beam shielding | ~few hundred MeV | containment ends; you survive, you do not shield |
 | H⁻ binding | 0.754 eV | strips on gas and on its own bending field; the current ceiling of every neutral battery |
 | Panel phase tolerance | λ/20 across the aperture | coherence lost; the panel becomes N emitters and loses D |
@@ -1346,6 +1368,7 @@ Beam and optical reaction are not design quantities. A beam carries E/c of momen
 | What a neutral beam kills | the crew, through unopened armour |
 | To kill missiles | an optical panel on a closed loop |
 | To blind an aperture | any panel, at any range it can reach |
+| To upset electronics through plate and shutter | one channel: ~100,000 km at 19 GeV, ~60,000 km at 15 GeV, est. (§8.5) |
 | To kill a ship with light | nothing in this book |
 | To kill a rod | nothing in this book |
 | To see a rod | a cryogenic infrared telescope, 6.5 m class, cued by the muzzle flash |
@@ -1467,6 +1490,8 @@ The earlier array, SPECVLVM:
 11. Guidance survival was printed as 283,000 g in one filing and 20,000 g in another. 20,000 g is the survival limit; 283,000 g is the standard launch that no package survives.
 
 12. "A rod cannot be seen." Overstated, and a guideline rather than a rating. It holds for a laser's tracking loop, which has nothing to close on. It does not hold for a cued cryogenic infrared telescope of the 6.5 m class, which can see a cold dart at tens to hundreds of thousands of kilometres, est. Once seen, a rod can be ranged by an active panel. It still cannot be tracked, deflected, or shot down. The words see, range and track are fixed in §1.2.
+
+13. Issue 3 rated electronics only at 100 Gy, which is damage. Delivered inside the 0.8 µs pulse, about 1 Gy upsets them. Issue 4 enters prompt upset as a threshold (§8, §8.5). It reaches about five times further than any effect that ruins.
 
 ---
 
