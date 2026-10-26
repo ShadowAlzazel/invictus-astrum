@@ -126,9 +126,14 @@ blocks = ["picket"]
 words = ["Picket"]
 
 [formation_role.strike]
-label = "Strike, Shock"
+label = "Strike"
 blocks = ["battle", "line"]
 words = ["Strike"]
+
+[formation_role.shock]
+label = "Shock"
+blocks = ["battle", "pd"]
+words = ["Shock"]
 
 [formation_role.vanguard]
 label = "Vanguard"

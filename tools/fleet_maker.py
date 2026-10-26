@@ -14,6 +14,7 @@ import argparse
 import math
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 
@@ -26,6 +27,12 @@ class Fleet:
     def __init__(self, fleet_id: str, name: str, faction: str, profile: float):
         self.fleet_id, self.name, self.faction, self.profile = fleet_id, name, faction, profile
         self.units: list[dict[str, str]] = []
+        self.counters: dict[str, int] = {}
+
+    def next_number(self, label: str) -> int:
+        """Return the next fleet-wide number for this formation name."""
+        self.counters[label] = self.counters.get(label, 0) + 1
+        return self.counters[label]
 
     def unit(self, uid: str, callsign: str, echelon: str, parent: str | None = None,
              ship_class: str | None = None, flag: bool = False) -> None:
@@ -87,33 +94,38 @@ def add_forward(f: Fleet) -> None:
         tf = f"tf{t}"
         f.unit(tf, f"Task Force {t}", "task-force", f.fleet_id)
         for l in range(1, 4):
-            fid = f"{tf}-lf{l}"
-            f.flotilla(fid, f"Line Flotilla {l}", tf, [
-                ("bs", f"Battle Squadron {l}", "papilion", (4, 5)),
-                ("ls", f"Line Squadron {l}", "phalaena", (3, 4)),
-                ("p1", f"Picket Squadron {l}A", "phalaena", (2, 3)),
-                ("p2", f"Picket Squadron {l}B", "phalaena", (2, 3)),
+            number = f.next_number("Line Flotilla")
+            fid = f"{tf}-lf{number}"
+            f.flotilla(fid, f"Line Flotilla {number}", tf, [
+                ("bs", f"Battle Squadron {f.next_number('Battle Squadron')}", "papilion", (4, 5)),
+                ("ls", f"Line Squadron {f.next_number('Line Squadron')}", "phalaena", (3, 4)),
+                ("p1", f"Picket Squadron {f.next_number('Picket Squadron A')}A", "phalaena", (2, 3)),
+                ("p2", f"Picket Squadron {f.next_number('Picket Squadron B')}B", "phalaena", (2, 3)),
             ])
         for n in range(1, 3):
-            f.squadron(f"{tf}-lp{n}", f"TF Picket Squadron {n}", tf, "phalaena", (3, 4))
-        f.squadron(f"{tf}-vs", "Vanguard Squadron", tf, "papilion", (3, 4))
-        f.squadron(f"{tf}-es", "Escort Squadron", tf, "aeshna", (2, 3))
+            number = f.next_number("TF Picket Squadron")
+            f.squadron(f"{tf}-lp{number}", f"TF Picket Squadron {number}", tf, "phalaena", (3, 4))
+        number = f.next_number("Vanguard Squadron")
+        f.squadron(f"{tf}-vs", f"Vanguard Squadron {number}", tf, "papilion", (3, 4))
+        number = f.next_number("Escort Squadron")
+        f.squadron(f"{tf}-es", f"Escort Squadron {number}", tf, "aeshna", (2, 3))
 
-    f.flotilla("battle-flotilla", "Battle Flotilla", f.fleet_id, [
-        ("bs1", "Battle Squadron 1", "papilion", (4, 5)),
-        ("bs2", "Battle Squadron 2", "papilion", (4, 5)),
-        ("ls1", "Line Squadron 1", "phalaena", (3, 4)),
-        ("ls2", "Line Squadron 2", "phalaena", (3, 4)),
-    ])
-    f.flotilla("escort-flotilla", "Escort Flotilla", f.fleet_id, [
-        ("es1", "Escort Squadron 1", "aeshna", (2, 3)),
-        ("es2", "Escort Squadron 2", "aeshna", (2, 3)),
-        ("les1", "Light Escort Squadron 1", "phalaena", (3, 5)),
-        ("les2", "Light Escort Squadron 2", "phalaena", (3, 5)),
-    ])
+    battle_squadrons = []
+    for slot in range(1, 3):
+        battle_squadrons.append((f"bs{slot}", f"Battle Squadron {f.next_number('Battle Squadron')}", "papilion", (4, 5)))
+    for slot in range(1, 3):
+        battle_squadrons.append((f"ls{slot}", f"Line Squadron {f.next_number('Line Squadron')}", "phalaena", (3, 4)))
+    f.flotilla("battle-flotilla", "Battle Flotilla", f.fleet_id, battle_squadrons)
+    escort_squadrons = []
+    for slot in range(1, 3):
+        escort_squadrons.append((f"es{slot}", f"Escort Squadron {f.next_number('Escort Squadron')}", "aeshna", (2, 3)))
+    for slot in range(1, 3):
+        escort_squadrons.append((f"les{slot}", f"Light Escort Squadron {f.next_number('Light Escort Squadron')}", "phalaena", (3, 5)))
+    f.flotilla("escort-flotilla", "Escort Flotilla", f.fleet_id, escort_squadrons)
     f.unit("fleet-picket-group", "Fleet Picket Group", "group", f.fleet_id)
     for n in range(1, 4):
-        f.squadron(f"fleet-picket-{n}", f"Fleet Picket Squadron {n}", "fleet-picket-group", "phalaena", (3, 4))
+        number = f.next_number("Fleet Picket Squadron")
+        f.squadron(f"fleet-picket-{number}", f"Fleet Picket Squadron {number}", "fleet-picket-group", "phalaena", (3, 4))
     f.squadron("strike-squadron", "Strike Squadron", f.fleet_id, "papilion", (5, 5))
     add_auxiliaries(f, "aux", f.fleet_id, tender=(12, 16), repair=(2, 2), watch=(5, 6), patrol=(8, 12))
 
@@ -135,7 +147,8 @@ def add_auxiliaries(f: Fleet, prefix: str, parent: str, tender: tuple[int, int],
             size = 2 if total == 4 else 3 if total > 3 else total
             groups.append(size)
             total -= size
-        for squadron_no, size in enumerate(groups, 1):
+        for size in groups:
+            squadron_no = f.next_number(f"{label} Squadron")
             sid = f"{prefix}-{slug}-{squadron_no}"
             f.unit(sid, f"{label} Squadron {squadron_no}", "squadron", prefix)
             for hull in range(1, size + 1):
@@ -148,41 +161,45 @@ def add_reserve(f: Fleet) -> None:
     # Task forces are organizational garden formations; normally one is lent forward.
     for n in range(1, 4):
         f.unit(f"task-force-{n}", f"Reserve Task Force {n} (Garden)", "task-force", f.fleet_id)
-    for flot in range(1, 3):
+    for _ in range(1, 3):
+        flot = f.next_number("Picket Flotilla")
         fid = f"picket-flotilla-{flot}"
         f.unit(fid, f"Picket Flotilla {flot} (Garden)", "flotilla", f.fleet_id)
         for s in range(1, 3):
-            f.squadron(f"{fid}-line-{s}", f"Line Squadron {s}", fid, "phalaena", (4, 5))
+            number = f.next_number("Line Squadron")
+            f.squadron(f"{fid}-line-{number}", f"Line Squadron {number}", fid, "phalaena", (4, 5))
         for s in range(1, 4):
-            f.squadron(f"{fid}-picket-{s}", f"Picket Squadron {s}", fid, "phalaena", (2, 3))
-    f.flotilla("escort-flotilla", "Escort Flotilla (Garden)", f.fleet_id, [
-        ("es1", "Escort Squadron 1", "aeshna", (2, 3)),
-        ("es2", "Escort Squadron 2", "aeshna", (2, 3)),
-        ("les1", "Light Escort Squadron 1", "phalaena", (3, 5)),
-        ("les2", "Light Escort Squadron 2", "phalaena", (3, 5)),
-    ])
+            number = f.next_number("Picket Squadron")
+            f.squadron(f"{fid}-picket-{number}", f"Picket Squadron {number}", fid, "phalaena", (2, 3))
+    reserve_escorts = []
+    for slot in range(1, 3):
+        reserve_escorts.append((f"es{slot}", f"Escort Squadron {f.next_number('Escort Squadron')}", "aeshna", (2, 3)))
+    for slot in range(1, 3):
+        reserve_escorts.append((f"les{slot}", f"Light Escort Squadron {f.next_number('Light Escort Squadron')}", "phalaena", (3, 5)))
+    f.flotilla("escort-flotilla", "Escort Flotilla (Garden)", f.fleet_id, reserve_escorts)
     f.unit("fleet-picket-group", "Fleet Picket Group", "group", f.fleet_id)
     for n in range(1, 4):
-        f.squadron(f"tf-picket-{n}", f"TF Picket Squadron {n}", "fleet-picket-group", "phalaena", (3, 4))
+        number = f.next_number("TF Picket Squadron")
+        f.squadron(f"tf-picket-{number}", f"TF Picket Squadron {number}", "fleet-picket-group", "phalaena", (3, 4))
 
     old = "old-forest-tf"
     f.unit(old, "Old Forest Task Force", "task-force", f.fleet_id)
-    f.flotilla("old-forest-tf-old-line", "Old Line Flotilla", old, [
-        ("bs1", "Battle Squadron 1", "yggdrasil", (4, 5)),
-        ("bs2", "Battle Squadron 2", "yggdrasil", (4, 5)),
-        ("em1", "Emitter Squadron 1", "holzweiber", (4, 5)),
-        ("em2", "Emitter Squadron 2", "holzweiber", (4, 5)),
-    ])
-    f.flotilla("old-forest-tf-screen", "Screen Flotilla", old, [
-        ("screen1", "Screen Squadron 1", "holzweiber", (4, 5)),
-        ("screen2", "Screen Squadron 2", "holzweiber", (4, 5)),
-        ("screen3", "Screen Squadron 3", "holzweiber", (4, 5)),
-        ("picket1", "Picket Squadron 1", "dryad", (2, 3)),
-        ("picket2", "Picket Squadron 2", "dryad", (2, 3)),
-    ])
-    f.flotilla("old-forest-tf-dryad-picket", "Dryad Picket Flotilla", old, [
-        (f"picket{s}", f"Picket Squadron {s}", "dryad", (2, 3)) for s in range(1, 6)
-    ])
+    old_line_squadrons = []
+    for slot in range(1, 3):
+        old_line_squadrons.append((f"bs{slot}", f"Battle Squadron {f.next_number('Battle Squadron')}", "yggdrasil", (4, 5)))
+    for slot in range(1, 3):
+        old_line_squadrons.append((f"em{slot}", f"Emitter Squadron {f.next_number('Emitter Squadron')}", "holzweiber", (4, 5)))
+    f.flotilla("old-forest-tf-old-line", "Old Line Flotilla", old, old_line_squadrons)
+    screen_squadrons = []
+    for slot in range(1, 4):
+        screen_squadrons.append((f"screen{slot}", f"Screen Squadron {f.next_number('Screen Squadron')}", "holzweiber", (4, 5)))
+    for slot in range(1, 3):
+        screen_squadrons.append((f"picket{slot}", f"Picket Squadron {f.next_number('Picket Squadron')}", "dryad", (2, 3)))
+    f.flotilla("old-forest-tf-screen", "Screen Flotilla", old, screen_squadrons)
+    dryad_squadrons = []
+    for slot in range(1, 6):
+        dryad_squadrons.append((f"picket{slot}", f"Picket Squadron {f.next_number('Picket Squadron')}", "dryad", (2, 3)))
+    f.flotilla("old-forest-tf-dryad-picket", "Dryad Picket Flotilla", old, dryad_squadrons)
     add_auxiliaries(f, "aux", f.fleet_id, tender=(12, 16), repair=(2, 2), watch=(5, 6), patrol=(8, 12))
 
 
@@ -195,17 +212,34 @@ def main() -> int:
     parser.add_argument("--profile", type=float, default=0.0, metavar="0..1",
                         help="Interpolate between low (0) and high (1) counts; default: 0")
     parser.add_argument("--output", type=Path, help="Output path (default: data/fleets/<id>.toml)")
-    parser.add_argument("--force", action="store_true", help="Replace an existing output file")
+    overwrite_modes = parser.add_mutually_exclusive_group()
+    overwrite_modes.add_argument("--force", action="store_true",
+                                 help="Replace an existing output file, including ship callsigns")
+    overwrite_modes.add_argument("--overwrite", action="store_true",
+                                 help="Replace the output while keeping callsigns of ships with matching IDs")
     args = parser.parse_args()
     if not 0.0 <= args.profile <= 1.0:
         parser.error("--profile must be between 0 and 1")
     if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_-]*", args.fleet_id):
         parser.error("--id may contain only letters, numbers, hyphens, and underscores")
     output = args.output or Path(__file__).resolve().parent.parent / "data" / "fleets" / f"{args.fleet_id}.toml"
-    if output.exists() and not args.force:
-        parser.error(f"{output} already exists; choose another --id/path or pass --force")
+    if output.exists() and not (args.force or args.overwrite):
+        parser.error(f"{output} already exists; choose another --id/path, pass --overwrite to keep ship callsigns, or --force to replace all data")
     fleet = Fleet(args.fleet_id, args.name, args.faction, args.profile)
     (add_forward if args.type == "forward" else add_reserve)(fleet)
+    if args.overwrite and output.exists():
+        try:
+            old_data = tomllib.loads(output.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            parser.error(f"cannot preserve callsigns from {output}: {exc}")
+        old_callsigns = {
+            unit["id"]: unit["callsign"]
+            for unit in old_data.get("unit", [])
+            if unit.get("echelon") == "ship" and unit.get("id") and unit.get("callsign")
+        }
+        for unit in fleet.units:
+            if unit["echelon"] == "ship" and unit["id"] in old_callsigns:
+                unit["callsign"] = old_callsigns[unit["id"]]
     fleet_text = fleet.render()
     ids = [u["id"] for u in fleet.units] + [args.fleet_id]
     if len(ids) != len(set(ids)):

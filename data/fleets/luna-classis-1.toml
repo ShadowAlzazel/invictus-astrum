@@ -9,6 +9,8 @@ name = "Luna Classis I"
 faction = "avc"
 notes = "Task Forces 1 to 3, the Luna Strike Squadron, and the Classis's tenders and cutters."
 
+# Names to add; Columbina/Iuno
+
 # ---- friendly: one task force element, in flights, out of plane over Earth --------------------------
 
 [[unit]]
@@ -1126,7 +1128,7 @@ class = "papilion"
 
 [[unit]]
 id = "luna-strike-2"
-callsign = "Yahciyo Runami"
+callsign = "Yachiyo Runami"
 affiliation = "friend"
 echelon = "ship"
 formation = "luna-strike"
