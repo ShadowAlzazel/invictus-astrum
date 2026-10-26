@@ -40,8 +40,9 @@ def test_a_node_is_left_from_the_next_tick_and_after_its_wait():
 
 def test_the_spinal_loop_closes_fires_each_cycle_and_is_paced(tmp_path):
     """The root's map, flown at bogeys too: she closes to station at her spinal battery's envelope,
-    fires it once a cycle (each shot a WeaponEngageOrder in the book, logged by the combat book),
-    holding station between. Looked at a quarter of the way in while she closes, every tick once there."""
+    fires it once it has cycled and the map comes round to it (each shot a WeaponEngageOrder in the
+    book, logged by the combat book; each salvo resolved, on her spine), holding station between.
+    Looked at a quarter of the way in while she closes, every tick once there."""
     c, world = _app(tmp_path)
     fleet = world.fleet(world.scenarios["sol-demo"])
     t = fleet.t0 + 600
@@ -60,8 +61,12 @@ def test_the_spinal_loop_closes_fires_each_cycle_and_is_paced(tmp_path):
     path = [p.node for p in cap.machines[i].history]
     assert path[path.index("close"):path.index("close") + 5] == ["close", "fire", "await", "hold", "await"]
     shots = [e for e in fleet.combat.log if e.ship == i]
-    gaps = np.diff([e.t for e in shots])
-    assert len(shots) > 100 and gaps.min() >= world.minerva.cycle_s - 1e-6 and np.median(gaps) == world.minerva.cycle_s
+    gaps, w = np.diff([e.t for e in shots]), fleet.combat.weapon(i, "spinal")
+    assert w.interval_s == 10 and w.salvo_channels == 36                 # an AESHNA: six PICKET stacks, together
+    assert len(shots) > 100 and gaps.min() >= w.interval_s - 1e-6
+    assert np.median(gaps) == 2 * world.minerva.engaged_s                # (hold, await, hold: a tick each)
+    fired = [e for e in shots if e.what == "fired"]
+    assert len(fired) >= 0.99 * len(shots) and np.mean([e.result["hits"] for e in fired]) > 35    # 0.22 walls at 1,394 km
     assert {(e.weapon, e.kind) for e in shots} == {("spinal", "energy")} and all(e.targets == (fleet.c.row["ghost-1"],) for e in shots)
     assert len(_ai(fleet, ("fire",))) == len(shots) and fleet.c.stand[i] == pytest.approx(0.9 * 1550e3)
     assert n < 5000                                   # 44 h at 10 s would be 15,840

@@ -44,8 +44,9 @@ def test_only_an_admin_edits_and_a_bad_edit_is_undone(data):
             return {"cookie": f"astrum_session={r.cookies['astrum_session']}"}
         fab, hal = signed("Fabian"), signed("Halsey")
         listed = c.get("/api/fleets", headers=hal).json()
-        assert not listed["admin"] and {f["id"]: f["ships"] for f in listed["fleets"]} == {"jupiter-home": 45, "luna-classis-1": 106}
-        assert listed["fleets"][0]["scenarios"] == [{"id": "sol-demo", "placed": 45}]
+        assert not listed["admin"] and {f["id"]: f["ships"] for f in listed["fleets"]} == {"jupiter-home": 45, "luna-classis-1": 106,
+                                                                                          "alcyone-classis-2": 200, "ares-classis-1": 204}
+        assert next(f for f in listed["fleets"] if f["id"] == "jupiter-home")["scenarios"] == [{"id": "sol-demo", "placed": 45}]
         assert c.put("/api/fleets/jupiter-home", json={"units": {"jove-2": {"callsign": "Wraith"}}}, headers=hal).status_code == 403
         r = c.put("/api/fleets/jupiter-home", json={"units": {"jove-2": {"callsign": "Wraith"}}}, headers=fab)
         assert r.status_code == 200 and next(u for u in r.json()["units"] if u["id"] == "jove-2")["callsign"] == "Wraith"

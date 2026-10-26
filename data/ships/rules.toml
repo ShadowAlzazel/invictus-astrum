@@ -5,6 +5,7 @@
 [rate.line]
 label = "Line rate"
 half_beam_m = 45                     # TELVM §1.1: sets the hull's capacitance, so the charge a salvo leaves
+citadel_length_m = 200               # TELVM §1.3.4: the line-rate citadel, 200 × 90 m (a class's layout may say)
 commanded_by = "a Commander"
 hands = "about five hundred, in ten serving cohorts and an eleventh at depot"
 covers = "ships of the line, battlecruisers and cruisers"
@@ -12,6 +13,7 @@ covers = "ships of the line, battlecruisers and cruisers"
 [rate.frigate]
 label = "Frigate"
 half_beam_m = 25                     # picket rate
+citadel_length_m = 150               # TELVM §1.3.4: the picket-rate citadel, 150 × 50 m
 commanded_by = "a Captain"
 hands = "fewer"
 covers = "the frigates; the most independent posting below flag rank"
@@ -154,4 +156,17 @@ hold_s = 3600        # ... and after this long, dropped
 vigils = ["salticidae"]
 fast = 1.0
 slow = 0.3
+
+# ---- a salvo: where a stack's channels land (astrum/salvo.py) --------------------------------------
+# TORMENTA §4.7's spot: space charge from the muzzle (r'' = K/r, solved, from a quarter of the
+# aperture) and the ambient field's streak; it gives §4.8's table. TELVM §1.3: the ship's aim θ moves
+# the whole pattern together, each channel scatters about it by the stack rating. A salvo lands
+# where it lands; a channel hits if it lands on the target's presented size (s = k·√(L·W),
+# foreshortened by her aspect), and the per-salvo chance on a line citadel is §1.3.3's
+# 1 - exp(-(s/θR)²): ~63% at the wall, ~22% at twice it.
+[salvo]
+field_nt = 5.0                       # TELVM §1.2: the standard transverse field
+stack_rating_urad = 0.3              # TELVM §1.2: how closely a stack's channels land on one another
+muzzle_share = 0.25                  # est., TORMENTA §4.7: the muzzle beam radius, of the aperture
+size_k = { value = 0.479, est = true, note = "TELVM §1.3.4's sizes over √(L·W): 64.3, 41, 186 m for 200×90, 150×50, 500×300" }
 

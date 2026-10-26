@@ -425,12 +425,14 @@
             {#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></dd>
           {#if eng.minerva}<dt class="sub" title="Her ship AI: out of combat at her ReadyStance, or engaged in her profile's map (Fleet command, Combat profiles)">MINERVA</dt>
             <dd class="sub" class:gq={eng.minerva.engaged}>{eng.minerva.engaged ? eng.minerva.label : 'ready'} · after: {eng.after}</dd>{/if}
+          {#if eng.combat?.last}{@const l = eng.combat.last}<dt class="sub" title="Her last shot, as the combat book resolved it: channels on her target's presented silhouette, and of those on her citadel (a hit does nothing yet)">Last shot</dt>
+            <dd class="sub">{eng.combat.weapons.find((w) => w.id === l.weapon)?.label ?? l.weapon} · {l.what === 'fired' && l.channels ? `${l.hits}/${l.channels} hit, ${l.citadel} citadel at ${km(l.range_km)}` : l.what}{state ? ` · ${age(state.t - l.t)} ago` : ''}</dd>{/if}
           <dt title="Her crew's tier">Crew</dt><dd>{eng.veterancy ?? 'rated'}</dd>
         </dl>
         {/if}
         {#if shut.engage_open && arms.length}
         <dl class="tight arms">
-          {#each arms as w}<dt class:off={w.state && w.state !== 'ready'} title={`${w.kind ?? ''}${w.state ? `: ${w.state}` : ''}`}>{w.label}{#if w.count}<span class="dim">&nbsp;×{w.count}</span>{/if}</dt>
+          {#each arms as w}<dt class:off={w.state && w.state !== 'ready'} title={`${w.kind ?? ''}${w.state ? `: ${w.state}` : ''}${w.salvo ? `; ${w.salvo} channels a salvo, every ${w.interval_s} s` : ''}`}>{w.label}{#if w.count}<span class="dim">&nbsp;×{w.count}</span>{/if}</dt>
             <dd>{#each w.reach as r, k}<span title={r.note}>{k ? ' · ' : ''}{r.what} {km(r.km)}</span>{:else}<span class="dim">{w.kind ?? ''}</span>{/each}</dd>{/each}
         </dl>
         {/if}

@@ -201,7 +201,7 @@ class Armoury:
                   "trim": (num(ch, "trim_t") or 0) * n, "pulse_store": num(s, "pulse_store_t") or 0}
         return {"id": sid, "name": s["name"], "channel": s["channel"], "channel_name": ch["name"], "channels": n,
                 "length_m": length, "energy_gev": gev, "gamma": gev * self.k["gamma_per_gev"],
-                "spread_pct": num(ch, "spread_pct"), "current_ka": num(ch, "current_ka"),
+                "spread_pct": num(ch, "spread_pct"), "current_ka": num(ch, "current_ka"), "aperture_mm": num(ch, "aperture_mm"),
                 "pulse_mc": q_mc, "pulse_mj": pulse_mj, "salvo_mj": salvo, "drawn_mj": drawn,
                 "heat_mj": drawn - salvo, "charge_mc": q_mc * n, "cycle_s": num(s, "cycle_s"),
                 "trim_deg": num(s, "trim_deg"), "masses_t": masses, "mass_t": sum(masses.values()),

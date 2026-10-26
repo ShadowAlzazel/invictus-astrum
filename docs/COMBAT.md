@@ -131,10 +131,38 @@ makes, at each ReadyStance.
 
 | In sol-demo | |
 |---|---|
-| TF-3 escort, Aggressive, Standing orders (bogeys too), GHOST 1 sent at her | closes for 40 h, station at 1,395 km (0.9 of her spinal battery's 1,550 km at a rated crew), then fires it every 60 s (`cycle_s`, TEMPORARY) |
+| TF-3 escort, Aggressive, Standing orders (bogeys too), GHOST 1 sent at her | closes for 40 h, station at 1,395 km (0.9 of her spinal battery's 1,550 km at a rated crew), then fires it every 20 s: her PICKET stacks cycle in 10 s, the root's map comes round every other tick (hold, await) |
 | the same, looked at | 3,910 pictures over 44 h, 10.3 s (each tick: 17,230, 51.5 s) |
 | Search and Destroy | passes GHOST 1 at 708 km after 32.6 h, one correction (her reach 40,000 km) |
 | a day of the map's clock (the sweep caught up, as the map's own pictures have it), 1b / MINERVA / now | hunting 7.78 / 1.08 / 0.77 ms a picture; quiet 7.49 / 1.09 / 0.25 ms |
+
+**3, groundwork: the salvo** (`astrum/salvo.py`, `[salvo]` in `data/ships/rules.toml`). A fire
+order of a stack battery is resolved where it is fired: out of arc if her spine is more than the
+stack's trim (2°) off the aim; else the pattern lands about the aim point by her crew's aim
+(σ = θR/√8 a side, drawn once a salvo, so that P = 1 − e^−(s/θR)², TELVM §1.3.3), each channel
+about the pattern by the stack rating (0.3 µrad), and the light time's lead on the relative motion
+moves the point aimed at off her. A channel hits if it lands on her presented silhouette, an
+ellipse of her length and beam (wings spread or folded) foreshortened by her aspect and scaled to
+the canon's size (`size_k` 0.479, est., from TELVM §1.3.4), and the citadel's likewise. The event
+carries channels, hits, citadel hits, range, miss, one channel's spot and fluence; the damage
+function is handed it and does nothing. The draw is seeded by the shot, so a re-fly lands it the
+same. A battery fires again once cycled: stacks together, their cycle; alternating, the cycle over
+their count. The CAPTAIN turns her spine on the target before she fires, and holds her fire while
+she burns off it. A salvo costs 54 µs.
+
+| PAPILION's battery (8 channels a salvo, 6.5 µrad) on a PHALAENA, broadside (66 m, wall 10,211 km) | 1,000 km | 5,000 | 10,000 | 20,000 |
+|---|---|---|---|---|
+| canon P (TELVM §1.3.3) | 100% | 98.5% | 64.7% | 22.9% |
+| hits a channel, as built | 100% | 90.0% | 56.1% | 21.6% |
+| citadel hits a salvo | 8.0 | 5.5 | 2.5 | 0.8 |
+| spot (TORMENTA §4.8: 0.17 m, 46×6.7 m) | 0.20×0.17 m | 3.1×1.3 | 11.8×3.0 | 46.0×6.7 |
+| fluence, MJ/m² | 833 | 7.1 | 0.83 | 0.094 |
+
+End on (38 m, wall 5,895 km) a channel hits 75.5 / 30.5 / 8.3% at 5,000 / 10,000 / 20,000 km
+(canon 75.1 / 29.4 / 8.3%). In the fight above every salvo lands all 36 channels (0.22 walls).
+Live, the CAPTAIN is asked as the map's clock is pictured (at most every 0.25 s of the wall): at
+10 min/s, a shot every 5 to 6 min of game. **Open:** what a hit does (slate 3); the higher-warp
+salvo (a minute's three salvos at once), and the CAPTAIN at the flight's front edge (1c).
 
 A pass is dear: half the way at her cruise g is about 367 km/s against GHOST 1 from 27 Gm. Kept
 for now; how hard she burns into a pass is to be a setting of her profile's.

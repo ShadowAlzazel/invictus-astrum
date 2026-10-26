@@ -396,9 +396,14 @@ class Captain:
                 if not sp.burning[i] and not float(np.nan_to_num(sp.dir[i]) @ u) >= math.cos(math.radians(FACE_DEG)):
                     out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"face the {who}"}, source="ai",
                                      order_id=self._oid(sid, t), by=sid))
-            elif a == "fire" and not gone and w is not None and t - m.last_shot(w.id) >= self.minerva.cycle_s - 1e-6:
+            elif a == "fire" and not gone and w is not None and t - m.last_shot(w.id) >= (w.interval_s or self.minerva.cycle_s) - 1e-6:
                 u = sp.reckoned(j) - sp.r[i]
                 u = u / max(np.linalg.norm(u), 1.0)
+                if w.stack is not None and float(np.nan_to_num(sp.dir[i]) @ u) < math.cos(math.radians(w.stack.trim_deg)):
+                    if sp.burning[i]:                                    # (a stack fires along her spine, within its trim:
+                        continue                                         # burning off it, she holds her fire)
+                    out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"spine on the {who}"}, source="ai",
+                                     order_id=self._oid(sid, t), by=sid))
                 out.append(Order(sid, t, "fire", target={"weapon": w.id, "dir": u.tolist(), "targets": [c.ids[j]],
                                                          "label": f"fire {w.label} at the {who}"},
                                  source="ai", order_id=self._oid(sid, t, "fire"), by=sid))

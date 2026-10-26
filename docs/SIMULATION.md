@@ -257,7 +257,16 @@ but those already given off it keep it. `POST /api/bullseyes`, `DELETE /api/bull
 
 ## Combat: the ship AI
 
-No weapon does harm yet: a shot is logged, and the damage function does nothing. Every ship's AI is
+No weapon does harm yet: a shot is logged, and the damage function is handed it and does nothing.
+A spinal battery's salvo is resolved where it is fired (`astrum/salvo.py`, `[salvo]` in
+`data/ships/rules.toml`): along her spine, within the stack's trim (2°), else out of arc; her crew's
+aim (TELVM §1.3) moves the whole pattern, the stack rating scatters the channels, and each channel
+hits if it lands on the target's silhouette as presented to her (her length and beam foreshortened
+by her aspect, at the canon's size), and of those, her citadel. Each channel's spot and fluence are
+TORMENTA §4.7's (space charge and the ambient field). A battery fires again once its stacks have
+cycled (a LINE stack 20 s, a PICKET 10 s; stacks that alternate, the cycle over their count).
+
+Every ship's AI is
 one automaton, her **MINERVA** (`astrum/shipai`, docs/COMBAT.md): out of combat she stands in a
 **ReadyStance** (`data/minerva.toml`: her readiness, what takes her into combat, what she does
 after); in combat she flies her **combat profile**'s engagement (`data/profiles.toml`: nodes, what

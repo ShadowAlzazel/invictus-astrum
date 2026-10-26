@@ -147,6 +147,7 @@ class ShipRules:
     signature: dict = field(default_factory=dict)
     detection: dict = field(default_factory=dict)
     relay: dict = field(default_factory=dict)
+    salvo: dict = field(default_factory=dict)
 
     @staticmethod
     def load(path: Path) -> "ShipRules":
@@ -154,7 +155,8 @@ class ShipRules:
             d = tomllib.load(f)
         effects = dict(sorted(d.get("effect", {}).items(), key=lambda kv: kv[1].get("order", 99)))
         return ShipRules(d.get("rate", {}), d.get("lineage", {}), d.get("crew", {}), d.get("wall", {}), effects,
-                         d.get("drive", {}), d.get("signature", {}), d.get("detection", {}), d.get("relay", {}))
+                         d.get("drive", {}), d.get("signature", {}), d.get("detection", {}), d.get("relay", {}),
+                         d.get("salvo", {}))
 
 
 @dataclass

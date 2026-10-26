@@ -6,7 +6,7 @@
 stance = "hold"           # the ReadyStance of a ship none is ordered or written for
 block_s = 600             # est.: a ship at a ReadyStance looks for combat once a block (the flight's)
 engaged_s = 10            # est.: while any ship is engaged, her side is pictured this often (game s)
-cycle_s = 60              # TEMPORARY: a battery fires again after this long; no canon cycle time yet
+cycle_s = 60              # TEMPORARY: a battery whose cycle the data does not state (a stack's is its cycle_s)
 station_share = 0.9       # est.: station on a target is taken this far into a battery's envelope
 
 # A ReadyStance:
