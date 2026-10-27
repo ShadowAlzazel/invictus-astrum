@@ -57,3 +57,20 @@ def arrivals_stopped(monkeypatch):
     yield
     for a in made:
         a.stop()
+
+
+@pytest.fixture(autouse=True)
+def timelines_let_go(monkeypatch):
+    """Every fleet a test keeps a timeline for holds some 150 MB (its rows and their room, a day
+    and a half of samples); few tests close their app, and FastAPI keeps every app's routes, so the
+    fleets would all stay. Each timeline is let go when its test ends."""
+    from astrum.sim import Fleet
+    made, real = [], Fleet.keep_timeline
+
+    def keep(self):
+        made.append(self)
+        return real(self)
+    monkeypatch.setattr(Fleet, "keep_timeline", keep)
+    yield
+    for f in made:
+        f.timeline = None

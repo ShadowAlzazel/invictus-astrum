@@ -348,13 +348,19 @@ and drawn straight between.
 **The timeline.** The compiled step writes every flying row's state at every whole minute
 (`astrum/timeline.py`); what it does not fly is written in one more call (`kernels.record`): station
 ships by Hermite between their places, everything else as it stands. It keeps 2048 samples (a day
-and a half). Each change to what a row was given is a **version** (`Versions`), kept with its moment,
+and a half), for the fleet's rows and room for 256 more (est.), taken once at the start: a row is 344
+KB of it, and room past that is every sample copied. The rows past the ships are formations' leads,
+one for each order to a formation (TF-2's CAPTAIN makes some 130 a day in a battle); a lead given
+up (her flight over, or lost) gives her row to the next once she is older than anything looks or
+flies back (the timeline's span, the checkpoints'), so the room is not outgrown. Each change to what
+a row was given is a **version** (`Versions`), kept with its moment,
 where she was then, and what it says. A picture at any moment is read off the two, not flown
 (`Fleet.picture`): the version she was on then, her position and velocity by cubic Hermite between
 the nearest known states (the samples, or where she was as a version began).
 
 **The order book.** Every order is a row of the fleet's order book (`astrum/orders.py`): what was
-given is said once (`Given`), and each ship it goes to has an event, kept in time order. A ship
+given is said once (`Given`), and each ship it goes to has an event, kept in time order (and the
+active and passive ones apart the same way, so who pings is read off those few: `Fleet.pinging`). A ship
 flying an order points at her event, so a checkpoint is a copy of arrays (one every block, kept a day
 and a half), and what a checkpoint has given is every event before its moment: an order given into
 the past cannot shift it.

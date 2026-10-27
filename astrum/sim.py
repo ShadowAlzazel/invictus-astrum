@@ -79,7 +79,7 @@ from .orders import (ACTIVE, BURN, COAST, COLD, FACE, FIRE, FREE as GO_FREE, GOT
 from .zones import classify
 from .detect import Sensors, Sweeper
 from .signature import Signature
-from .timeline import FIELDS, MAX_SAMPLES, Timeline, Versions
+from .timeline import FIELDS, MAX_SAMPLES, ROOM, Timeline, Versions
 
 STATION_S = 300.0              # station ships pay for their places on a grid this fine (finer changes the bill by < 0.2%)
 STATION_AHEAD_S = 7200.0       # ... worked out this far ahead at once: a place moves by the clock alone
@@ -103,6 +103,7 @@ STANDOFF_BODY_R = 3.0          # ... and of a body, in its radii (at least 1,000
 STANDOFF_PULL = 0.5            # ... and where its pull is at most this share of what she holds
 CHECKPOINT_S = 600.0           # a checkpoint every block: an order flies again from at most this far before it
 CHECKPOINT_KEEP_S = 36 * 3600.0  # kept this far behind the fleet (a day behind the clock, and the run-ahead's most)
+LEAD_KEEP_S = max(CHECKPOINT_KEEP_S, MAX_SAMPLES * TIMELINE_S)   # a dead lead's row is given again after this
 CHUNK_S = 0.03                 # wall seconds the fleet runs before letting go of its lock
 LEAD_MARGIN = 0.95             # a formation's lead holds this share of its slowest ship's most: the rest keeps places
 FORM_T_MIN_S = 120.0           # a ship in formation closes her error on her place over at least this ...
@@ -297,6 +298,7 @@ class Fleet:
         self.versions = Versions()                 # every change to what a row was given, from when (astrum/timeline.py)
         self.mending: Mend | None = None           # an order's rows flying again, partway (command)
         self._spare: list[int] = []                # leads' rows an order set back for good: the next leads take them
+        self._dead: dict[int, float] = {}          # leads' rows -> when each was given up (the next leads take them, later)
         self._now = t0                             # the moment what is being changed changes
         self._relays: dict[str, object] = {}       # each view's chain of command for its reports (astrum/relay.py)
         self.registry = registry
@@ -317,7 +319,7 @@ class Fleet:
         """Keep every row's state a minute apart from here on (astrum/timeline.py)."""
         with self.lock:
             if self.timeline is None:
-                self.timeline = Timeline(self.t0, TIMELINE_S, self.c.cap + 64)    # room for leads to come
+                self.timeline = Timeline(self.t0, TIMELINE_S, self.c.cap + ROOM)    # room for leads to come
                 k = math.floor(self.timeline.k_of(self.t) + 1e-9)
                 if abs(self.timeline.time(k) - self.t) < 1e-6:
                     self._record(self.timeline.open(k, k), np.arange(self.c.n), flown=np.zeros(0, dtype=np.int64), whole=True)
@@ -398,8 +400,10 @@ class Fleet:
         """Which rows sweep their active sensors at t: as each one's last active or passive order
         before it says (none: passive). Read off the book, so nothing is flown for it."""
         out = np.zeros(len(self.c.row), dtype=bool)
-        ships, last = self.book.last_of((ACTIVE, PASSIVE), t)
-        out[ships] = self.book.kind[last] == ACTIVE
+        B = self.book
+        q = B.pings[: B.pings_before(t)][::-1]
+        ships, first = np.unique(B.ship[q], return_index=True)
+        out[ships] = B.kind[q[first]] == ACTIVE
         return out
 
     def quarters_at(self, t: float) -> np.ndarray:
@@ -414,8 +418,7 @@ class Fleet:
         active or passive order between taken from its moment on."""
         out = np.repeat(self.pinging(float(ts[0]))[None], len(ts), axis=0)
         B = self.book
-        q = B.queue[B.before(float(ts[0])):B.before(float(ts[-1]) + 1e-6)]
-        for e in q[np.isin(B.kind[q], (ACTIVE, PASSIVE))]:
+        for e in B.pings[B.pings_before(float(ts[0])):B.pings_before(float(ts[-1]) + 1e-6)]:
             out[np.searchsorted(ts, B.at[e] + 1e-6):, B.ship[e]] = B.kind[e] == ACTIVE
         return out
 
@@ -456,7 +459,7 @@ class Fleet:
         tl, c = self.timeline, self.c
         if tl is None or not len(slots) or not len(scope):
             return
-        tl.grow(c.cap)
+        tl.grow(c.n)
         still = scope if whole else np.setdiff1d(scope, flown)           # (her heat through the block is _heat's)
         held = still[c.mode[still] == STATION] if T0 is not None else still[:0]
         k1 = math.floor(tl.k_of(T0) + 1e-9) + 1 if T0 is not None else 0
@@ -929,7 +932,7 @@ class Fleet:
         c, tl = self.c, self.timeline
         slots = np.zeros(0, dtype=np.int64)
         if tl is not None and not steer_only:
-            tl.grow(c.cap)
+            tl.grow(c.n)
             k1, k2 = math.floor(tl.k_of(T0) + 1e-9) + 1, math.floor(tl.k_of(T1) + 1e-9)
             slots = tl.open(k1, k2)
         if not units:
@@ -969,6 +972,20 @@ class Fleet:
                 c.mode[L.row], c.goal[L.row] = DEAD, False
                 self._touch(L.row)
                 del self.leads[oid]
+                self._dead[L.row] = self._now
+
+    def _old_lead(self, t: float) -> int | None:
+        """A lead's row given up (her flight over, or lost) since before anything looks or flies back
+        from t (the timeline's day and a half, the checkpoints' kept span): for a new lead, so a long
+        war of orders to formations does not grow the fleet. None if none is."""
+        c, live = self.c, {L.row for L in self.leads.values()}
+        for j, gone in self._dead.items():
+            if gone < t - LEAD_KEEP_S and j < c.n and c.kind[j] == LEAD and j not in live:
+                del self._dead[j]
+                self.versions.cut(j, 0)
+                c.lead[: c.n][c.lead[: c.n] == j] = -1            # (ships that flew with her, long since)
+                return j
+        return None
 
     def _settle(self, t: float, scope: np.ndarray | None = None) -> None:
         """What happened in the block, put in words: ships that arrived take station; a formation
@@ -984,6 +1001,7 @@ class Fleet:
                 c.goal[i] = False
                 self._touch(int(i))
                 self.leads.pop(c.ids[i], None)
+                self._dead[int(i)] = ta
             else:
                 self._arrive(i, ta, c.r[i].copy())
         mine = c.goal[: c.n] & (c.mode[: c.n] == FREE)
@@ -1109,6 +1127,7 @@ class Fleet:
             c.mode[i], c.goal[i] = DEAD, False
             self._touch(i)
             self.leads.pop(c.ids[i], None)
+            self._dead[i] = self._now
         else:
             self.findings.append(f"{c.ids[i]}: lost the target of her order")
             c.goal[i], c.order[i] = False, -1
@@ -1774,7 +1793,7 @@ class Fleet:
                 slot = B.slot[e]
                 L = self.leads.get(g.oid)
                 if L is None or B.at[c.order[L.row]] != at:
-                    j = c.add(g.oid, LEAD, reuse=self._spare.pop() if self._spare else None)
+                    j = c.add(g.oid, LEAD, reuse=self._spare.pop() if self._spare else self._old_lead(at))
                     c.mode[j], c.r[j], c.v[j], c.t[j], c.order[j], c.nmem[j] = FREE, c.r[i] - slot, c.v[i], at, e, 1
                     c.goal[j], c.gg[j], c.stand[j], c.eta1[j], c.keep[j] = True, g.g, stand, math.inf, c.keep[i]
                     self.leads[g.oid] = L = LeadView(c, j)

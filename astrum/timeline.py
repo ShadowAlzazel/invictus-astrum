@@ -22,6 +22,8 @@ import numpy as np
 from .classis import DEAD
 
 MAX_SAMPLES = 2048                     # a minute apart: a day and a half, back and ahead
+ROOM = 256                             # est.: rows past the fleet's it holds from the start: the leads a day and a half of
+                                       # orders to formations makes (a dead lead's row is given again after that)
 
 FIELDS = {                             # name -> (shape after the row, dtype, empty)
     "r": ((3,), float, math.nan), "v": ((3,), float, 0.0), "prop": ((), float, 0.0), "dvs": ((), float, 0.0),

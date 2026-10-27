@@ -39,13 +39,20 @@ the whole book each block (`Fleet.pinging_many`, a sixth of the sweep in a quiet
    reads a view made at the front edge (the side picture and the columns it needs, as arrays),
    not the fleet: the boundary D needs.
 
-**B. The timeline ahead** (27)
-1. **Dead leads' rows reused.** In 12 h of the Venus battle TF-2's CAPTAIN orders made 66 lead
-   rows and gave none back (`_prune_leads` does not put a row on `_spare`). A lead dead longer
-   than the kept day (the timeline's samples, the checkpoints) gives its row to the next.
-2. **Room sized at the start.** A row is 344 KB of timeline (2,048 samples); a doubling copies
-   every one (236 to 472 rows: 81 MB, 0.5–1 s in one block). Sized for the scenario's formations
-   (a lead each) and a margin, so play does not grow it.
+**B. The timeline ahead** (27). Done 27 October, the same answers (sightings, pictures, orders,
+shots, every row; the golden run). In 12 h of the Venus battle (container): no timeline copied (it
+was 236 to 472 rows, 0.5–1 s in one block), the whole 2,520–2,817 -> 2,031–2,131 ms; the quiet 12 h
+as it was.
+1. **Dead leads' rows reused.** A lead given up (her flight over, or lost) gives her row to the
+   next once she is older than the timeline's span and the checkpoints' (`LEAD_KEEP_S`, 36 h).
+2. **Room sized at the start.** The fleet's rows and 256 more (est.: the battle's lead rows of a
+   day and a half), filled once (about 88 MB more a fleet); past it, copied as before.
+3. **Who pings, off the ping events alone.** The book keeps its active and passive events apart in
+   time order, so `Fleet.pinging` reads those few, not the whole book each block (a quiet 12 h's
+   `_block` 16–17 -> 9 ms).
+
+The tests let each fleet's timeline go at its end (`tests/conftest.py`): FastAPI keeps every app's
+routes, so the suite's fleets all stayed, and 150 MB each ran it out of memory.
 
 **C. The battle tick**
 1. **A setting** (the level's, the host's, as the clock): the engaged ships' tick, 10, 60, 300 or

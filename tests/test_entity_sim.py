@@ -991,6 +991,27 @@ def test_a_formation_ordered_again_and_again_in_the_past_keeps_its_rows():
     assert f.c.n == ships + 5                               # five orders, five leads (it was 62: leads made again each time)
 
 
+def test_a_lead_dead_past_the_kept_day_gives_her_row_to_the_next():
+    """A formation's lead once her flight is over is given up; past the day and a half the fleet
+    keeps (the timeline, the checkpoints), her row is the next lead's, so a long war of orders to
+    formations does not grow the fleet, nor the timeline past its room."""
+    from astrum.app import create_app
+    from astrum.sim import LEAD_KEEP_S
+    from astrum.simhost import give_order
+    world = create_app().state.world
+    f = _demo(world)
+    req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo", "unit": "kiki", "g": 0.3}
+    give_order(world, {**req, "t": f.t0 + 600, "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
+    f.at(f.t0 + 6 * 3600)
+    row, rows = next(iter(f._dead), None), f.c.n
+    assert row is not None and not f.leads                          # there, and her lead given up
+    t = f.t0 + 6 * 3600 + LEAD_KEEP_S + 3600
+    f.at(t)
+    give_order(world, {**req, "t": t, "target": {"bullseye": "burn", "aer": [270, 0, 30000]}})
+    f.at(t + 600)
+    assert f.c.n == rows and next(iter(f.leads.values())).row == row
+
+
 def test_an_order_withdrawn_is_as_if_never_given():
     """An order from the map taken back (Fleet.withdraw): struck from the book, and the ships it
     went to, flown past it, fly again as if it had never been given; a formation's lead gives its

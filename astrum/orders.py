@@ -61,6 +61,8 @@ class OrderBook:
         self.given: list[Given] = []
         self.queue = np.zeros(0, dtype=np.int64)       # events in time order (ties: as given)
         self._qat = np.zeros(0)                        # their moments, for searching
+        self.pings = np.zeros(0, dtype=np.int64)       # the active and passive ones alone, the same way (who pings)
+        self._pat = np.zeros(0)
 
     def add(self, g: Given, ship: int, slot=(0.0, 0.0, 0.0), gid: int | None = None) -> int:
         """An event: g given to the ship at row `ship` (gid: g's row, if it already has one)."""
@@ -80,6 +82,9 @@ class OrderBook:
         k = int(np.searchsorted(self._qat, g.at, side="right"))
         self.queue = np.insert(self.queue, k, e)
         self._qat = np.insert(self._qat, k, g.at)
+        if g.kind in (ACTIVE, PASSIVE):
+            k = int(np.searchsorted(self._pat, g.at, side="right"))
+            self.pings, self._pat = np.insert(self.pings, k, e), np.insert(self._pat, k, g.at)
         return e
 
     def of(self, e: int) -> Given:
@@ -129,7 +134,13 @@ class OrderBook:
         where = np.flatnonzero(np.isin(self.queue, events))
         self.struck[events] = True
         self.queue, self._qat = np.delete(self.queue, where), np.delete(self._qat, where)
+        gone = np.flatnonzero(np.isin(self.pings, events))
+        self.pings, self._pat = np.delete(self.pings, gone), np.delete(self._pat, gone)
         return where
+
+    def pings_before(self, t: float) -> int:
+        """How many active and passive events come before t (as before)."""
+        return int(np.searchsorted(self._pat, t - 1e-6, side="right"))
 
     def given_since(self, t0: float, given: int, ships: np.ndarray) -> np.ndarray:
         """Of the first `given` events of the queue (those a fleet has given), the ones from t0 on
