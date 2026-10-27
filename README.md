@@ -252,7 +252,7 @@ above it comes down to it.
 | `web/` | the map (Svelte + Three.js) |
 | `tools/formation_tf2.py` | lays out the demo's Task Force 2 wedge; edit its numbers and rerun |
 | `tools/formation_tf3.py` | lays out Task Force 3, docked tight around Mars, and the Luna Strike Squadron behind Jupiter |
-| `tools/bench_tactical.py` | the tactical layer at 10 min/s by function calls: flight, pictures, each kind of order |
+| `tools/bench_tactical.py` | the tactical layer at 10 min/s by function calls: flight and its parts as shares, pictures, each kind of order |
 | `tools/fetch_horizons.py` | fills in the major moons' real orbital phases from JPL Horizons |
 
 Edits to `data/` and `style.toml` show on the map within a couple of seconds. See `OVERVIEW.md`
