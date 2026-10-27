@@ -20,6 +20,7 @@ block, for every ship engaging. Neither does anything yet.
 """
 from __future__ import annotations
 
+from bisect import bisect_left, bisect_right, insort
 from dataclasses import dataclass
 
 import numpy as np
@@ -142,7 +143,9 @@ class CombatBook:
             tier = getattr(contacts.get(sid), "veterancy", None) or "rated"
             a = (sc.aim.get(tier) or sc.aim.get("rated")) if sc is not None and sc.aim else None
             self.aim.append(float(a.value) if a is not None and a.value else 6.5)
-        self.log: list[Event] = []
+        self.log: list[Event] = []                       # by time
+        self._mine: dict[int, list[Event]] = {}          # each ship's shots, by time
+        self._shots: dict[tuple, list[float]] = {}       # (ship, weapon id): when it fired, in order
         self.version = 0                     # moves on whenever a ship's combat state or the log changes
 
     def weapon(self, i: int, wid: str) -> Weapon | None:
@@ -187,7 +190,7 @@ class CombatBook:
                                          hull_dir, cold)
                     what = "out of arc" if result is None else "fired"
         ev = Event(t, i, w.id, w.kind, tuple(tg.get("dir") or (0.0, 0.0, 0.0)), targets, lands, what, g.source, result)
-        self.log.append(ev)
+        self._add(ev)
         self.changed()
         if w.kind == ENERGY and what == "fired":
             for k in targets:
@@ -212,18 +215,37 @@ class CombatBook:
         rng = np.random.default_rng(salvo.seed(fleet.scenario.id if fleet.scenario else "", fleet.c.ids[i], w.id, f"{t:.3f}"))
         return salvo.fire(w.stack, w.salvo_channels, d, self.aim[i], sizes, self.rules, rng, salvo.offset(at, aim, axis, los))
 
+    def _add(self, ev: Event) -> None:
+        """A shot into the log and its indices, in time order (one fired into the past falls in place)."""
+        insort(self.log, ev, key=_t)
+        insort(self._mine.setdefault(ev.ship, []), ev, key=_t)
+        insort(self._shots.setdefault((ev.ship, ev.weapon), []), ev.t)
+
     def last_salvo(self, i: int, wid: str, t: float) -> float:
         """When her battery last fired before t (out of arc too: it was fired), else -inf."""
-        return max((e.t for e in self.log if e.ship == i and e.weapon == wid and e.t < t - 1e-9), default=-np.inf)
+        times = self._shots.get((i, wid), ())
+        k = bisect_left(times, t - 1e-9)
+        return times[k - 1] if k else -np.inf
 
     def forget(self, t: float, rows=None) -> None:
         """What happened from t on goes (it is flown again): every shot, or those of the given rows
-        (fired by them, or at them)."""
+        (fired by them, or at them). Only the log from t on is read."""
         rows = None if rows is None else set(int(x) for x in rows)
-        keep = [e for e in self.log if e.t < t - 1e-9 or (rows is not None and e.ship not in rows and not rows & set(e.targets))]
-        if len(keep) != len(self.log):
-            self.log = keep
-            self.changed()
+        k = bisect_left(self.log, t - 1e-9, key=_t)
+        tail = self.log[k:]
+        keep = [e for e in tail if rows is not None and e.ship not in rows and not rows & set(e.targets)]
+        if len(keep) == len(tail):
+            return
+        gone = {id(e) for e in tail} - {id(e) for e in keep}
+        self.log[k:] = keep
+        for s in {e.ship for e in tail if id(e) in gone}:
+            mine = self._mine[s]
+            j = bisect_left(mine, t - 1e-9, key=_t)
+            mine[j:] = [e for e in mine[j:] if id(e) not in gone]
+            for key in [key for key in self._shots if key[0] == s]:
+                times = self._shots[key]
+                times[bisect_left(times, t - 1e-9):] = [e.t for e in mine[j:] if e.weapon == key[1]]
+        self.changed()
 
     def state(self, fleet, i: int, t: float | None = None) -> dict:
         """Her combat state, as the map reads it: at t, her quarters as her last quarters order
@@ -233,8 +255,9 @@ class CombatBook:
                     "salvo": w.salvo_channels if w.stack else None, "interval_s": w.interval_s,
                     "state": "disabled" if c.wdisabled[i] >> w.n & 1 else "damaged" if c.wdamaged[i] >> w.n & 1 else "ready"}
                    for w in (self.weapons[i] if i < len(self.weapons) else [])]
-        mine = [e for e in self.log if e.ship == i and (t is None or e.t <= t + 1e-6)]
-        last = mine[-1] if mine else None
+        mine = self._mine.get(i, [])
+        k = len(mine) if t is None else bisect_right(mine, t + 1e-6, key=_t)
+        last = mine[k - 1] if k else None
         last = None if last is None else {"t": last.t, "weapon": last.weapon, "what": last.what,
                                           "target": fleet.c.ids[last.targets[0]] if last.targets else None,
                                           **({k: last.result[k] for k in ("channels", "hits", "citadel", "range_km", "fluence_mjm2")}
@@ -247,6 +270,10 @@ class CombatBook:
             label = fleet.book.of(ords[k[0]]).target.get("label") if len(k) else None
         return {"quarters": q, "quarters_name": QUARTERS.get(q, ""), "state": label, "damage": float(c.damage[i]), "weapons": weapons,
                 "last": last}
+
+
+def _t(e: Event) -> float:
+    return e.t
 
 
 def damage(fleet, event: Event, target: int, t: float) -> None:

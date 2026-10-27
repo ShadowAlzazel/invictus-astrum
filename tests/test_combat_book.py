@@ -91,3 +91,27 @@ def test_a_salvo_lands_as_the_canon_says():
         R = walls * s / (cb.aim[i] * 1e-6)
         hits = np.mean([salvo.fire(w.stack, 8, R, cb.aim[i], sizes, cb.rules, rng)["hits"] for _ in range(1500)]) / 8
         assert hits == pytest.approx(canon, abs=0.04)
+
+
+def test_the_logs_indices_agree_with_the_log_through_forgets():
+    """A battery's last salvo and a ship's last shot, read off the indices, are what the log says,
+    shots fired into the past and forgets (every ship's, or some rows') among them."""
+    from astrum.combat import Event
+    _, f = _fleet()
+    cb, rng = f.combat, np.random.default_rng(7)
+    for k in range(400):
+        if k % 50 == 49:
+            cb.forget(float(rng.uniform(0, 1000)), None if k % 100 == 99 else [int(x) for x in rng.integers(0, 6, 2)])
+        e = Event(float(rng.uniform(0, 1000)), int(rng.integers(0, 6)), str(rng.choice(["spinal", "optical"])), "energy",
+                  (1.0, 0.0, 0.0), (int(rng.integers(0, 6)),), 0.0, "fired", "ai", None)
+        cb._add(e)
+        assert [x.t for x in cb.log] == sorted(x.t for x in cb.log)
+        for s in range(6):
+            T = float(rng.uniform(0, 1100))
+            for w in ("spinal", "optical"):
+                assert cb.last_salvo(s, w, T) == max((x.t for x in cb.log if x.ship == s and x.weapon == w and x.t < T - 1e-9), default=-np.inf)
+            mine = [x for x in cb.log if x.ship == s and x.t <= T + 1e-6]
+            last = cb.state(f, s)["last"]
+            every = [x for x in cb.log if x.ship == s]
+            assert (last and last["t"]) == (every[-1].t if every else None) and (cb._mine.get(s) or [None])[-1] is (every[-1] if every else None)
+            assert ([x for x in cb._mine.get(s, []) if x.t <= T + 1e-6] == mine)
