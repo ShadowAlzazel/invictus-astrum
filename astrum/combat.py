@@ -32,6 +32,7 @@ import numpy as np
 from . import optics, salvo
 from .constants import C
 from .damage import Damage
+from .systems import OPERATIONAL, OUT, Systems
 from .orders import QUARTERS as QUARTERS_ORDER
 
 ENERGY, KINETIC, PROPELLED = "energy", "kinetic", "propelled"
@@ -57,6 +58,7 @@ class Weapon:
     stacks: int = 1                     # how many stacks
     together: bool = True               # its stacks fire at once (else one at a time, in turn)
     optic: optics.Optic | None = None   # an optical battery's: its apertures
+    far_km: float | None = None         # a stack's farthest rated reach (TELVM §3.7: what one spot still does there)
 
     @property
     def interval_s(self) -> float | None:
@@ -68,8 +70,11 @@ class Weapon:
     @property
     def reach_km(self) -> float | None:
         """How far she uses it on a ship: an optical battery's dazzle range (else its engagement
-        range), any other's engagement range."""
-        return (self.optic.dazzle_km or self.engage_km) if self.optic is not None else self.engage_km
+        range), a stack's farthest rated reach (a few channels in a hundred still land, and upset her
+        far beyond where they open her), any other's engagement range."""
+        if self.optic is not None:
+            return self.optic.dazzle_km or self.engage_km
+        return self.far_km or self.engage_km
 
     @property
     def salvo_channels(self) -> int:
@@ -115,7 +120,8 @@ def weapons_of(sc) -> list[Weapon]:
         out.append(Weapon(n, str(raw.get("id") or n), raw.get("label") or str(raw.get("id") or n), kind,
                           int(b.get("count") or 1), float(q.hi) if q is not None and q.hi else None, b.get("kind", ""),
                           bool(b.get("focus")), st, int(raw.get("count") or 1) if st else 1, raw.get("firing", "together") != "alternate",
-                          op))
+                          op, max((float(v) for v in (f.get("reach") or {}).values() if isinstance(v, (int, float))), default=None)
+                          if st else None))
     return out
 
 
@@ -146,7 +152,6 @@ class CombatBook:
         rules = getattr(registry, "rules", None)
         self.rules = dict(getattr(rules, "salvo", {}) or {})
         self.optics = dict(getattr(rules, "optics", {}) or {})
-        self.harm = Damage(fleet, registry)
         k = self.rules.get("size_k", 0.479)
         self.size_k = float(k["value"] if isinstance(k, dict) else k)
         by_class: dict[str, tuple] = {}
@@ -160,11 +165,13 @@ class CombatBook:
                 sc = classes.get(cid)
                 by_class[cid] = (weapons_of(sc) if sc else [], hull_of(sc, rules) if sc and rules else None, sc)
             ws, hull, sc = by_class[cid]
-            self.weapons.append(ws)
+            self.weapons.append(list(ws))                # (hers: what is operational of them, astrum/systems.py)
             self.hulls.append(hull)
             tier = getattr(contacts.get(sid), "veterancy", None) or "rated"
             a = (sc.aim.get(tier) or sc.aim.get("rated")) if sc is not None and sc.aim else None
             self.aim.append(float(a.value) if a is not None and a.value else 6.5)
+        self.systems = Systems(fleet, self.weapons)
+        self.harm = Damage(fleet, registry, self.systems)
         self.log: list[Event] = []                       # by time
         self._mine: dict[int, list[Event]] = {}          # each ship's shots, by time
         self._shots: dict[tuple, list[float]] = {}       # (ship, weapon id): when it fired, in order
@@ -184,7 +191,7 @@ class CombatBook:
         it has not cycled."""
         c, tg = fleet.c, g.target
         w = self.weapon(i, tg.get("weapon", ""))
-        if w is None or c.wdisabled[i] >> w.n & 1 or self.harm.destroyed(fleet, i):
+        if w is None or self.out(fleet, i):
             fleet.findings.append(f"{c.ids[i]}: no weapon {tg.get('weapon')!r} to fire")
             return None
         if w.interval_s and t - self.last_salvo(i, w.id, t) < w.interval_s - 1e-6:
@@ -282,6 +289,16 @@ class CombatBook:
     def destroyed(self, fleet, j: int) -> bool:
         return self.harm.destroyed(fleet, j)
 
+    def out(self, fleet, j: int) -> bool:
+        """Out of the fight: destroyed, or disabled (her drive and every battery out)."""
+        return self.harm.destroyed(fleet, j) or (j < len(self.weapons) and self.systems.disabled(j))
+
+    def out_rows(self, fleet, n: int) -> np.ndarray:
+        out = fleet.c.damage[:n] >= self.harm.hp[:n]
+        d = self.systems.disabled_rows()
+        out[: min(n, len(d))] |= d[:n]
+        return out
+
     def partners(self, t: float, rows: set[int]) -> set[int]:
         """Whoever fired at these rows from t on, or was fired at by them: flown again with them,
         so the shots between them are made again on both."""
@@ -299,6 +316,7 @@ class CombatBook:
         k = bisect_left(self.log, t - 1e-9, key=_t)
         tail = self.log[k:]
         keep = [e for e in tail if rows is not None and e.ship not in rows and not rows & set(e.targets)]
+        self.systems.forget(t, rows)
         if len(keep) == len(tail):
             return
         gone = {id(e) for e in tail} - {id(e) for e in keep}
@@ -316,10 +334,13 @@ class CombatBook:
         """Her combat state, as the map reads it: at t, her quarters as her last quarters order
         before it set them (with the label it gave them: her automaton's state); else as flown."""
         c, label = fleet.c, None
-        weapons = [{"id": w.id, "label": w.label, "kind": w.kind, "count": w.count, "engage_km": w.engage_km,
+        down = {id(o.key): o.state for s in OUT for o in self.systems.lists[s] if o.row == i and o.kind == "weapon"}
+        mine = self.weapons[i] if i < len(self.weapons) else []
+        every = sorted([*mine, *(o.key for s in OUT for o in self.systems.lists[s] if o.row == i and o.kind == "weapon")],
+                       key=lambda w: w.n)
+        weapons = [{"id": w.id, "label": w.label, "kind": w.kind, "count": w.count, "engage_km": w.engage_km, "reach_km": w.reach_km,
                     "salvo": w.salvo_channels if w.stack else None, "interval_s": w.interval_s,
-                    "state": "disabled" if c.wdisabled[i] >> w.n & 1 else "damaged" if c.wdamaged[i] >> w.n & 1 else "ready"}
-                   for w in (self.weapons[i] if i < len(self.weapons) else [])]
+                    "state": down.get(id(w), OPERATIONAL)} for w in every]
         mine = self._mine.get(i, [])
         k = len(mine) if t is None else bisect_right(mine, t + 1e-6, key=_t)
         last = mine[k - 1] if k else None
@@ -327,7 +348,7 @@ class CombatBook:
         last = None if last is None else {"t": last.t, "weapon": last.weapon, "what": last.what,
                                           "target": fleet.c.ids[last.targets[0]] if last.targets else None,
                                           **{k: last.result[k] for k in keys if last.result and k in last.result},
-                                          **({"lost_mj": last.harm["lost_mj"]} if last.harm else {})}
+                                          **({"lost_mj": last.harm["lost_mj"], "took": last.harm["systems"]} if last.harm else {})}
         q = int(c.quarters[i])
         if t is not None:
             q = int(fleet.quarters_at(t)[i])
@@ -336,7 +357,9 @@ class CombatBook:
             label = fleet.book.of(ords[k[0]]).target.get("label") if len(k) else None
         hp = float(self.harm.hp[i]) if i < len(self.harm.hp) else float("inf")
         return {"quarters": q, "quarters_name": QUARTERS.get(q, ""), "state": label, "damage": float(c.damage[i]),
-                "hp": hp if np.isfinite(hp) else None, "destroyed": bool(self.harm.destroyed(fleet, i)), "weapons": weapons, "last": last}
+                "hp": hp if np.isfinite(hp) else None, "destroyed": bool(self.harm.destroyed(fleet, i)),
+                "disabled": bool(i < len(self.weapons) and self.systems.disabled(i)), "weapons": weapons,
+                "systems": self.systems.state(i) if i < len(self.weapons) else {}, "last": last}
 
 
 def _t(e: Event) -> float:

@@ -19,7 +19,7 @@ def test_her_weapons_are_her_classs_batteries_by_kind():
     got = [(w.id, w.kind, w.count) for w in f.combat.weapons[i]]
     assert got == [("spinal", "energy", 16), ("main", "kinetic", 16), ("optical", "energy", 12)]
     s = f.combat.state(f, i)
-    assert s["quarters"] == 3 and {w["state"] for w in s["weapons"]} == {"ready"}
+    assert s["quarters"] == 3 and {w["state"] for w in s["weapons"]} == {"operational"}
 
 
 def test_an_engage_held_flies_on_with_her_target():
@@ -136,22 +136,60 @@ def test_light_on_a_target_reaches_as_the_canon_says():
     assert "dazzle" not in optics.dwell(one, 41e6, 6.5, 10.0, rules)["effects"]
 
 
+def _shot(f, by, at, result, weapon="spinal", t=None):
+    from astrum.combat import Event
+    return Event(f.t0 + 3600 if t is None else t, f.c.row[by], weapon, "energy", (1.0, 0.0, 0.0), (f.c.row[at],), 0.0, "fired", "ai",
+                 result)
+
+
 def test_a_hit_takes_off_what_it_put_on_her_at_the_share_that_opens_a_hull():
-    """The damage model: a salvo's channels each their pulse, at the share of the opening fluence
-    (82.7 MJ/m²) their spot reaches, a citadel hit twice; light the energy held on her hull, at its
-    open-loop share. At her hit points (her rate's) she is destroyed."""
-    from types import SimpleNamespace as E
+    """The damage model's hit points: a salvo's channels each their pulse, at the share of the
+    opening fluence (82.7 MJ/m²) their spot reaches, a citadel hit twice; light the energy held on
+    her hull, at its open-loop share. At her hit points (her rate's) she is destroyed, and every
+    system of hers with her."""
     _, f = _fleet()
     j = f.c.row["tf3-lf4-ls-1"]                                       # a PHALAENA: a frigate
     H = f.combat.harm
+    H.share = {}                                                      # (the hit points alone: no system in the way)
     assert H.hp[j] == 5000 and H.open_mjm2 == 82.7 and H.citadel == 2.0
-    got = H.hit(f, E(result={"hits": 8, "citadel": 3, "pulse_mj": 91.2, "fluence_mjm2": 833.0}), j, 0.0)
-    assert got == {"lost_mj": pytest.approx(91.2 * (5 + 2 * 3)), "destroyed": False}
-    far = H.hit(f, E(result={"hits": 8, "citadel": 0, "pulse_mj": 91.2, "fluence_mjm2": 7.12}), j, 0.0)
+    salvo = lambda hits, cit, F: {"hits": hits, "citadel": cit, "pulse_mj": 91.2, "fluence_mjm2": F}
+    got = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", salvo(8, 3, 833.0)), j, 0.0)
+    assert got["lost_mj"] == pytest.approx(91.2 * (5 + 2 * 3)) and not got["destroyed"]
+    far = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", salvo(8, 0, 7.12)), j, 0.0)
     assert far["lost_mj"] == pytest.approx(91.2 * 8 * 7.12 / 82.7)
-    lit = H.hit(f, E(result={"hull_mjm2": 5.5, "energy_mj": 184.0}), j, 0.0)
-    assert lit["lost_mj"] == pytest.approx(184.0 * 5.5 / 82.7)
+    lit = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", {"hull_mjm2": 5.5, "energy_mj": 184.0, "held_mjm2": 0.1, "held_wm2": 1.0},
+                         "optical"), j, 0.0)
+    assert lit["lost_mj"] == pytest.approx(184.0 * 5.5 / 82.7) and not lit["systems"]
     f.c.damage[j] = 4990.0
-    assert H.hit(f, E(result={"hits": 1, "citadel": 0, "pulse_mj": 91.2, "fluence_mjm2": 833.0}), j, 0.0)["destroyed"]
-    assert H.destroyed(f, j) and H.hit(f, E(result={"hits": 1, "citadel": 0, "pulse_mj": 91.2, "fluence_mjm2": 833.0}), j, 0.0) == \
-        {"lost_mj": pytest.approx(91.2), "destroyed": False}                                  # (destroyed once)
+    got = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", salvo(1, 0, 833.0)), j, 0.0)
+    assert got["destroyed"] and H.destroyed(f, j) and f.combat.out(f, j) and not f.combat.weapons[j]
+    assert all(st["operational"] == 0 and st["destroyed"] > 0 for k, st in f.combat.systems.state(j).items() if k != "radiator")
+
+
+def test_her_systems_go_out_by_what_lands_on_them_and_a_re_fly_brings_them_back():
+    """Her systems (astrum/systems.py) in lists by state: a channel on her citadel at a fluence
+    that opens a hull destroys what it lands on (here every channel on her drive); one that only
+    ruins electronics far out, damages. What is out leaves what runs: her battery the combat
+    book's list (it cannot be fired), her drive her thrust, a sensor mount the sweep from the
+    next minute. Her drive and every battery out, she is disabled, and the rest with her. Set back
+    to before it (forget), all of it is operational again."""
+    from astrum.systems import DAMAGED, DESTROYED, DISABLED
+    _, f = _fleet()
+    i, j = f.c.row["tf3-lf4-bs-1"], f.c.row["tf3-lf4-ls-1"]
+    H, S, t = f.combat.harm, f.combat.systems, f.t0 + 3600
+    assert H.tier("weapon", 100.0) == DESTROYED and H.tier("weapon", 30.0) == DISABLED and H.tier("weapon", 0.1) == DAMAGED
+    assert H.tier("sensor", 3.0) == DESTROYED and H.tier("sensor", 0.1) == DAMAGED and H.tier("weapon", 0.05) is None
+    H.share = {"citadel": {"drive": 1.0}, "hull": {"weapon": 1.0}}
+    got = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", {"hits": 2, "citadel": 1, "pulse_mj": 91.2, "fluence_mjm2": 833.0}), j, t)
+    assert ("drive", "drive", DESTROYED) in got["systems"] and f.c.fmax[j] == 0 and not S.drive[j]
+    assert len(f.combat.weapons[j]) == 2 and len(S.lists[DESTROYED]) == 2
+    far = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", {"hits": 5, "citadel": 0, "pulse_mj": 91.2, "fluence_mjm2": 0.09}, t=t + 60), j, t + 60)
+    assert {st for _, _, st in far["systems"]} >= {DAMAGED} and far["disabled"] and S.disabled(j) and f.combat.out(f, j)
+    assert f.combat.weapon(j, "spinal") is None and all(st["operational"] == 0 for st in S.state(j).values())
+    mounts = [m for m, (r, _, _) in enumerate(f.sensors.mounts) if r == j]
+    k = int((t + 60 - f.t0) // 60)
+    assert mounts and (f.sensors.off_from[mounts] == k + 1).all()              # it swept the minute it was hit
+    assert not np.isin(f.sensors.view(k + 1).row, [j]).any() and np.isin(f.sensors.view(k).row, [j]).any()
+    S.forget(t - 1)
+    assert S.drive[j] and len(f.combat.weapons[j]) == 3 and not S.lists[DESTROYED] and not S.disabled(j)
+    assert np.isin(f.sensors.view(k + 1).row, [j]).any()

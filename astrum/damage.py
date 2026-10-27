@@ -1,18 +1,35 @@
 """Battle damage: what a hit does to a ship (docs/COMBAT.md). Its own module, so the model can grow
-(by system, by where a hit lands, crew and electronics) without the rest changing.
+(by where a hit lands on her silhouette, crew and electronics) without the rest changing.
 
-For now one figure: her hit points, the energy that opens her hull a ship can take before she is
-destroyed ([damage] in data/ships/rules.toml, by her rate; TEMPORARY). A hit takes off the energy
-it put on her, at the share of what opens a hull its fluence reaches (TORMENTA §8: a woven hull
-opens at 82.7 MJ/m²): a UREB channel each, at its spot's fluence, a citadel hit counting for more;
-light the power it held on her hull over its dwell, at its open-loop fluence (so it barely marks
-one: "a laser cannot heat a ship", §6.6). What she has taken is her `damage` column (astrum/
-classis.py), so a checkpoint keeps it and a re-fly makes it again. At her hit points she is
-destroyed: a wreck, her drive dead, flying on as she goes (Fleet._wreck).
+Two things, by TORMENTA §8's thresholds ([damage] in data/ships/rules.toml):
+
+- Her hit points: the hull-opening energy she takes before she is destroyed, by her rate
+  (TEMPORARY). A hit takes off the energy it put on her, at the share of what opens a woven hull
+  (82.7 MJ/m²) its fluence reaches: a UREB channel its pulse, a citadel hit counting for more;
+  light the power it held on her hull over its dwell, at its open-loop fluence (it barely marks
+  one: "a laser cannot heat a ship", §6.6). What she has taken is her `damage` column.
+- Her systems (astrum/systems.py). Each channel on her lands on one of them, or on none, by the
+  share of her each kind takes ([damage.share]: her hull's, her citadel's); one of that kind,
+  drawn, goes to the state the channel's fluence reaches ([damage.systems]: a battery or her drive
+  damaged where its electronics are ruined, ~0.075 MJ/m², disabled where plate shatters, destroyed
+  where the hull opens; a sensor mast destroyed at 2.91; a radiator at 1.2). So a salvo far beyond
+  where it opens her still takes out what it lands on. Light held on her, closed loop on what
+  looks back or is hot (§6.5.1): a sensor mast ruined at 2.91 MJ/m² held, a thermal-infrared window
+  heated blind (damaged) at 1 W/cm²; else, her wings spread, a radiator at 1.2.
+
+At her hit points she is destroyed, and every system of hers still operational with her; with her
+drive and every battery out she is disabled, and the rest with her. Either way she is a wreck: she
+neither burns, fires, nor sweeps (Fleet._wreck). Every draw is the shot's own, so a re-fly lands it
+the same.
 """
 from __future__ import annotations
 
 import numpy as np
+
+from . import salvo
+from .systems import DAMAGED, DESTROYED, DISABLED
+
+TIERS = (DESTROYED, DISABLED, DAMAGED)
 
 
 def _num(x, default: float) -> float:
@@ -23,14 +40,22 @@ def _num(x, default: float) -> float:
 
 class Damage:
     """A fleet's damage model: each row's hit points (inf for what cannot be hit: a formation's
-    lead, a ship with no class), and the figures a hit is weighed by."""
+    lead, a ship with no class), the figures a hit is weighed by, and her systems."""
 
-    def __init__(self, fleet, registry):
+    def __init__(self, fleet, registry, systems):
         rules = getattr(registry, "rules", None)
         d = dict(getattr(rules, "damage", {}) or {})
         classes = getattr(registry, "classes", {}) or {}
+        self.systems = systems
         self.open_mjm2 = _num(d.get("open_mjm2"), 82.7)
         self.citadel = _num(d.get("citadel_factor"), 2.0)
+        self.tiers = {k: {s: _num(v, np.inf) for s, v in (t or {}).items() if s in TIERS}
+                      for k, t in (d.get("systems") or {}).items()}
+        self.share = {part: {k: _num(v, 0.0) for k, v in (sh or {}).items() if k in self.tiers}
+                      for part, sh in (d.get("share") or {}).items()}
+        light = d.get("light") or {}
+        self.mast_held, self.window_wm2 = _num(light.get("mast_mjm2"), 2.91), _num(light.get("ir_window_wm2"), 1e4)
+        self.radiator_held = _num(light.get("radiator_mjm2"), 1.2)
         hp = d.get("hp_mj") or {}
         self.hp = np.full(len(fleet.c.ids), np.inf)
         for i, spec in enumerate(fleet.c.spec[: fleet.c.n]):
@@ -41,17 +66,62 @@ class Damage:
     def destroyed(self, fleet, j: int) -> bool:
         return bool(j < len(self.hp) and fleet.c.damage[j] >= self.hp[j])
 
+    def tier(self, kind: str, F: float) -> str | None:
+        """The state a fluence F (MJ/m²) puts a system of a kind in: the worst it reaches, if any."""
+        t = self.tiers.get(kind, {})
+        return next((s for s in TIERS if F >= t.get(s, np.inf)), None)
+
     def hit(self, fleet, ev, j: int, t: float) -> dict:
-        """A shot that landed on her: what it took off (MJ), and whether it destroyed her."""
-        r, c = ev.result or {}, fleet.c
+        """A shot that landed on her: what it took off (MJ), which of her systems it took out, and
+        whether it destroyed or disabled her."""
+        r, c, S = ev.result or {}, fleet.c, self.systems
+        if j >= len(S.weapons) or self.destroyed(fleet, j):
+            return {"lost_mj": 0.0, "systems": [], "destroyed": False, "disabled": False}
+        rng = np.random.default_rng(salvo.seed(fleet.scenario.id if fleet.scenario else "", c.ids[ev.ship], ev.weapon,
+                                               f"{ev.t:.3f}", c.ids[j], "harm"))
+        by, took, was = f"{c.ids[ev.ship]} {ev.weapon} @{ev.t:.0f}", [], S.disabled(j)
+        lost = 0.0
         if "hits" in r:                                   # a salvo: each channel on her, the citadel's more
-            share = min(1.0, r["fluence_mjm2"] / self.open_mjm2)
-            lost = r["pulse_mj"] * share * ((r["hits"] - r["citadel"]) + self.citadel * r["citadel"])
-        elif "hull_mjm2" in r:                            # light held on her hull, open loop
+            F = r["fluence_mjm2"]
+            lost = r["pulse_mj"] * min(1.0, F / self.open_mjm2) * ((r["hits"] - r["citadel"]) + self.citadel * r["citadel"])
+            for part, n in (("hull", r["hits"] - r["citadel"]), ("citadel", r["citadel"])):
+                for kind in self._lands(part, n, rng, bool(c.cold[j])):
+                    state = self.tier(kind, F)
+                    if state:
+                        took += self._take(fleet, j, kind, state, t, by, rng)
+        elif "held_mjm2" in r:                            # light held on her: what looks back, else what is hot
             lost = r["energy_mj"] * min(1.0, r["hull_mjm2"] / self.open_mjm2)
-        else:
-            lost = 0.0
-        was = self.destroyed(fleet, j)
-        if lost > 0 and not was:
+            state = DESTROYED if r["held_mjm2"] >= self.mast_held else DAMAGED if r["held_wm2"] >= self.window_wm2 else None
+            if state and S.sensors[j]:
+                took += self._take(fleet, j, "sensor", state, t, by, rng)
+            elif not c.cold[j] and r["held_mjm2"] >= self.radiator_held:
+                took += self._take(fleet, j, "radiator", DESTROYED, t, by, rng)
+        if lost > 0:
             c.damage[j] += lost
-        return {"lost_mj": lost, "destroyed": not was and self.destroyed(fleet, j)}
+        destroyed = self.destroyed(fleet, j)
+        disabled = not destroyed and not was and S.disabled(j)
+        if destroyed or disabled:
+            took += S.take_all(fleet, j, DESTROYED if destroyed else DISABLED, t, by)
+        return {"lost_mj": lost, "systems": [(o.kind, _name(o), o.state) for o in took], "destroyed": destroyed,
+                "disabled": disabled}
+
+    def _lands(self, part: str, n: int, rng, cold: bool) -> list[str]:
+        """Which kind of her systems each of n channels on her part (hull, citadel) lands on, if any
+        (her radiators folded with her wings: not there to hit)."""
+        share = {k: v for k, v in self.share.get(part, {}).items() if not (cold and k == "radiator")}
+        if n <= 0 or not share:
+            return []
+        kinds, p = list(share), np.array(list(share.values()))
+        got = rng.choice(len(kinds) + 1, size=int(n), p=np.append(p, max(0.0, 1.0 - p.sum())))
+        return [kinds[g] for g in got if g < len(kinds)]
+
+    def _take(self, fleet, j: int, kind: str, state: str, t: float, by: str, rng) -> list:
+        ops = self.systems.operational(j, kind)
+        if not ops:
+            return []
+        o = self.systems.take(fleet, j, kind, ops[int(rng.integers(len(ops)))], state, t, by)
+        return [o] if o is not None else []
+
+
+def _name(o) -> str:
+    return o.key.label if o.kind == "weapon" else f"{o.kind} {o.key}" if o.kind != "drive" else "drive"

@@ -179,7 +179,8 @@ its irradiance and fluence each way, the energy put on her, and what the canon's
 reaches: a mane (0.8 MJ/m²), a radiator (1.2), a mast (2.91), a thermal-infrared window heated blind
 (1 W/cm²), dazzle within the battery's dazzle range (40,000 km). The CAPTAIN holds every optical
 battery of hers that reaches the target on it whenever a node fires, once a tick: light retargets in
-microseconds and needs no arc. The effects are said, not yet done (a dazzled sensor, a ruined mane).
+microseconds and needs no arc. What it ruins (a mast, a radiator) the damage model takes out; a
+dazzle is said, not yet done.
 
 | Light, as built against TORMENTA | as built | canon |
 |---|---|---|
@@ -188,14 +189,34 @@ microseconds and needs no arc. The effects are said, not yet done (a dazzled sen
 | one PANEL III ruins a mane, held 100 s (§6.7) | 0.8 MJ/m² at 62,200 km | 62,200 km |
 
 **3, damage** (`astrum/damage.py`, `[damage]` in `data/ships/rules.toml`): its own module, so the
-model can grow without the rest changing. For now one figure, her hit points: the hull-opening
-energy she takes before she is destroyed, by her rate (TEMPORARY: line 15,000 MJ, frigate 5,000).
-A hit takes off the energy it put on her at the share of what opens a woven hull (82.7 MJ/m², §8)
-its fluence reaches: a channel its pulse, a citadel hit twice (TEMPORARY); light its energy on her
-hull at its open-loop fluence, so it barely marks one. What she has taken is her `damage` column, so
-a checkpoint keeps it. At her hit points she is a wreck: her drive dead (`fmax` 0), coasting on,
-taking no orders, firing no more; her side's picture marks her (`wrecked`), and whoever fought her
-leaves combat (`destroyed`).
+model can grow without the rest changing. Two things. Her hit points: the hull-opening energy she
+takes before she is destroyed, by her rate (TEMPORARY: line 15,000 MJ, frigate 5,000); a hit takes
+off the energy it put on her at the share of what opens a woven hull (82.7 MJ/m², §8) its fluence
+reaches, a citadel hit twice (TEMPORARY), light its energy on her hull at its open-loop fluence.
+And her systems (`astrum/systems.py`): her batteries, her sensor mounts, her drive, her radiators
+(two, est.). Each channel on her lands on one kind of them, or on none, by the share of her each
+takes (`[damage.share]`, TEMPORARY: on her hull a mast 8%, a battery 6%, a radiator 15% with her
+wings spread; on her citadel her stack 20%, her drive 20%); one of that kind, drawn, goes to the
+state its fluence reaches (`[damage.systems]`: a battery or her drive damaged at 0.075 MJ/m², where
+electronics are ruined, disabled at 25, destroyed at 82.7; a mast destroyed at 2.91, damaged at
+0.075; a radiator destroyed at 1.2). Light held on her, closed loop: a mast ruined at 2.91 MJ/m²
+held, a thermal-infrared window heated blind (damaged) at 1 W/cm²; else, her wings spread, a
+radiator at 1.2.
+
+The states are lists, not flags. What runs reads only what is operational: her batteries are the
+combat book's list of hers (one out cannot be ordered or fired), her sensors the cones the sweep
+is handed (a mount out sweeps no more from the minute after it was hit: the sweep is cut there,
+each stretch with the mounts operational then), her drive her thrust (`fmax`), her radiators the
+share that shed (`shed`). A system out leaves them for the list of its state (damaged, disabled,
+destroyed), which only holds it: what it was, since when, by what. With her drive and every
+battery out she is disabled, at her hit points destroyed; either way every system of hers still
+operational goes out with her, so a wreck neither burns, fires, nor sweeps, at no cost to anyone.
+Every change is a dated record, so a re-fly from a moment sets them back and makes them again.
+
+**The spine's reach.** A stack fires out to its farthest rated reach (TELVM §3.7: a LINE stack
+100,000 km, a PICKET 49,800), where a few channels in a hundred still land and ruin what they land
+on far beyond where they open a hull. The root's map closes firing (`close`: station, fire; again
+each tick within reach, `in-reach`), and `destroyed` holds for a target out of the fight.
 
 **A fleet action** (`tests/test_battle.py`): Line Flotilla 1 of Task Force 2 (four PAPILION, seven
 PHALAENA), aggressive on the root's map, bogeys too, attack-moved from Earth at the Venus Raiders
@@ -203,15 +224,19 @@ PHALAENA), aggressive on the root's map, bogeys too, attack-moved from Earth at 
 
 | Venus | 10 s ticks | merged, at 1 h/s (60 s ticks) |
 |---|---|---|
-| contact | about 67 h out | the same |
-| raiders destroyed | 10, over 1.9 h | 10, over 2.0 h |
-| ours destroyed | 2 PAPILION | 1 PAPILION |
-| shots: spinal (ours, theirs) / optical | 54, 54 / 2,284 | 8, 3 orders (of up to 6 salvos) / 523 |
-| 72 h flown, battle and all | 6.3 s (the battle about 4 s) | 3.8 s (the battle about 1.5 s) |
-| flown again from the middle | the same shots, the same ships fall | |
+| first out | 67.5 h out | the same |
+| raiders out | 10 within 1.04 h: 9 disabled, 1 destroyed | 10 within 1.05 h: 7 disabled, 3 destroyed |
+| ours | none out; 2 radiators destroyed, 3 masts damaged | the same |
+| spinal salvos (ours) | 716, from 49,775 km in (median 25,354): 1,326 of 17,120 channels hit | 151 orders, 21,648 channels, 2,952 hit |
+| optical dwells (ours, theirs) | 3,912, 1,600 | 679, 295 |
+| what took the raiders out | their batteries and drives damaged by channels far out (24, 8); their masts (23) and radiators (20) by light | much the same |
+| 72 h flown, battle and all | 7.0 s | 3.9 s |
+| flown again from the middle | the same shots, the same systems out, the same ships | |
 
-In it the spinal batteries fire little: 95% of a ship's chances come while she burns to keep
-station on a target that moves, off her spine, and she holds her fire. The AI at the front edge,
+The raiders never fire their spines: a PICKET reaches 49,800 km against a LINE's 100,000, their
+batteries are out before they close, and within reach they burn off their spines to close.
+She holds her fire while she burns off her spine (95% of her chances, in the action before the
+spine reached so far). The AI at the front edge,
 on a day of sol-demo: quiet 15 ms a game hour against 8 without it; TF-3 hunting, 40 against 5.
 
 A pass is dear: half the way at her cruise g is about 367 km/s against GHOST 1 from 27 Gm. Kept
@@ -221,10 +246,13 @@ for now; how hard she burns into a pass is to be a setting of her profile's.
 
 The owner's to give:
 
-- Survivability beyond hit points: damage by system (drive, sensors, weapons, rads, a mast), crew
-  and electronics (§8.2: a beam kills the people it crosses before it opens the hull), prompt
-  upset (§8.5). The hit points and the citadel's factor are TEMPORARY.
-- What light does once said: a dazzled sensor (its sweep blind a while), a ruined mane or radiator.
+- Where a hit lands: her silhouette and her attitude (basic shapes, as a class's layout gives
+  them), in place of the shares by kind; her crew (§8.2: a beam kills the people it crosses long
+  before it opens the hull) and prompt upset (§8.5). The hit points, the shares, the citadel's
+  factor and the two radiators are TEMPORARY.
+- Damaged, disabled and destroyed are alike in the simulation (all out): what tells them apart
+  (repair, salvage) is to come. A system out stays in the state it went out at.
+- A dazzled sensor (its sweep blind a while, behind its shutter) is said, not done.
 - Firing the spine while she keeps station: she holds her fire while she burns off it (95% of her
   chances in the Venus action). Cutting her drive for the shot, or a node that does, is a choice of
   the map's or the CAPTAIN's.
@@ -247,7 +275,7 @@ Ours to build:
   process, and the run-ahead waits on it.
 - Projectiles: a kinetic round as a coasting row, a missile as a row with its own seeker and burn
   (`CombatBook.launch` logs them launched, nothing more).
-- A wreck still sweeps with her sensors, and every side knows her for one.
+- Every side knows a wreck for one (it is not yet read off what it sees of her).
 - A fire order of the map's into the flight's past reads her heading off the timeline, sampled
   every 60 s: up to a minute old.
 - The salvo's simplifications: her aim's error drawn afresh each salvo (no walk-in from one to

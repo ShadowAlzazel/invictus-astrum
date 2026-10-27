@@ -129,8 +129,9 @@ class Sensors:
         rules = getattr(getattr(registry, "rules", None), "detection", None) or {}
         arm = getattr(registry, "armoury", None)
         parts = arm.parts.get("sensor", {}) if arm else {}
-        rows, body, cosr, thr, period, phase, what, active, reach_m = [], [], [], [], [], [], [], [], []
+        rows, body, cosr, thr, period, phase, what, active, reach_m, mount = [], [], [], [], [], [], [], [], [], []
         self.emit = np.zeros(len(c.row))
+        self.mounts: list[tuple[int, str, float]] = []      # (ship, part, what its pings give off, W): a sensor as a system
         for i in range(len(c.row)):
             spec = c.spec[i]
             sc = registry.classes.get(spec.class_id) if spec is not None and hasattr(registry, "classes") else None
@@ -143,7 +144,9 @@ class Sensors:
                 T = max(SAMPLE_S, round(float(p["revisit_s"]) / SAMPLE_S) * SAMPLE_S)
                 reach = float(p["reach_km"]) * 1e3
                 self.emit[i] += (num(p, "emit_mw") or 0.0) * 1e6 if p.get("active") else 0.0
+                self.mounts.append((i, sid, (num(p, "emit_mw") or 0.0) * 1e6 if p.get("active") else 0.0))
                 for k, d in enumerate(axes(count, faces, turn=1.3 * m)):
+                    mount.append(len(self.mounts) - 1)
                     rows.append(i)
                     body.append(d)
                     cosr.append(math.cos(math.radians(min(float(p["cone_deg"]), 180.0))))
@@ -175,6 +178,59 @@ class Sensors:
         self.classify = float(rules.get("classify", 4.0))
         self.lost = float(rules.get("lost", 1.5))
         self.hold_s = float(rules.get("hold_s", 3600.0))
+        self.mount = np.array(mount, dtype=np.int64)       # each cone's mount
+        self.off_from = np.full(len(self.mounts), NEVER, dtype=np.int64)   # each mount sweeps up to the minute before
+        self._views: dict = {}
+
+    # ---- what sweeps: the operational mounts (astrum/systems.py takes one out from a minute) ----------
+    def off(self, mounts, k: int) -> None:
+        """These mounts no longer sweep from minute k (or again, with k NEVER)."""
+        self.off_from[np.asarray(mounts, dtype=np.int64)] = k
+        self._views.clear()
+
+    def bounds(self, a: int, b: int) -> list[int]:
+        """The minutes in (a, b] the operational mounts change at."""
+        ks = np.unique(self.off_from[(self.off_from > a) & (self.off_from <= b)])
+        return ks.tolist()
+
+    def view(self, k: int) -> "Sensors | SensorView":
+        """The cones that sweep at minute k, as the sweep reads a table (its index into this one: idx)."""
+        up = self.off_from > k
+        if up.all():
+            return self
+        key = up.tobytes()
+        got = self._views.get(key)
+        if got is None:
+            got = self._views[key] = SensorView(self, up)
+        return got
+
+    @property
+    def idx(self) -> None:
+        return None
+
+
+NEVER = np.iinfo(np.int64).max
+
+
+class SensorView:
+    """A fleet's sensors less the mounts that are not operational: the same columns, compacted, and
+    each cone's row in the whole table (idx)."""
+
+    def __init__(self, S: Sensors, up: np.ndarray):
+        keep = up[S.mount] if len(S.mount) else np.zeros(0, dtype=bool)
+        self.idx = np.flatnonzero(keep)
+        for name in ("row", "body", "cos", "thr", "period", "phase", "_every", "_at", "active", "reach"):
+            setattr(self, name, getattr(S, name)[self.idx])
+        n = len(S.s_start) - 1
+        self.s_start = np.searchsorted(self.row, np.arange(n + 1)).astype(np.int64)
+        self.thr_min, self.act_reach, self.emit = np.full(n, np.inf), np.zeros(n), np.zeros(n)
+        if len(self.row):
+            np.minimum.at(self.thr_min, self.row[~self.active], self.thr[~self.active])
+            np.maximum.at(self.act_reach, self.row[self.active], self.reach[self.active])
+        for m, (i, _, e) in enumerate(S.mounts):
+            if up[m]:
+                self.emit[i] += e
+        self.classify, self.identify = S.classify, S.identify
 
 
 # ---- the sweeper: every side's sweeps, on the flight's grid -----------------------------------------
@@ -366,7 +422,15 @@ class Sweeper:
                 "thrust": get("thrust"), "cold": get("cold"), "heat": get("heat"), "ping": f.pinging_many(ts)}
 
     def _sweep(self, side: SideSweep, a: int, b: int, X: dict) -> None:
-        f, S, sig = self.fleet, self.fleet.sensors, self.fleet.signature
+        """Minutes a..b of the side's sweeps: each stretch with the sensors operational then."""
+        cuts = [a, *self.fleet.sensors.bounds(a, b), b + 1]
+        for lo, hi in zip(cuts, cuts[1:]):
+            part = X if (lo, hi) == (a, b + 1) else {k: v[lo - a:hi - a] for k, v in X.items()}
+            self._sweep_part(side, lo, hi - 1, part)
+
+    def _sweep_part(self, side: SideSweep, a: int, b: int, X: dict) -> None:
+        f, sig = self.fleet, self.fleet.signature
+        S = f.sensors.view(a)
         c, n = f.c, len(side.own)
         T, Q = len(X["km"]), len(side.tgt)
         best = (np.empty((T, Q), dtype=np.int64), np.empty((T, Q)), np.empty((T, Q)), np.empty((T, Q)),
@@ -375,7 +439,9 @@ class Sweeper:
                       S.emit, sig.aspect_deg, sig.aspect_share, sig.cold_share, sig.recover, side.cl_start, side.cl_rows,
                       S.s_start, S.body, S.cos, S.thr, S._every, S._at, S.active, S.reach, side.tgt, S.thr_min, S.act_reach,
                       S.classify, S.identify, True, *best)
-        cols = kernels.sightings(a, X["ts"], X["r"], X["v"], *best, side.tgt, S.row, C, *relay(f, side.view, side.own).tree)
+        if S.idx is not None:                              # (each sighting's sensor, in the whole table)
+            best[0][best[0] >= 0] = S.idx[best[0][best[0] >= 0]]
+        cols = kernels.sightings(a, X["ts"], X["r"], X["v"], *best, side.tgt, f.sensors.row, C, *relay(f, side.view, side.own).tree)
         side.add(a, b, cols if len(cols[0]) else None)
 
     # ---- what pictures read ------------------------------------------------------------------------

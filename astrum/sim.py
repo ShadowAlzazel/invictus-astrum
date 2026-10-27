@@ -1030,14 +1030,16 @@ class Fleet:
         if not len(rows) or T1 <= T0:
             return
         cold, h0, store, quiet = c.cold[rows], c.heat[rows], c.store[rows], c.quiet[rows]
-        rate = np.where(cold, quiet, -self.signature.recover * quiet)
+        shed = self.signature.recover * quiet * c.shed[rows]        # (her radiators that work: astrum/systems.py)
+        rate = np.where(cold, quiet, -shed)
         with np.errstate(divide="ignore", invalid="ignore"):
             full_at = np.where(cold & (quiet > 0), T0 + (store - h0) / np.where(quiet > 0, quiet, 1.0), math.inf)
 
         def at(ts: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
             ts = ts[:, None]
             spread = cold & (ts >= full_at)                  # full: her wings spread then, and it empties since
-            h = np.where(spread, store - self.signature.recover * quiet * (ts - full_at), h0 + rate * (ts - T0))
+            with np.errstate(invalid="ignore"):              # (never full, and no radiators: 0 · inf, not taken)
+                h = np.where(spread, store - shed * (ts - full_at), h0 + rate * (ts - T0))
             return np.clip(h, 0.0, store), cold & ~spread
 
         if tl is not None and len(slots):
@@ -1656,18 +1658,20 @@ class Fleet:
         c.mode[i], c.burn[i], c.thrust[i], c.goal[i], c.order[i], c.burn_ev[i] = FREE, BURN_NONE, 0.0, False, -1, -1
         self._touch(i)
 
-    def _wreck(self, i: int) -> None:
-        """Destroyed (astrum/damage.py): her drive dead, she flies on as she goes."""
-        self._coast(i)
-        self.c.fmax[i] = 0.0
-        self.findings.append(f"{self.c.ids[i]}: destroyed at {self._now:.0f}")
+    def _wreck(self, i: int, harm: dict) -> None:
+        """What a hit did to her flight (astrum/damage.py): her drive out (destroyed, disabled, or it
+        alone), she flies on as she goes."""
+        if any(kind == "drive" for kind, _, _ in harm["systems"]):
+            self._coast(i)                                # (off station too: nothing holds her there now)
+        if harm["destroyed"] or harm["disabled"]:
+            self.findings.append(f"{self.c.ids[i]}: {'destroyed' if harm['destroyed'] else 'disabled'} at {self._now:.0f}")
 
     def _apply(self, e: int) -> None:
         """An event of the order book, given to her at its moment (a wreck takes none)."""
         c, B = self.c, self.book
         i, at, kind, g = int(B.ship[e]), float(B.at[e]), int(B.kind[e]), B.of(e)
         self._now = at
-        if self.combat.destroyed(self, i):
+        if self.combat.out(self, i):
             return
         if kind == BURN:
             b = self._placed(at)[2].get(g.burn.get("bullseye", "system"))
@@ -1754,8 +1758,9 @@ class Fleet:
             self._touch(i)
         elif kind == FIRE:                            # a WeaponEngageOrder: the combat book resolves it
             ev = self.combat.fire(self, i, at, g)
-            for j in (ev.targets if ev is not None and ev.harm and ev.harm["destroyed"] else ()):
-                self._wreck(j)
+            if ev is not None and ev.harm:
+                for j in ev.targets:
+                    self._wreck(j, ev.harm)
         elif kind == QUARTERS:                        # her readiness: 1 general quarters, 2 attack, 3 watching
             c.quarters[i] = quarters_level(g)
             self.combat.changed()

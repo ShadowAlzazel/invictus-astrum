@@ -38,11 +38,13 @@ def test_a_node_is_left_from_the_next_tick_and_after_its_wait():
     assert m.at.node == READY and not m.engaged
 
 
-def test_the_spinal_loop_closes_fires_each_cycle_and_destroys_her(tmp_path):
+def test_the_spinal_loop_closes_firing_and_takes_her_out(tmp_path):
     """The root's map, flown at bogeys too, at the flight's front edge: she closes to station at her
-    spinal battery's envelope and fires it each cycle (each shot a WeaponEngageOrder in the book,
-    resolved on her spine by the combat book), her optics held on the target with it; the target
-    destroyed, she leaves combat and fires no more."""
+    spinal battery's envelope, firing at every tick within its reach (each shot a WeaponEngageOrder
+    in the book, resolved by the combat book), her optics held on the target within their dazzle
+    range. GHOST 1's systems go out one by one (light ruins her masts and radiators; a salvo her
+    batteries and drive) until she is out of the fight; then she leaves combat and fires no more,
+    and GHOST 1, a wreck, sweeps no more."""
     c, world = _app(tmp_path)
     fleet = world.fleet(world.scenarios["sol-demo"])
     t = fleet.t0 + 600
@@ -52,21 +54,21 @@ def test_the_spinal_loop_closes_fires_each_cycle_and_destroys_her(tmp_path):
     fleet.reach(t + 44 * 3600)
     i, j = fleet.c.row["tf3-es-1"], fleet.c.row["ghost-1"]
     cap = c.app.state.sim.host.ai.captain(world.scenarios["sol-demo"], fleet)
-    path = [p.node for p in cap.machines[i].history]
-    k = path.index("close")
-    assert path[k:k + 5] == ["close", "fire", "await", "hold", "hold"] and path[-1] == "ready"
+    path = [p.node for k, p in enumerate(cap.machines[i].history) if not k or p.node != cap.machines[i].history[k - 1].node]
+    assert path == ["ready", "close", "fire", "await", "hold", "ready"]     # (close, and hold: again each tick)
     shots = [e for e in fleet.combat.log if e.ship == i]
-    spinal, light = [e for e in shots if e.weapon == "spinal"], [e for e in shots if e.weapon != "spinal"]
-    w = fleet.combat.weapon(i, "spinal")
-    assert w.interval_s == 10 and w.salvo_channels == 36                 # an AESHNA: six PICKET stacks, together
-    gaps = np.diff([e.t for e in spinal])
-    assert len(spinal) >= 3 and gaps.min() >= w.interval_s - 1e-6 and np.median(gaps) == w.interval_s
-    assert all(e.what == "fired" for e in spinal) and np.mean([e.result["hits"] for e in spinal]) > 35   # 0.22 walls at 1,394 km
-    assert {e.weapon for e in light} == {"domes", "strips"} and all("dazzle" in e.result["effects"] for e in light)
-    assert max(e.result["range_km"] for e in light) <= 1550 * 1.01                   # (where the map fires: in the envelope)
-    assert fleet.combat.destroyed(fleet, j) and fleet.c.damage[j] >= fleet.combat.harm.hp[j] and fleet.c.fmax[j] == 0
-    gone = next(e.t for e in spinal if e.harm and e.harm["destroyed"])
-    assert all(e.t <= gone for e in shots) and len(_ai(fleet, ("fire",))) == len(shots)
+    light = [e for e in shots if e.weapon != "spinal"]
+    assert fleet.combat.weapon(i, "spinal").reach_km == 49800                # an AESHNA's PICKET stacks, at their farthest
+    assert {e.weapon for e in light} == {"domes", "strips"} and max(e.result["range_km"] for e in light) <= 40000
+    assert any(e.weapon == "spinal" and e.what == "fired" for e in shots)
+    S = fleet.combat.systems
+    assert fleet.combat.out(fleet, j) and all(st["operational"] == 0 for st in S.state(j).values())
+    took = {(o.kind, o.by.split(" ")[1]) for s in S.lists for o in S.lists[s] if o.row == j}
+    assert ("sensor", "domes") in took or ("sensor", "strips") in took        # light took her masts
+    gone = max(e.t for e in shots if e.harm and (e.harm["destroyed"] or e.harm["disabled"]))
+    assert all(e.t <= gone for e in shots) and not (fleet.sensors.off_from[[m for m, (r, _, _) in enumerate(fleet.sensors.mounts)
+                                                                          if r == j]] > fleet.sweeper.flown_minute()).any()
+    assert len(_ai(fleet, ("fire",))) == len(shots)
 
 
 def test_search_and_destroy_passes_each_target_once_and_coasts_on(tmp_path):

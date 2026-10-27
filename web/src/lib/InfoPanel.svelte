@@ -135,6 +135,7 @@
   const short = (label) => label?.split(':')[0] ?? '';
   const ROMAN = { 1: 'I', 2: 'II', 3: 'III' };
   // her batteries, each with its reaches (her class's ranges) and how it stands (her combat state)
+  const sysAll = (v) => v.operational + v.damaged + v.disabled + v.destroyed;
   $: arms = ship && !seenOnly ? battery(spec?.ranges ?? [], eng?.combat?.weapons ?? []) : [];
   function battery(ranges, weapons) {
     const same = (a, b) => a?.toLowerCase() === b?.toLowerCase();
@@ -426,15 +427,17 @@
           {#if eng.minerva}<dt class="sub" title="Her ship AI: out of combat at her ReadyStance, or engaged in her profile's map (Fleet command, Combat profiles)">MINERVA</dt>
             <dd class="sub" class:gq={eng.minerva.engaged}>{eng.minerva.engaged ? eng.minerva.label : 'ready'} · after: {eng.after}</dd>{/if}
           {#if eng.combat?.hp}<dt title="Her hull: the hull-opening energy she has taken, of what destroys her (TEMPORARY hit points, by her rate)">Hull</dt>
-            <dd class:gq={eng.combat.destroyed}>{eng.combat.destroyed ? 'destroyed' : `${Math.round(eng.combat.damage).toLocaleString()} of ${eng.combat.hp.toLocaleString()} MJ taken`}</dd>{/if}
+            <dd class:gq={eng.combat.destroyed || eng.combat.disabled}>{eng.combat.destroyed ? 'destroyed' : `${eng.combat.disabled ? 'disabled · ' : ''}${Math.round(eng.combat.damage).toLocaleString()} of ${eng.combat.hp.toLocaleString()} MJ taken`}</dd>{/if}
+          {#if eng.combat?.systems && Object.keys(eng.combat.systems).length}<dt title="Her systems: of each kind, how many are operational of all she has (the rest damaged, disabled or destroyed)">Systems</dt>
+            <dd>{Object.entries(eng.combat.systems).filter(([, v]) => sysAll(v)).map(([k, v]) => `${k}s ${v.operational}/${sysAll(v)}`).join(' · ')}</dd>{/if}
           {#if eng.combat?.last}{@const l = eng.combat.last}<dt class="sub" title="Her last shot, as the combat book resolved it: a salvo's channels on her target's presented silhouette, and of those on her citadel; light held on her for the tick; and what it took off her">Last shot</dt>
-            <dd class="sub">{eng.combat.weapons.find((w) => w.id === l.weapon)?.label ?? l.weapon} · {l.what === 'fired' && l.channels ? `${l.hits}/${l.channels} hit, ${l.citadel} citadel` : l.what === 'fired' && l.effects ? `held${l.effects.length ? ` (${l.effects.join(', ')})` : ''}` : l.what}{l.range_km ? ` at ${km(l.range_km)}` : ''}{l.lost_mj ? `, ${Math.round(l.lost_mj).toLocaleString()} MJ` : ''}{state ? ` · ${age(state.t - l.t)} ago` : ''}</dd>{/if}
+            <dd class="sub">{eng.combat.weapons.find((w) => w.id === l.weapon)?.label ?? l.weapon} · {l.what === 'fired' && l.channels ? `${l.hits}/${l.channels} hit, ${l.citadel} citadel` : l.what === 'fired' && l.effects ? `held${l.effects.length ? ` (${l.effects.join(', ')})` : ''}` : l.what}{l.range_km ? ` at ${km(l.range_km)}` : ''}{l.lost_mj ? `, ${Math.round(l.lost_mj).toLocaleString()} MJ` : ''}{l.took?.length ? `, ${l.took.map(([, name, st]) => `${name} ${st}`).join(', ')}` : ''}{state ? ` · ${age(state.t - l.t)} ago` : ''}</dd>{/if}
           <dt title="Her crew's tier">Crew</dt><dd>{eng.veterancy ?? 'rated'}</dd>
         </dl>
         {/if}
         {#if shut.engage_open && arms.length}
         <dl class="tight arms">
-          {#each arms as w}<dt class:off={w.state && w.state !== 'ready'} title={`${w.kind ?? ''}${w.state ? `: ${w.state}` : ''}${w.salvo ? `; ${w.salvo} channels a salvo, every ${w.interval_s} s` : ''}`}>{w.label}{#if w.count}<span class="dim">&nbsp;×{w.count}</span>{/if}</dt>
+          {#each arms as w}<dt class:off={w.state && w.state !== 'operational'} title={`${w.kind ?? ''}${w.state ? `: ${w.state}` : ''}${w.salvo ? `; ${w.salvo} channels a salvo, every ${w.interval_s} s` : ''}`}>{w.label}{#if w.count}<span class="dim">&nbsp;×{w.count}</span>{/if}</dt>
             <dd>{#each w.reach as r, k}<span title={r.note}>{k ? ' · ' : ''}{r.what} {km(r.km)}</span>{:else}<span class="dim">{w.kind ?? ''}</span>{/each}</dd>{/each}
         </dl>
         {/if}

@@ -48,7 +48,7 @@ class SidePicture:
     said: Mapping = field(default_factory=dict)     # own row -> what she was given (Fleet versions': goal, with its g; place)
     fired_on: dict = field(default_factory=dict)    # own row -> the rows flying an engage order on her
     age: np.ndarray | None = None                   # how old what is shown of each is (s; own: 0)
-    wrecked: np.ndarray | None = None               # shown, and destroyed (a wreck is known for one)
+    wrecked: np.ndarray | None = None               # shown, and out of the fight: destroyed or disabled (known for it)
 
     def reckoned(self, j: int) -> np.ndarray:
         """Where she is now, as the side reckons it: where she was seen, on at her velocity then."""
@@ -191,6 +191,6 @@ class Pictures:
             r[attackers] = true_r[attackers]
             age[attackers] = 0.0
             shown[attackers] = True
-        wrecked = shown & (fleet.c.damage[:n] >= fleet.combat.harm.hp[:n])
+        wrecked = shown & fleet.combat.out_rows(fleet, n)
         return SidePicture(sc, fleet, side, t, r, hide(pic["v"][:n]), hide(pic["dir"][:n]), shown & (pic["thrust"][:n] > 0),
                            shown, ident, old, said, on, age, wrecked)

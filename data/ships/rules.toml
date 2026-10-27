@@ -185,3 +185,26 @@ threshold = { mane_mjm2 = 0.8, radiator_mjm2 = 1.2, mast_mjm2 = 2.91, ir_window_
 open_mjm2 = 82.7                     # TORMENTA §8: a woven hull opened
 citadel_factor = { value = 2.0, est = true, note = "TEMPORARY: a channel on her citadel counts twice" }
 hp_mj = { line = 15000, frigate = 5000, auxiliary = 3000, unrated = 2000, default = 5000, est = true, note = "TEMPORARY: hit points by rate, MJ of hull-opening energy, until survivability is the owner's (docs/COMBAT.md)" }
+
+# Her systems (astrum/systems.py): the fluence (MJ/m²) a channel landing on one takes it to each state
+# at. TORMENTA §8: electronics ruined ~0.075 (~100 Gy), titanium plate shattered ~25, a woven hull
+# opened 82.7, a sensor mast 2.91, a radiator 1.2. Which state each reads off is est.
+[damage.systems]
+weapon = { damaged = 0.075, disabled = 25.0, destroyed = 82.7 }
+drive = { damaged = 0.075, disabled = 25.0, destroyed = 82.7 }
+sensor = { damaged = 0.075, destroyed = 2.91 }
+radiator = { destroyed = 1.2 }
+
+# The share of the channels on her that land on each kind (the rest on her hull and crew alone):
+# on her hull, and on her citadel (her stack and her drive's). TEMPORARY, until a class's silhouette
+# says where each lies.
+[damage.share]
+hull = { sensor = 0.08, weapon = 0.06, radiator = 0.15 }
+citadel = { weapon = 0.2, drive = 0.2 }
+
+# Light held on her, closed loop (TORMENTA §6.5.1, §6.7): a sensor looking back, its mast ruined;
+# a thermal-infrared window heated blind; else, her wings spread, a radiator ruined.
+[damage.light]
+mast_mjm2 = 2.91
+ir_window_wm2 = 1.0e4
+radiator_mjm2 = 1.2

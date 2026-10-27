@@ -41,10 +41,9 @@ COLUMNS = {
     "goal": ((), np.bool_, False), "gg": ((), float, 0.0), "track": ((), np.int64, -1),
     "off": ((3,), float, 0.0), "stand": ((), float, 0.0), "hold": ((3,), float, 0.0), "hashold": ((), np.bool_, False),
     "keep": ((), np.bool_, False),             # an engage held: she never arrives, she keeps flying it (burning to hold on her)
-    # her combat state (astrum/combat.py): her quarters (1 general quarters, 2 attack, 3 watching),
-    # each of her class's batteries damaged or disabled (a bit each), and her damage (what it is: open)
-    "quarters": ((), np.int8, 3), "wdamaged": ((), np.int64, 0), "wdisabled": ((), np.int64, 0),
-    "damage": ((), float, 0.0),
+    # her combat state (astrum/combat.py): her quarters (1 general quarters, 2 attack, 3 watching), the
+    # hull-opening energy she has taken (astrum/damage.py), and the share of her radiators that work
+    "quarters": ((), np.int8, 3), "damage": ((), float, 0.0), "shed": ((), float, 1.0),
     "lead": ((), np.int64, -1), "solo": ((), np.bool_, False), "amax": ((), float, 0.0),
     # how it stands (the step writes these)
     "aim": ((3,), float, 0.0), "rng": ((), float, math.nan), "clos": ((), float, math.nan),

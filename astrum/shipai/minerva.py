@@ -39,10 +39,11 @@ CONDITIONS = {
     "always": "at once (the next tick)",
     "far": "the target beyond the battery's envelope",
     "in-envelope": "the target within the battery's envelope",
+    "in-reach": "the target within the battery's reach (a stack's: its farthest rated)",
     "lost": "the target out of her side's picture, or of her stance's range",
     "gone": "the target out of her side's picture",
-    "alive": "the target not destroyed",
-    "destroyed": "the target destroyed",
+    "alive": "the target still in the fight",
+    "destroyed": "the target destroyed or disabled: out of the fight",
     "passed": "going away from the target after closing on it",
     "fired-on": "a ship engaging her",
 }

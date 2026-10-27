@@ -236,9 +236,11 @@ class Captain:
         mine = np.flatnonzero(side.own[:n] & self.ships)
         visit = (self.engaged | set(sp.fired_on) | near | self._moving[1]
                  | set(mine[self.readied[mine] != ready[mine]].tolist()))
-        idle = mine[(c.mode[mine] == DEAD) | (c.fmax[mine] <= 0)]
+        wreck = fleet.combat.out_rows(fleet, n)
+        able = (c.fmax[:n] > 0) | np.array([bool(ws) for ws in fleet.combat.weapons[:n]], dtype=bool)
+        idle = mine[(c.mode[mine] == DEAD) | ~able[mine] | wreck[mine]]   # (nothing to order her, or a wreck)
         self.readied[idle] = ready[idle]                  # (nothing to order her)
-        rows = [i for i in mine.tolist() if i in visit and c.mode[i] != DEAD and c.fmax[i] > 0 and t >= self.until[i] - 1e-6]
+        rows = [i for i in mine.tolist() if i in visit and c.mode[i] != DEAD and able[i] and not wreck[i] and t >= self.until[i] - 1e-6]
         ping = fleet.pinging(t)
         out, looking = [], []
         for i in rows:
@@ -274,7 +276,7 @@ class Captain:
             out += self._look(sp, looking, prof, frame)
         if block:
             self.looked[side.view] = k
-        self.engaged = {i for i, m in enumerate(self.machines) if m is not None and m.engaged and c.fmax[i] > 0}   # (a wreck: out)
+        self.engaged = {i for i, m in enumerate(self.machines) if m is not None and m.engaged and able[i] and not wreck[i]}   # (a wreck: out)
         self.last_t = max(self.last_t, t)
         return [o for o in out if o is not None]
 
@@ -298,7 +300,8 @@ class Captain:
         r = sp.reckoned(j) - sp.r[i]
         d = float(np.linalg.norm(r))
         eng = self.world.engagement(prof)
-        env = max(self.envelope_m(i, self.weapon(sp.fleet, i, n.weapon)) for n in eng.nodes.values())
+        env = max(max(self.envelope_m(i, w), w.reach_km * 1e3 if "fire" in n.do and w is not None and w.reach_km else 0.0)
+                  for n in eng.nodes.values() for w in [self.weapon(sp.fleet, i, n.weapon)])
         if d <= 1.2 * env:
             return self.tick_s
         closing = -float(r @ (np.nan_to_num(sp.v[j]) - sp.v[i])) / max(d, 1.0)
@@ -372,8 +375,10 @@ class Captain:
             if not opening and not m.at.closing:
                 m.note(closing=True)
         env = self.envelope_m(i, self.weapon(fleet, i, node.weapon))
-        dead = j >= 0 and (fleet.c.mode[j] == DEAD or fleet.combat.destroyed(fleet, j))
-        table = {"always": True, "far": not gone and d > env, "in-envelope": not gone and d <= env,
+        dead = j >= 0 and (fleet.c.mode[j] == DEAD or fleet.combat.out(fleet, j))
+        w = self.weapon(fleet, i, node.weapon)
+        reach = w.reach_km * 1e3 if w is not None and w.reach_km else env
+        table = {"always": True, "far": not gone and d > env, "in-envelope": not gone and d <= env, "in-reach": not gone and d <= reach,
                  "lost": gone or d > self.reach_m(i, rs.id, prof), "gone": gone, "alive": not dead, "destroyed": dead,
                  "passed": m.at.closing and opening, "fired-on": bool(sp.fired_on.get(i))}
         return table.__getitem__
@@ -421,7 +426,7 @@ class Captain:
         return out
 
     def _fire(self, sp, i: int, m: Machine, j: int, w, who: str) -> list:
-        """Her shots at j this tick: the node's battery once it has cycled, the tick's cycles at
+        """Her shots at j this tick: the node's battery, within its reach, once it has cycled, the tick's cycles at
         once (a stack fires along her spine, within its trim: turned on it first, and held while
         she burns off it); and every optical battery of hers that reaches her, held on her for the
         tick (light retargets in microseconds, and needs no arc)."""
@@ -430,8 +435,8 @@ class Captain:
         u = sp.reckoned(j) - sp.r[i]
         d = float(np.linalg.norm(u))
         u = u / max(d, 1.0)
-        ws = ([w] if w is not None else []) + [x for x in fleet.combat.weapons[i]
-                                              if x.optic is not None and x is not w and x.reach_km and d <= x.reach_km * 1e3]
+        ws = ([w] if w is not None and (not w.reach_km or d <= w.reach_km * 1e3) else []) + [
+            x for x in fleet.combat.weapons[i] if x.optic is not None and x is not w and x.reach_km and d <= x.reach_km * 1e3]
         fired, out = dict(m.at.fired), []
         for x in ws:
             every = tick if x.optic is not None else x.interval_s or self.minerva.cycle_s

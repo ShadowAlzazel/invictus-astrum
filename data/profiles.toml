@@ -20,9 +20,10 @@
 #   weapon    which battery a node's actions and conditions read: "focus" (her focus battery), a
 #             battery's kind ("stack": the spinal battery; "strip", "dome", "panel", "turret",
 #             "cell"); one she lacks is read as her focus battery
-#   if        "always", "far" (beyond the battery's envelope), "in-envelope", "lost" (out of her
+#   if        "always", "far" (beyond the battery's envelope), "in-envelope", "in-reach" (within its
+#             reach: a stack's farthest rated, TELVM §3.7), "lost" (out of her
 #             side's picture, or of her stance's range), "gone" (out of the picture), "alive",
-#             "destroyed", "passed" (going away from her after a pass), "fired-on"
+#             "destroyed" (destroyed or disabled), "passed" (going away from her after a pass), "fired-on"
 
 [profile.root]
 name = "Standing orders"
@@ -30,10 +31,10 @@ targets = ["hostile"]
 start = "close"
 
 [profile.root.node.close]
-label = "Close to station"
-do = ["station"]
+label = "Close to station, fire"
+do = ["station", "fire"]
 weapon = "stack"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-envelope", go = "fire" }]
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-envelope", go = "fire" }, { if = "in-reach", go = "close" }]
 
 [profile.root.node.fire]
 label = "Fire spinal battery"
