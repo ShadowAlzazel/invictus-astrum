@@ -14,7 +14,8 @@
 #
 #   do        "station" (on the target at the battery's envelope, keeping with her), "hold" (hold
 #             station where she is on the target; with none, where she is), "face" (her hull on the
-#             target), "fire" (the battery, a WeaponEngageOrder: the combat function), "pass" (a
+#             target), "fire" (the battery, a WeaponEngageOrder: the combat function, once it has
+#             cycled; and every optical battery that reaches the target, held on it the tick), "pass" (a
 #             burn through where the target will be), "correct" (a pass's course corrected)
 #   weapon    which battery a node's actions and conditions read: "focus" (her focus battery), a
 #             battery's kind ("stack": the spinal battery; "strip", "dome", "panel", "turret",
@@ -48,7 +49,7 @@ on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "a
 label = "Hold station, fire"
 do = ["hold", "fire"]
 weapon = "stack"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "far", go = "close" }, { if = "alive", go = "await" }]
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "far", go = "close" }, { if = "alive", go = "hold" }]
 
 [profile.root.node.lost]
 label = "Target lost: hold, wait"

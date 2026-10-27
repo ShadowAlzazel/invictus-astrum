@@ -425,8 +425,10 @@
             {#each profiles as p}<option value={p.id}>{p.name}</option>{/each}</select></dd>
           {#if eng.minerva}<dt class="sub" title="Her ship AI: out of combat at her ReadyStance, or engaged in her profile's map (Fleet command, Combat profiles)">MINERVA</dt>
             <dd class="sub" class:gq={eng.minerva.engaged}>{eng.minerva.engaged ? eng.minerva.label : 'ready'} · after: {eng.after}</dd>{/if}
-          {#if eng.combat?.last}{@const l = eng.combat.last}<dt class="sub" title="Her last shot, as the combat book resolved it: channels on her target's presented silhouette, and of those on her citadel (a hit does nothing yet)">Last shot</dt>
-            <dd class="sub">{eng.combat.weapons.find((w) => w.id === l.weapon)?.label ?? l.weapon} · {l.what === 'fired' && l.channels ? `${l.hits}/${l.channels} hit, ${l.citadel} citadel at ${km(l.range_km)}` : l.what}{state ? ` · ${age(state.t - l.t)} ago` : ''}</dd>{/if}
+          {#if eng.combat?.hp}<dt title="Her hull: the hull-opening energy she has taken, of what destroys her (TEMPORARY hit points, by her rate)">Hull</dt>
+            <dd class:gq={eng.combat.destroyed}>{eng.combat.destroyed ? 'destroyed' : `${Math.round(eng.combat.damage).toLocaleString()} of ${eng.combat.hp.toLocaleString()} MJ taken`}</dd>{/if}
+          {#if eng.combat?.last}{@const l = eng.combat.last}<dt class="sub" title="Her last shot, as the combat book resolved it: a salvo's channels on her target's presented silhouette, and of those on her citadel; light held on her for the tick; and what it took off her">Last shot</dt>
+            <dd class="sub">{eng.combat.weapons.find((w) => w.id === l.weapon)?.label ?? l.weapon} · {l.what === 'fired' && l.channels ? `${l.hits}/${l.channels} hit, ${l.citadel} citadel` : l.what === 'fired' && l.effects ? `held${l.effects.length ? ` (${l.effects.join(', ')})` : ''}` : l.what}{l.range_km ? ` at ${km(l.range_km)}` : ''}{l.lost_mj ? `, ${Math.round(l.lost_mj).toLocaleString()} MJ` : ''}{state ? ` · ${age(state.t - l.t)} ago` : ''}</dd>{/if}
           <dt title="Her crew's tier">Crew</dt><dd>{eng.veterancy ?? 'rated'}</dd>
         </dl>
         {/if}

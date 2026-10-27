@@ -165,7 +165,7 @@ def test_sol_demo_fleet(reg):
     world = app.state.world
     sc = world.scenarios["sol-demo"]
     f = world.fleet(sc)
-    assert len(f.ships) == 154 and not f.findings
+    assert len(f.ships) == 164 and not f.findings                   # (with the ten Venus Raiders)
     c = TestClient(app)
     meta = c.get("/api/meta").json()
     kiki = next(u for u in meta["scenarios"][0]["contacts"] if u["id"] == "kiki-1")

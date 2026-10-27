@@ -1,12 +1,14 @@
 """The CAPTAIN: each ship's MINERVA run for one fleet (docs/COMBAT.md).
 
-Handed each side's picture (astrum/pictures.py), the CAPTAIN reads only what is in it and, for each
-of the side's ships, moves her MINERVA on and gives what it says as orders (source "ai") through the
-order book, as a player does: her readiness (quarters, her sensors pinging at general quarters), and
-in combat each node's actions. Out of combat a ship stands in her ReadyStance and is looked at once a
-block, or when she is fired on; in combat (engaged) she is looked at every tick, and her side is
-pictured more often while she is. A ship flying a plain go-to of the map's or the scenario's is left
-to it; an attack-move is aggressive the whole way, a patrol on guard.
+Run at the flight's front edge (astrum/ai.py), handed each side's picture there (astrum/pictures.py),
+the CAPTAIN reads only what is in it and, for each of the side's ships, moves her MINERVA on and
+gives what it says as orders (source "ai") through the order book, as a player does: her readiness
+(quarters, her sensors pinging at general quarters), and in combat each node's actions. Out of
+combat a ship stands in her ReadyStance and is looked at once a block, or when she is fired on; in
+combat (engaged) she is looked at every tick (tick_s: engaged_s, or merged_s at a fast clock, when
+a fire order fires the tick's cycles at once), and her side is pictured that often while she is. A
+ship flying a plain go-to of the map's or the scenario's is left to it; an attack-move is
+aggressive the whole way, a patrol on guard.
 
 A target is hostile only once identified (Side.hostile: unknown is a bogey). Its orders are facts of
 the book, like a player's: a replay gives them again as given, and the CAPTAIN only moves on (it
@@ -77,6 +79,7 @@ class Captain:
         self.engaged: set[int] = set()
         self.due = np.full(n, -np.inf)                   # an engaged ship is looked at again from here (pace)
         self.last_t = -np.inf
+        self.tick_s = self.minerva.engaged_s             # an engaged ship's tick (ai.AI.front sets it by the clock's warp)
         self.ships = np.array([c.kind[i] == SHIP for i in range(n)])
         self.readied = np.zeros(n, dtype=np.int8)        # the readiness her orders last set (0: none yet)
         self.near: dict[str, tuple] = {}                 # side -> (block, its ready rows a sighting is in reach of)
@@ -137,6 +140,14 @@ class Captain:
 
     def envelope_m(self, i: int, w) -> float:
         return w.engage_km * 1e3 if w is not None and w.engage_km else self.engage_m[i]
+
+    def next_due(self, t: float) -> float:
+        """When it is to be handed the fleet again: an engaged ship's next look, else the next block
+        (when ready ships look)."""
+        nxt = self.t0 + (math.floor((t - self.t0) / self.minerva.block_s + 1e-9) + 1) * self.minerva.block_s
+        if self.engaged:
+            nxt = min(nxt, min(float(self.due[i]) for i in self.engaged))
+        return max(nxt, self._on_tick(t + 1e-6))
 
     # ---- what to picture -------------------------------------------------------------------------
     def wants(self, fleet, t: float) -> dict[str, bool]:
@@ -245,7 +256,7 @@ class Captain:
                     out += self._exit(sp, i, m, rs, prof[i], goal)
                 elif t >= self.due[i] - 1e-6:
                     out += self._engaged(sp, i, m, rs, prof[i], goal)
-                    self.due[i] = t + self._pace(sp, i, m, prof[i])
+                    self.due[i] = self._on_tick(t + self._pace(sp, i, m, prof[i]))
                 continue
             if plain or rs.enter == "never":
                 continue
@@ -255,7 +266,7 @@ class Captain:
                 if foes:
                     j = min(foes, key=lambda a: _d(sp.r[a], sp.r[i]))
                     out += self._enter(sp, i, m, j, goal, frame[i], prof[i], rs)
-                    self.due[i] = t + self._pace(sp, i, m, prof[i])
+                    self.due[i] = self._on_tick(t + self._pace(sp, i, m, prof[i]))
             elif block and i in near:
                 looking.append((i, rs, goal))
         self.until[mine] = np.maximum(self.until[mine], t)    # (the rest had nothing to decide)
@@ -263,12 +274,17 @@ class Captain:
             out += self._look(sp, looking, prof, frame)
         if block:
             self.looked[side.view] = k
-        self.engaged = {i for i, m in enumerate(self.machines) if m is not None and m.engaged}
+        self.engaged = {i for i, m in enumerate(self.machines) if m is not None and m.engaged and c.fmax[i] > 0}   # (a wreck: out)
         self.last_t = max(self.last_t, t)
         return [o for o in out if o is not None]
 
+    def _on_tick(self, t: float) -> float:
+        """A moment put on the tick's grid (from the scenario's start), so every engaged ship is
+        looked at together."""
+        return self.t0 + math.ceil((t - self.t0) / self.tick_s - 1e-9) * self.tick_s
+
     def _pace(self, sp, i: int, m: Machine, prof) -> float:
-        """How soon an engaged ship is looked at again: every tick (engaged_s) near the farthest
+        """How soon an engaged ship is looked at again: every tick (tick_s) near the farthest
         envelope her engagement acts at; short of it, a quarter of the time she takes to close on it,
         at most a block; while her node makes her wait, at its end."""
         M, j = self.minerva, m.at.target
@@ -276,24 +292,24 @@ class Captain:
         if not m.engaged or node is None:
             return M.block_s
         if node.wait_s > 0 and sp.t - m.at.since < node.wait_s:
-            return min(max(node.wait_s - (sp.t - m.at.since), M.engaged_s), M.block_s)
+            return min(max(node.wait_s - (sp.t - m.at.since), self.tick_s), M.block_s)
         if j < 0 or not sp.shown[j] or sp.old[j]:
-            return M.engaged_s
+            return self.tick_s
         r = sp.reckoned(j) - sp.r[i]
         d = float(np.linalg.norm(r))
         eng = self.world.engagement(prof)
         env = max(self.envelope_m(i, self.weapon(sp.fleet, i, n.weapon)) for n in eng.nodes.values())
         if d <= 1.2 * env:
-            return M.engaged_s
+            return self.tick_s
         closing = -float(r @ (np.nan_to_num(sp.v[j]) - sp.v[i])) / max(d, 1.0)
-        return min(max(0.25 * (d - env) / max(closing, 1.0), M.engaged_s), M.block_s)
+        return min(max(0.25 * (d - env) / max(closing, 1.0), self.tick_s), M.block_s)
 
     def _look(self, sp, items: list, prof: list, frame: list) -> list:
         """The side's ready ships that enter combat on what it sees, all at once: the nearest target
         of her profile's within her stance's range takes her into her engagement."""
         side = sp.side
         I = np.array([i for i, *_ in items])
-        live = sp.shown & ~sp.old & ~side.own
+        live = sp.shown & ~sp.old & ~side.own & ~sp.wrecked
         hostile = live & sp.identified & side.hostile
         bogey = live & ~sp.identified
         H = np.array(["hostile" in prof[i].targets for i in I])[:, None]
@@ -310,7 +326,7 @@ class Captain:
             if near[a].any():
                 j = int(np.flatnonzero(near[a])[np.argmin(D[a][near[a]])])
                 out += self._enter(sp, i, m, j, goal, frame[i], prof[i], rs)
-                self.due[i] = sp.t + self._pace(sp, i, m, prof[i])
+                self.due[i] = self._on_tick(sp.t + self._pace(sp, i, m, prof[i]))
         return out
 
     # ---- in combat ---------------------------------------------------------------------------------
@@ -356,7 +372,7 @@ class Captain:
             if not opening and not m.at.closing:
                 m.note(closing=True)
         env = self.envelope_m(i, self.weapon(fleet, i, node.weapon))
-        dead = j >= 0 and fleet.c.mode[j] == DEAD
+        dead = j >= 0 and (fleet.c.mode[j] == DEAD or fleet.combat.destroyed(fleet, j))
         table = {"always": True, "far": not gone and d > env, "in-envelope": not gone and d <= env,
                  "lost": gone or d > self.reach_m(i, rs.id, prof), "gone": gone, "alive": not dead, "destroyed": dead,
                  "passed": m.at.closing and opening, "fired-on": bool(sp.fired_on.get(i))}
@@ -396,22 +412,45 @@ class Captain:
                 if not sp.burning[i] and not float(np.nan_to_num(sp.dir[i]) @ u) >= math.cos(math.radians(FACE_DEG)):
                     out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"face the {who}"}, source="ai",
                                      order_id=self._oid(sid, t), by=sid))
-            elif a == "fire" and not gone and w is not None and t - m.last_shot(w.id) >= (w.interval_s or self.minerva.cycle_s) - 1e-6:
-                u = sp.reckoned(j) - sp.r[i]
-                u = u / max(np.linalg.norm(u), 1.0)
-                if w.stack is not None and float(np.nan_to_num(sp.dir[i]) @ u) < math.cos(math.radians(w.stack.trim_deg)):
-                    if sp.burning[i]:                                    # (a stack fires along her spine, within its trim:
-                        continue                                         # burning off it, she holds her fire)
-                    out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"spine on the {who}"}, source="ai",
-                                     order_id=self._oid(sid, t), by=sid))
-                out.append(Order(sid, t, "fire", target={"weapon": w.id, "dir": u.tolist(), "targets": [c.ids[j]],
-                                                         "label": f"fire {w.label} at the {who}"},
-                                 source="ai", order_id=self._oid(sid, t, "fire"), by=sid))
-                m.move(t, fired=tuple({**dict(m.at.fired), w.id: t}.items()))
+            elif a == "fire" and not gone:
+                out += self._fire(sp, i, m, j, w, who)
             elif a == "pass" and not gone:
                 out.append(self._pass(sp, i, j, g, f"pass the {who}"))
             elif a == "correct" and not gone and not sp.burning[i]:
                 out.append(self._correct(sp, i, j))
+        return out
+
+    def _fire(self, sp, i: int, m: Machine, j: int, w, who: str) -> list:
+        """Her shots at j this tick: the node's battery once it has cycled, the tick's cycles at
+        once (a stack fires along her spine, within its trim: turned on it first, and held while
+        she burns off it); and every optical battery of hers that reaches her, held on her for the
+        tick (light retargets in microseconds, and needs no arc)."""
+        fleet, t = sp.fleet, sp.t
+        c, sid, tick = fleet.c, fleet.c.ids[i], self.tick_s
+        u = sp.reckoned(j) - sp.r[i]
+        d = float(np.linalg.norm(u))
+        u = u / max(d, 1.0)
+        ws = ([w] if w is not None else []) + [x for x in fleet.combat.weapons[i]
+                                              if x.optic is not None and x is not w and x.reach_km and d <= x.reach_km * 1e3]
+        fired, out = dict(m.at.fired), []
+        for x in ws:
+            every = tick if x.optic is not None else x.interval_s or self.minerva.cycle_s
+            if t - fired.get(x.id, -math.inf) < every - 1e-6:
+                continue
+            extra, k = ({"dwell_s": tick}, 1) if x.optic is not None else ({}, max(1, int(tick / every + 1e-9)))
+            if x.stack is not None:
+                if float(np.nan_to_num(sp.dir[i]) @ u) < math.cos(math.radians(x.stack.trim_deg)):
+                    if sp.burning[i]:
+                        continue
+                    out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"spine on the {who}"}, source="ai",
+                                     order_id=self._oid(sid, t), by=sid))
+                extra = {"salvos": k} if k > 1 else {}
+            out.append(Order(sid, t, "fire", target={"weapon": x.id, "dir": u.tolist(), "targets": [c.ids[j]],
+                                                     "label": f"fire {x.label} at the {who}", **extra},
+                             source="ai", order_id=self._oid(sid, t, "fire"), by=sid))
+            fired[x.id] = t + (k - 1) * every
+        if out:
+            m.move(t, fired=tuple(fired.items()))
         return out
 
     def _exit(self, sp, i: int, m: Machine, rs, prof, goal, passed: bool = False) -> list:

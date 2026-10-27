@@ -257,14 +257,17 @@ but those already given off it keep it. `POST /api/bullseyes`, `DELETE /api/bull
 
 ## Combat: the ship AI
 
-No weapon does harm yet: a shot is logged, and the damage function is handed it and does nothing.
 A spinal battery's salvo is resolved where it is fired (`astrum/salvo.py`, `[salvo]` in
 `data/ships/rules.toml`): along her spine, within the stack's trim (2°), else out of arc; her crew's
 aim (TELVM §1.3) moves the whole pattern, the stack rating scatters the channels, and each channel
 hits if it lands on the target's silhouette as presented to her (her length and beam foreshortened
 by her aspect, at the canon's size), and of those, her citadel. Each channel's spot and fluence are
 TORMENTA §4.7's (space charge and the ambient field). A battery fires again once its stacks have
-cycled (a LINE stack 20 s, a PICKET 10 s; stacks that alternate, the cycle over their count).
+cycled (a LINE stack 20 s, a PICKET 10 s; stacks that alternate, the cycle over their count). An
+optical battery's light is held on her for the tick (`astrum/optics.py`, TORMENTA §6: open loop on
+her hull, closed on hot structure; dazzle within 40,000 km). What lands goes to the damage model
+(`astrum/damage.py`): her hit points, by her rate (TEMPORARY), taken off at the share of the
+hull-opening fluence a hit reaches; at them she is a wreck, her drive dead, coasting on.
 
 Every ship's AI is
 one automaton, her **MINERVA** (`astrum/shipai`, docs/COMBAT.md): out of combat she stands in a
@@ -284,16 +287,18 @@ A ship's stance and profile are each the last ordered to her or a formation abov
 scenario's, else the MINERVA's default and the root profile. Commanders make their own profiles on
 the map (`profiles.toml`): a shared one's map, with targets (`hostile`, `unknown`) and ranges.
 
-**The CAPTAIN** (`astrum/shipai/captain.py`, handed pictures by `astrum/ai.py`) is a subscriber of
-the picture processor (`astrum/pictures.py`), as a browser is of its side's pictures: each side is
-pictured with the same functions as the map's, and it answers with orders (source `ai`) through the
-order book. It reads only what is in the picture. A ready ship looks once a block, if her side's
-sweep holds a ship within her reach (or at once when fired on); an engaged one every 10 s near her
-envelope, else by how soon she gets there. Task Force 2 (Earth) is written on return fire.
+**The CAPTAIN** (`astrum/shipai/captain.py`, run by `astrum/ai.py`) runs at the flight's front
+edge (`Fleet.front`): after a step, at the moments it asked for, the fleet hands itself to it as it
+stands; each side it wants is pictured there with the same functions as the map's
+(`astrum/pictures.py`), and it answers with orders (source `ai`) through the order book, at that
+moment, so nothing flies again for them. It reads only what is in the picture. A ready ship looks
+once a block, if her side's sweep holds a ship within her reach (or at once when fired on); an
+engaged one every tick (10 s, a minute above 10 min/s) near her envelope, else by how soon she gets
+there. Task Force 2 (Earth) is written on return fire.
 
 ```
-simulation (flight, order book) -> picture processor (each side's picture) -> subscribers (the CAPTAIN)
-          ^------------------------------- orders -----------------------------------'
+flight (order book) -- each step, at its front edge --> the CAPTAIN (each side's picture there)
+        ^------------------------ orders, at that moment ------------------------'
 ```
 
 A ship acts unless she flies a plain go-to of the map's or the scenario's; an attack-move (**A**) is

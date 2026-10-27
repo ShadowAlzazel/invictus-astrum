@@ -41,9 +41,12 @@ system: drive, sensors, weapons, rads, a mast).
 ## Orders
 
 **WeaponEngageOrder** (`fire`): a ship, a weapon (a battery), the moment, the direction it was
-aimed, and its targets if any. It goes into the order book like every other order, so a replay
-fires the same shots. The sim resolves it: energy lands then; a projectile becomes a row. A shot
-moves no ship, so one given into the flight's past is fired where it falls and nothing flies again.
+aimed, and its targets if any; at a merged tick, how many salvos (`salvos`), and for light, how
+long it is held (`dwell_s`). It goes into the order book like every other order, so a replay fires
+the same shots. The sim resolves it: energy lands then; a projectile is launched (to become a row).
+A shot can destroy a ship, so one given into the flight's past flies her and her targets again
+from before it, and a re-fly takes with it whoever fought the rows it flies (`CombatBook.partners`):
+the shots between them are made again on both.
 
 Engage is drawn red on the map. The book already has orders that follow on from others
 (attack-move and patrol fly on after an engagement, queued orders, the braking leg's "then", given
@@ -108,17 +111,17 @@ A plain go-to of the map's takes her out of combat, and the CAPTAIN leaves her t
 
 ## Where it runs
 
-The ship AI is its own module and can be turned off (`[sim] ai`); in slate 1c, a process of its
-own. The fleet flies ahead of the clock, so an order at the clock lands in the flight's past and its
-ships fly again from a checkpoint (shots excepted: they move no ship). So the CAPTAIN is to run at
-the flight's front edge: the sim hands it each block's state of the engaged ships and those due to
-look, and it answers with orders for the next block, which land in the future.
-
-As built, it runs in the sim's process, on the picture processor's thread: each side is pictured at
-the map's clock, at most every 0.25 s of the wall (`PICTURE_WALL_S`) and within 15% of the time
-(`PICTURE_SHARE`), and the CAPTAIN answers then. The run-ahead keeps 3 s of the wall flown ahead
-(10 min to 12 h of game), so at 10 min/s an order of hers lands about 30 min in the flight's past,
-and each one but a shot flies her rows again. The tests step it by hand, every `engaged_s`.
+The ship AI is its own module and can be turned off (`[sim] ai`). It runs at the flight's front
+edge (`Fleet.front`, `astrum/ai.py`): after each step the fleet flies, at the moments the CAPTAIN
+asked for, it is handed the fleet as it stands; each side it wants is pictured there by the picture
+processor's own functions, and its orders are given at that moment, the flight's own, so nothing
+flies again for them. The flight stops at those moments: every engaged ship's next look, on one
+grid of ticks from the scenario's start (`engaged_s`, est. 10 s; `merged_s`, est. 60 s, above
+`merge_warp`, est. 10 min/s, the run-ahead telling it the level's warp), else the next block, when
+ready ships look. A replay from a checkpoint does not ask it again: its orders are the book's. A
+map's order at the clock, behind the front, still flies its ships again, and strikes the CAPTAIN's
+later orders to them; it decides for them again at its next moment. Slate 1c's own process is
+still to come: it runs in the sim's, in the run-ahead's thread, which waits on it.
 
 ## As built
 
@@ -137,8 +140,8 @@ makes, at each ReadyStance.
 
 | In sol-demo | |
 |---|---|
-| TF-3 escort, Aggressive, Standing orders (bogeys too), GHOST 1 sent at her | closes for 40 h, station at 1,395 km (0.9 of her spinal battery's 1,550 km at a rated crew), then fires it every 20 s: her PICKET stacks cycle in 10 s, the root's map comes round every other tick (hold, await) |
-| the same, looked at | 3,910 pictures over 44 h, 10.3 s (each tick: 17,230, 51.5 s) |
+| TF-3 escort, Aggressive, Standing orders (bogeys too), GHOST 1 sent at her | closes for 40 h, station at 1,395 km (0.9 of her spinal battery's 1,550 km at a rated crew), fires it every 10 s (her PICKET stacks' cycle), her optics with it; GHOST 1 destroyed after 5 salvos, and she leaves combat |
+| the same, flown | 44 h in 1.4 s at the front edge (13.8 s stepped by pictures before it) |
 | Search and Destroy | passes GHOST 1 at 708 km after 32.6 h, one correction (her reach 40,000 km) |
 | a day of the map's clock (the sweep caught up, as the map's own pictures have it), 1b / MINERVA / now | hunting 7.78 / 1.08 / 0.77 ms a picture; quiet 7.49 / 1.09 / 0.25 ms |
 
@@ -154,7 +157,8 @@ carries channels, hits, citadel hits, range, miss, one channel's spot and fluenc
 function is handed it and does nothing. The draw is seeded by the shot, so a re-fly lands it the
 same. A battery fires again once cycled: stacks together, their cycle; alternating, the cycle over
 their count. The CAPTAIN turns her spine on the target before she fires, and holds her fire while
-she burns off it. A salvo costs 54 µs.
+she burns off it. A salvo costs 54 µs; at a merged tick a fire order fires the tick's cycles (six
+for a PAPILION's alternating stacks in a minute), each salvo its own aim error, in one draw.
 
 | PAPILION's battery (8 channels a salvo, 6.5 µrad) on a PHALAENA, broadside (66 m, wall 10,211 km) | 1,000 km | 5,000 | 10,000 | 20,000 |
 |---|---|---|---|---|
@@ -166,9 +170,49 @@ she burns off it. A salvo costs 54 µs.
 
 End on (38 m, wall 5,895 km) a channel hits 75.5 / 30.5 / 8.3% at 5,000 / 10,000 / 20,000 km
 (canon 75.1 / 29.4 / 8.3%). In the fight above every salvo lands all 36 channels (0.22 walls).
-Live, the CAPTAIN is asked as the map's clock is pictured (at most every 0.25 s of the wall): at
-10 min/s, a shot every 5 to 6 min of game. **Open:** what a hit does (slate 3); the higher-warp
-salvo (a minute's three salvos at once), and the CAPTAIN at the flight's front edge (1c).
+**3, light** (`astrum/optics.py`, `[optics]` in `data/ships/rules.toml`). An optical battery is its
+apertures (a strip's panels, each its own; a dome phased whole, each dome one), combined
+incoherently: powers add, each keeps its spot d = 2.44 λR/D (TORMENTA §6.1). Held on a target for
+the tick (a fire order's `dwell_s`): on her hull open loop, its power spread over max(d, θR) by her
+aim error (§6.5); on hot structure or a sensor looking at her, closed loop, over d. The dwell says
+its irradiance and fluence each way, the energy put on her, and what the canon's thresholds say it
+reaches: a mane (0.8 MJ/m²), a radiator (1.2), a mast (2.91), a thermal-infrared window heated blind
+(1 W/cm²), dazzle within the battery's dazzle range (40,000 km). The CAPTAIN holds every optical
+battery of hers that reaches the target on it whenever a node fires, once a tick: light retargets in
+microseconds and needs no arc. The effects are said, not yet done (a dazzled sensor, a ruined mane).
+
+| Light, as built against TORMENTA | as built | canon |
+|---|---|---|
+| twelve PANEL III open a woven hull at 1,000 km, 6.5 µrad (§6.5) | 150 s | about two and a half minutes |
+| one PANEL III ruins a radiator, held 10 s (§6.7) | 1.2 MJ/m² at 16,100 km | 16,100 km |
+| one PANEL III ruins a mane, held 100 s (§6.7) | 0.8 MJ/m² at 62,200 km | 62,200 km |
+
+**3, damage** (`astrum/damage.py`, `[damage]` in `data/ships/rules.toml`): its own module, so the
+model can grow without the rest changing. For now one figure, her hit points: the hull-opening
+energy she takes before she is destroyed, by her rate (TEMPORARY: line 15,000 MJ, frigate 5,000).
+A hit takes off the energy it put on her at the share of what opens a woven hull (82.7 MJ/m², §8)
+its fluence reaches: a channel its pulse, a citadel hit twice (TEMPORARY); light its energy on her
+hull at its open-loop fluence, so it barely marks one. What she has taken is her `damage` column, so
+a checkpoint keeps it. At her hit points she is a wreck: her drive dead (`fmax` 0), coasting on,
+taking no orders, firing no more; her side's picture marks her (`wrecked`), and whoever fought her
+leaves combat (`destroyed`).
+
+**A fleet action** (`tests/test_battle.py`): Line Flotilla 1 of Task Force 2 (four PAPILION, seven
+PHALAENA), aggressive on the root's map, bogeys too, attack-moved from Earth at the Venus Raiders
+(ten hostile PHALAENA on guard, a ring 30,000 km out from Venus, `data/scenarios/sol-demo.toml`).
+
+| Venus | 10 s ticks | merged, at 1 h/s (60 s ticks) |
+|---|---|---|
+| contact | about 67 h out | the same |
+| raiders destroyed | 10, over 1.9 h | 10, over 2.0 h |
+| ours destroyed | 2 PAPILION | 1 PAPILION |
+| shots: spinal (ours, theirs) / optical | 54, 54 / 2,284 | 8, 3 orders (of up to 6 salvos) / 523 |
+| 72 h flown, battle and all | 6.3 s (the battle about 4 s) | 3.8 s (the battle about 1.5 s) |
+| flown again from the middle | the same shots, the same ships fall | |
+
+In it the spinal batteries fire little: 95% of a ship's chances come while she burns to keep
+station on a target that moves, off her spine, and she holds her fire. The AI at the front edge,
+on a day of sol-demo: quiet 15 ms a game hour against 8 without it; TF-3 hunting, 40 against 5.
 
 A pass is dear: half the way at her cruise g is about 367 km/s against GHOST 1 from 27 Gm. Kept
 for now; how hard she burns into a pass is to be a setting of her profile's.
@@ -177,13 +221,15 @@ for now; how hard she burns into a pass is to be a setting of her profile's.
 
 The owner's to give:
 
-- What a hit does: heat into her thermal store, a dazzled sensor, damage, by fluence and by where
-  it lands (the salvo already says how many channels hit her and her citadel). Survivability: hull
-  points, or damage by system (drive, sensors, weapons, rads, a mast). Until then nothing is
-  `destroyed`.
-- The higher-warp salvo: above some warp, a minute's cycles fired as one (three salvos a minute).
-  The warp it starts at, and whether it is drawn as one salvo of three times the channels or three
-  draws at one moment.
+- Survivability beyond hit points: damage by system (drive, sensors, weapons, rads, a mast), crew
+  and electronics (§8.2: a beam kills the people it crosses before it opens the hull), prompt
+  upset (§8.5). The hit points and the citadel's factor are TEMPORARY.
+- What light does once said: a dazzled sensor (its sweep blind a while), a ruined mane or radiator.
+- Firing the spine while she keeps station: she holds her fire while she burns off it (95% of her
+  chances in the Venus action). Cutting her drive for the shot, or a node that does, is a choice of
+  the map's or the CAPTAIN's.
+- The merged tick: from 10 min/s (`merge_warp`), 60 s; each salvo its own draw, at the tick's
+  first moment's geometry.
 - Projectiles: mass, g, burn time, payload, burst radius, seeker; whether point defence sees only
   what the sweep sees.
 - How hard she burns into a pass (a profile's setting).
@@ -197,13 +243,13 @@ TELVM §1.3.4's three sizes), `muzzle_share` 0.25 (gives TORMENTA §4.8's table)
 
 Ours to build:
 
-- **1c, the CAPTAIN at the flight's front edge**, in its own process. Live, she is asked only as
-  the map is pictured: at 10 min/s, a shot every 5 to 6 min of game against 20 s stepped; at
-  6 h/s her face orders fly again in the past while she burns, and her salvos go out of arc.
+- **1c, the CAPTAIN in its own process.** It is at the flight's front edge now, in the sim's
+  process, and the run-ahead waits on it.
+- Projectiles: a kinetic round as a coasting row, a missile as a row with its own seeker and burn
+  (`CombatBook.launch` logs them launched, nothing more).
+- A wreck still sweeps with her sensors, and every side knows her for one.
 - A fire order of the map's into the flight's past reads her heading off the timeline, sampled
   every 60 s: up to a minute old.
-- A shot costs about 0.43 ms, 0.07 of it the salvo; the rest (reading both ships at the moment)
-  is not yet profiled. 4% of a one-ship fight.
 - The salvo's simplifications: her aim's error drawn afresh each salvo (no walk-in from one to
   the next); her roll unknown, so her silhouette's width is her beam; the light time's lead on
   the relative motion, Galilean; the citadel an ellipse at her centre.

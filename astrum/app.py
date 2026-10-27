@@ -83,6 +83,7 @@ class World:
         self.systems, self.ephemerides, self.players, self.scenarios = {}, {}, {}, {}
         self.drafts: dict[str, tuple] = {}       # workshop previews: "draft" -> (system, ephemeris)
         self.ships: ShipRegistry | None = None
+        self.on_fleet: list = []                         # each called (scenario, fleet) when a fleet is built: the ship AI's
         self.display_rules: dict = {}
         self.settings: dict = {}
         self.trees: dict[str, dict] = {}         # scenario id -> formation tree
@@ -566,6 +567,8 @@ class World:
                                        bullseyes_many=lambda player, bid, ts: self.resolved_many(sc.system, player, bid, ts))
         for fid in sc.factions:                          # every side is swept as the fleet is flown, watched or not
             f.sweeper.watch(fid, picture.own_rows(f, self.factions, fid))
+        for hook in self.on_fleet:
+            hook(sc, f)
         return f
 
     def level_of(self, scenario: str) -> Level | None:

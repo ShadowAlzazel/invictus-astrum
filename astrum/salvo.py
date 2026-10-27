@@ -115,19 +115,22 @@ def seed(*parts) -> int:
 
 
 def fire(st: Stack, n: int, range_m: float, aim_urad: float, sizes: tuple, rules: dict, rng: np.random.Generator,
-         off=(0.0, 0.0)) -> dict:
-    """One salvo of n channels at range: where the pattern landed (its miss from her centre, m: her
-    aim's error, and off, where she is from the point aimed at), where each channel landed about it,
-    how many hit her silhouette and her citadel, one channel's spot and fluence, and the chance a
-    channel on the pattern's centre hits (§1.3.3's, for her presented size)."""
+         off=(0.0, 0.0), salvos: int = 1) -> dict:
+    """Salvos of n channels at range (several: the cycles of a merged tick, each its own aim error):
+    where each pattern landed (its miss from her centre, m: her aim's error, and off, where she is
+    from the point aimed at), where each channel landed about it, how many hit her silhouette and
+    her citadel, one channel's spot, pulse and fluence, and the chance a channel on the pattern's
+    centre hits (§1.3.3's, for her presented size)."""
     A, B, Ac, Bc = sizes
     sigma_p = aim_urad * 1e-6 * range_m / math.sqrt(8.0)
     sigma_c = float(rules.get("stack_rating_urad", 0.3)) * 1e-6 * range_m
-    miss = rng.normal(0.0, sigma_p, 2) - np.asarray(off, dtype=float)
-    land = miss + rng.normal(0.0, sigma_c, (n, 2))
-    on = lambda a, b: int(((land[:, 0] / max(a, 1e-9)) ** 2 + (land[:, 1] / max(b, 1e-9)) ** 2 <= 1.0).sum())
+    miss = rng.normal(0.0, sigma_p, (salvos, 1, 2)) - np.asarray(off, dtype=float)
+    land = miss + rng.normal(0.0, sigma_c, (salvos, n, 2))
+    on = lambda a, b: ((land[..., 0] / max(a, 1e-9)) ** 2 + (land[..., 1] / max(b, 1e-9)) ** 2 <= 1.0).sum(axis=1)
     a, b = spot(st, range_m, float(rules.get("field_nt", 5.0)) * 1e-9, float(rules.get("muzzle_share", 0.25)))
     size = 2 * math.sqrt(A * B)
-    return {"channels": n, "range_km": range_m / 1e3, "miss_m": float(np.hypot(*miss)), "off_m": float(np.hypot(*off)), "hits": on(A, B), "citadel": on(Ac, Bc),
-            "spot_m": [a, b], "fluence_mjm2": st.pulse_mj / (math.pi * a * b),
+    hits, cit = on(A, B), on(Ac, Bc)
+    return {"channels": n * salvos, "salvos": salvos, "range_km": range_m / 1e3, "miss_m": float(np.hypot(*miss[0, 0])),
+            "off_m": float(np.hypot(*off)), "hits": int(hits.sum()), "citadel": int(cit.sum()), "hits_each": hits.tolist(),
+            "spot_m": [a, b], "pulse_mj": st.pulse_mj, "fluence_mjm2": st.pulse_mj / (math.pi * a * b),
             "presented_m": size, "p_hit": 1.0 - math.exp(-(size / max(aim_urad * 1e-6 * range_m, 1e-9)) ** 2)}

@@ -855,6 +855,97 @@ formation = "ghost"
 class = "phalaena"
 position = { body = "mars", offset_km = [-2201973, 30240348, 687739] }
 
+# ---- Venus Raiders: ten hostile frigates (PHALAENA hulls) on station around Venus, on guard, for
+# trying a fleet action: a ring 30,000 km out in the ecliptic. Placeholder callsigns and class.
+[[contact]]
+id = "venus-raiders"
+callsign = "Venus Raiders"
+affiliation = "hostile"
+faction = "bandit"
+echelon = "squadron"
+flag = "raider-1"
+stance = "guard"
+
+[[contact]]
+id = "raider-1"
+callsign = "Raider 1"
+echelon = "ship"
+formation = "venus-raiders"
+class = "phalaena"
+position = { body = "venus", offset_km = [30000, 0, 0] }
+
+[[contact]]
+id = "raider-2"
+callsign = "Raider 2"
+echelon = "ship"
+formation = "venus-raiders"
+class = "phalaena"
+position = { body = "venus", offset_km = [24271, 17634, 0] }
+
+[[contact]]
+id = "raider-3"
+callsign = "Raider 3"
+echelon = "ship"
+formation = "venus-raiders"
+class = "phalaena"
+position = { body = "venus", offset_km = [9271, 28532, 0] }
+
+[[contact]]
+id = "raider-4"
+callsign = "Raider 4"
+echelon = "ship"
+formation = "venus-raiders"
+class = "phalaena"
+position = { body = "venus", offset_km = [-9271, 28532, 0] }
+
+[[contact]]
+id = "raider-5"
+callsign = "Raider 5"
+echelon = "ship"
+formation = "venus-raiders"
+class = "phalaena"
+position = { body = "venus", offset_km = [-24271, 17634, 0] }
+
+[[contact]]
+id = "raider-6"
+callsign = "Raider 6"
+echelon = "ship"
+formation = "venus-raiders"
+class = "phalaena"
+position = { body = "venus", offset_km = [-30000, 0, 0] }
+
+[[contact]]
+id = "raider-7"
+callsign = "Raider 7"
+echelon = "ship"
+formation = "venus-raiders"
+class = "phalaena"
+position = { body = "venus", offset_km = [-24271, -17634, 0] }
+
+[[contact]]
+id = "raider-8"
+callsign = "Raider 8"
+echelon = "ship"
+formation = "venus-raiders"
+class = "phalaena"
+position = { body = "venus", offset_km = [-9271, -28532, 0] }
+
+[[contact]]
+id = "raider-9"
+callsign = "Raider 9"
+echelon = "ship"
+formation = "venus-raiders"
+class = "phalaena"
+position = { body = "venus", offset_km = [9271, -28532, 0] }
+
+[[contact]]
+id = "raider-10"
+callsign = "Raider 10"
+echelon = "ship"
+formation = "venus-raiders"
+class = "phalaena"
+position = { body = "venus", offset_km = [24271, -17634, 0] }
+
 # ---- the local picture --------------------------------------------------------------------------------
 [[contact]]
 id = "g1"

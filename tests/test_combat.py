@@ -84,7 +84,8 @@ def test_a_stance_is_ordered_inherited_and_kept_in_the_ledger(tmp_path):
     assert c.post("/api/order", json={**o, "unit": "kiki", "profile": "nope"}).status_code == 400
     e = c.get("/api/engagement/sol-demo/kiki-2", params={**q, "t": t + 120}).json()
     assert e["stance"] == "guard" and e["stance_from"]["by"] == "tf-1" and e["profile"] == "wall" and e["readiness"] == 1
-    assert [x["kind"] for x in e["ledger"]] == ["stance", "stance"]
+    assert [x["kind"] for x in e["ledger"]] == ["stance", "active", "quarters"]      # the CAPTAIN's readiness, at once
+    assert e["ledger"][2]["label"] == "Guard: readiness I" and e["ledger"][2]["source"] == "ai"
     f = c.get("/api/engagement/sol-demo/tf-1", params={**q, "t": t + 120}).json()
     assert f["stance"] == "guard" and f["profile"] is None and f["ships"] > 3
     assert c.get("/api/engagement/sol-demo/kiki-2", params={**q, "t": t - 60}).json()["stance"] == "hold"
@@ -149,17 +150,10 @@ def _hunt(c, t, stance="aggressive", unit="tf-3", map="hold-the-line", **range_k
                                       "profile": "hunters", "stance": stance}).status_code
 
 
-def _drive(c, t0, t1, step=600.0):
-    """The map's clock run from t0 to t1: each side pictured every step (finer while the CAPTAIN
-    asks it: a ship engaged), the AI handed it."""
-    host, world = c.app.state.sim.host, c.app.state.world
-    sc = world.scenarios["sol-demo"]
-    fleet = world.fleet(sc)
-    t = float(t0)
-    while t < t1:
-        fleet.reach(t)
-        host.pictures.publish(sc, fleet, t)
-        t += min(step, host.pictures.step(sc, fleet))
+def _drive(c, t0, t1):
+    """The fleet flown to t1: the AI is handed it at its front edge, at the moments it asks for."""
+    fleet = c.app.state.world.fleet(c.app.state.world.scenarios["sol-demo"])
+    fleet.reach(t1)
     return fleet
 
 
@@ -174,10 +168,11 @@ def test_the_ai_reads_only_its_sides_picture(tmp_path):
     assert np.isfinite(sp.r[own]).all() and set(sp.said) == set(np.flatnonzero(own).tolist())
     unseen = ~own & ~sp.shown
     assert unseen.any() and np.isnan(sp.r[unseen]).all() and np.isnan(sp.v[unseen]).all()
-    assert host.ai.wants(sc, fleet, t) == {"arcvs": False, "jadf": False, "ghost": False}   # the first block: readiness
-    got = host.pictures.publish(sc, fleet, t)       # to order; nothing the sweep holds is near any ship, so no tracks
-    assert got and {o.kind for o in got} == {"quarters"} and {o.target["level"] for o in got} == {2}
-    assert host.ai.wants(sc, fleet, t + 60) == {}                                          # and not again this block
+    got = _ai(fleet)                                # at the flight's front edge, the first block: readiness to order;
+    assert {x[0] for x in got} == {fleet.t0 + 600}           # nothing the sweep holds is near any ship: no more
+    assert {x[3] for x in got if x[2] == "quarters"} == {"Hold ground: readiness II", "Return fire: readiness II", "Guard: readiness I"}
+    assert {x[1] for x in got if x[2] == "active"} == {f"raider-{k}" for k in range(1, 11)}       # (on guard, they ping)
+    assert host.ai.wants(sc, fleet, t + 60) == {}
 
 
 def test_aggressive_ships_enter_combat_on_what_they_see_and_the_book_keeps_it(tmp_path):
@@ -189,7 +184,8 @@ def test_aggressive_ships_enter_combat_on_what_they_see_and_the_book_keeps_it(tm
     assert _hunt(c, t) == 200
     _drive(c, t, t + 6 * 3600)
     mine = [x[2:] for x in _ai(fleet) if x[1] == "tf3-es-1"]
-    assert mine[:3] == [("quarters", "Aggressive: readiness I", None), ("active", None, None), ("goto", "station on bogey", "ghost-1")]
+    k = mine.index(("quarters", "Aggressive: readiness I", None))      # (before it, at the first block: her written stance's)
+    assert mine[k:k + 3] == [("quarters", "Aggressive: readiness I", None), ("active", None, None), ("goto", "station on bogey", "ghost-1")]
     cap = c.app.state.sim.host.ai.captain(world.scenarios["sol-demo"], fleet)
     i = fleet.c.row["tf3-es-1"]
     assert cap.machines[i].at.node == "close" and i in cap.engaged and fleet.pinging(t + 6 * 3600)[i]
@@ -213,8 +209,10 @@ def test_a_map_order_overrules_the_ais_later_orders(tmp_path):
     assert not after("tf3-es-1") and after("tf3-es-2")  # hers after it go; the others' stand
     cap = c.app.state.sim.host.ai.captain(world.scenarios["sol-demo"], fleet)
     assert not cap.machines[fleet.c.row["tf3-es-1"]].engaged                  # her MINERVA set back too
-    _drive(c, t + 300, t + 3600)                     # and it decides for her again from there
-    assert [x[2] for x in after("tf3-es-1")] == ["goto"]       # (her readiness, given before it, stands)
+    front = fleet.t
+    _drive(c, t + 300, front + 3600)                 # and it decides for her again, at its next moment
+    again = after("tf3-es-1")                        # (her readiness ordered again, then her station)
+    assert [x[2] for x in again] == ["quarters", "active", "goto"] and all(x[0] >= front - 1e-6 for x in again)
 
 
 def test_return_fire_enters_combat_on_a_ship_engaging_her(tmp_path):
@@ -228,7 +226,8 @@ def test_return_fire_enters_combat_on_a_ship_engaging_her(tmp_path):
     _drive(c, t, t + 3600)
     assert ("tf3-es-1", "goto", "station on bogey", "ghost-1") in {x[1:] for x in _ai(fleet)}
     assert not any(x[1] == "tf3-es-2" for x in _ai(fleet, ("goto", "fire")))   # not engaged: holds her fire
-    assert {x[3] for x in _ai(fleet, ("quarters",)) if x[1].startswith("tf3")} == {"Return fire: readiness II"}
+    e = c.get("/api/engagement/sol-demo/tf3-es-2", params={"player": "arcvs", "t": t + 3600}).json()
+    assert (e["stance"], e["readiness"], e["combat"]["quarters"]) == ("return-fire", 2, 2)     # (readiness II as she stood: no new order)
 
 
 def test_hold_ground_faces_its_target_and_never_moves(tmp_path):

@@ -66,8 +66,8 @@ def test_a_shot_is_logged_lands_and_is_made_again_when_flown_again(monkeypatch):
     f.reach(t + 2 * 3600)
     assert len([e for e in f.combat.log if e.ship == i]) == 1 and len(hits) == 2 and c.quarters[i] == 1
     f.command(Order("tf3-lf4-bs-1", t + 30, "fire", target={"weapon": "spinal", "dir": [-x for x in u], "targets": ["tf3-lf4-ls-1"]},
-                    source="ai"))
-    assert f.combat.log[-1].what == "out of arc" and f.combat.log[-1].result is None and len(hits) == 2
+                    source="ai"))                    # (a shot in the past flies her and her target again: hers at t is made again)
+    assert f.combat.log[-1].what == "out of arc" and f.combat.log[-1].result is None and len(hits) == 3
     f.command(Order("tf3-lf4-bs-1", t, "fire", target={"weapon": "nope"}, source="ai"))
     assert any("no weapon 'nope'" in x for x in f.findings)
 
@@ -115,3 +115,43 @@ def test_the_logs_indices_agree_with_the_log_through_forgets():
             every = [x for x in cb.log if x.ship == s]
             assert (last and last["t"]) == (every[-1].t if every else None) and (cb._mine.get(s) or [None])[-1] is (every[-1] if every else None)
             assert ([x for x in cb._mine.get(s, []) if x.t <= T + 1e-6] == mine)
+
+
+def test_light_on_a_target_reaches_as_the_canon_says():
+    """TORMENTA §6: twelve PANEL III open a woven hull at 1,000 km in about two and a half minutes
+    (§6.5, open loop at 6.5 µrad); one PANEL III ruins a radiator held 10 s at ~16,100 km and a mane
+    held 100 s at ~62,200 km (§6.7, closed loop); dazzle to 40,000 km. A PAPILION's optical battery
+    is its twelve PANEL III."""
+    from astrum import optics
+    _, f = _fleet()
+    i = f.c.row["tf3-lf4-bs-1"]
+    w, rules = f.combat.weapon(i, "optical"), f.combat.optics
+    assert w.optic == optics.Optic(12, 10.0, 1.536, 40000.0) and w.reach_km == 40000
+    d = optics.dwell(w.optic, 1e6, 6.5, 1.0, rules)
+    assert 82.7 / d["hull_mjm2"] == pytest.approx(150, rel=0.05) and d["spot_m"] == pytest.approx(0.251, abs=0.001)
+    one = optics.Optic(1, 10.0, 1.536, 40000.0)
+    assert optics.dwell(one, 16100e3, 6.5, 10.0, rules)["held_mjm2"] == pytest.approx(1.2, rel=0.03)
+    assert optics.dwell(one, 62200e3, 6.5, 100.0, rules)["held_mjm2"] == pytest.approx(0.8, rel=0.03)
+    assert "dazzle" in optics.dwell(one, 39e6, 6.5, 10.0, rules)["effects"]
+    assert "dazzle" not in optics.dwell(one, 41e6, 6.5, 10.0, rules)["effects"]
+
+
+def test_a_hit_takes_off_what_it_put_on_her_at_the_share_that_opens_a_hull():
+    """The damage model: a salvo's channels each their pulse, at the share of the opening fluence
+    (82.7 MJ/m²) their spot reaches, a citadel hit twice; light the energy held on her hull, at its
+    open-loop share. At her hit points (her rate's) she is destroyed."""
+    from types import SimpleNamespace as E
+    _, f = _fleet()
+    j = f.c.row["tf3-lf4-ls-1"]                                       # a PHALAENA: a frigate
+    H = f.combat.harm
+    assert H.hp[j] == 5000 and H.open_mjm2 == 82.7 and H.citadel == 2.0
+    got = H.hit(f, E(result={"hits": 8, "citadel": 3, "pulse_mj": 91.2, "fluence_mjm2": 833.0}), j, 0.0)
+    assert got == {"lost_mj": pytest.approx(91.2 * (5 + 2 * 3)), "destroyed": False}
+    far = H.hit(f, E(result={"hits": 8, "citadel": 0, "pulse_mj": 91.2, "fluence_mjm2": 7.12}), j, 0.0)
+    assert far["lost_mj"] == pytest.approx(91.2 * 8 * 7.12 / 82.7)
+    lit = H.hit(f, E(result={"hull_mjm2": 5.5, "energy_mj": 184.0}), j, 0.0)
+    assert lit["lost_mj"] == pytest.approx(184.0 * 5.5 / 82.7)
+    f.c.damage[j] = 4990.0
+    assert H.hit(f, E(result={"hits": 1, "citadel": 0, "pulse_mj": 91.2, "fluence_mjm2": 833.0}), j, 0.0)["destroyed"]
+    assert H.destroyed(f, j) and H.hit(f, E(result={"hits": 1, "citadel": 0, "pulse_mj": 91.2, "fluence_mjm2": 833.0}), j, 0.0) == \
+        {"lost_mj": pytest.approx(91.2), "destroyed": False}                                  # (destroyed once)

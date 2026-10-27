@@ -1,24 +1,23 @@
-"""The picture processor: each side's picture of a scenario at its map's clock, for its subscribers.
+"""The picture processor: each side's picture of a scenario, for whoever reads one.
 
 The simulation flies the fleet and takes orders; what each side may know of it is made here, once
 per moment, by the same functions the map's pictures are (astrum/picture.py: what its sensors saw,
-as reported to its flagship), and handed to whoever subscribed: the AI (astrum/ai.py), as a
-browser is handed its side's. A subscriber reads only what is in the picture and answers with
-orders, through the order book like anyone else.
+as reported to its flagship). The ship AI is handed its sides' pictures (side_picture) at the
+flight's front edge (astrum/ai.py), as a browser is handed its side's; a reader reads only what is
+in the picture and answers with orders, through the order book like anyone else.
 
-The clock is the map's: the moment its last picture was asked for (SimHost.frame). A scenario's
-sides are pictured when its clock has moved PICTURE_STEP_S of game time since the last, at most
-every PICTURE_WALL_S of wall time (at the fastest warps the subscribers see coarser moments, as a
-player would), nor more than PICTURE_SHARE of the time, and again soon after orders are given
-(poke). Every side is swept as the fleet flies (astrum/detect.py Sweeper): a picture only reads
-what it has made. Run in a thread of its own beside
-the run-ahead (threaded), or stepped by hand (publish: tests and tools).
+Subscribers may also be handed every side at the map's clock (publish): pictured when its clock
+has moved PICTURE_STEP_S of game time since the last, at most every PICTURE_WALL_S of wall time,
+nor more than PICTURE_SHARE of the time, and again soon after orders are given (poke). Every side
+is swept as the fleet flies (astrum/detect.py Sweeper): a picture only reads what it has made. Run
+in a thread of its own beside the run-ahead (threaded), or stepped by hand (publish: tests and tools).
 """
 from __future__ import annotations
 
 import threading
 import time
 import traceback
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -46,14 +45,39 @@ class SidePicture:
     shown: np.ndarray                 # in the picture at all (own: always)
     identified: np.ndarray            # known for who she is (own and friends: always)
     old: np.ndarray                   # an old track: where she was last seen, long ago
-    said: dict = field(default_factory=dict)        # own row -> what she was given (Fleet versions': goal, with its g; place)
+    said: Mapping = field(default_factory=dict)     # own row -> what she was given (Fleet versions': goal, with its g; place)
     fired_on: dict = field(default_factory=dict)    # own row -> the rows flying an engage order on her
     age: np.ndarray | None = None                   # how old what is shown of each is (s; own: 0)
+    wrecked: np.ndarray | None = None               # shown, and destroyed (a wreck is known for one)
 
     def reckoned(self, j: int) -> np.ndarray:
         """Where she is now, as the side reckons it: where she was seen, on at her velocity then."""
         age = 0.0 if self.age is None or not np.isfinite(self.age[j]) else float(self.age[j])
         return self.r[j] + np.nan_to_num(self.v[j]) * age
+
+
+class Said(Mapping):
+    """Each of the side's own rows -> what she was given (Fleet versions': goal, with its g; place),
+    read when asked for."""
+
+    def __init__(self, V, pic: dict, own: np.ndarray):
+        self.V, self.pic, self.rows = V, pic, np.flatnonzero(own)
+        self._own, self._got = own, {}
+
+    def __getitem__(self, a: int) -> dict:
+        if not (0 <= a < len(self._own) and self._own[a]):
+            raise KeyError(a)
+        if a not in self._got:
+            got = self.V.said[self.pic["mver"][a]] or {}
+            goal = got.get("goal")
+            self._got[a] = {**got, "goal": {**goal, "g": float(self.pic["gg"][a])} if goal else None}
+        return self._got[a]
+
+    def __iter__(self):
+        return iter(self.rows.tolist())
+
+    def __len__(self) -> int:
+        return len(self.rows)
 
 
 class Pictures:
@@ -147,14 +171,11 @@ class Pictures:
         its ships, which they know by being fired on."""
         side = self.host._side(sc, fleet, view)
         n, own, V = len(fleet.c.row), side.own, fleet.versions
-        said, on = {}, {}
-        for a in np.flatnonzero(own | pic["goal"][:n]).tolist():
-            got = V.said[pic["mver"][a]] or {}
-            goal = got.get("goal")
-            if own[a]:
-                said[a] = {**got, "goal": {**goal, "g": float(pic["gg"][a])} if goal else None}
+        said, on = Said(V, pic, own), {}
+        for a in np.flatnonzero(~own[:n] & pic["goal"][:n]).tolist():       # who flies an engage on one of ours
+            goal = (V.said[pic["mver"][a]] or {}).get("goal")
             j = fleet.c.row.get(goal["target"].get("unit")) if goal else None
-            if goal and goal["target"].get("engage") and j is not None and own[j] and not own[a]:
+            if goal and goal["target"].get("engage") and j is not None and own[j]:
                 on.setdefault(j, []).append(a)
         pic = {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in pic.items()}
         true_r = pic["r"][:n].copy()
@@ -170,5 +191,6 @@ class Pictures:
             r[attackers] = true_r[attackers]
             age[attackers] = 0.0
             shown[attackers] = True
+        wrecked = shown & (fleet.c.damage[:n] >= fleet.combat.harm.hp[:n])
         return SidePicture(sc, fleet, side, t, r, hide(pic["v"][:n]), hide(pic["dir"][:n]), shown & (pic["thrust"][:n] > 0),
-                           shown, ident, old, said, on, age)
+                           shown, ident, old, said, on, age, wrecked)

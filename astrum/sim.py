@@ -307,6 +307,8 @@ class Fleet:
         self.sensors = Sensors(self, registry)              # every ship's sensors, a cone each (astrum/detect.py)
         self.sweeper = Sweeper(self)                        # ... and every side's sweeps, as it is flown
         self.combat = combat.CombatBook(self, registry)     # her weapons, and what happened (astrum/combat.py)
+        self.front = None                                   # the ship AI at the flight's front edge (_front), if any
+        self._front_t, self._front_due = -math.inf, -math.inf
 
     # ---- the timeline: what the map reads ----------------------------------------------------
     def keep_timeline(self) -> Timeline:
@@ -503,21 +505,18 @@ class Fleet:
             given = self._enter(orders)
             if not given:
                 return None
+            if any(o.source != "ai" for o in orders):
+                self._front_due = -math.inf                   # (the AI looks at what was given at its next moment)
             t_o = float(B.at[given].min())
             if self.t < t_o - 1e-9:
                 return None
             if t_o >= self.t - 1e-9 and self.mending is None:   # at the fleet's own moment: given now
                 self._run(self.t)
                 return {self.c.ids[B.ship[e]]: self.c.ship(B.ship[e]) for e in given}
-            if self.mending is None and all(int(B.kind[e]) == FIRE for e in given):   # shots move no ship: one the
-                for e in sorted(given, key=lambda e: B.at[e]):                       # fleet has passed is fired where
-                    if B.at[e] < self.t - 1e-9:                                      # it falls, and nothing flies again
-                        self._qi += 1
-                        self._apply(int(e))
-                self._run(self.t)
-                return {self.c.ids[B.ship[e]]: self.c.ship(B.ship[e]) for e in given}
             self._qi += int((B.at[given] < self.t).sum())   # given before where the fleet is: flown again below
-            return self._refly({self.c.ids[B.ship[e]] for e in given}, t_o, set(given), float(B.at[given].max()))
+            ships = {self.c.ids[B.ship[e]] for e in given}       # (a shot's targets too: what it does to them flies)
+            ships |= {u for e in given if B.kind[e] == FIRE for u in B.of(e).target.get("targets", ()) if u in self.c.row}
+            return self._refly(ships, t_o, set(given), float(B.at[given].max()))
 
     def refuel(self, ship: str, t: float, kg: float, source: str = "map") -> dict[str, Ship] | None:
         """Propellant taken on by a ship at t, up to her tanks: an order like any other, so a fleet
@@ -562,9 +561,9 @@ class Fleet:
         self._forget(t_o)
         k = max(bisect.bisect_right([c[0] for c in self._checkpoints], t_o) - 1, 0)
         t_k, snap, st_t = self._checkpoints[k]
-        while True:                                       # the rows they touch, then and now
+        while True:                                       # the rows they touch, then and now, and whom they fought
             self._restore_rows(snap, rows)
-            more = self._affected(set(), rows)
+            more = self._affected(set(), rows) | self.combat.partners(t_k, rows)
             if more <= rows:
                 break
             rows |= more
@@ -835,7 +834,8 @@ class Fleet:
             n = c.n
             held = (c.burn[:n] == BURN_G) | (c.burn[:n] == BURN_THROTTLE)
             ends = c.buntil[:n][held]
-            t1 = min(self._grid_next(self.t), t_end, nxt, *(float(e) for e in ends if e > self.t))
+            due = self._front_due if self.front is not None and self._front_due > self.t + 1e-6 else math.inf
+            t1 = min(self._grid_next(self.t), t_end, nxt, due, *(float(e) for e in ends if e > self.t))
             T0 = self.t
             slots, flown = self._fly(self.t, t1)
             self.t = t1
@@ -848,6 +848,18 @@ class Fleet:
                 cps.append((self.t, self._snapshot(), self._station_t))
                 while len(cps) > 2 and cps[1][0] < self.t - CHECKPOINT_KEEP_S:
                     del cps[1]                          # the scenario's start stays: further back flies from there
+            self._front()
+
+    def _front(self) -> None:
+        """The ship AI at the flight's front edge: at a moment it is due and has not yet seen (a
+        replay from a checkpoint gives its orders again from the book), handed the fleet as it
+        stands; its orders are given at that moment, so nothing flies again for them."""
+        if self.front is None or self.t < self._front_due - 1e-6 or self.t <= self._front_t + 1e-9:
+            return
+        self._front_t = self.t
+        orders, self._front_due = self.front(self, self.t)
+        if orders:
+            self._enter(orders)
 
     def _combat_step(self, T0: float, T1: float, scope: np.ndarray | None = None) -> None:
         """The combat step (astrum/combat.py) for every ship engaging (among scope, if given)."""
@@ -1644,11 +1656,19 @@ class Fleet:
         c.mode[i], c.burn[i], c.thrust[i], c.goal[i], c.order[i], c.burn_ev[i] = FREE, BURN_NONE, 0.0, False, -1, -1
         self._touch(i)
 
+    def _wreck(self, i: int) -> None:
+        """Destroyed (astrum/damage.py): her drive dead, she flies on as she goes."""
+        self._coast(i)
+        self.c.fmax[i] = 0.0
+        self.findings.append(f"{self.c.ids[i]}: destroyed at {self._now:.0f}")
+
     def _apply(self, e: int) -> None:
-        """An event of the order book, given to her at its moment."""
+        """An event of the order book, given to her at its moment (a wreck takes none)."""
         c, B = self.c, self.book
         i, at, kind, g = int(B.ship[e]), float(B.at[e]), int(B.kind[e]), B.of(e)
         self._now = at
+        if self.combat.destroyed(self, i):
+            return
         if kind == BURN:
             b = self._placed(at)[2].get(g.burn.get("bullseye", "system"))
             if b is None:
@@ -1733,7 +1753,9 @@ class Fleet:
             c.dir[i] = g.target["dir"]
             self._touch(i)
         elif kind == FIRE:                            # a WeaponEngageOrder: the combat book resolves it
-            self.combat.fire(self, i, at, g)
+            ev = self.combat.fire(self, i, at, g)
+            for j in (ev.targets if ev is not None and ev.harm and ev.harm["destroyed"] else ()):
+                self._wreck(j)
         elif kind == QUARTERS:                        # her readiness: 1 general quarters, 2 attack, 3 watching
             c.quarters[i] = quarters_level(g)
             self.combat.changed()

@@ -1,19 +1,24 @@
-"""Standing orders: what a unit stands in, the orders it was given, and the ship AI's subscriber.
+"""Standing orders: what a unit stands in, the orders it was given, and the ship AI at the front edge.
 
 A ship's ReadyStance and combat profile are each, at a moment, the last one ordered to her (a STANCE
 event of the order book, given to her or to a formation she is in), else the one written for her in
 the scenario or for the nearest formation above her, else the MINERVA's default stance
 (data/minerva.toml) and the root profile. A formation stands in what its ships do, when they all do.
 
-The ship AI (astrum/shipai: each ship's MINERVA, run by the CAPTAIN) is a subscriber of the picture
-processor (astrum/pictures.py), as a browser is of the map's pictures: it is handed each side's
-picture at the map's clock, reads only what is in it, and gives orders (source "ai") through the
-order book, as a player does. The flight never waits on it.
+The ship AI (astrum/shipai: each ship's MINERVA, run by the CAPTAIN) runs at the flight's front
+edge (Fleet.front): the fleet hands it itself as it stands after a step, at the moments it asks for
+(an engaged ship's tick, else the next block), and it is handed each side's picture there, made by
+the picture processor's functions (astrum/pictures.py) as a browser's is. It reads only what is in
+it and gives orders (source "ai") through the order book, as a player does, at that moment: the
+flight's own, so nothing flies again for them, at any warp. The flight waits on it: it is the
+fleet's own step. At a warp above merge_warp an engaged ship's tick is merged_s, and a fire order
+fires the tick's cycles at once (data/minerva.toml).
 """
 from __future__ import annotations
 
 import numpy as np
 
+from .detect import SAMPLE_S
 from .orders import KIND, STANCE
 from .shipai.captain import Captain, player_of, written
 
@@ -71,12 +76,17 @@ def _said(g) -> str | None:
 
 
 class AI:
-    """The ship AI as the picture processor's subscriber: a CAPTAIN for each fleet, handed each
-    side's picture, its orders given to the fleet as a player's are."""
+    """The ship AI at each fleet's front edge: a CAPTAIN for each fleet, handed each side's picture
+    there (made by pictures, the picture processor), its orders given to the fleet as a player's are."""
 
-    def __init__(self, world):
-        self.world = world
+    def __init__(self, world, pictures=None):
+        self.world, self.pictures = world, pictures
         self.captains: dict[int, Captain] = {}
+        self.warp: dict[str, float] = {}                 # scenario -> its level's warp (the run-ahead says)
+
+    def attach(self, sc, fleet) -> None:
+        """Run at this fleet's front edge."""
+        fleet.front = lambda f, t: self.front(sc, f, t)
 
     def captain(self, sc, fleet) -> Captain:
         m = self.captains.get(id(fleet))
@@ -88,19 +98,19 @@ class AI:
     def wants(self, sc, fleet, t: float) -> dict[str, bool]:
         return self.captain(sc, fleet).wants(fleet, t)
 
-    def step(self, sc, fleet) -> float | None:
-        """How often the scenario is pictured for it: finer while a ship of it is engaged."""
-        m = self.captains.get(id(fleet))
-        if m is None or not m.engaged:
-            return None
-        soon = min(m.due[i] for i in m.engaged) - m.last_t
-        return self.world.minerva.engaged_s if soon < self.world.minerva.block_s / 10 else None
-
-    def __call__(self, sp) -> list:
-        orders = self.captain(sp.scenario, sp.fleet).decide(sp)
-        if orders:
-            sp.fleet.command(*orders)
-        return orders
+    def front(self, sc, fleet, t: float) -> tuple[list, float]:
+        """The fleet at its front edge, t: the sides the CAPTAIN wants pictured (every side swept up
+        to t first), each handed to it; its orders, and when it wants the fleet again."""
+        M, cap = self.world.minerva, self.captain(sc, fleet)
+        cap.tick_s = M.merged_s if self.warp.get(sc.id, 0.0) > M.merge_warp else M.engaged_s
+        views = cap.wants(fleet, t)
+        out = []
+        if views:
+            fleet.sweeper.catch_up(int(np.floor((t - fleet.t0) / SAMPLE_S + 1e-9)))
+            pic = fleet.picture(t)
+            for view, tracks in views.items():
+                out += cap.decide(self.pictures.side_picture(sc, fleet, view, t, pic, tracks))
+        return out, cap.next_due(t)
 
     def overrule(self, sc, fleet, ships: list[str], t: float) -> None:
         """An order of the map's at t: the AI's later orders to these ships go, their MINERVA is set

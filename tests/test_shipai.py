@@ -38,38 +38,35 @@ def test_a_node_is_left_from_the_next_tick_and_after_its_wait():
     assert m.at.node == READY and not m.engaged
 
 
-def test_the_spinal_loop_closes_fires_each_cycle_and_is_paced(tmp_path):
-    """The root's map, flown at bogeys too: she closes to station at her spinal battery's envelope,
-    fires it once it has cycled and the map comes round to it (each shot a WeaponEngageOrder in the
-    book, logged by the combat book; each salvo resolved, on her spine), holding station between.
-    Looked at a quarter of the way in while she closes, every tick once there."""
+def test_the_spinal_loop_closes_fires_each_cycle_and_destroys_her(tmp_path):
+    """The root's map, flown at bogeys too, at the flight's front edge: she closes to station at her
+    spinal battery's envelope and fires it each cycle (each shot a WeaponEngageOrder in the book,
+    resolved on her spine by the combat book), her optics held on the target with it; the target
+    destroyed, she leaves combat and fires no more."""
     c, world = _app(tmp_path)
     fleet = world.fleet(world.scenarios["sol-demo"])
     t = fleet.t0 + 600
     assert _hunt(c, t, "aggressive", unit="tf3-es-1", map="root") == 200
     c.post("/api/order", json={"scenario": "sol-demo", "view": "master", "unit": "ghost-1", "t": t, "g": 0.3,
                                "target": {"unit": "tf3-es-1"}})
-    host, sc = c.app.state.sim.host, world.scenarios["sol-demo"]
-    n, T = 0, t
-    while T < t + 44 * 3600:
-        fleet.reach(T)
-        host.pictures.publish(sc, fleet, T)
-        T += host.pictures.step(sc, fleet)
-        n += 1
-    i = fleet.c.row["tf3-es-1"]
-    cap = host.ai.captain(sc, fleet)
+    fleet.reach(t + 44 * 3600)
+    i, j = fleet.c.row["tf3-es-1"], fleet.c.row["ghost-1"]
+    cap = c.app.state.sim.host.ai.captain(world.scenarios["sol-demo"], fleet)
     path = [p.node for p in cap.machines[i].history]
-    assert path[path.index("close"):path.index("close") + 5] == ["close", "fire", "await", "hold", "await"]
+    k = path.index("close")
+    assert path[k:k + 5] == ["close", "fire", "await", "hold", "hold"] and path[-1] == "ready"
     shots = [e for e in fleet.combat.log if e.ship == i]
-    gaps, w = np.diff([e.t for e in shots]), fleet.combat.weapon(i, "spinal")
+    spinal, light = [e for e in shots if e.weapon == "spinal"], [e for e in shots if e.weapon != "spinal"]
+    w = fleet.combat.weapon(i, "spinal")
     assert w.interval_s == 10 and w.salvo_channels == 36                 # an AESHNA: six PICKET stacks, together
-    assert len(shots) > 100 and gaps.min() >= w.interval_s - 1e-6
-    assert np.median(gaps) == 2 * world.minerva.engaged_s                # (hold, await, hold: a tick each)
-    fired = [e for e in shots if e.what == "fired"]
-    assert len(fired) >= 0.99 * len(shots) and np.mean([e.result["hits"] for e in fired]) > 35    # 0.22 walls at 1,394 km
-    assert {(e.weapon, e.kind) for e in shots} == {("spinal", "energy")} and all(e.targets == (fleet.c.row["ghost-1"],) for e in shots)
-    assert len(_ai(fleet, ("fire",))) == len(shots) and fleet.c.stand[i] == pytest.approx(0.9 * 1550e3)
-    assert n < 5000                                   # 44 h at 10 s would be 15,840
+    gaps = np.diff([e.t for e in spinal])
+    assert len(spinal) >= 3 and gaps.min() >= w.interval_s - 1e-6 and np.median(gaps) == w.interval_s
+    assert all(e.what == "fired" for e in spinal) and np.mean([e.result["hits"] for e in spinal]) > 35   # 0.22 walls at 1,394 km
+    assert {e.weapon for e in light} == {"domes", "strips"} and all("dazzle" in e.result["effects"] for e in light)
+    assert max(e.result["range_km"] for e in light) <= 1550 * 1.01                   # (where the map fires: in the envelope)
+    assert fleet.combat.destroyed(fleet, j) and fleet.c.damage[j] >= fleet.combat.harm.hp[j] and fleet.c.fmax[j] == 0
+    gone = next(e.t for e in spinal if e.harm and e.harm["destroyed"])
+    assert all(e.t <= gone for e in shots) and len(_ai(fleet, ("fire",))) == len(shots)
 
 
 def test_search_and_destroy_passes_each_target_once_and_coasts_on(tmp_path):
@@ -133,9 +130,6 @@ def test_a_quiet_scenario_is_not_pictured_for_the_ship_ai(tmp_path, monkeypatch)
     monkeypatch.setattr(P.Pictures, "side_picture", lambda self, sc, fl, view, t, pic, tracks=True:
                         seen.append((view, tracks)) or real(self, sc, fl, view, t, pic, tracks))
     t = fleet.t0 + 600
-    for T in np.arange(t, t + 6 * 3600, 60.0):
-        fleet.reach(float(T))
-        fleet.sweeper.catch_up(int((float(T) - fleet.t0) // 60))
-        host.pictures.publish(sc, fleet, float(T))
-    assert not any(tr for _, tr in seen) and len(seen) == 3                    # once each side, for its readiness
+    fleet.reach(t + 6 * 3600)
+    assert not any(tr for _, tr in seen) and len(seen) == 4                    # once each side, for its readiness
     assert {x[3] for x in _ai(fleet, ("quarters",)) if x[1].startswith("tf2")} == {"Return fire: readiness II"}

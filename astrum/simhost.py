@@ -499,10 +499,13 @@ class SimHost:
         self._shared: dict = {}                         # (level, system, side, player, moment, switches, versions) -> a picture, made once
         self.ahead = RunAhead(self) if run_ahead else None
         self.arrivals = Arrivals(world)
-        self.ai = AI(world)                             # the AI: a subscriber of each side's picture, giving orders
-        self.pictures = Pictures(world, self, threaded=run_ahead and world.config["sim"]["ai"])
+        self.pictures = Pictures(world, self)
+        self.ai = AI(world, self.pictures)              # the AI: at each fleet's front edge, handed each side's picture there
         if world.config["sim"]["ai"]:
-            self.pictures.subscribe(self.ai)
+            world.on_fleet.append(self.ai.attach)
+            for sid, f in world.fleets.items():
+                if sid in world.scenarios:
+                    self.ai.attach(world.scenarios[sid], f)
 
     def handle(self, kind: str, payload):
         if kind == "frame":
@@ -692,7 +695,7 @@ class SimHost:
         switches = resolve(world.config["picture"], req.get("picture"))
         if clock is not None:
             key = (lid, sid, side.view if side else None, req.get("player"), t, tuple(sorted(switches.items())),
-                   world.version, id(fleet), fleet.book.n if fleet is not None else 0)
+                   world.version, id(fleet), fleet.book.before(t + 2e-6) if fleet is not None else 0)   # (orders up to t: the AI's are ahead)
         pic = self._shared.get(key) if key is not None else None
         if pic is None:
             pic = self._picture(sid, s, eph, sc, fleet, side, t, switches, req.get("player"))
@@ -795,6 +798,7 @@ class RunAhead:
                 warp = 0.0 if clock.paused else clock.warp
                 ahead = min(max(warp * LOOKAHEAD_WALL_S, LOOKAHEAD_S[0]), LOOKAHEAD_S[1])
                 for sid in lv.scenarios if lv else ():
+                    self.host.ai.warp[sid] = warp
                     sc = self.world.scenarios.get(sid)
                     f = self.world.fleet(sc) if sc else None
                     if f is None:

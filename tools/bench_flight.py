@@ -5,9 +5,9 @@
     python tools/bench_flight.py --live 15    # and the sim's process as serve.py runs it, thread by thread
     python tools/bench_flight.py --live 15 --warp 86400     # ... at 1 d/s
 
-At 1 h/s, every wall second the process must fly an hour of the fleet, sweep that hour for every
-side, answer the map's pictures (30 a second here) and picture each side for the AI (4 a second at
-most). Each is timed apart, one thread, game hour by game hour, for: the fleet quiet; Task Force 3
+At 1 h/s, every wall second the process must fly an hour of the fleet (the ship AI with it, at the
+flight's front edge), sweep that hour for every side, and answer the map's pictures (30 a second
+here). Each is timed apart, one thread, game hour by game hour, for: the fleet quiet; Task Force 3
 (44) to a point a million km off Mars (it starts, cruises, brakes and arrives within 12 h); and
 Task Force 3 toward the Sun (it burns all the way). Then 24 game hours of flight by its steps.
 With --live: the simulation's own process as serve.py runs it, a map asking as the browser does,
@@ -34,7 +34,7 @@ from astrum import kernels  # noqa: E402
 from astrum.simhost import SimHost  # noqa: E402
 
 kernels.warm_up()
-WARP, FPS, AI_PER_S, HOURS = 3600.0, 30, 4, 12
+WARP, FPS, HOURS = 3600.0, 30, 12
 req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo", "view": "arcvs"}
 
 
@@ -88,10 +88,6 @@ def second_by_second(case):
         for k in range(FPS):
             host.frame({**req, "t": t + WARP * k / FPS}, conn=1)
         p["map pictures"] = time.perf_counter() - a
-        a = time.perf_counter()
-        for k in range(AI_PER_S):
-            host.pictures.publish(sc, f, t + WARP * k / AI_PER_S)
-        p["AI pictures"] = time.perf_counter() - a
         rows.append(p)
         t += WARP
     flying = sum(1 for i in f.c.row.values() if f.c.goal[i])
@@ -226,7 +222,7 @@ def threads_from(path, seconds, rate=100):
 if __name__ == "__main__":
     print(kernels.status())
     print("\nA wall second at 1 h/s, game hour by game hour (ms of one thread; 1000 = a whole core):\n")
-    parts = ["flight", "time to target", "sweeps", "map pictures", "AI pictures"]
+    parts = ["flight", "time to target", "sweeps", "map pictures"]
     print(f"  {'case':38s}" + "".join(f"{p:>16s}" for p in parts) + f"{'in all':>12s}{'worst hour':>12s}")
     for case, name in (("quiet", "fleet quiet (the scenario's own orders)"), ("near", "TF-3 (44) 1M km off Mars, arrives"),
                        ("sun", "TF-3 (44) toward the Sun, burning")):
