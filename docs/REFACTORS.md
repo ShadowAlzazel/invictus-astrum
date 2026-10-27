@@ -1,7 +1,7 @@
 # Refactors worth doing
 
 What has been measured and left for later, biggest gain first. Figures are sol-demo (154 ships,
-four sides) on the owner's machine, 24 October, unless said; `docs/SIMULATION.md` "Where the time
+four sides) on the owner's machine, 24 October, unless said (18 to 26: 164 ships, the container, 27 October); `docs/SIMULATION.md` "Where the time
 goes" has the rest. Compare a change side by side with the code before it, on one machine.
 
 ## Speed
@@ -16,15 +16,30 @@ goes" has the rest. Compare a change side by side with the code before it, on on
 | 6 | **A grid under the groups.** The sweep culls by formation spheres and a brightness bound, but groups against every target are still all pairs. | For thousands of ships: groups only against targets in nearby cells. | A coarse grid of the groups' spheres per minute in the kernel. |
 | 7 | **The map's clustering on a grid.** The overlay links units and tracks pairwise every frame. | Fine at 100s (2 ms a frame); needed for 1000s on screen. | Screen-space buckets for `clusters`. |
 
+| 18 | **The CAPTAIN in its own process (1c).** It runs at the flight's front edge, in the run-ahead's thread, which waits on it: a hunt costs 45 ms a game hour with it, 6 without (container). | The flight no longer waits on the AI; fast warps steadier. | The side pictures it reads handed across each tick (they are made from the fleet's arrays), its orders handed back at the same moment. |
+| 19 | **Fine ticks for the engaged alone.** While any ship is engaged, the flight stops at every tick (10 s), so every row is flown in 10 s steps. | The rest of the fleet keeps its 10-minute blocks during a battle. | The engaged rows flown apart between ticks, as a re-fly flies its scope. |
+| 20 | **Side pictures kept a minute.** At each tick each side wanted is pictured: detection about 0.7 ms a side. What has reached the flagship changes by the minute. | Most of the AI's cost in a battle. | The detection part of a side's picture kept per minute; own ships' rows read fresh. |
+| 21 | **Shots in a batch.** A shot costs about 0.4 ms, 0.07 of it the salvo; the rest is reading both ships at its moment. | Fleet actions of hundreds of ships. | Every fire order at one moment resolved in one array pass (geometry, presented sizes, draws seeded per shot). |
+| 22 | **The CAPTAIN's per-ship loop.** `decide` visits each ship due in Python. | Hundreds of engaged ships. | The conditions (distance, envelope, reach) as arrays over the rows due; only the moves between nodes per ship. |
+
 ## Clarity
 
 | # | Refactor | Why |
 |---|---|---|
 | 10 | **Old-track removals kept.** They live in the sim's memory (`SimHost._dismissed`): a restart brings them back. | Write them beside `bullseyes.toml`, per player. |
 | 15 | **Holding on a unit is placed, not flown.** A ship that arrives on a unit (an engage) holds station on it, carried as it moves. | An engaged ship that burns away should be chased under thrust; today the AI only notices at its next picture. The kernel would keep flying a go-to on a unit, or the AI re-engage a target that burns. |
+| 23 | **Projectiles as rows.** `CombatBook.launch` logs a round or a missile as launched, nothing more. | A kinetic round is a coasting row (gravity alone); a missile a row under its own burn and seeker; either handed to the damage model when it bursts or strikes. |
+| 24 | **Where a hit lands.** A channel lands on a kind of system by a share of her (TEMPORARY). | Her silhouette and attitude by basic shapes from her class's layout, so what faces the shooter is what is hit; then crew and prompt upset. |
+| 25 | **A wreck known by sight.** Every side's picture marks a wreck as one, as the truth has it. | Read off what the side sees of her: no plume, cold, no pings, and the flash only a ship near her saw. |
+| 26 | **States told apart.** Damaged, disabled and destroyed are alike in the simulation (all out). | Repair and salvage will need them apart; a system already out stays at the state it went out at. |
 | 12 | **`Versions` as arrays.** Per-row Python lists, flattened for `at` when they change. | Append-only arrays with a per-row cut would drop the rebuild and the lists. |
 
 ## Done
+
+- **The ship AI at the flight's front edge** (`727b9d9`): a step of the flight, its orders at the flight's moment, engaged ships on one tick grid; the 44 h escort fight 13.8 s to 1.4 s, 3 h of battle 17.7 s to 3.5 s.
+- **The combat log indexed** (`3354d16`): reload check, last shot and forget no longer read the whole log; at a million shots 22 / 23 / 57 ms to 0.001 / 0.004 / under 0.01 ms.
+- **A salvo's spot in closed form** (`d764e20`): 1.07 ms to 29 µs, the same spots to four figures.
+- **Systems by state** (`e6fbe58`): lists, not flags; a wreck's sensors cut from the sweep at no cost.
 
 - **Station keeping** (`a014217`, `6f51411`): a place's velocity is its central difference (it was a
   60 s forward difference, 21 m/s off by Io), and a station ship's samples carry the Hermite's
