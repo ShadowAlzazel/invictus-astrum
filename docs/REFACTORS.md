@@ -4,6 +4,57 @@ What has been measured and left for later, biggest gain first. Figures are sol-d
 four sides) on the owner's machine, 24 October, unless said (18 to 26: 164 ships, the container, 27 October); `docs/SIMULATION.md` "Where the time
 goes" has the rest. Compare a change side by side with the code before it, on one machine.
 
+## The plan (27 October)
+
+In this order; each stage is its own module (or block of one), measured before and after with
+`tools/bench_flight.py`, and keeps the same answers unless it says. The aim: 1 d/s with fleets moving
+and engaged, on the owner's machine (the budget there: about 37 ms of flight a game hour, the
+pictures taking the rest of the second).
+
+**A. The AI's look** (the priority)
+1. **The sweep across cores** (`kernels.sweep`, `detect.py`). It is 50–60% of the flight in the
+   moving cases, nine tenths of it compiled. The sides are uneven (JADF 163 ms, ARCVS 43 of 343 in
+   12 h, container), so a side to a thread gave only 20%; the targets of a minute are independent,
+   so the kernel's loop over them goes parallel (each target's best sighting her own): the same
+   sightings, est. 2–3x on 4 cores.
+2. **Side pictures by the minute** (20; `detect.Sweeper.arrived`, `pictures.side_picture`). What has
+   reached a flagship is made once a side a minute (it gathers an hour of sightings each time
+   now), and shared by the CAPTAIN and the map's pictures of that side.
+3. **The CAPTAIN's decisions as arrays** (22; `shipai/captain.py`). The conditions (distance,
+   envelope, reach, due) over the rows due at once; Python only for the moves between nodes. It
+   reads a view made at the front edge (the side picture and the columns it needs, as arrays),
+   not the fleet: the boundary D needs.
+
+**B. The timeline ahead** (27)
+1. **Dead leads' rows reused.** In 12 h of the Venus battle TF-2's CAPTAIN orders made 66 lead
+   rows and gave none back (`_prune_leads` does not put a row on `_spare`). A lead dead longer
+   than the kept day (the timeline's samples, the checkpoints) gives its row to the next.
+2. **Room sized at the start.** A row is 344 KB of timeline (2,048 samples); a doubling copies
+   every one (236 to 472 rows: 81 MB, 0.5–1 s in one block). Sized for the scenario's formations
+   (a lead each) and a margin, so play does not grow it.
+
+**C. The battle tick**
+1. **A setting** (the level's, the host's, as the clock): the engaged ships' tick, fine (10 s) by
+   default. Longer ticks fire a tick's cycles at once (merged salvos); what a longer tick loses is
+   the automaton's and the admiral's, not the simulation's.
+2. **Fine ticks for the engaged alone** (19). The engaged rows flown apart between ticks, as a
+   re-fly flies its scope; the rest keep their 10-minute blocks (215 pieces in 12 h of battle now,
+   72 without).
+3. **An order in a battle.** It re-flies the ship and every ship she fought with since the
+   checkpoint (`combat.partners`), out to the front edge: 120 min ahead, 21 rows, 441 ms; at 1 d/s
+   the run-ahead is up to 12 h ahead. So while ships are engaged the front edge stays near the
+   clock (the CAPTAIN's future is guesswork past it), and the partners' CAPTAIN orders after the
+   order's moment go and are decided again (today only the ordered ship's are: the other side
+   acts on a future that no longer happens).
+
+**D. The CAPTAIN in its own process** (18). With A3's view and C3's short battle look-ahead: the
+view handed across each tick, the orders handed back at the same moment, lockstepped at the front
+edge; the flight waits on it only when it lags.
+
+**E. Combat, after.** Shots in a batch (21), projectiles as rows (23: rods coasting, missiles
+under burn and seeker, each its own module behind `CombatBook.launch`), wrecks by what a side sees
+(25).
+
 ## Speed
 
 | # | Refactor | What it buys | What it costs |
@@ -21,8 +72,8 @@ goes" has the rest. Compare a change side by side with the code before it, on on
 | 20 | **Side pictures kept a minute.** At each tick each side wanted is pictured: detection about 0.7 ms a side. What has reached the flagship changes by the minute. In the Venus battle (`tools/bench_flight.py`) detection is 23% of the whole, reading the sightings (`SideSweep.sightings`) 15%. | Most of the AI's cost in a battle. | The detection part of a side's picture kept per minute; own ships' rows read fresh. |
 | 21 | **Shots in a batch.** A shot costs about 0.4 ms, 0.07 of it the salvo; the rest is reading both ships at its moment. | Fleet actions of hundreds of ships. | Every fire order at one moment resolved in one array pass (geometry, presented sizes, draws seeded per shot). |
 | 22 | **The CAPTAIN's per-ship loop.** `decide` visits each ship due in Python. | Hundreds of engaged ships. | The conditions (distance, envelope, reach) as arrays over the rows due; only the moves between nodes per ship. |
-| 27 | **Timeline room grown ahead.** When the rows outgrow it, `Timeline.grow` copies every sample of every field at once: in the Venus battle (236 to 472 rows) 0.7–1 s in one block, the worst game hour's 1.7–2.0 s. The fleet went from 165 rows to 231 in those 12 h. | No hitch when a battle adds rows. | Room grown before it is needed, a little at a time (or the samples in chunks of rows); and why the rows grew: leads freed and reused (`_free_leads`), or new ones each order. |
-| 28 | **The sweep the CAPTAIN asks for.** Outside a battle about two-thirds of the AI is `Sweeper.catch_up` inside `Captain._near` (35–45% of the flight, any case with an order out). | Most of the AI's cost while nothing is engaged. | The sweep read only as far as the minute that changed what is near, or culled to the ships the CAPTAIN asks about. |
+| 27 | **Timeline room grown ahead.** See the plan, B: dead leads' rows never reused (66 new in 12 h of battle), and each doubling copies 344 KB a row. | No hitch when a battle adds rows. | Rows reused past the kept day; room sized at the start. |
+| 28 | **The sweep across cores.** See the plan, A1. The sweep costs the same whole or in the AI's small calls (96 against 104 ms, 289 calls, a quiet 12 h): it was always paid, and moved into the AI. | Half the flight in the moving cases. | The kernel's loop over targets parallel. |
 
 ## Clarity
 
