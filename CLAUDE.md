@@ -40,6 +40,27 @@ what it did.
   is called a flake: run the same check on the code before the change.
 - **Report briefly:** what changed, what was checked and how, what was decided, what is open.
   Figures in a table when there are several. No recap of the request.
+- **Simple over clever.** Take work away rather than add machinery to do it faster: no threads,
+  heuristics or caches to chase a small gain. Judge a change by the owner's share lines
+  (`tools/bench_flight.py`, `tools/bench_tactical.py`) on the owner's machine, the whole run and not
+  only the part changed; a gain in one place that costs elsewhere is a loss. Where a gain needs a
+  new mechanism, ask first.
+
+## The design to keep
+
+- **Cull, do not compute.** The sweep passes over what cannot see a target before it looks at it:
+  branches (task forces), then formations as spheres, then ships, then cones, the brightest first
+  under a bound; nothing is worked out until a target needs it.
+- **The AI only reads.** The CAPTAIN reads the order book (orders are facts: a replay gives them
+  again) and what each side's sweep already holds, through its view; it gives orders as a player
+  does, and keeps no copy of the fleet of its own.
+- **Lists, not flags.** A ship's systems are in lists by state, so only what is operational is
+  ever checked; the engaged ships are a list, and they get the finer compute.
+- **One picture, deltas out.** A side's picture is made once per moment and shared; each connection
+  is sent only what changed since its last.
+- **Each part its own block.** The flight kernel waits on nothing added after it; the sweep, the
+  pictures, the AI, combat and damage are each a module with one way in and one way out, so any
+  can be split into a process of its own later.
 
 ## Rules
 
