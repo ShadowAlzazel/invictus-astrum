@@ -11,7 +11,19 @@ In this order; each stage is its own module (or block of one), measured before a
 and engaged, on the owner's machine (the budget there: about 37 ms of flight a game hour, the
 pictures taking the rest of the second).
 
-**A. The AI's look** (the priority)
+**A. The AI's look** (the priority). Done 27 October, the same answers (sightings, pictures, orders,
+shots, every row; the golden run). Container, 12 game hours, ms, before / after, interleaved:
+
+| case | the whole | `_front` | `catch_up` (the sweep) | `side_picture` | `decide` |
+|---|---|---|---|---|---|
+| TF-3 off Mars | 570–640 / 514–682 | 396–439 / 324–456 | 321–351 / 245–339 | – | – |
+| the Venus battle | 3,641–4,192 / 3,038–3,119 | 2,065–2,466 / 1,526–1,580 | 454–515 / 463–498 | 826–1,017 / 415–427 | 485–591 / 277–280 |
+
+The sweep on every core gains 15–30% here (4 cores, noisy) and stays level in the battle, whose
+sweeps are a minute or a block of a side at a time; the side pictures and the CAPTAIN's decisions
+halve. What was left as it was: the CAPTAIN's distances per ship (as one array pass their last bits
+change, and with them, rarely, which side of a threshold a ship falls).
+
 1. **The sweep across cores** (`kernels.sweep`, `detect.py`). It is 50–60% of the flight in the
    moving cases, nine tenths of it compiled. The sides are uneven (JADF 163 ms, ARCVS 43 of 343 in
    12 h, container), so a side to a thread gave only 20%; the targets of a minute are independent,
@@ -34,17 +46,18 @@ pictures taking the rest of the second).
    (a lead each) and a margin, so play does not grow it.
 
 **C. The battle tick**
-1. **A setting** (the level's, the host's, as the clock): the engaged ships' tick, fine (10 s) by
-   default. Longer ticks fire a tick's cycles at once (merged salvos); what a longer tick loses is
-   the automaton's and the admiral's, not the simulation's.
+1. **A setting** (the level's, the host's, as the clock): the engaged ships' tick, 10, 60, 300 or
+   600 s, fine (10 s) by default (the owner's figures). Longer ticks fire a tick's cycles at once
+   (merged salvos); what a longer tick loses is the automaton's and the admiral's, not the
+   simulation's.
 2. **Fine ticks for the engaged alone** (19). The engaged rows flown apart between ticks, as a
    re-fly flies its scope; the rest keep their 10-minute blocks (215 pieces in 12 h of battle now,
    72 without).
 3. **An order in a battle.** It re-flies the ship and every ship she fought with since the
    checkpoint (`combat.partners`), out to the front edge: 120 min ahead, 21 rows, 441 ms; at 1 d/s
    the run-ahead is up to 12 h ahead. So while ships are engaged the front edge stays near the
-   clock (the CAPTAIN's future is guesswork past it), and the partners' CAPTAIN orders after the
-   order's moment go and are decided again (today only the ordered ship's are: the other side
+   clock (the CAPTAIN's future is guesswork past it; at a slow clock less still, as the warp asks:
+   the owner's note), and the partners' CAPTAIN orders after the order's moment go and are decided again (today only the ordered ship's are: the other side
    acts on a future that no longer happens).
 
 **D. The CAPTAIN in its own process** (18). With A3's view and C3's short battle look-ahead: the

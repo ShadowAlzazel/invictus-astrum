@@ -21,6 +21,7 @@ import numpy as np
 from .detect import SAMPLE_S
 from .orders import KIND, STANCE
 from .shipai.captain import Captain, player_of, written
+from .shipai.view import View
 
 NAMES = {v: k for k, v in KIND.items()}
 __all__ = ["AI", "ledger", "player_of", "standing", "written"]
@@ -96,20 +97,21 @@ class AI:
         return m
 
     def wants(self, sc, fleet, t: float) -> dict[str, bool]:
-        return self.captain(sc, fleet).wants(fleet, t)
+        return self.captain(sc, fleet).wants(View(fleet, t), t)
 
     def front(self, sc, fleet, t: float) -> tuple[list, float]:
         """The fleet at its front edge, t: the sides the CAPTAIN wants pictured (every side swept up
         to t first), each handed to it; its orders, and when it wants the fleet again."""
         M, cap = self.world.minerva, self.captain(sc, fleet)
         cap.tick_s = M.merged_s if self.warp.get(sc.id, 0.0) > M.merge_warp else M.engaged_s
-        views = cap.wants(fleet, t)
+        fv = View(fleet, t)                              # all the CAPTAIN reads of the fleet, but its sides' pictures
+        views = cap.wants(fv, t)
         out = []
         if views:
             fleet.sweeper.catch_up(int(np.floor((t - fleet.t0) / SAMPLE_S + 1e-9)))
             pic = fleet.picture(t)
             for view, tracks in views.items():
-                out += cap.decide(self.pictures.side_picture(sc, fleet, view, t, pic, tracks))
+                out += cap.decide(self.pictures.side_picture(sc, fleet, view, t, pic, tracks), fv)
         return out, cap.next_due(t)
 
     def overrule(self, sc, fleet, ships: list[str], t: float) -> None:

@@ -22,17 +22,26 @@ try:
     HAVE_NUMBA = not numba.config.DISABLE_JIT
     WHY_NOT = "" if HAVE_NUMBA else "NUMBA_DISABLE_JIT is set"
     jit = numba.njit(cache=True, error_model="numpy", nogil=True)    # nogil: other threads run while a kernel does
+    pjit = numba.njit(cache=True, error_model="numpy", nogil=True, parallel=True)   # (its prange loops on every core)
+    prange = numba.prange
 except ImportError as e:                             # optional: the numpy paths stand in
     HAVE_NUMBA, WHY_NOT = False, f"{type(e).__name__}: {e}"
 
     def jit(f):
         return f
+    pjit, prange = jit, range
+
+
+def threads(n: int) -> None:
+    """How many threads the sweep runs on from here, in this thread (0: every one Numba has)."""
+    if HAVE_NUMBA:
+        numba.set_num_threads(min(n or numba.config.NUMBA_NUM_THREADS, numba.config.NUMBA_NUM_THREADS))
 
 
 def status() -> str:
     """Whether the hot loops are compiled, in a line for the server's start and the benches."""
     if HAVE_NUMBA:
-        return f"kernels compiled (Numba {numba.__version__})"
+        return f"kernels compiled (Numba {numba.__version__}; the sweep on {numba.config.NUMBA_NUM_THREADS} threads)"
     fix = "" if "DISABLE_JIT" in WHY_NOT else ". Install Numba for this Python: python -m pip install numba"
     return f"kernels NOT compiled: they run as plain Python, some 100x slower ({WHY_NOT}){fix}"
 
@@ -259,7 +268,10 @@ def _share_from(deg, aspect_deg, aspect_share):
     return best
 
 
-@jit
+LANES = 64                     # a sweep's targets dealt round this many lanes, the lanes over the threads
+
+
+@pjit
 def sweep(km, R, V, DIR, THRUST, COLD, HEAT, PING, ve, quiet, emit, aspect_deg, aspect_share, cold_share, recover,
           cl_start, cl_rows, s_start, body, cosr, thr, every, at, active, reach, tgt, thr_min, act_reach,
           classify, identify, bound, best_s, best_f, best_d, best_p, best_act, best_cls, best_ident):
@@ -285,153 +297,167 @@ def sweep(km, R, V, DIR, THRUST, COLD, HEAT, PING, ve, quiet, emit, aspect_deg, 
     len(tgt)): the sensor, -1 for none; flux W/m^2; distance m; the plume's share of the flux;
     whether actively; class (an active return, or her plume at classify times the sensor's floor)
     and identity (her hull and rads, the plume aside, at identify times it). Returns how many
-    sightings were looked at and kept or not."""
-    T, C, S = km.shape[0], cl_start.shape[0] - 1, cosr.shape[0]
+    sightings were looked at and kept or not.
+
+    The ships in tgt are looked for at once, dealt round LANES lanes (a formation burning together
+    costs alike, so it is shared out), on as many threads as the caller set (threads): what is kept
+    of her is hers alone, so the same sightings however many."""
+    T, C, S, Q = km.shape[0], cl_start.shape[0] - 1, cosr.shape[0], tgt.shape[0]
     for m in range(T):
-        for q in range(tgt.shape[0]):
+        for q in range(Q):
             best_s[m, q], best_f[m, q], best_act[m, q], best_cls[m, q], best_ident[m, q] = -1, -1.0, False, False, False
     share_max = 0.0
-    for x in range(aspect_share.shape[0]):
-        share_max = max(share_max, aspect_share[x])
-    cc, crad, cthr, creach = np.empty((C, 3)), np.empty(C), np.empty(C), np.empty(C)
-    wax, due = np.zeros((S, 3)), np.zeros(S, dtype=np.bool_)
-    near, key, gaps, sb = np.empty(C, dtype=np.int64), np.empty(C), np.empty(C), np.empty(C)
+    for a_ in range(aspect_share.shape[0]):
+        share_max = max(share_max, aspect_share[a_])
+    cc, crad, cthr, creach = np.empty((T, C, 3)), np.empty((T, C)), np.empty((T, C)), np.empty((T, C))
+    wax, due = np.zeros((T, S, 3)), np.zeros((T, S), dtype=np.bool_)
+    near, key, gaps, sb = np.empty((Q, C), dtype=np.int64), np.empty((Q, C)), np.empty((Q, C)), np.empty((Q, C))
+    looked = np.zeros(Q, dtype=np.int64)
     four_pi = 4.0 * math.pi
-    k = 0
     for m in range(T):
-        for c in range(C):                          # each group's sphere this minute, and its cones
-            sx = sy = sz = 0.0
-            nn = 0
-            for q in range(cl_start[c], cl_start[c + 1]):
-                o = cl_rows[q]
-                if R[m, o, 0] == R[m, o, 0]:
-                    sx += R[m, o, 0]
-                    sy += R[m, o, 1]
-                    sz += R[m, o, 2]
-                    nn += 1
-            crad[c] = -1.0
-            if nn == 0:
-                continue
-            cc[c, 0], cc[c, 1], cc[c, 2] = sx / nn, sy / nn, sz / nn
-            rad, tmin, ra = 0.0, np.inf, 0.0
-            for q in range(cl_start[c], cl_start[c + 1]):
-                o = cl_rows[q]
-                if R[m, o, 0] != R[m, o, 0]:
+        _shapes(m, km, R, V, DIR, PING, cl_start, cl_rows, s_start, body, every, at, active, thr_min, act_reach,
+                cc, crad, cthr, creach, wax, due)
+        for lane in prange(LANES):
+            for q in range(lane, Q, LANES):
+                j = tgt[q]
+                if R[m, j, 0] != R[m, j, 0]:
                     continue
-                dx, dy, dz = R[m, o, 0] - cc[c, 0], R[m, o, 1] - cc[c, 1], R[m, o, 2] - cc[c, 2]
-                rad = max(rad, math.sqrt(dx * dx + dy * dy + dz * dz))
-                tmin = min(tmin, thr_min[o])
-                if PING[m, o]:
-                    ra = max(ra, act_reach[o])
-                fx, fy, fz = DIR[m, o, 0], DIR[m, o, 1], DIR[m, o, 2]     # her hull's frame
-                if fx * fx + fy * fy + fz * fz <= 0.25:
-                    fx, fy, fz = V[m, o, 0], V[m, o, 1], V[m, o, 2]
-                fn = math.sqrt(fx * fx + fy * fy + fz * fz)
-                if fn > 1e-9:
-                    fx, fy, fz = fx / fn, fy / fn, fz / fn
+                if COLD[m, j] > 0.5:
+                    rads = cold_share * quiet[j]
                 else:
-                    fx, fy, fz = 1.0, 0.0, 0.0
-                if abs(fz) > 0.99:
-                    sx, sy, sz = fz, 0.0, -fx
-                else:
-                    sx, sy, sz = -fy, fx, 0.0
-                sn = math.sqrt(sx * sx + sy * sy + sz * sz)
-                sx, sy, sz = sx / sn, sy / sn, sz / sn
-                ux2, uy2, uz2 = fy * sz - fz * sy, fz * sx - fx * sz, fx * sy - fy * sx
-                for s in range(s_start[o], s_start[o + 1]):
-                    due[s] = (km[m] - at[s]) % every[s] == 0 and (PING[m, o] or not active[s])
-                    if due[s]:
-                        wax[s, 0] = body[s, 0] * fx + body[s, 1] * sx + body[s, 2] * ux2
-                        wax[s, 1] = body[s, 0] * fy + body[s, 1] * sy + body[s, 2] * uy2
-                        wax[s, 2] = body[s, 0] * fz + body[s, 1] * sz + body[s, 2] * uz2
-            crad[c], cthr[c], creach[c] = rad, tmin, ra
-        for q in range(tgt.shape[0]):
-            j = tgt[q]
-            if R[m, j, 0] != R[m, j, 0]:
-                continue
-            if COLD[m, j] > 0.5:
-                rads = cold_share * quiet[j]
-            else:
-                rads = quiet[j] * (1.0 + (recover if HEAT[m, j] > 0.0 else 0.0))
-            jet = 0.5 * THRUST[m, j] * ve[j] if THRUST[m, j] > 0.0 else 0.0
-            base = rads + emit[j] * (1.0 if PING[m, j] else 0.0)
-            pmax = base + jet * share_max
-            nc = 0
-            for c in range(C):                      # the groups that could see her at all
-                if crad[c] < 0.0:
-                    continue
-                dx, dy, dz = R[m, j, 0] - cc[c, 0], R[m, j, 1] - cc[c, 1], R[m, j, 2] - cc[c, 2]
-                lim = creach[c]
-                if cthr[c] < np.inf:
-                    lim = max(lim, math.sqrt(pmax / (four_pi * cthr[c])))
-                D = math.sqrt(dx * dx + dy * dy + dz * dz)
-                g = D - crad[c]
-                if g > lim:
-                    continue                        # the whole group is too far to see her at all
-                share = share_max
-                if bound and g > 0.0 and jet > 0.0:   # her plume toward the sphere: the least angle off her tail
-                    cs = min(max((dx * DIR[m, j, 0] + dy * DIR[m, j, 1] + dz * DIR[m, j, 2]) / D, -1.0), 1.0)
-                    share = _share_from(max(math.degrees(math.acos(cs)) - math.degrees(math.asin(min(crad[c] / D, 1.0))), 0.0),
-                                        aspect_deg, aspect_share)
-                x = nc
-                kk = (base + jet * share) / (four_pi * g * g) if g > 0.0 else np.inf
-                while bound and x > 0 and key[x - 1] < kk:   # brightest first
-                    near[x], key[x], gaps[x], sb[x] = near[x - 1], key[x - 1], gaps[x - 1], sb[x - 1]
-                    x -= 1
-                near[x], key[x], gaps[x], sb[x] = c, kk, g, share
-                nc += 1
-            for x in range(nc):
-                c, g = near[x], gaps[x]
-                if bound and best_f[m, q] >= 0.0 and key[x] <= best_f[m, q] and g > 0.0:
-                    if (best_cls[m, q] or (jet * sb[x] / (four_pi * g * g) < classify * cthr[c] and creach[c] < g)) \
-                            and (best_ident[m, q] or base / (four_pi * g * g) < identify * cthr[c]):
-                        continue                    # nothing it could add
-                for qq in range(cl_start[c], cl_start[c + 1]):
-                    o = cl_rows[qq]
-                    if R[m, o, 0] != R[m, o, 0]:
+                    rads = quiet[j] * (1.0 + (recover if HEAT[m, j] > 0.0 else 0.0))
+                jet = 0.5 * THRUST[m, j] * ve[j] if THRUST[m, j] > 0.0 else 0.0
+                base = rads + emit[j] * (1.0 if PING[m, j] else 0.0)
+                pmax = base + jet * share_max
+                nc = 0
+                for c in range(C):                      # the groups that could see her at all
+                    if crad[m, c] < 0.0:
                         continue
-                    dx, dy, dz = R[m, j, 0] - R[m, o, 0], R[m, j, 1] - R[m, o, 1], R[m, j, 2] - R[m, o, 2]
-                    d = math.sqrt(dx * dx + dy * dy + dz * dz)
-                    if d <= 0.0:
-                        continue
-                    lim = act_reach[o] if PING[m, o] else 0.0
-                    if thr_min[o] < np.inf:
-                        lim = max(lim, math.sqrt(pmax / (four_pi * thr_min[o])))
-                    if d > lim:
-                        continue                    # nor this ship
-                    ux, uy, uz = dx / d, dy / d, dz / d
-                    plume = 0.0                     # how bright she is toward this ship
-                    if jet > 0.0:                   # toward her: (-u); off her tail (-dir): cos = u . dir
-                        cs = min(max(ux * DIR[m, j, 0] + uy * DIR[m, j, 1] + uz * DIR[m, j, 2], -1.0), 1.0)
-                        plume = jet * np.interp(math.degrees(math.acos(cs)), aspect_deg, aspect_share)
-                    p = base + plume
-                    f, pf = p / (four_pi * d * d), plume / (four_pi * d * d)
-                    if bound and best_f[m, q] >= 0.0 and f <= best_f[m, q] \
-                            and (best_cls[m, q] or (pf < classify * thr_min[o] and not (PING[m, o] and d <= act_reach[o]))) \
-                            and (best_ident[m, q] or f - pf < identify * thr_min[o]):
-                        continue                    # nothing she could add
-                    for s in range(s_start[o], s_start[o + 1]):
-                        if not due[s] or ux * wax[s, 0] + uy * wax[s, 1] + uz * wax[s, 2] < cosr[s]:
+                    dx, dy, dz = R[m, j, 0] - cc[m, c, 0], R[m, j, 1] - cc[m, c, 1], R[m, j, 2] - cc[m, c, 2]
+                    lim = creach[m, c]
+                    if cthr[m, c] < np.inf:
+                        lim = max(lim, math.sqrt(pmax / (four_pi * cthr[m, c])))
+                    D = math.sqrt(dx * dx + dy * dy + dz * dz)
+                    g = D - crad[m, c]
+                    if g > lim:
+                        continue                        # the whole group is too far to see her at all
+                    share = share_max
+                    if bound and g > 0.0 and jet > 0.0:   # her plume toward the sphere: the least angle off her tail
+                        cs = min(max((dx * DIR[m, j, 0] + dy * DIR[m, j, 1] + dz * DIR[m, j, 2]) / D, -1.0), 1.0)
+                        share = _share_from(max(math.degrees(math.acos(cs)) - math.degrees(math.asin(min(crad[m, c] / D, 1.0))), 0.0),
+                                            aspect_deg, aspect_share)
+                    x = nc
+                    kk = (base + jet * share) / (four_pi * g * g) if g > 0.0 else np.inf
+                    while bound and x > 0 and key[q, x - 1] < kk:   # brightest first
+                        near[q, x], key[q, x], gaps[q, x], sb[q, x] = near[q, x - 1], key[q, x - 1], gaps[q, x - 1], sb[q, x - 1]
+                        x -= 1
+                    near[q, x], key[q, x], gaps[q, x], sb[q, x] = c, kk, g, share
+                    nc += 1
+                for x in range(nc):
+                    c, g = near[q, x], gaps[q, x]
+                    if bound and best_f[m, q] >= 0.0 and key[q, x] <= best_f[m, q] and g > 0.0:
+                        if (best_cls[m, q] or (jet * sb[q, x] / (four_pi * g * g) < classify * cthr[m, c] and creach[m, c] < g)) \
+                                and (best_ident[m, q] or base / (four_pi * g * g) < identify * cthr[m, c]):
+                            continue                    # nothing it could add
+                    for qq in range(cl_start[c], cl_start[c + 1]):
+                        o = cl_rows[qq]
+                        if R[m, o, 0] != R[m, o, 0]:
                             continue
-                        if active[s]:
-                            if d > reach[s]:
+                        dx, dy, dz = R[m, j, 0] - R[m, o, 0], R[m, j, 1] - R[m, o, 1], R[m, j, 2] - R[m, o, 2]
+                        d = math.sqrt(dx * dx + dy * dy + dz * dz)
+                        if d <= 0.0:
+                            continue
+                        lim = act_reach[o] if PING[m, o] else 0.0
+                        if thr_min[o] < np.inf:
+                            lim = max(lim, math.sqrt(pmax / (four_pi * thr_min[o])))
+                        if d > lim:
+                            continue                    # nor this ship
+                        ux, uy, uz = dx / d, dy / d, dz / d
+                        plume = 0.0                     # how bright she is toward this ship
+                        if jet > 0.0:                   # toward her: (-u); off her tail (-dir): cos = u . dir
+                            cs = min(max(ux * DIR[m, j, 0] + uy * DIR[m, j, 1] + uz * DIR[m, j, 2], -1.0), 1.0)
+                            plume = jet * np.interp(math.degrees(math.acos(cs)), aspect_deg, aspect_share)
+                        p = base + plume
+                        f, pf = p / (four_pi * d * d), plume / (four_pi * d * d)
+                        if bound and best_f[m, q] >= 0.0 and f <= best_f[m, q] \
+                                and (best_cls[m, q] or (pf < classify * thr_min[o] and not (PING[m, o] and d <= act_reach[o]))) \
+                                and (best_ident[m, q] or f - pf < identify * thr_min[o]):
+                            continue                    # nothing she could add
+                        for s in range(s_start[o], s_start[o + 1]):
+                            if not due[m, s] or ux * wax[m, s, 0] + uy * wax[m, s, 1] + uz * wax[m, s, 2] < cosr[s]:
                                 continue
-                            fs, pfs = 0.0, 0.0
-                        else:
-                            if f < thr[s]:
-                                continue
-                            fs, pfs = f, pf
-                        k += 1
-                        if active[s]:
-                            best_cls[m, q] = True
-                        else:
-                            if pfs >= classify * thr[s]:
+                            if active[s]:
+                                if d > reach[s]:
+                                    continue
+                                fs, pfs = 0.0, 0.0
+                            else:
+                                if f < thr[s]:
+                                    continue
+                                fs, pfs = f, pf
+                            looked[q] += 1
+                            if active[s]:
                                 best_cls[m, q] = True
-                            if fs - pfs >= identify * thr[s]:
-                                best_ident[m, q] = True
-                        if fs > best_f[m, q]:
-                            best_s[m, q], best_f[m, q], best_d[m, q], best_p[m, q], best_act[m, q] = s, fs, d, pfs, active[s]
-    return k
+                            else:
+                                if pfs >= classify * thr[s]:
+                                    best_cls[m, q] = True
+                                if fs - pfs >= identify * thr[s]:
+                                    best_ident[m, q] = True
+                            if fs > best_f[m, q]:
+                                best_s[m, q], best_f[m, q], best_d[m, q], best_p[m, q], best_act[m, q] = s, fs, d, pfs, active[s]
+    return looked.sum()
+
+
+@jit
+def _shapes(m, km, R, V, DIR, PING, cl_start, cl_rows, s_start, body, every, at, active, thr_min, act_reach,
+            cc, crad, cthr, creach, wax, due):
+    """Minute m's shapes for a sweep: each group's sphere about its ships (its centre, radius, most
+    sensitive sensor, farthest ping), and each sensor whose sweep comes round, its axis where it points."""
+    for c in range(cl_start.shape[0] - 1):
+        sx = sy = sz = 0.0
+        nn = 0
+        for q in range(cl_start[c], cl_start[c + 1]):
+            o = cl_rows[q]
+            if R[m, o, 0] == R[m, o, 0]:
+                sx += R[m, o, 0]
+                sy += R[m, o, 1]
+                sz += R[m, o, 2]
+                nn += 1
+        crad[m, c] = -1.0
+        if nn == 0:
+            continue
+        cc[m, c, 0], cc[m, c, 1], cc[m, c, 2] = sx / nn, sy / nn, sz / nn
+        rad, tmin, ra = 0.0, np.inf, 0.0
+        for q in range(cl_start[c], cl_start[c + 1]):
+            o = cl_rows[q]
+            if R[m, o, 0] != R[m, o, 0]:
+                continue
+            dx, dy, dz = R[m, o, 0] - cc[m, c, 0], R[m, o, 1] - cc[m, c, 1], R[m, o, 2] - cc[m, c, 2]
+            rad = max(rad, math.sqrt(dx * dx + dy * dy + dz * dz))
+            tmin = min(tmin, thr_min[o])
+            if PING[m, o]:
+                ra = max(ra, act_reach[o])
+            fx, fy, fz = DIR[m, o, 0], DIR[m, o, 1], DIR[m, o, 2]     # her hull's frame
+            if fx * fx + fy * fy + fz * fz <= 0.25:
+                fx, fy, fz = V[m, o, 0], V[m, o, 1], V[m, o, 2]
+            fn = math.sqrt(fx * fx + fy * fy + fz * fz)
+            if fn > 1e-9:
+                fx, fy, fz = fx / fn, fy / fn, fz / fn
+            else:
+                fx, fy, fz = 1.0, 0.0, 0.0
+            if abs(fz) > 0.99:
+                sx, sy, sz = fz, 0.0, -fx
+            else:
+                sx, sy, sz = -fy, fx, 0.0
+            sn = math.sqrt(sx * sx + sy * sy + sz * sz)
+            sx, sy, sz = sx / sn, sy / sn, sz / sn
+            ux2, uy2, uz2 = fy * sz - fz * sy, fz * sx - fx * sz, fx * sy - fy * sx
+            for s in range(s_start[o], s_start[o + 1]):
+                due[m, s] = (km[m] - at[s]) % every[s] == 0 and (PING[m, o] or not active[s])
+                if due[m, s]:
+                    wax[m, s, 0] = body[s, 0] * fx + body[s, 1] * sx + body[s, 2] * ux2
+                    wax[m, s, 1] = body[s, 0] * fy + body[s, 1] * sy + body[s, 2] * uy2
+                    wax[m, s, 2] = body[s, 0] * fz + body[s, 1] * sz + body[s, 2] * uz2
+        crad[m, c], cthr[m, c], creach[m, c] = rad, tmin, ra
 
 
 @jit

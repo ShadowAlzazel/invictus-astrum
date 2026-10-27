@@ -121,7 +121,10 @@ grid of ticks from the scenario's start (`engaged_s`, est. 10 s; `merged_s`, est
 ready ships look. A replay from a checkpoint does not ask it again: its orders are the book's. A
 map's order at the clock, behind the front, still flies its ships again, and strikes the CAPTAIN's
 later orders to them; it decides for them again at its next moment. Slate 1c's own process is
-still to come: it runs in the sim's, in the run-ahead's thread, which waits on it.
+still to come: it runs in the sim's, in the run-ahead's thread, which waits on it. What it reads of
+the fleet is one view, made at each front edge (`astrum/shipai/view.py`: the rows' columns, the
+operational batteries, the wrecks, who pings, the order book, what each side's sweep holds, the bodies
+and bullseyes); the process will be handed a copy of it with the same names.
 
 ## As built
 

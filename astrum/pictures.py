@@ -19,6 +19,7 @@ import time
 import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from functools import cached_property
 
 import numpy as np
 
@@ -52,8 +53,23 @@ class SidePicture:
 
     def reckoned(self, j: int) -> np.ndarray:
         """Where she is now, as the side reckons it: where she was seen, on at her velocity then."""
-        age = 0.0 if self.age is None or not np.isfinite(self.age[j]) else float(self.age[j])
-        return self.r[j] + np.nan_to_num(self.v[j]) * age
+        return self.now[j]
+
+    @cached_property
+    def now(self) -> np.ndarray:
+        """Every ship where the side reckons she is now (reckoned), at once."""
+        age = np.zeros(len(self.r)) if self.age is None else np.where(np.isfinite(self.age), self.age, 0.0)
+        return self.r + self.v0 * age[:, None]
+
+    @cached_property
+    def v0(self) -> np.ndarray:
+        """Each ship's velocity as seen, nothing (zero) where none is."""
+        return np.nan_to_num(self.v)
+
+    @cached_property
+    def dir0(self) -> np.ndarray:
+        """Where each hull points as seen, nothing (zero) where it is not."""
+        return np.nan_to_num(self.dir)
 
 
 class Said(Mapping):

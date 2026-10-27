@@ -1407,6 +1407,8 @@ def test_an_order_flown_again_keeps_what_was_seen_before_it():
     r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.1, "player": "arcvs", "target": {"body": "mars"}})
     oid = r.json()["ships"]["kiki-1"]["goal"]["order_id"]
     host, T = SimHost(w), t + 2 * 3600
+    for h in (host, app.state.sim.host):                                 # (times to target answered here, not between the pictures)
+        h.arrivals.stop()
     f.at(T + 3600)
     for v in ("arcvs", "ghost"):
         host.frame({"system": "sol", "t": T, "scenario": "sol-demo", "view": v}, conn=v)
@@ -1415,6 +1417,7 @@ def test_an_order_flown_again_keeps_what_was_seen_before_it():
     k0 = int((T - 1800 - f.t0) // 60)
     assert all(s.frontier < k0 for s in f.sweeper.sides.values())       # swept again from the order on
     f.at(T + 600)
+    f.arrivals()
     for v in ("arcvs", "ghost"):
         a = json.loads(host.frame({"system": "sol", "t": T + 600, "scenario": "sol-demo", "view": v}, conn=v + "2"))
         f.sweeper.forget(0)                                              # every minute swept again: the same picture

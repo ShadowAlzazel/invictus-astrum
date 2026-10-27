@@ -89,9 +89,15 @@ her:
   JADF's sensors at Jupiter find 191,000 sightings an hour, some 3,000 kept), so this is what culls it.
 
 Nothing culled or passed over is a sighting lost: a test sweeps every sensor against every ship and
-finds the same. Each side's summary is its sightings kept in runs, whole every hour, and as of the
-newest minute; any minute's is the hour's with the minutes since laid over (`kernels.fold`). An
-order flown again forgets from its minute on, and is swept again as it is flown.
+finds the same. The targets of a minute are each her own, so a dear stretch (many minutes of a side
+whose minute costs some 60 µs or more on one thread) is swept on every core, its targets dealt round
+64 lanes so a formation burning together is shared out; a minute, or a cheap side, on one thread,
+which costs less than starting the rest. The same sightings either way (a test runs both).
+
+Each side's summary is its sightings kept in runs (joined within each hour, so a picture reads a
+few, not one a tick), whole every hour, and as of the newest minute; any minute's is the hour's with
+the minutes since laid over (`kernels.fold`), kept once made (a later minute does not change it).
+An order flown again forgets from its minute on, and is swept again as it is flown.
 
 **Active sensors.** Every ship carries an active scan (~4,400 km, the VIGIL's figure), swept only
 while she pings (**V**, or Ping in her panel: orders `active` / `passive`). It sees any hull in its
@@ -297,7 +303,9 @@ the map (`profiles.toml`): a shared one's map, with targets (`hostile`, `unknown
 edge (`Fleet.front`): after a step, at the moments it asked for, the fleet hands itself to it as it
 stands; each side it wants is pictured there with the same functions as the map's
 (`astrum/pictures.py`), and it answers with orders (source `ai`) through the order book, at that
-moment, so nothing flies again for them. It reads only what is in the picture. A ready ship looks
+moment, so nothing flies again for them. It reads only what is in the picture, and the fleet only
+through a view made at the front edge (`astrum/shipai/view.py`: its rows, batteries, wrecks, pings,
+the book, the sweep, the bodies and bullseyes), the boundary its own process will take. A ready ship looks
 once a block, if her side's sweep holds a ship within her reach (or at once when fired on); an
 engaged one every tick (10 s, a minute above 10 min/s) near her envelope, else by how soon she gets
 there. Task Force 2 (Earth) is written on return fire.
