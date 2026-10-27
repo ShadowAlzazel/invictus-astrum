@@ -1,0 +1,79 @@
+### PREVIOUS CHATS
+
+What changed: the shot log is now kept in time order, with an index for each ship and for each of her batteries. Shots fired into the past fall into place. Three lookups now read the index instead of scanning the whole log:
+
+“when did this battery last fire”, for the reload check;
+“her last shot”, for the panel;
+a re-fly’s “forget the shots from here on”, which now reads only the log from that moment on.
+
+Before and after, at a million shots in the log (about a day of 100 ships firing every 10 s):
+
+	Before	After
+Reload check (last_salvo)	22 ms	0.001 ms
+Her last shot (state)	23 ms	0.004 ms
+Re-fly forget, nothing to forget	57 ms	under 0.01 ms
+Re-fly forget, one ship’s last 10 min	67 ms	8.2 ms
+Re-fly forget, everyone’s last 10 min	53 ms	2.5 ms
+
+At 1,000 and 100,000 shots the after-figures are the same, so the cost no longer depends on the log’s length.
+
+How it was checked:
+
+A new test fires 400 random shots, some into the past, with forgets in between. After each one it checks the lookups against a full read of the log, and that the log stays in time order.
+tools/check.py ok, and all 259 tests pass.
+
+Still open: in the 44 h fight one fire() costs about 0.43 ms, and only 0.07 ms of that is the salvo. The rest is probably reading the two ships’ positions and headings at the moment of the shot, but I haven’t profiled it. That’s 4% of the one-ship fight. If fleet-scale fights show it, it’s the next thing to look at.
+
+Yes. Document the open items. And how are we looking on the Ai separate process and combat overall
+
+Writing the open items into docs/COMBAT.md as one section, and updating “Where it runs” to say how the CAPTAIN runs now:
+
+I’ve documented the open items in docs/COMBAT.md and pushed it to combat (0444e53). There’s a new Open section, split into what’s yours to decide, the estimates still in the data, and what’s ours to build. “Where it runs” now says how the CAPTAIN runs today.
+
+Combat overall
+
+Slate	State
+1a: combat book, fire and readiness orders, engage	done
+1b: MINERVA and CAPTAIN, ReadyStances, profiles, the map’s Combat section and Combat profiles	done
+1c: CAPTAIN at the flight’s front edge, in its own process	not started; it is the weak point now
+2: profiles editable on the map, semi-direct and direct control	not started
+3: energy weapons and what a hit does	UREB salvo done (hits, citadel, spot, fluence, reload, arc); optics not yet; damage waits on you
+4: missiles and kinetic rounds, point defence	not started
+
+The AI process (1c). The CAPTAIN still runs inside the sim’s process, on the picture thread, and is only asked when the map’s clock is pictured. Two things go wrong because of that:
+
+Pacing depends on the warp. At 10 min/s she fires every 5–6 game minutes instead of every 20 s.
+Her orders land in the past. The flight runs about 30 min ahead at 10 min/s, so every order except a shot makes her fly again. At 6 h/s her turn-to-face orders get re-flown while she burns, and her salvos go out of arc.
+
+Plan:
+
+Move the CAPTAIN to the flight’s front edge, still in the sim process. The run-ahead worker, after flying each block, asks it about the engaged ships every engaged_s and about the rest once a block. Her orders then land in the future: no re-flies, and the same pacing at any warp. This fixes both problems above.
+Then measure, and only then move it to its own process. The side pictures are built from the fleet’s arrays in the sim process, so a separate process means shipping them across every tick. That pays only if the AI’s time is fighting the flight for the CPU.
+
+Cost once it ticks at game time. These are estimates, scaled from the measured 0.77 ms a picture while hunting, not measured at the front edge:
+
+Warp	Engaged ticks per wall second	CAPTAIN time per wall second
+10 min/s	60	~46 ms
+1 h/s	360	~0.28 s
+6 h/s	2,160	~1.7 s: can’t keep up
+
+That bottom row is where your higher-warp idea comes in. Ticking once a game minute and firing three salvos in one go cuts the load by six, so 6 h/s costs about what 1 h/s does now.
+
+Decision for you: at what warp should salvos merge, and should a merged salvo be one draw of three times the channels, or three separate draws at the same moment?
+
+
+
+### NOTES 
+
+Firing the spine while she keeps station: she holds her fire while she burns off it (95% of her chances in the Venus action). Cutting her drive for the shot, or a node that does, is a choice of the map's or the CAPTAIN's.
+
+
+### My responses 
+Ok. The spinal battery can fire from much farther away. Even at 50K, a few % hit chance is still alot when compounded. And while we still do not have like individual component damage, it does destroy like sensors or disable weapons. That will be part of the sim. I think we can do damage by ship system. We already store by components. Instead of checking if a system is OPERATIONAL or not with a Boolean, which will just add an unnecessary check each time.
+Just add lists for OPERATIONAL -> DAMAGED/DISABLED -> DESTROYED.
+
+So combat only checks operational, and if something gets damaged, it gets put into another list, just to hold state. But not part of the constant checking. 
+
+This is how we solve the sweeping wrecks. A ship can be DISABLED or DESTROYED. but since both have their system in NOT OPERATIONAL it does not add anymore cost.
+
+And light does ruin sensors and depending on the profile of the ship, the radiators. But we can add the angle and silhouette later using basic shape functions.
