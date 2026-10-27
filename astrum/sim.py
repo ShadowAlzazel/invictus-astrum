@@ -280,6 +280,8 @@ class Fleet:
         self._body_cache: dict[float, dict] = {}
         self._bull_cache: dict[tuple, object] = {}
         self._point_cache: dict[tuple, np.ndarray] = {}   # where bullseye and body points are, by moment
+        self._knot_cache: dict[tuple, tuple] = {}         # time to target: a target's knots, as an array from a grid index
+        self._node_window = None                          # ... and the bodies' nodes, a window each answer slices
         self._place_cache: dict[float, tuple] = {}
         self._base_cache: dict[float, np.ndarray] = {}
         self._st_ahead: tuple = (None, {})            # station ships' places ahead: (who holds what, {grid moment: ...})
@@ -1264,11 +1266,17 @@ class Fleet:
             if len(ts) == 1:
                 _room(self._base_cache, 64)
                 self._base_cache[ts[0]] = base
-        W = pl.W[ks[ok]]
-        unplaced = np.isnan(base).any(axis=2)            # every moment's product at once (the same bits as one by one)
-        X = np.matmul(W[None], np.where(unplaced[..., None], 0.0, base))
-        for j in np.flatnonzero(unplaced.any(axis=1)):
-            X[j, (W[:, unplaced[j]] != 0).any(axis=1)] = np.nan
+        one = pl.one[ks[ok]]
+        X = np.empty((len(ts), len(one), 3))
+        X[:, one >= 0] = base[:, one[one >= 0]]          # placed directly: its base row (the product's own bits)
+        mix = np.flatnonzero(one < 0)
+        if len(mix):                                     # a weighted sum: every moment's product at once
+            W = pl.W[ks[ok][mix]]
+            unplaced = np.isnan(base).any(axis=2)
+            Y = np.matmul(W[None], np.where(unplaced[..., None], 0.0, base))
+            for j in np.flatnonzero(unplaced.any(axis=1)):
+                Y[j, (W[:, unplaced[j]] != 0).any(axis=1)] = np.nan
+            X[:, mix] = Y
         out[:, ok] = X
         return out
 
@@ -1569,24 +1577,79 @@ class Fleet:
         # where the target is, on a grid from the scenario's start: every ship flying to it, and every
         # time it is flown ahead again, reads the same moments (Fleet._point keeps them)
         g0 = t0 if moving else self.t0 + math.floor((t0 - self.t0) / PREDICT_KNOT_S) * PREDICT_KNOT_S
-        knots = [R0, R0] if moving else []
-        # most get there well inside the horizon: the target's track and the bodies that far first, all
-        # of it only if she runs past that (the same flight either way: it reads only up to her arrival)
+        knots = np.array([R0, R0]) if moving else np.zeros((0, 3))
+        # most get there well inside the horizon: the target's track and the bodies that far first, and
+        # on from where that leaves her only if she runs past it (the same steps either way)
+        x, w, t_from, steps, state = np.asarray(r, float), np.asarray(v, float), float(t0), 0, np.zeros(9)
         for span in [horizon] if moving else sorted({min(horizon, 1.5 * est + 1800.0), horizon}):
-            node_t0, node_h, NP, NV = self._nodes(t0, t0 + span + PREDICT_KNOT_S)
+            node_t0, node_h, NP, NV = self._nodes_ahead(t0, t0 + span + PREDICT_KNOT_S)
             if not moving:
-                more = self._points(goal["target"], [g0 + k * PREDICT_KNOT_S for k in
-                                                     range(len(knots), int((t0 - g0 + span) / PREDICT_KNOT_S) + 3)])
-                for p in more:
-                    knots.append(p + hold if p is not None else knots[-1] if knots else R0)
-            at = kernels.predict(np.asarray(r, float), np.asarray(v, float), float(a), float(t0), R0, V0, moving,
-                                 np.array(knots), float(g0), PREDICT_KNOT_S,
+                knots = np.concatenate([knots, self._knots(goal["target"], g0, len(knots),
+                                                           int((t0 - g0 + span) / PREDICT_KNOT_S) + 3, hold, knots, R0)])
+            at = kernels.predict(x, w, float(a), float(t0), t_from, R0, V0, moving,
+                                 knots, float(g0), PREDICT_KNOT_S,
                                  0.0 if goal.get("hold_m") is not None else float(goal.get("standoff_m", 0.0)),
                                  node_t0, node_h, NP, NV, self._gms, self._rad, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS,
-                                 PREDICT_STEP_SHARE, PREDICT_STEP_S[0], PREDICT_STEP_S[1], horizon, PREDICT_MAX_STEPS)
-            if math.isfinite(at) or moving:
+                                 PREDICT_STEP_SHARE, PREDICT_STEP_S[0], PREDICT_STEP_S[1], horizon, PREDICT_MAX_STEPS - steps,
+                                 state)
+            if math.isfinite(at) or moving or state[8] == 0.0:
                 return at
+            x, w, t_from, steps = state[0:3].copy(), state[3:6].copy(), float(state[6]), steps + int(state[7])
         return at
+
+    def _knots(self, spec: dict, g0: float, k0: int, k1: int, hold: np.ndarray, before: np.ndarray, R0: np.ndarray) -> np.ndarray:
+        """A target's knots k0..k1-1 on the grid from g0 (PREDICT_KNOT_S apart), held off it by hold:
+        a bullseye's or a body's point kept as an array by grid index, worked out for all those not
+        kept yet at once (each moment the same bits however many are asked); any other target, and a
+        point not there, as _points has them (a missing one: the knot before)."""
+        if k1 <= k0:
+            return np.zeros((0, 3))
+        n0 = round((g0 - self.t0) / PREDICT_KNOT_S)
+        a, b = n0 + k0, n0 + k1                          # grid indices from the scenario's start
+        if ("bullseye" in spec or "body" in spec) and hasattr(self.eph, "positions_many"):
+            key = (spec.get("player"), spec.get("bullseye"), tuple(spec.get("aer") or ()), spec.get("body"))
+            got = self._knot_cache.get(key)
+            if got is None or a < got[0] or a > got[0] + len(got[1]):
+                got = (a, np.zeros((0, 3)))              # (not kept, or not running on from what is: afresh)
+            end = got[0] + len(got[1])
+            if b > end:
+                P = self._points_many(spec, [self.t0 + n * PREDICT_KNOT_S for n in range(end, b)])
+                got = None if P is None else (got[0], np.concatenate([got[1], P]))
+                if got is not None:
+                    if len(self._knot_cache) > 64:
+                        self._knot_cache.clear()
+                    self._knot_cache[key] = got
+            if got is not None and not np.isnan(P := got[1][a - got[0]:b - got[0]]).any():
+                off = np.asarray(spec.get("offset_m", (0.0, 0.0, 0.0)), dtype=float) + np.asarray(spec.get("at_m", (0.0, 0.0, 0.0)), dtype=float)
+                return P + off + hold
+        out = []
+        for p in self._points(spec, [g0 + k * PREDICT_KNOT_S for k in range(k0, k1)]):
+            out.append(p + hold if p is not None else out[-1] if out else before[-1] if len(before) else R0)
+        return np.array(out)
+
+    def _points_many(self, spec: dict, ts: list[float]) -> np.ndarray | None:
+        """A bullseye's or a body's point at many moments at once (T × 3; no offset), else None."""
+        if "body" in spec:
+            return self.eph.positions_many(ts, np.array([self.eph.ids.index(spec["body"])]))[:, 0]
+        if self.bullseyes_many is not None:
+            got = self.bullseyes_many(spec.get("player") or self.scenario.player, spec["bullseye"], ts)
+            brg, el, rng = spec["aer"]
+            return None if got is None else got[0] + got[1] @ from_aer(math.radians(brg), math.radians(el), rng)
+        return None
+
+    def _nodes_ahead(self, t0: float, t1: float):
+        """_nodes for time to target: a window of them kept, each answer a slice of it (the same
+        nodes from the same first one), made again longer when one runs past it."""
+        if not hasattr(self.eph, "nodes"):
+            return self._nodes(t0, t1)
+        h = self.eph.h
+        k0, k1 = math.floor(t0 / h), math.ceil(t1 / h) + 1
+        win = self._node_window
+        if win is None or k0 < win[0] or k1 >= win[0] + len(win[1]):
+            node_t0, NP, NV = self.eph.nodes(k0 * h, (k0 + 2 * (k1 - k0)) * h, self._pull_cols())
+            win = self._node_window = (round(node_t0 / h), NP, NV)
+        j0, j1 = k0 - win[0], k1 - win[0] + 1
+        return k0 * h, h, win[1][j0:j1], win[2][j0:j1]
 
     # ---- orders ---------------------------------------------------------------------------------
     def _arrive(self, i: int, t: float, aim: np.ndarray) -> None:

@@ -8,8 +8,8 @@ goes" has the rest. Compare a change side by side with the code before it, on on
 
 | # | Refactor | What it buys | What it costs |
 |---|---|---|---|
-| 16 | **Time to target.** `Fleet._predict` flies each order ahead in its own thread: 3.5% of a core at 1 h/s during a long burn, a quarter of the sim process; reading the bodies' nodes and the target's points is 40% of it. | The largest share not yet worked on. | Nodes and points read once per question in the kernel; or asked less often on a long leg. |
-| 17 | **Station keeping, the rest.** Still the flight's largest step (27–34%). Each look-ahead places every station ship at three moments a grid point (the central difference), and `base_many` loops over bodies in Python. | Roughly half of what is left of it. | The bodies' velocities off the table (its Hermite's derivative) and the bullseyes' rates, so one moment a grid point; the bodies' loop batched. |
+| 16 | **Time to target, the kernel.** An answer is now mostly `kernels.predict` itself (about 7 ms for a 20-day horizon at 2-minute steps, on the container); the reading around it is done. | What is left of it. | Longer steps far from every body (a figure: it changes the answers), or asked less often for an answer that is infinity (every 30 min now). |
+| 17 | **Station keeping: velocities from the rates.** The look-ahead places every station ship at three moments a grid point for the central difference (37–42 ms of its 54–61 a quiet day). | About a third of station keeping. | The bodies' velocities off the table (its Hermite's derivative) and the bullseyes' frames' rates from `bullseye.resolve_many` (shared with the web process, through `World.resolved_many`), so one moment a grid point. Changes the velocities' last bits. |
 | 4 | **Encoder, the rest.** The figures go column by column now; `Side.picture` (the tracks) and the per-ship dicts are still a Python loop, and the JSON is 0.9 ms of a picture. | The pictures are half the sim process at 1 h/s. | Tracks built per stage, not per row; with 5, the dicts go. |
 | 5 | **Binary pictures.** JSON text (35 KiB a picture after the first) through the pipe and the socket. | Less to build and parse on both ends; smaller at 1000s of ships. | A typed-array format for the map; JSON kept for tools. |
 | 2 | **The run-ahead in its own process.** It and the pictures share one interpreter: at ≥ 12 h/s they contend, and a picture flies the fleet itself when the run-ahead lags. | Pictures no longer wait on flight; the fastest warps steadier. | The fleet's state shared between processes (shared memory, or the run-ahead owning the fleet and pictures read from snapshots). Large. |
@@ -35,6 +35,9 @@ goes" has the rest. Compare a change side by side with the code before it, on on
 | 12 | **`Versions` as arrays.** Per-row Python lists, flattened for `at` when they change. | Append-only arrays with a per-row cut would drop the rebuild and the lists. |
 
 ## Done
+
+- **Time to target, the reading** (`dev`): the kernel flies on from where a short span ran out instead of again from the start (`state`); the target's knots kept as an array by grid index; the bodies' nodes a window each answer slices. The same answers to the bit, about 2.2× faster (27–39 to 11–18 ms an answer, interleaved runs).
+- **Station places, gathered** (`dev`): a station ship placed directly (every one in sol-demo) reads her base row instead of the placement's matrix product, the same bits; the product's own time halved, within the noise of a day's station keeping.
 
 - **The ship AI at the flight's front edge** (`727b9d9`): a step of the flight, its orders at the flight's moment, engaged ships on one tick grid; the 44 h escort fight 13.8 s to 1.4 s, 3 h of battle 17.7 s to 3.5 s.
 - **The combat log indexed** (`3354d16`): reload check, last shot and forget no longer read the whole log; at a million shots 22 / 23 / 57 ms to 0.001 / 0.004 / under 0.01 ms.

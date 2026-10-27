@@ -66,6 +66,8 @@ class Placement:
                 break
         self.ids = list(weights)
         self.W = np.array([weights[cid] for cid in self.ids]) if weights else np.zeros((0, nb))
+        one = ((self.W != 0).sum(axis=1) == 1) & (self.W.max(axis=1, initial=0.0) == 1.0)
+        self.one = np.where(one, self.W.argmax(axis=1), -1) if len(self.W) else np.zeros(0, dtype=np.int64)   # placed directly: its base row
 
     def base_positions(self, bullseyes: dict, bodies: dict, ships: dict | None = None) -> np.ndarray:
         """The directly placed contacts (nb × 3), ships where they are flown."""

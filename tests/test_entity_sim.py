@@ -487,6 +487,43 @@ def test_time_to_target_of_a_ship_keeping_her_place():
     assert math.isfinite(as_array) and as_array == f._predict({**goal, "hold_m": hold.tolist()}, t0, r, v, a, R0 + hold, V0)
 
 
+def test_time_to_target_flown_on_from_where_it_ran_out_is_the_same_bits():
+    """kernels.predict stopped for want of the bodies (a short span's nodes) and flown on from the
+    state it left, with more of them, arrives at the very moment one flight over them all does
+    (Fleet._predict's two spans: the second goes on from the first, not again from the start)."""
+    from astrum import kernels
+    from astrum.sim import (ARRIVE_M, ARRIVE_MS, BRAKE_MARGIN, PREDICT_KNOT_S, PREDICT_MAX_STEPS, PREDICT_STEP_S,
+                            PREDICT_STEP_SHARE)
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki-1", "t": t, "g": 0.4, "player": "arcvs",
+                               "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
+    f.at(t + 60)
+    i = f.c.row["kiki-1"]
+    with f.lock:
+        goal = {"target": f.c.target_of(i), "standoff_m": float(f.c.stand[i])}
+        t0, r, v, a = f.t, f.c.r[i].copy(), f.c.v[i].copy(), 0.4 * G0
+        R0, V0 = f._raw_target(goal, t0)
+    horizon = 3 * 86400.0
+    g0 = f.t0 + math.floor((t0 - f.t0) / PREDICT_KNOT_S) * PREDICT_KNOT_S
+    knots = f._knots(goal["target"], g0, 0, int((t0 - g0 + horizon) / PREDICT_KNOT_S) + 3, np.zeros(3), np.zeros((0, 3)), R0)
+    node_t0, h, NP, NV = f._nodes_ahead(t0, t0 + horizon)
+
+    def fly(x, w, t_from, nodes, steps, state):
+        return kernels.predict(x, w, a, t0, t_from, R0, V0, False, knots, g0, PREDICT_KNOT_S, 0.0, node_t0, h,
+                               NP[:nodes], NV[:nodes], f._gms, f._rad, BRAKE_MARGIN, ARRIVE_M, ARRIVE_MS, PREDICT_STEP_SHARE,
+                               PREDICT_STEP_S[0], PREDICT_STEP_S[1], horizon, steps, state)
+    once = fly(r, v, t0, len(NP), PREDICT_MAX_STEPS, np.zeros(9))
+    s1 = np.zeros(9)
+    assert math.isfinite(once) and fly(r, v, t0, 6, PREDICT_MAX_STEPS, s1) == math.inf and s1[8] == 1.0    # (an hour of nodes: short)
+    on = fly(s1[0:3].copy(), s1[3:6].copy(), float(s1[6]), len(NP), PREDICT_MAX_STEPS - int(s1[7]), np.zeros(9))
+    assert on == once
+
+
 def test_station_places_worked_out_ahead_are_the_same_bits():
     """Station ships' places are worked out hours ahead at once (Fleet._station_grid): the fleet
     flies to the bit as it does with every place worked out alone, an order in the past and all."""

@@ -149,20 +149,26 @@ def _surface(x, w, B, rad, t, node_t0, node_h, NP, NV):
 
 
 @jit
-def predict(r, v, a, t0, R0, V0, moving, knots, knot_t0, knot_dt, standoff, node_t0, node_h, NP, NV, gm, rad,
-            brake, arrive_m, arrive_ms, step_share, step_min, step_max, horizon, max_steps):
+def predict(r, v, a, t0, t_from, R0, V0, moving, knots, knot_t0, knot_dt, standoff, node_t0, node_h, NP, NV, gm, rad,
+            brake, arrive_m, arrive_ms, step_share, step_min, step_max, horizon, max_steps, state):
     """sim.Fleet._predict, compiled: her guidance flown forward as a point under gravity (point
     masses), semi-implicit Euler, to the moment she arrives; infinity past the horizon, or past
     the bodies or the target given. The target is R0 + V0·t if moving, else drawn straight between
     knots (knot_dt apart from knot_t0, at or before t0; its acceleration, their second difference);
     the bodies are read off table nodes (node_h apart from node_t0, NP/NV: positions and
-    velocities, n×M×3) by cubic Hermite, and their surfaces (radii rad) are not crossed."""
+    velocities, n×M×3) by cubic Hermite, and their surfaces (radii rad) are not crossed.
+
+    Flown from t_from (r, v then; t0 the question's moment), and where it stops written to state:
+    her position and velocity, the moment, the steps it took, and 1 if it stopped for want of the
+    target or the bodies given (more of them flies it on from there: the same steps, the same bits)."""
     x = np.array([r[0], r[1], r[2]])
     w = np.array([v[0], v[1], v[2]])
-    t = t0
+    t = t_from
     M = gm.shape[0]
     B = np.empty((M, 3))
-    for _ in range(max_steps):
+    for step in range(max_steps):
+        state[0], state[1], state[2], state[3], state[4], state[5] = x[0], x[1], x[2], w[0], w[1], w[2]
+        state[6], state[7], state[8] = t, step, 0.0
         rx, ry, rz = x[0], x[1], x[2]
         vx, vy, vz = w[0], w[1], w[2]
         el = t - t0
@@ -174,6 +180,7 @@ def predict(r, v, a, t0, R0, V0, moving, knots, knot_t0, knot_dt, standoff, node
             y = (t - knot_t0) / knot_dt
             k = int(y)
             if k + 1 >= knots.shape[0]:
+                state[8] = 1.0
                 return math.inf
             u = y - k
             Vx = (knots[k + 1, 0] - knots[k, 0]) / knot_dt
@@ -207,6 +214,7 @@ def predict(r, v, a, t0, R0, V0, moving, knots, knot_t0, knot_dt, standoff, node
         y = (t - node_t0) / node_h
         k = int(math.floor(y))
         if k < 0 or k + 1 >= NP.shape[0]:
+            state[8] = 1.0
             return math.inf
         u = y - k
         u2, u3 = u * u, u * u * u
@@ -237,6 +245,7 @@ def predict(r, v, a, t0, R0, V0, moving, knots, knot_t0, knot_dt, standoff, node
         x[2] += w[2] * dt
         _surface(x, w, B, rad, t, node_t0, node_h, NP, NV)
         t += dt
+    state[7] = max_steps
     return math.inf
 
 
@@ -965,9 +974,9 @@ def warm_up() -> None:
     z3, one = np.zeros((1, 3)), np.ones(1)
     gravity(z3 + 1.0, z3, one, np.zeros(0, dtype=np.int64), np.zeros(0), np.zeros((0, 3, 3)), True)
     gravity_times((z3 + 1.0)[None], z3[None], one, np.zeros(0, dtype=np.int64), np.zeros(0), np.zeros((0, 3, 3)), True)
-    predict(np.zeros(3), np.zeros(3), 1.0, 0.0, np.ones(3) * 1e3, np.zeros(3), True, np.zeros((2, 3)), 0.0, 600.0, 0.0,
+    predict(np.zeros(3), np.zeros(3), 1.0, 0.0, 0.0, np.ones(3) * 1e3, np.zeros(3), True, np.zeros((2, 3)), 0.0, 600.0, 0.0,
             0.0, 600.0, np.zeros((3, 1, 3)), np.zeros((3, 1, 3)), np.zeros(1), np.zeros(1),
-            0.9, 2000.0, 10.0, 0.02, 1.0, 120.0, 1200.0, 10)
+            0.9, 2000.0, 10.0, 0.02, 1.0, 120.0, 1200.0, 10, np.zeros(9))
     i1, f1, f3 = np.zeros(1, dtype=np.int64), np.zeros(1), np.zeros((1, 3))
     i2, b2 = np.zeros(2, dtype=np.int64), np.zeros((1, 2), dtype=np.bool_)
     T3 = np.zeros((1, 2, 3))
