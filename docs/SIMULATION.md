@@ -89,10 +89,11 @@ her:
   JADF's sensors at Jupiter find 191,000 sightings an hour, some 3,000 kept), so this is what culls it.
 
 Nothing culled or passed over is a sighting lost: a test sweeps every sensor against every ship and
-finds the same. The targets of a minute are each her own, so a dear stretch (many minutes of a side
-whose minute costs some 60 µs or more on one thread) is swept on every core, its targets dealt round
-64 lanes so a formation burning together is shared out; a minute, or a cheap side, on one thread,
-which costs less than starting the rest. The same sightings either way (a test runs both).
+finds the same. Two more pass over what cannot see her, the same sightings either way: the side's
+formations stand in branches, each task force's sphere about them, so a task force too far to see
+her is passed over with all its formations (ARCVS's 38 formations are 6 branches); and a ship's
+sensor axes are worked out the first time a target comes to her cones that minute, not for every
+ship every minute. One plain compiled call, one thread.
 
 Each side's summary is its sightings kept in runs (joined within each hour, so a picture reads a
 few, not one a tick), whole every hour, and as of the newest minute; any minute's is the hour's with

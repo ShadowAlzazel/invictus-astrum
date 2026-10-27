@@ -19,8 +19,7 @@ def _fleet(hours=30):
 
 def test_the_culling_never_hides_what_a_sensor_sees():
     """The groups' spheres and each ship's own pass over only what no sensor of theirs could see,
-    and the bound only what could not be kept: the same sightings as every sensor against every ship;
-    and on one thread as on every core."""
+    and the bound only what could not be kept: the same sightings as every sensor against every ship."""
     w, f = _fleet(6)
     tl, S, sig, c = f.timeline, f.sensors, f.signature, f.c
     n = len(c.row)
@@ -33,15 +32,12 @@ def test_the_culling_never_hides_what_a_sensor_sees():
                     np.empty((T, Q), dtype=bool), np.empty((T, Q), dtype=bool), np.empty((T, Q), dtype=bool))
             got = kernels.sweep(X["km"], X["r"], X["v"], X["dir"], X["thrust"], X["cold"], X["heat"], X["ping"], c.ve[:n],
                                 c.quiet[:n], S.emit, sig.aspect_deg, sig.aspect_share, sig.cold_share, sig.recover,
-                                side.cl_start, side.cl_rows, S.s_start, S.body, S.cos, S.thr, S._every, S._at, S.active,
-                                S.reach, side.tgt, thr_min, S.act_reach, S.classify, S.identify, bound, *best)
+                                side.cl_start, side.cl_rows, side.br_start, S.s_start, S.body, S.cos, S.thr, S._every,
+                                S._at, S.active, S.reach, side.tgt, thr_min, S.act_reach, S.classify, S.identify, bound,
+                                *best)
             return got, [np.where(best[0] >= 0, x, 0) for x in best]
         (k1, a), (k2, b) = run(S.thr_min, True), run(np.full(n, 1e-300), False)   # (a floor that low: every sphere passes)
         assert k1 <= k2 and all(np.array_equal(x, y) for x, y in zip(a, b)), view
-        kernels.threads(1)
-        k3, c3 = run(S.thr_min, True)                                               # on one thread: the same
-        kernels.threads(0)
-        assert k3 == k1 and all(np.array_equal(x, y) for x, y in zip(a, c3)), view
 
 
 def test_a_summary_from_the_hourly_whole_ones_is_the_one_laid_minute_by_minute():

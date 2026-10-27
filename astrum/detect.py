@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import bisect
 import math
-import threading
-import time
 import zlib
 
 import numpy as np
@@ -29,9 +27,6 @@ from .armoury import num
 from .relay import C, relay
 from .ships import facing
 
-SWEEPING = threading.Lock()     # the parallel sweep one call at a time (Numba's workqueue layer, without tbb or omp, allows no more)
-WIDE_MIN = 5                    # est.: minutes in one call from which the sweep runs on every core ...
-WIDE_US = 60.0                  # est.: ... for a side whose minute costs this much on one thread (µs)
 
 SAMPLE_S = 60.0
 GOLDEN = math.pi * (3.0 - math.sqrt(5.0))
@@ -258,6 +253,15 @@ def _copy(state: dict) -> dict:
     return {name: a.copy() for name, a in state.items()}
 
 
+def _branch(contacts, unit: str) -> str:
+    """A unit's branch for the sweep: the formation it is in just under the top of its tree (a task
+    force under the fleet), or itself at the top."""
+    up = [unit]
+    while getattr(contacts.get(up[-1]), "formation", None) and len(up) < 32:
+        up.append(contacts[up[-1]].formation)
+    return up[-2] if len(up) >= 2 else up[-1]
+
+
 class SideSweep:
     """One side's sweeps: its ships in groups (its formations, kept), who it looks at, and what it
     has made of them: its sightings (one per ship a minute: the brightest), kept as runs of minutes
@@ -272,15 +276,19 @@ class SideSweep:
         groups: dict = {}
         for o in np.flatnonzero(own).tolist():            # her formation: the group she is swept in
             groups.setdefault(getattr(contacts.get(c.ids[o]), "formation", None) or c.ids[o], []).append(o)
-        self.cl_rows = np.array([o for g in groups.values() for o in g], dtype=np.int64)
-        self.cl_start = np.cumsum([0] + [len(g) for g in groups.values()]).astype(np.int64)
+        branches: dict = {}                               # each group's branch: its task force (the formation under the fleet)
+        for g in groups:
+            branches.setdefault(_branch(contacts, g), []).append(g)
+        order = [g for gs in branches.values() for g in gs]
+        self.cl_rows = np.array([o for g in order for o in groups[g]], dtype=np.int64)
+        self.cl_start = np.cumsum([0] + [len(groups[g]) for g in order]).astype(np.int64)
+        self.br_start = np.cumsum([0] + [len(gs) for gs in branches.values()]).astype(np.int64)
         self.head, self.frontier = _empty(n), -1          # as of the newest minute swept
         self.runs: list[tuple] = []                       # sightings: (first minute, last, columns by sighting) ...
         self.starts: list[int] = []                       # ... and each run's first minute, to find them by
         self._lo = None                                   # the oldest minute kept for, last time
         self.snaps: dict[int, dict] = {-1: _empty(n)}     # minute -> the summary as of it
         self._kept: dict[int, dict] = {}                  # summaries asked for, kept a while
-        self.cost = 0.0                                   # a minute's sweep of hers, on one thread (s): whether to spread it
 
     def sightings(self, lo: int, hi: int) -> tuple | None:
         """The sightings of minutes lo..hi, in order (None: none)."""
@@ -446,16 +454,10 @@ class Sweeper:
         T, Q = len(X["km"]), len(side.tgt)
         best = (np.empty((T, Q), dtype=np.int64), np.empty((T, Q)), np.empty((T, Q)), np.empty((T, Q)),
                 np.empty((T, Q), dtype=np.bool_), np.empty((T, Q), dtype=np.bool_), np.empty((T, Q), dtype=np.bool_))
-        wide = T >= WIDE_MIN and side.cost >= WIDE_US * 1e-6   # every core for a dear stretch; one for a minute, or a cheap side
-        w0 = time.perf_counter()
-        with SWEEPING:
-            kernels.threads(0 if wide else 1)
-            kernels.sweep(X["km"], X["r"], X["v"], X["dir"], X["thrust"], X["cold"], X["heat"], X["ping"], c.ve[:n], c.quiet[:n],
-                          S.emit, sig.aspect_deg, sig.aspect_share, sig.cold_share, sig.recover, side.cl_start, side.cl_rows,
-                          S.s_start, S.body, S.cos, S.thr, S._every, S._at, S.active, S.reach, side.tgt, S.thr_min, S.act_reach,
-                          S.classify, S.identify, True, *best)
-        if not wide:
-            side.cost = (time.perf_counter() - w0) / T     # (what a minute of hers costs on one thread: it decides, not what is seen)
+        kernels.sweep(X["km"], X["r"], X["v"], X["dir"], X["thrust"], X["cold"], X["heat"], X["ping"], c.ve[:n], c.quiet[:n],
+                      S.emit, sig.aspect_deg, sig.aspect_share, sig.cold_share, sig.recover, side.cl_start, side.cl_rows,
+                      side.br_start, S.s_start, S.body, S.cos, S.thr, S._every, S._at, S.active, S.reach, side.tgt, S.thr_min,
+                      S.act_reach, S.classify, S.identify, True, *best)
         if S.idx is not None:                              # (each sighting's sensor, in the whole table)
             best[0][best[0] >= 0] = S.idx[best[0][best[0] >= 0]]
         cols = kernels.sightings(a, X["ts"], X["r"], X["v"], *best, side.tgt, f.sensors.row, C, *relay(f, side.view, side.own).tree)

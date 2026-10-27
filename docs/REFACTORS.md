@@ -14,21 +14,23 @@ pictures taking the rest of the second).
 **A. The AI's look** (the priority). Done 27 October, the same answers (sightings, pictures, orders,
 shots, every row; the golden run). Container, 12 game hours, ms, before / after, interleaved:
 
-| case | the whole | `_front` | `catch_up` (the sweep) | `side_picture` | `decide` |
-|---|---|---|---|---|---|
-| TF-3 off Mars | 570–640 / 514–682 | 396–439 / 324–456 | 321–351 / 245–339 | – | – |
-| the Venus battle | 3,641–4,192 / 3,038–3,119 | 2,065–2,466 / 1,526–1,580 | 454–515 / 463–498 | 826–1,017 / 415–427 | 485–591 / 277–280 |
+| case | `catch_up` (the sweep) | its kernel | `side_picture` | `decide` |
+|---|---|---|---|---|
+| quiet | 115–117 / 105–108 | 66 / 52–53 | – | – |
+| the Venus battle | 454–515 / 463–498 | | 826–1,017 / 415–427 | 485–591 / 277–280 |
 
-The sweep on every core gains 15–30% here (4 cores, noisy) and stays level in the battle, whose
-sweeps are a minute or a block of a side at a time; the side pictures and the CAPTAIN's decisions
-halve. What was left as it was: the CAPTAIN's distances per ship (as one array pass their last bits
-change, and with them, rarely, which side of a threshold a ship falls).
+A1 was first done on every core, and on the owner's machine (Windows) the sweep went from 99 to
+255 ms: a parallel loop is dear to start there, and it started once a minute. Taken out: the sweep
+is one plain call again, made cheaper by the owner's branch tree and sensor axes when asked (A1
+below). What was left as it was: the CAPTAIN's distances per ship (as one array pass their last
+bits change, and with them, rarely, which side of a threshold a ship falls); who pings, read off
+the whole book each block (`Fleet.pinging_many`, a sixth of the sweep in a quiet 12 h).
 
-1. **The sweep across cores** (`kernels.sweep`, `detect.py`). It is 50–60% of the flight in the
-   moving cases, nine tenths of it compiled. The sides are uneven (JADF 163 ms, ARCVS 43 of 343 in
-   12 h, container), so a side to a thread gave only 20%; the targets of a minute are independent,
-   so the kernel's loop over them goes parallel (each target's best sighting her own): the same
-   sightings, est. 2–3x on 4 cores.
+1. **The sweep, culled by branch** (`kernels.sweep`, `detect.py`). It is 50–60% of the flight in
+   the moving cases, nine tenths of it compiled. A target tests each task force's sphere before its
+   formations' (ARCVS: 38 formations in 6), and a ship's sensor axes are made only when a target
+   comes to her cones that minute: ARCVS's block 2.0x cheaper, all sides' 1.2x (JADF, whose
+   targets are 4–5 AU off, little).
 2. **Side pictures by the minute** (20; `detect.Sweeper.arrived`, `pictures.side_picture`). What has
    reached a flagship is made once a side a minute (it gathers an hour of sightings each time
    now), and shared by the CAPTAIN and the map's pictures of that side.
