@@ -114,6 +114,12 @@ ships fly again from a checkpoint (shots excepted: they move no ship). So the CA
 the flight's front edge: the sim hands it each block's state of the engaged ships and those due to
 look, and it answers with orders for the next block, which land in the future.
 
+As built, it runs in the sim's process, on the picture processor's thread: each side is pictured at
+the map's clock, at most every 0.25 s of the wall (`PICTURE_WALL_S`) and within 15% of the time
+(`PICTURE_SHARE`), and the CAPTAIN answers then. The run-ahead keeps 3 s of the wall flown ahead
+(10 min to 12 h of game), so at 10 min/s an order of hers lands about 30 min in the flight's past,
+and each one but a shot flies her rows again. The tests step it by hand, every `engaged_s`.
+
 ## As built
 
 **1a** the combat book (`astrum/combat.py`): weapons by kind and mount from her class, her combat
@@ -166,6 +172,43 @@ salvo (a minute's three salvos at once), and the CAPTAIN at the flight's front e
 
 A pass is dear: half the way at her cruise g is about 367 km/s against GHOST 1 from 27 Gm. Kept
 for now; how hard she burns into a pass is to be a setting of her profile's.
+
+## Open
+
+The owner's to give:
+
+- What a hit does: heat into her thermal store, a dazzled sensor, damage, by fluence and by where
+  it lands (the salvo already says how many channels hit her and her citadel). Survivability: hull
+  points, or damage by system (drive, sensors, weapons, rads, a mast). Until then nothing is
+  `destroyed`.
+- The higher-warp salvo: above some warp, a minute's cycles fired as one (three salvos a minute).
+  The warp it starts at, and whether it is drawn as one salvo of three times the channels or three
+  draws at one moment.
+- Projectiles: mass, g, burn time, payload, burst radius, seeker; whether point defence sees only
+  what the sweep sees.
+- How hard she burns into a pass (a profile's setting).
+- The root map fires every other tick (hold, await), so 20 s; a PICKET stack cycles in 10 s. A
+  map whose hold fires and stays would fire each cycle.
+- `wait_s = 600` on the root's lost node is TESTING.
+
+Estimates in the data, to be checked against the canon when it gives them: `size_k` 0.479 (from
+TELVM §1.3.4's three sizes), `muzzle_share` 0.25 (gives TORMENTA §4.8's table), `engaged_s`,
+`block_s`, `station_share`, `cycle_s` 60 for a battery with no cycle (TEMPORARY).
+
+Ours to build:
+
+- **1c, the CAPTAIN at the flight's front edge**, in its own process. Live, she is asked only as
+  the map is pictured: at 10 min/s, a shot every 5 to 6 min of game against 20 s stepped; at
+  6 h/s her face orders fly again in the past while she burns, and her salvos go out of arc.
+- A fire order of the map's into the flight's past reads her heading off the timeline, sampled
+  every 60 s: up to a minute old.
+- A shot costs about 0.43 ms, 0.07 of it the salvo; the rest (reading both ships at the moment)
+  is not yet profiled. 4% of a one-ship fight.
+- The salvo's simplifications: her aim's error drawn afresh each salvo (no walk-in from one to
+  the next); her roll unknown, so her silhouette's width is her beam; the light time's lead on
+  the relative motion, Galilean; the citadel an ellipse at her centre.
+- `tools/formation_tf2.py` writes over the fleet's callsigns: it needs the owner's names before
+  it is run again.
 
 ## Slates
 
