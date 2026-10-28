@@ -11,7 +11,7 @@
   import { config as adjutantConfig } from './lib/adjutant.js';
   import Orders from './lib/Orders.svelte';
   import Bullseyes from './lib/Bullseyes.svelte';
-  import { aimAt, group, hms, named, nextThen, orderGroups, shipsUnder, stepG } from './lib/orders.js';
+  import { aimAt, group, hms, named, nextThen, orderGroups, shipsUnder, stepG, THEN, toggleAttack } from './lib/orders.js';
   import { Motion } from './lib/motion.js';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
@@ -436,11 +436,14 @@
     if (!able.length) return say('No ship there has a drive stated; they cannot be ordered to move.');
     const grp = group(state, contacts, able);
     const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
-    ordering = { unit: chosen, ships: able, g, tilt: 0, plane: orderPlane, mode, then: lastThen };
+    // an attack-move starts keeping station (aggressive, unchanged). K on it toggles a pass; it does
+    // not inherit how the last move ended
+    ordering = { unit: chosen, ships: able, g, tilt: 0, plane: orderPlane, mode, then: mode === 'attack' ? 'station' : lastThen };
   }
-  // how a move ends (orders.js THEN): on station, free, or ballistic; K while aiming, kept for the next move
+  // how a move ends (orders.js THEN): on station, free, or ballistic; K while aiming, kept for the next move.
+  // an attack-move's K is its own: keep station, or pass on by. It does not change the move's
   let lastThen = 'station';
-  $: if (ordering?.then) lastThen = ordering.then;
+  $: if (ordering?.mode === 'move' && ordering.then) lastThen = ordering.then;
   // K: the selection goes free if any of its ships holds station, else takes station (decelerate: to
   // rest on the active bullseye, held there)
   async function toggleFree(unit = chosen) {
@@ -529,8 +532,9 @@
     if (!aim || !scenario) { say('Nothing to aim at there.'); return false; }
     try {
       const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId, view: side,
-                                  target: aim.target, mode: o.mode, queue, free: o.mode === 'move' && o.then === 'free' ? true : undefined,
-                                  ballistic: o.mode === 'move' && o.then === 'ballistic' && !queue ? true : undefined });
+                                  target: aim.target, mode: o.mode, queue,
+                                  free: o.mode === 'move' && o.then === 'free' ? true : undefined,
+                                  ballistic: !queue && (o.mode === 'move' && o.then === 'ballistic' || o.mode === 'attack' && o.then === 'pass') ? true : undefined });
       const goal = Object.values(r.ships)[0]?.goal;
       const who = `${map.contactName(o.unit)}${o.ships.length > 1 ? ` (${o.ships.length} ships)` : ''}`;
       say(o.mode === 'turn' ? `${who}: turned to ${aim.kind === 'point' ? 'the point' : aim.label}` : o.g <= 0 ? `${who}: drive cut`
@@ -588,8 +592,16 @@
     if (ordering) {                                      // aiming an order: its own keys first
       const m = Object.keys(MODES).find((a) => is(e, a));
       if (e.key === 'Escape' || (m && MODES[m] === ordering.mode)) { ordering = null; return; }
-      if (m) { ordering = { ...ordering, mode: MODES[m] }; return; }      // another kind of order, aimed the same
+      if (m) {
+        const mode = MODES[m];
+        const then = mode === 'attack' ? (ordering.mode === 'attack' ? ordering.then : 'station')
+          : mode === 'move' ? (THEN.includes(ordering.then) ? ordering.then : lastThen)
+          : ordering.then;
+        ordering = { ...ordering, mode, then };                           // another kind of order, aimed the same
+        return;
+      }
       if (is(e, 'free') && ordering.mode === 'move') { ordering = { ...ordering, then: nextThen(ordering.then) }; return; }
+      if (is(e, 'free') && ordering.mode === 'attack') { ordering = { ...ordering, then: toggleAttack(ordering.then) }; return; }
       if (orderTool?.key(e)) { e.preventDefault(); return; }
     } else if (Object.keys(MODES).some((a) => is(e, a)) && mode === 'map') { startOrder(MODES[Object.keys(MODES).find((a) => is(e, a))]); return; }
     else if (is(e, 'stop') && mode === 'map') { stopOrder(); return; }

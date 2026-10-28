@@ -78,7 +78,9 @@ moves her MINERVA on, and gives each node's actions as orders to the book.
 
 Readiness I is general quarters: her sensors ping, to find cold targets, and every passive sensor
 sees her doing it. A ReadyStance is ordered to a ship or a formation and passed down its chain. An
-attack-move is Aggressive the whole way, a patrol Guard.
+attack-move is Aggressive the whole way, a patrol Guard. Aimed, K keeps station at the point (the
+usual: Aggressive is still that station-keeping) or passes on by, a ballistic burn with no braking,
+and after an engagement she flies on instead of holding the point.
 
 A **profile** is what she does in combat: its nodes (each with what she does entering it: station,
 hold, face, fire, pass, correct; the battery it reads), the conditions between them (far,
@@ -256,9 +258,10 @@ The owner's to give:
 - Damaged, disabled and destroyed are alike in the simulation (all out): what tells them apart
   (repair, salvage) is to come. A system out stays in the state it went out at.
 - A dazzled sensor (its sweep blind a while, behind its shutter) is said, not done.
-- Firing the spine while she keeps station: she holds her fire while she burns off it (95% of her
-  chances in the Venus action). Cutting her drive for the shot, or a node that does, is a choice of
-  the map's or the CAPTAIN's.
+- The spine, when the bow is off the aim (`spine` on the node, else `cut`): hold the stack while
+  she burns off it and face it when she does not. `coast` cuts the drive for that tick, then faces
+  and fires, and the node's move returns the next. `keep` does not turn her; the stack fires only
+  already inside its trim. Light ignores it. No shared profile sets it, so they fire as before.
 - The merged tick: from 10 min/s (`merge_warp`), 60 s; each salvo its own draw, at the tick's
   first moment's geometry.
 - Projectiles: mass, g, burn time, payload, burst radius, seeker; whether point defence sees only

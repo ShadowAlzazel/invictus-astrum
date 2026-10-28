@@ -103,7 +103,8 @@
     if (aimed) {
       const a = map.project(aimed.from), b = map.project(aimed.to);
       if (a && b) {
-        const ballistic = ordering.mode === 'move' && ordering.then === 'ballistic', est = estimate(aimed, shown, ballistic), hd = heading(map, aimed);
+        const pass = ordering.mode === 'attack' && ordering.then === 'pass';
+        const ballistic = (ordering.mode === 'move' && ordering.then === 'ballistic') || pass, est = estimate(aimed, shown, ballistic), hd = heading(map, aimed);
         line(a, b, col(F, 0.95), 1.6);
         if (ordering.ships.length > 1 || ordering.ships[0] !== ordering.unit) {      // each ship's own line, offset kept
           for (const id of ordering.ships) {
@@ -123,7 +124,8 @@
              shown > 0 ? `ETA ≈ ${hms(est.eta)} at ${shown.toFixed(2)} g · Δv ≈ ${est.dv.toFixed(1)} km/s` : 'stop: cut her drive',
              ...(ordering.mode === 'move' && shown > 0 ? [ballistic ? 'ballistic: no braking, on through it'
                : ordering.then === 'free' ? (aimed.kind === 'body' ? `then free: an orbit of ${aimed.label}` : 'then free: coasting, or an orbit in a well')
-               : 'then holds station there'] : [])],
+               : 'then holds station there'] : []),
+             ...(ordering.mode === 'attack' && shown > 0 ? [pass ? 'pass on by: no braking, on through it' : 'then keeps station, aggressive'] : [])],
               b.x, b.y, F);
       }
     }
@@ -162,6 +164,11 @@
       <button class="plane" class:on={ordering.then !== 'station'} on:click={() => (ordering = { ...ordering, then: nextThen(ordering.then) })}
         title="How it ends (K cycles): hold station there (paying to hold her place); free there (an orbit in a body's well, paying only the burn onto it; else coasting); or ballistic (no braking: half the way burning, then on through it at that speed)">
         <i></i>{ordering.then === 'ballistic' ? 'Ballistic: burn, then on through' : ordering.then === 'free' ? 'Then free: orbit or coast' : 'Then hold station'}<kbd>{cap($keymap.free)}</kbd>
+      </button>
+    {:else if ordering.mode === 'attack'}
+      <button class="plane" class:on={ordering.then === 'pass'} on:click={() => (ordering = { ...ordering, then: ordering.then === 'pass' ? 'station' : 'pass' })}
+        title="K: keep station there (aggressive, the usual), or pass on by (one burn, no braking, on through the point)">
+        <i></i>{ordering.then === 'pass' ? 'Pass on by: burn, then through' : 'Keep station'}<kbd>{cap($keymap.free)}</kbd>
       </button>
     {/if}
     <p class="keys"><kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>{cap($keymap.eve)}</kbd><kbd>{cap($keymap.haid)}</kbd> Eve / Haid · <kbd>{cap($keymap.plane)}</kbd> plane · click to order, <kbd>⇧</kbd>-click to queue · <kbd>{cap($keymap.order)}</kbd><kbd>{cap($keymap.attack)}</kbd><kbd>{cap($keymap.patrol)}</kbd><kbd>{cap($keymap.turn)}</kbd> move, attack, patrol, turn · <kbd>Esc</kbd> cancel</p>

@@ -26,7 +26,7 @@ from ..classis import DEAD, SHIP
 from ..detect import SAMPLE_S
 from ..entity import G0
 from ..frames import to_aer
-from ..orders import GOTO, STANCE
+from ..orders import BURN, COAST, GOTO, STANCE
 from ..sim import Order
 from .minerva import EXIT, READY, Machine
 
@@ -87,6 +87,8 @@ class Captain:
         self.looked: dict[str, int] = {}                 # side -> the last block its ready ships looked in
         self._stood = (None, None)
         self._moving = (0, set(), np.inf)                # (book events looked at, ships ever given an attack-move or
+        self._passes: dict[int, bool] = {}               # a patrol, the first engage order's moment);
+                                                         # ship -> her attack-move passes on by (no braking to station)
         self._reach: dict = {}                           # a patrol, the first engage order's moment)
         self._chosen: dict = {}                          # (row, battery kind) -> (her batteries then, the one a node reads)
         self._far: dict = {}                             # (row, profile) -> (her batteries, engagement, farthest it acts at)
@@ -173,13 +175,23 @@ class Captain:
         a ship of another side flies an engage on (no tracks: being fired on shows her where)."""
         self.fv, B = fv, fv.book
         n0, moving, first = self._moving
+        passes = dict(self._passes)
         for e in range(n0, B.n):
-            tg = B.of(e).target if B.kind[e] == GOTO else {}
+            g, kind, ship = B.of(e), int(B.kind[e]), int(B.ship[e])
+            tg = g.target if kind == GOTO else {}
             if tg.get("attack") or tg.get("patrol"):
-                moving = moving | {int(B.ship[e])}
+                moving = moving | {ship}
+                if tg.get("attack"):                     # the usual keeps station; pass: on through, no braking
+                    passes[ship] = bool(tg.get("pass"))
+            elif kind == BURN and g.burn.get("attack"):
+                moving = moving | {ship}
+                passes[ship] = True
+            elif kind in (GOTO, COAST) and g.source not in ("ai", "auto"):
+                passes.pop(ship, None)                   # a plain order of the map's: the pass is over
             if tg.get("engage"):
                 first = min(first, float(B.at[e]))
         self._moving = (B.n, moving, first)
+        self._passes = passes
         stance, prof, _, ready = self.standing(B, t)
         k = int(np.floor((t - self.t0) / self.minerva.block_s + 1e-9))
         out: dict[str, bool] = {}
@@ -260,7 +272,7 @@ class Captain:
         for i in rows:
             m = self.machine(i)
             goal = (sp.said.get(i) or {}).get("goal")
-            tg = goal["target"] if goal else {}
+            tg = self._move_target(i, goal)
             plain = bool(goal) and goal["source"] not in ("ai", "auto") and not (tg.get("attack") or tg.get("patrol"))
             rs = self.minerva.stances[self._stance(i, m, tg, stance[i])]
             out += self._readiness(sp, i, m, rs, bool(ping[i]))
@@ -348,14 +360,20 @@ class Captain:
     # ---- in combat ---------------------------------------------------------------------------------
     def _enter(self, sp, i: int, m: Machine, j: int, goal, frame: str, prof, rs) -> list:
         """Into combat on target j: her engagement's first node, with the move she was on (an
-        attack-move or a patrol: to resume) and where she stood (her post) to go back to."""
-        tg = goal["target"] if goal else {}
+        attack-move or a patrol: to resume) and where she stood (her post) to go back to. A pass
+        resumes as a coast, not a brake to the point."""
+        tg = self._move_target(i, goal)
         back = None
         if "then" in tg:                                  # braking on the way back: back to that, after
             back = tg["then"]
         elif tg.get("attack") or tg.get("patrol"):
-            back = {"target": {k: v for k, v in tg.items() if k != "offset_m"}, "g": goal["g"], "by": goal["by"],
-                    "slot": tg.get("offset_m", [0.0, 0.0, 0.0])}
+            if tg.get("pass"):
+                back = {"target": {"attack": True, "pass": True, "label": "pass on by"},
+                        "g": (goal or {}).get("g") or self._cruise(i), "by": (goal or {}).get("by") or self.fv.ids[i],
+                        "slot": [0.0, 0.0, 0.0]}
+            else:
+                back = {"target": {k: v for k, v in tg.items() if k != "offset_m"}, "g": goal["g"], "by": goal["by"],
+                        "slot": tg.get("offset_m", [0.0, 0.0, 0.0])}
         eng = self.world.engagement(prof)
         m.move(sp.t, node=eng.start, target=j, back=back, post=self._home(sp, i, frame), closing=False)
         return self._do(sp, i, m, eng.nodes[eng.start], rs, goal)
@@ -408,7 +426,12 @@ class Captain:
         on_her = bool(goal) and goal["source"] == "ai" and tg.get("engage") and j >= 0 and tg.get("unit") == fv.ids[j]
         who = "hostile" if j >= 0 and sp.identified[j] else "bogey"
         out = []
+        # coast, and the bow is off while she burns: this tick cuts the drive, so the node's move
+        # does not relight it. The move returns next tick, when she faces and fires.
+        quiet = node.spine == "coast" and not gone and bool(sp.burning[i]) and self._bow_off(sp, i, j, w)
         for a in node.do:
+            if quiet and a in ("station", "hold", "pass", "correct", "face"):
+                continue
             if a in ("station", "pass") and not rs.moves:
                 a = "face"
             if a in ("hold", "correct") and not rs.moves:
@@ -431,18 +454,27 @@ class Captain:
                     out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"face the {who}"}, source="ai",
                                      order_id=self._oid(sid, t), by=sid))
             elif a == "fire" and not gone:
-                out += self._fire(sp, i, m, j, w, who)
+                out += self._fire(sp, i, m, j, w, who, node.spine)
             elif a == "pass" and not gone:
                 out.append(self._pass(sp, i, j, g, f"pass the {who}"))
             elif a == "correct" and not gone and not sp.burning[i]:
                 out.append(self._correct(sp, i, j))
         return out
 
-    def _fire(self, sp, i: int, m: Machine, j: int, w, who: str) -> list:
+    def _bow_off(self, sp, i: int, j: int, w) -> bool:
+        """Her spine is off the aim by more than the stack's trim. Light has no bow."""
+        if w is None or w.stack is None:
+            return False
+        u = sp.reckoned(j) - sp.r[i]
+        u = u / max(float(np.linalg.norm(u)), 1.0)
+        return float(sp.dir0[i] @ u) < math.cos(math.radians(w.stack.trim_deg))
+
+    def _fire(self, sp, i: int, m: Machine, j: int, w, who: str, spine: str = "cut") -> list:
         """Her shots at j this tick: the node's battery, within its reach, once it has cycled, the tick's cycles at
-        once (a stack fires along her spine, within its trim: turned on it first, and held while
-        she burns off it); and every optical battery of hers that reaches her, held on her for the
-        tick (light retargets in microseconds, and needs no arc)."""
+        once; and every optical battery of hers that reaches her, held on her for the tick (light
+        retargets in microseconds, and needs no arc). A stack off the aim follows the node's spine:
+        cut (the default) holds it while she burns off it and faces it when she does not; coast cuts
+        the drive for that tick instead; keep does not turn her and does not fire it."""
         fv, t = self.fv, sp.t
         sid, tick = fv.ids[i], self.tick_s
         u = sp.reckoned(j) - sp.r[i]
@@ -456,12 +488,17 @@ class Captain:
             if t - fired.get(x.id, -math.inf) < every - 1e-6:
                 continue
             extra, k = ({"dwell_s": tick}, 1) if x.optic is not None else ({}, max(1, int(tick / every + 1e-9)))
+            off = x.stack is not None and self._bow_off(sp, i, j, x)
+            if off and spine == "coast" and sp.burning[i]:
+                out.append(Order(sid, t, "coast", target={"label": "cut the drive for the shot"}, source="ai",
+                                 order_id=self._oid(sid, t, "coast"), by=sid))
+                continue
+            if off and (spine == "keep" or sp.burning[i]):
+                continue
+            if off:
+                out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"spine on the {who}"}, source="ai",
+                                 order_id=self._oid(sid, t), by=sid))
             if x.stack is not None:
-                if float(sp.dir0[i] @ u) < math.cos(math.radians(x.stack.trim_deg)):
-                    if sp.burning[i]:
-                        continue
-                    out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"spine on the {who}"}, source="ai",
-                                     order_id=self._oid(sid, t), by=sid))
                 extra = {"salvos": k} if k > 1 else {}
             out.append(Order(sid, t, "fire", target={"weapon": x.id, "dir": u.tolist(), "targets": [fv.ids[j]],
                                                      "label": f"fire {x.label} at the {who}", **extra},
@@ -480,7 +517,8 @@ class Captain:
         if not rs.moves:
             return []
         if after == "resume" and back:
-            return [self._back(sp, i, back)]
+            got = self._back(sp, i, back)
+            return [got] if got is not None else []
         if after == "post" and post:
             return [self._back(sp, i, post)]
         if after == "coast":
@@ -553,13 +591,26 @@ class Captain:
                 "duration_s": float(np.linalg.norm(dv)) / a, "pass": self.fv.ids[j], "label": "pass: correction"}
         return Order(sid, sp.t, "burn", burn=burn, source="ai", order_id=self._oid(sid, sp.t), by=sid)
 
-    def _back(self, sp, i: int, back: dict, rest_only: bool = False) -> Order:
+    def _move_target(self, i: int, goal) -> dict:
+        """The move she is on, as her stance reads it. An attack-move told to pass on by has no
+        go-to (it is a burn, then a coast): she is still aggressive, and she does not brake to station."""
+        tg = dict(goal["target"]) if goal and goal.get("target") else {}
+        if self._passes.get(i) and not tg.get("engage") and not tg.get("patrol") and not (tg.get("attack") and not tg.get("pass")):
+            tg = {**tg, "attack": True, "pass": True, "label": tg.get("label") or "pass on by"}
+        return tg
+
+    def _back(self, sp, i: int, back: dict, rest_only: bool = False) -> Order | None:
         """Back to a move or a place (back: {target, g, by, slot}). If she cannot stop there from
         how she moves (closing too fast, or going away), she brakes to rest in its frame first (then
         on; rest_only: and stays there); an attack-move she would pass while braking is done once she
         rests."""
         fv, t = self.fv, sp.t
         tg, slot = back["target"], np.asarray(back.get("slot", (0.0, 0.0, 0.0)), dtype=float)
+        if tg.get("pass") and not rest_only:             # on through: leave the burn, or coast; do not brake to the point
+            burn = (sp.said.get(i) or {}).get("burn") or {}
+            if burn.get("attack"):
+                return None
+            return self._order(sp, i, {"label": "pass on by", "attack": True, "pass": True}, 0.0, kind="coast")
         target = {**tg, "offset_m": slot.tolist()} if slot.any() else dict(tg)
         a = 0.9 * min(back["g"] * G0, float(fv.accel[i]))
         P0, P1 = (fv.point(tg, t), fv.point(tg, t + 60.0)) if "bullseye" in tg or "body" in tg else (None, None)

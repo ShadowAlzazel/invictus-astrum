@@ -325,8 +325,10 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
         raise OrderRefused(400, "mode is move, attack, patrol or turn (patrol: to a point off a bullseye)")
     if mode == "turn":
         return turn_order(world, sc, fleet, side, unit, ships, t, tp, target, player, overrule)
-    if req.get("ballistic") is True and mode == "move":
-        return ballistic_order(world, sc, fleet, side, unit, ships, t, tp, target, float(g), overrule)
+    if req.get("ballistic") is True and mode in ("move", "attack"):
+        # an attack-move passed on by is the same burn, and she stays aggressive: she does not brake
+        # to keep station at the point (K while aiming; the usual attack-move still does)
+        return ballistic_order(world, sc, fleet, side, unit, ships, t, tp, target, float(g), overrule, attack=mode == "attack")
     formation, offsets, anchor = len(ships) > 1 or unit not in ships, {sid: np.zeros(3) for sid in ships}, None
     if formation or mode == "patrol":                # where it is now (where the fleet has got, if it is behind the clock)
         flown = fleet.positions_at(tp)
@@ -358,14 +360,16 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
 
 
 def ballistic_order(world, sc, fleet, side, unit: str, ships: list[str], t: float, tp: float, target: dict, g: float,
-                    overrule=None) -> dict:
+                    overrule=None, attack: bool = False) -> dict:
     """BALLISTIC: a move that keeps its speed. Every ship burns at g along one line for half the
     way, then her drive is cut and she coasts on through the target at the speed she reached: no
     braking, no order left to fly (a timed burn, as a scenario writes one, so the formation keeps
     its shape). Aimed as a straight line, gravity left out: from where the formation is (the mean of
     its ships) with its own drift, at where the target will be when she gets there (worked out again
     until that settles); at a body, past it at the distance a go-to would stop short of it. As the
-    map's predictor aims it (web/src/lib/kepler.js ballisticAim)."""
+    map's predictor aims it (web/src/lib/kepler.js ballisticAim). attack: an attack-move told to pass
+    on by. The burn is marked so, and she is aggressive the whole way; she does not brake to keep
+    station at the point (the usual attack-move, without this, still does)."""
     a = g * G0
     if a <= 0:
         raise OrderRefused(400, "a ballistic move needs g above 0")
@@ -395,9 +399,13 @@ def ballistic_order(world, sc, fleet, side, unit: str, ships: list[str], t: floa
     if overrule is not None:
         overrule(sc, fleet, ships, t)
     oid = f"{unit}:ballistic@{t:.0f}#{next(_order_n)}"
+    name = target.get("label", "the target")
+    label = f"attack-move, pass by {name}" if attack else f"ballistic to {name}"
     burn = {"bullseye": "system", "bearing": math.degrees(brg), "elevation": math.degrees(el), "g": g, "duration_s": tb}
+    if attack:
+        burn["attack"] = True                         # aggressive the whole way; she does not brake to station
     out = order_reply(fleet, t, unit, ships, [Order(sid, t, "burn", burn=burn, source="map", order_id=oid, by=unit) for sid in ships], side)
-    return {**out, "ballistic": {"burn_s": tb, "there_s": T, "label": f"ballistic to {target.get('label', 'the target')}"}}
+    return {**out, "ballistic": {"burn_s": tb, "there_s": T, "label": label, "attack": attack}}
 
 
 def turn_order(world, sc, fleet, side, unit: str, ships: list[str], t: float, tp: float, target: dict, player: str,

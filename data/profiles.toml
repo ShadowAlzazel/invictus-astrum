@@ -17,6 +17,10 @@
 #             target), "fire" (the battery, a WeaponEngageOrder: the combat function, once it has
 #             cycled; and every optical battery that reaches the target, held on it the tick), "pass" (a
 #             burn through where the target will be), "correct" (a pass's course corrected)
+#   spine     how a stack is fired when the bow is off the aim (light ignores it). Left out: "cut"
+#             (hold the stack while she burns off it, and face it when she does not). "coast" cuts
+#             the drive for that tick, then faces and fires, and the node's move returns the next.
+#             "keep" does not turn her: the stack fires only already inside its trim.
 #   weapon    which battery a node's actions and conditions read: "focus" (her focus battery), a
 #             battery's kind ("stack": the spinal battery; "strip", "dome", "panel", "turret",
 #             "cell"); one she lacks is read as her focus battery

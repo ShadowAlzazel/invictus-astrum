@@ -6,8 +6,8 @@ nodes, data/profiles.toml). The CAPTAIN reads only what her side's picture shows
 answers with orders, through the order book as a player does, so a replay gives them again
 (astrum/shipai/captain.py, imported by astrum/ai.py: the data here imports nothing of the sim).
 """
-from .minerva import (ACTIONS, AFTERS, CONDITIONS, ENTERS, EXIT, RANGES, READY, STANCES, WEAPONS, Engagement, Machine,
+from .minerva import (ACTIONS, AFTERS, CONDITIONS, ENTERS, EXIT, RANGES, READY, SPINES, STANCES, WEAPONS, Engagement, Machine,
                       Minerva, Node, ReadyStance, check_engagement, load_minerva, make_engagement)
 
-__all__ = ["ACTIONS", "AFTERS", "CONDITIONS", "ENTERS", "EXIT", "RANGES", "READY", "STANCES", "WEAPONS", "Engagement",
+__all__ = ["ACTIONS", "AFTERS", "CONDITIONS", "ENTERS", "EXIT", "RANGES", "READY", "SPINES", "STANCES", "WEAPONS", "Engagement",
            "Machine", "Minerva", "Node", "ReadyStance", "check_engagement", "load_minerva", "make_engagement"]

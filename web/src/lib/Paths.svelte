@@ -188,8 +188,10 @@
       if (o) stroke(path, o, k ? fuchsia : under.has(c.id) ? friendOn : friend, k ? [1, 4] : [3, 4]);
     }
     if (kept.size > 4 * contacts.length) kept.clear();
-    // a move aimed: given free, what she does once there; ballistic, her whole way, notched in time
-    const a = estimates && ordering?.mode === 'move' && ordering.then !== 'station' ? aim() : null;
+    // a move aimed: given free, what she does once there; ballistic, her whole way, notched in time.
+    // an attack-move told to pass on by is the same burn
+    const pass = ordering?.mode === 'attack' && ordering.then === 'pass';
+    const a = estimates && ordering && ((ordering.mode === 'move' && ordering.then !== 'station') || pass) ? aim() : null;
     if (a && ordering.then === 'free') {
       let path = null;
       const b = a.kind === 'body' && map.bodies[a.id];
@@ -202,7 +204,7 @@
       }
       const o = path?.pts && (a.kind === 'body' ? a.to : map.position({ kind: 'body', id: path.body }));
       if (o) stroke(path, o, fuchsia, [1, 4]);
-    } else if (a && ordering.then === 'ballistic') {
+    } else if (a && (ordering.then === 'ballistic' || pass)) {
       ballistic(a, fuchsia);
     }
     ctx.setLineDash([]);

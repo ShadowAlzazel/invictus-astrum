@@ -75,3 +75,87 @@ def test_a_battle_flown_again_is_the_same_battle(tmp_path):
     assert [(e.t, e.ship, e.weapon, e.what, (e.result or {}).get("hits")) for e in fleet.combat.log] == was
     assert _down(fleet, RAIDERS + ours) == down
     assert [(o.t, o.row, o.kind, o.state) for o in fleet.combat.systems.log] == systems
+
+
+def test_an_attack_move_keeps_station_unless_told_to_pass(tmp_path):
+    """Without the pass, an attack-move is still a go-to: aggressive, and she brakes to keep
+    station. Aggressive itself is not a fly-by. The pass is a ballistic burn, marked so."""
+    c, world = _app(tmp_path)
+    fleet = world.fleet(world.scenarios["sol-demo"])
+    t = fleet.t0 + 600
+    body = {"scenario": "sol-demo", "player": "arcvs", "unit": "kiki-1", "t": t, "g": 0.3, "target": {"body": "venus"}}
+    held = c.post("/api/order", json={**body, "mode": "attack"}).json()
+    assert "ballistic" not in held
+    tg = held["ships"]["kiki-1"]["goal"]["target"]
+    assert tg.get("attack") and not tg.get("pass") and fleet.c.goal[fleet.c.row["kiki-1"]]
+    passed = c.post("/api/order", json={**body, "t": t + 60, "mode": "attack", "ballistic": True}).json()
+    assert passed["ballistic"]["attack"] and passed["ballistic"]["burn_s"] > 0
+    assert passed["ballistic"]["label"].startswith("attack-move, pass by")
+
+
+def _spine(fleet, sid) -> bool:
+    """A UREB spine: a stack battery that can fire a salvo. Not every ship has one."""
+    i = fleet.c.row[sid]
+    return any(w.mount == "stack" and w.stack is not None for w in fleet.combat.weapons[i])
+
+
+def test_the_task_force_burns_high_g_ballistic_at_the_venus_raiders(tmp_path):
+    """The whole of Task Force 2 attack-moves to Venus on a pass: one high-g burn, the slowest
+    ship's most, half the way, then on through, to intercept the raiders. She does not brake to
+    keep station at Venus. A tender and a cutter have no UREB spine: they take the same order and
+    burn at what they can hold, and a spine is only ever fired by a ship that has one."""
+    from astrum.entity import G0
+
+    c, world = _app(tmp_path)
+    sc = world.scenarios["sol-demo"]
+    fleet = world.fleet(sc)
+    tree = world.trees["sol-demo"]
+    tf = [s for s, u in tree.items() if "tf-2" in u.get("ancestors", []) and sc.contacts[s].ship_class]
+    bare = ["luna-tenders-1", "luna-patrol-1"]
+    assert tf and all(not _spine(fleet, s) for s in bare) and any(_spine(fleet, s) for s in tf)
+    ordered = tf + bare
+    high = min(fleet.c.max_accel(fleet.c.row[s]) / G0 for s in tf)
+    assert high > 0.4                                          # full burn, not the cruise-floor go-to
+    c.app.state.sim.host.ai.warp[sc.id] = 3600.0
+    t = fleet.t0 + 3600                                 # after the scenario's own burn of Picket A 1 (at 1800 s, for 1200 s)
+    c.post("/api/profiles", json={"player": "arcvs", "name": "Hunters", "map": "root", "targets": ["hostile", "unknown"], "range": {}})
+    o = {"scenario": "sol-demo", "player": "arcvs", "unit": "tf-2+luna-tenders-1+luna-patrol-1", "t": t}
+    assert c.post("/api/order", json={**o, "profile": "hunters", "stance": "aggressive"}).status_code == 200
+    r = c.post("/api/order", json={**o, "g": high, "mode": "attack", "ballistic": True, "target": {"body": "venus"}}).json()
+    assert r["ballistic"]["attack"] and r["ballistic"]["there_s"] > r["ballistic"]["burn_s"] > 0
+    tb, there = r["ballistic"]["burn_s"], r["ballistic"]["there_s"]
+    fleet.reach(t + 0.15 * tb)
+    venus = fleet._bodies(fleet.t)["venus"]
+    for s in ordered:
+        i = fleet.c.row[s]
+        assert not fleet.c.goal[i]                             # a pass, not a go-to that keeps station
+        burn = fleet.c.burn_dict(i)
+        assert burn and burn.get("attack") and burn["g"] == pytest.approx(high)
+        most = fleet.c.max_accel(i) / G0
+        held = fleet.c.thrust[i] / fleet.c.mass(i) / G0
+        assert held == pytest.approx(min(high, most), rel=0.02) and held > 0.15
+        aim = venus - fleet.c.r[i]
+        assert float(fleet.c.dir[i] @ aim) > 0.9 * np.linalg.norm(aim)
+    raid = [fleet.c.row[s] for s in RAIDERS]
+    rows = [fleet.c.row[s] for s in ordered]
+    end = t + there + 6 * 3600
+    at, best = fleet.t, np.inf
+
+    def nearest() -> float:
+        return float(np.linalg.norm(fleet.c.r[rows][:, None] - fleet.c.r[raid][None], axis=2).min())
+
+    while at < end - 1:
+        now = nearest()
+        best = min(best, now)
+        # a pass at several hundred km/s crosses a spine's reach in a few minutes: sample finely there
+        at = min(at + (90.0 if now < 3e9 else 1200.0), end)
+        fleet.reach(at)
+        if nearest() < 1.2e8:
+            best = min(best, nearest())
+            break
+    log = fleet.combat.log
+    spinal_from = {fleet.c.ids[e.ship] for e in log if e.weapon == "spinal" and e.what == "fired"}
+    assert spinal_from <= {s for s in ordered if _spine(fleet, s)}
+    assert not spinal_from & set(bare)
+    fired_at = [e for e in log if e.what == "fired" and set(e.targets) & set(raid)]
+    assert best < 1.2e8 or fired_at, f"no intercept: closest {best / 1e3:,.0f} km, no shot at the raiders"

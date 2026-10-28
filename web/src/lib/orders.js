@@ -159,3 +159,6 @@ export function stepG(g, maxG, cruise, up, fine) {
 // well, else coasting), or ballistic (no braking: half the way burning, then coasting on through)
 export const THEN = ['station', 'free', 'ballistic'];
 export const nextThen = (then) => THEN[(THEN.indexOf(then ?? 'station') + 1) % THEN.length];
+// an attack-move's K, two ways only: keep station (the usual; aggressive does not change), or
+// pass on by (a ballistic burn, no braking to the point)
+export const toggleAttack = (then) => (then === 'pass' ? 'station' : 'pass');

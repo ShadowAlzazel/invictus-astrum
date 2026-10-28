@@ -62,7 +62,7 @@ log = logging.getLogger("astrum.web")         # who connected, signed in, acted 
 from . import display
 from . import picture
 from . import profiles
-from .shipai import ACTIONS, AFTERS, CONDITIONS, WEAPONS, Minerva, load_minerva
+from .shipai import ACTIONS, AFTERS, CONDITIONS, SPINES, WEAPONS, Minerva, load_minerva
 from .profiles import Profile
 from . import switches
 from .detect import suite, unsimulated
@@ -1255,7 +1255,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         return {"profiles": [p.as_dict() for p in world.profiles_of(player).values()],
                 "stances": {k: f"{s.label}: {s.text}" for k, s in M.stances.items()}, "minerva": M.as_dict(),
                 "ranges": profiles.RANGES, "targets": list(profiles.TARGETS), "afters": AFTERS, "actions": ACTIONS,
-                "conditions": CONDITIONS, "weapons": list(WEAPONS)}
+                "conditions": CONDITIONS, "weapons": list(WEAPONS), "spines": SPINES}
 
     @app.post("/api/profiles")
     async def profile_make(request: Request, req: dict = Body(...)):

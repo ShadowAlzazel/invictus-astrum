@@ -32,6 +32,15 @@ def test_a_profile_is_an_engagement_map(tmp_path):
     with pytest.raises(ValueError) as e:
         load_shared(f)
     assert "no action 'dance'" in str(e.value) and "no condition 'bored'" in str(e.value) and "goes to 'b'" in str(e.value)
+    assert {n.spine for p in shared.values() for n in p.engagement.nodes.values()} == {"cut"}
+    f.write_text('[profile.root]\nname = "x"\nstart = "a"\n[profile.root.node.a]\ndo = ["fire"]\nweapon = "stack"\nspine = "keep"\n'
+                 'on = [{ if = "always", go = "exit" }]\n')
+    assert load_shared(f)["root"].engagement.nodes["a"].spine == "keep"
+    f.write_text('[profile.root]\nname = "x"\nstart = "a"\n[profile.root.node.a]\nspine = "park"\ndo = ["fire"]\n'
+                 'on = [{ if = "always", go = "exit" }]\n')
+    with pytest.raises(ValueError) as e:
+        load_shared(f)
+    assert "spine is one of" in str(e.value)
     assert check({"name": "a", "stance": "guard", "range": {"hold": -3}, "targets": ["friend"]}) == [
         "unknown key 'stance'", "targets are among ['hostile', 'unknown']",
         "range hold: one of ['sensor', 'half-sensor', 'dazzle', 'weapons'], or km above zero"]

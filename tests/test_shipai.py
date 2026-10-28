@@ -115,6 +115,8 @@ def test_the_profiles_say_their_engagements_and_the_minerva_for_the_map(tmp_path
     assert root["root"] and root["engagement"]["start"] == "close" and set(root["engagement"]["nodes"]) >= {"close", "fire", "lost"}
     assert got["minerva"]["stance"] == "hold" and got["minerva"]["stances"]["aggressive"]["readiness"] == 1
     assert got["stances"]["hold"].startswith("Hold ground:") and {"station", "fire"} <= set(got["actions"])
+    assert set(got["spines"]) == {"cut", "coast", "keep"}
+    assert {n["spine"] for n in root["engagement"]["nodes"].values()} == {"cut"}
     used = {w["if"] for p in got["profiles"] for n in p["engagement"]["nodes"].values() for w in n["on"]}
     assert used <= set(got["conditions"])
 
@@ -135,3 +137,56 @@ def test_a_quiet_scenario_is_not_pictured_for_the_ship_ai(tmp_path, monkeypatch)
     fleet.reach(t + 6 * 3600)
     assert not any(tr for _, tr in seen) and len(seen) == 4                    # once each side, for its readiness
     assert {x[3] for x in _ai(fleet, ("quarters",)) if x[1].startswith("tf2")} == {"Return fire: readiness II"}
+
+
+def test_the_spine_holds_faces_or_keeps_as_the_node_says():
+    """Off the aim: cut holds the stack while she burns and faces it when she does not; keep never
+    turns her; coast cuts the drive for that tick and does not relight the node's station. Light
+    fires either way. On the aim, the stack fires and she is not turned."""
+    from types import SimpleNamespace
+
+    from astrum.combat import Weapon
+    from astrum.optics import Optic
+    from astrum.salvo import Stack
+    from astrum.shipai.captain import Captain
+
+    stack = Weapon(0, "spinal", "spinal", "energy", 1, 1500.0, "stack", True,
+                   Stack(8, 1.0, 1.0, 0.01, 0.1, 1.0, 10.0, 2.0), 1, True, None, 100000.0)
+    light = Weapon(1, "strips", "strips", "energy", 1, None, "strip", False, None, 1, True, Optic(1, 1.0, 1.0, 40000.0), None)
+    pic = SimpleNamespace(t=100.0, r=np.array([[0.0, 0.0, 0.0], [1000.0, 0.0, 0.0]]),
+                          dir0=np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]), burning=np.array([True, False]),
+                          shown=np.array([True, True]), old=np.array([False, False]), identified=np.array([True, False]))
+    pic.reckoned = lambda j: pic.r[j]
+    cap = SimpleNamespace(tick_s=10.0, minerva=SimpleNamespace(cycle_s=60.0, station_share=0.9),
+                          fv=SimpleNamespace(ids=["kiki", "ghost"], weapons=[[stack, light]], spec=[None, None]))
+    cap._oid = lambda *a, **k: Captain._oid(cap, *a, **k)
+    cap._bow_off = lambda *a: Captain._bow_off(cap, *a)
+    cap._fire = lambda *a, **k: Captain._fire(cap, *a, **k)
+    cap._order = lambda *a, **k: Captain._order(cap, *a, **k)
+    cap._cruise = lambda i: 0.3
+    cap.weapon = lambda i, kind: stack
+    cap.envelope_m = lambda i, w: 1e6
+
+    def kinds(spine, burning, aimed=False):
+        pic.burning[0] = burning
+        pic.dir0[0] = np.array([1.0, 0.0, 0.0] if aimed else [0.0, 1.0, 0.0])
+        return [o.kind for o in Captain._fire(cap, pic, 0, Machine(0.0), 1, stack, "bogey", spine)]
+
+    assert kinds("cut", True) == ["fire"] and kinds("keep", True) == ["fire"]
+    assert kinds("coast", True) == ["coast", "fire"]
+    assert kinds("cut", False) == ["face", "fire", "fire"] and kinds("coast", False) == ["face", "fire", "fire"]
+    assert kinds("keep", False) == ["fire"]
+    assert kinds("keep", True, aimed=True) == ["fire", "fire"] and "face" not in kinds("cut", False, aimed=True)
+
+    pic.burning[0], pic.dir0[0] = True, np.array([0.0, 1.0, 0.0])
+    rs = SimpleNamespace(moves=True)
+
+    def engaged():
+        m = Machine(0.0)
+        m.move(pic.t, target=1)
+        return m
+
+    coasting = Node("close", "Close", ("station", "fire"), weapon="stack", spine="coast")
+    assert [o.kind for o in Captain._do(cap, pic, 0, engaged(), coasting, rs, None)] == ["coast", "fire"]
+    cutting = Node("close", "Close", ("station", "fire"), weapon="stack")
+    assert [o.kind for o in Captain._do(cap, pic, 0, engaged(), cutting, rs, None)] == ["goto", "fire"]
