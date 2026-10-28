@@ -236,7 +236,8 @@ equation (`orbits.drift_many`) and costs nothing to hold. A scenario may start s
 **Ballistic.** A move given ballistic does not brake: one burn from the ships' mean, half the way by
 distance, then she coasts through the target (`simhost.ballistic_order`; a `burn` with a duration).
 An attack-move told to pass on by is that burn, and she flies Ballistic orders: still aggressive, and she does not brake
-to keep station (the usual attack-move flies Standing orders, and still does).
+to keep station (the usual attack-move flies Standing orders, and still does). Which profiles is the MINERVA's
+(`data/minerva.toml`), read off her move: nothing is written for it.
 
 **Bingo.** After every block, a ship flying an order with less Δv left than she closes on its
 target at can no longer stop there: she drops it and goes free (an orbit only if she still has the

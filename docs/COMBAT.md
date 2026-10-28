@@ -80,14 +80,17 @@ Readiness I is general quarters: her sensors ping, to find cold targets, and eve
 sees her doing it. A ReadyStance is ordered to a ship or a formation and passed down its chain. An
 attack-move is Aggressive the whole way, a patrol Guard. Aimed, K chooses which of the two profiles
 an attack-move flies. Keeping station, the usual: Standing orders (she closes to the battery and
-holds). Passing on by: Ballistic orders, one burn and no braking. On that profile her class decides
+holds). Passing on by: Ballistic orders, one burn and no braking. Which two is `data/minerva.toml`'s
+(attack_keep, attack_pass); the CAPTAIN reads it off her move, as her stance, and nothing is written
+into the book: once the move is over she is on her own profile again. On that profile her class decides
 the shot. Her focus a stack: she keeps the heading, and the stack fires only already inside its trim.
 Her focus anything else: she fires it, and once in reach falls back to the spine, facing it only when
 she is not burning. The drive is not cut for the shot. Aggressive itself is still that station-keeping
 when she keeps station.
 
 A **profile** is what she does in combat: its nodes (each with what she does entering it: station,
-hold, face, fire, pass, correct; the battery it reads), the conditions between them (far,
+hold, face, fire, pass, correct, and with fire spine and hold-heading; the battery it reads; what a
+node does is its do, never its name), the conditions between them (far,
 in-envelope, lost, gone, alive, destroyed, passed, fired-on, always), whom she engages (targets)
 and, if it says, its own ranges and after. A node's ways out are taken from the next tick on, the
 first whose condition holds; a node may wait first. A commander's profile flies a shared one's
@@ -95,8 +98,9 @@ map with its own targets and ranges. Shared: **Standing orders** (the root: clos
 spinal battery's envelope, fire it once a cycle, hold; target lost, hold and wait, then exit),
 **Hold the line**, **Pursuit** (on until the target is out of the picture), **Search and Destroy**
 (a pass through her, firing as she passes, then on: after = coast), **Ballistic orders** (an
-attack-move passing on by: close, then keep the heading if her focus is a stack, else coast for the
-shot, her focus first and the spine if that was not it; after = coast).
+attack-move passing on by: close, then keep the heading if her focus is a stack (fire, spine,
+hold-heading), else coast for the shot (fire, spine): her focus first and the spine if that was not
+it; after = coast).
 
 **Ticks.** A ship at her ReadyStance looks for combat once a block (`block_s`), or at once when
 fired on; and she looks only if her side's sweep holds a live sighting within her reach (and a
@@ -267,8 +271,11 @@ The owner's to give:
 - An attack-move flies one of two profiles. Standing orders (keep station): the stack is held while
   she burns off the aim, and she faces it when she does not. Ballistic orders (pass on by): her focus
   battery decides. A stack, she keeps the heading and fires it only inside its trim. Anything else,
-  she fires that, and falls back to the spine, facing it only when she is not burning. No node carries
-  a spine of its own. Light ignores the bow.
+  she fires that, and falls back to the spine, facing it only when she is not burning. A node says it
+  by its actions (spine, hold-heading), not its name. Light ignores the bow.
+- A burn given over a go-to leaves the go-to under it (the fleet's BURN sets her thrust, not her
+  goal): a pass ordered while she is on an attack-move flies the burn with the go-to still hers. From
+  rest it is a pass as meant. Whether a burn should clear the go-to is the owner's to say.
 - The merged tick: from 10 min/s (`merge_warp`), 60 s; each salvo its own draw, at the tick's
   first moment's geometry.
 - Projectiles: mass, g, burn time, payload, burst radius, seeker; whether point defence sees only

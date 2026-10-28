@@ -34,6 +34,8 @@ ACTIONS = {
     "fire": "the battery fired at the target: a WeaponEngageOrder, the combat function",
     "pass": "a burn through where the target will be, half the way, then on",
     "correct": "a pass's course corrected while its miss is over a quarter of her reach",
+    "spine": "with fire: her spine as well, when her focus is not it, in reach of the shot",
+    "hold-heading": "with fire: her heading is the admiral's: she is not turned for the shot, and a stack fires only with her bow inside its trim",
 }
 CONDITIONS = {
     "always": "at once (the next tick)",
@@ -101,11 +103,14 @@ class Minerva:
     cycle_s: float
     station_share: float
     stances: dict                              # id -> ReadyStance
+    attack_keep: str = "root"                  # the profile an attack-move flies keeping station ...
+    attack_pass: str = "ballistic"             # ... and passing on by
 
     def as_dict(self) -> dict:
         return {"stance": self.stance, "block_s": self.block_s, "engaged_s": self.engaged_s, "merged_s": self.merged_s,
                 "merge_warp": self.merge_warp, "cycle_s": self.cycle_s,
-                "station_share": self.station_share, "stances": {k: s.as_dict() for k, s in self.stances.items()}}
+                "station_share": self.station_share, "stances": {k: s.as_dict() for k, s in self.stances.items()},
+                "attack_keep": self.attack_keep, "attack_pass": self.attack_pass}
 
 
 def _range_ok(r) -> bool:
@@ -151,6 +156,9 @@ def load_minerva(path: str | Path) -> Minerva:
             p.append(f"[minerva] {k}: a number above zero")
     if m.get("stance") not in STANCES:
         p.append(f"[minerva] stance is one of {list(STANCES)}")
+    for k in ("attack_keep", "attack_pass"):
+        if not isinstance(m.get(k, ""), str):
+            p.append(f"[minerva] {k}: a profile's id")
     p += [f"[stance.{s}] is needed" for s in STANCES if s not in st]
     for sid, s in st.items():
         if sid not in STANCES:
@@ -168,7 +176,8 @@ def load_minerva(path: str | Path) -> Minerva:
     return Minerva(m["stance"], float(m["block_s"]), float(m["engaged_s"]), float(m["merged_s"]), float(m["merge_warp"]),
                    float(m["cycle_s"]), float(m["station_share"]),
                    {sid: ReadyStance(sid, s.get("label") or sid, s.get("text", ""), int(s["readiness"]), s["enter"], s.get("range"),
-                                     s["after"], bool(s.get("moves", True))) for sid, s in st.items()})
+                                     s["after"], bool(s.get("moves", True))) for sid, s in st.items()},
+                   m.get("attack_keep", "root"), m.get("attack_pass", "ballistic"))
 
 
 @dataclass(frozen=True)

@@ -131,6 +131,17 @@ class Captain:
         on = ((m.at.back or {}).get("target") or {}) if m.engaged else tg
         return "aggressive" if on.get("attack") else "guard" if on.get("patrol") else stance
 
+    def _profile(self, i: int, m: Machine | None, tg: dict, prof):
+        """The profile she fights by: on an attack-move (or engaged out of one) the one the MINERVA
+        names for it (attack_keep: Standing orders; attack_pass, passing on by: Ballistic orders);
+        else her own. Read off her move, as her stance is: nothing is written, so once the move is
+        over she is on her own again."""
+        on = ((m.at.back or {}).get("target") or {}) if m is not None and m.engaged else tg
+        if not on.get("attack"):
+            return prof
+        M = self.minerva
+        return self.world.profile(self.player[self.view[i]], M.attack_pass if on.get("pass") else M.attack_keep)
+
     def machine(self, i: int) -> Machine:
         if self.machines[i] is None:
             self.machines[i] = Machine(self.t0)
@@ -157,7 +168,7 @@ class Captain:
             def reach(n) -> float:
                 w = self.weapon(i, n.weapon)
                 far = max(self.envelope_m(i, w), w.reach_km * 1e3 if "fire" in n.do and w is not None and w.reach_km else 0.0)
-                if n.id in ("keep", "coast"):             # her focus came first; the spine is still in reach of the shot
+                if "spine" in n.do:                       # her focus came first; the spine is still in reach of the shot
                     spine = next((x for x in ws if x.stack is not None and x.reach_km), None)
                     if spine is not None:
                         far = max(far, spine.reach_km * 1e3)
@@ -202,6 +213,8 @@ class Captain:
         self._moving = (B.n, moving, first)
         self._passes = passes
         stance, prof, _, ready = self.standing(B, t)
+        prof = [self._profile(i, self.machines[i], {"attack": True, "pass": self._passes[i]}, p) if i in moving and i in self._passes
+                else p for i, p in enumerate(prof)]
         k = int(np.floor((t - self.t0) / self.minerva.block_s + 1e-9))
         out: dict[str, bool] = {}
         n = len(self.view)
@@ -263,6 +276,7 @@ class Captain:
         side, t = sp.side, sp.t
         self.fv = fv
         stance, prof, frame, ready = self.standing(fv.book, t)
+        prof = list(prof)                                 # (her own; an attack-move's read off her move, below)
         k = int(np.floor((t - self.t0) / self.minerva.block_s + 1e-9))
         block = k > self.looked.get(side.view, -1)
         near = self.near.get(side.view, (None, ()))
@@ -282,6 +296,7 @@ class Captain:
             m = self.machine(i)
             goal = (sp.said.get(i) or {}).get("goal")
             tg = self._move_target(i, goal)
+            prof[i] = self._profile(i, m, tg, prof[i])
             plain = bool(goal) and goal["source"] not in ("ai", "auto") and not (tg.get("attack") or tg.get("patrol"))
             rs = self.minerva.stances[self._stance(i, m, tg, stance[i])]
             out += self._readiness(sp, i, m, rs, bool(ping[i]))
@@ -480,12 +495,12 @@ class Captain:
 
     def _fire(self, sp, i: int, m: Machine, j: int, w, who: str, node) -> list:
         """Her shots at j this tick: the node's battery, within its reach, once it has cycled, the tick's cycles at
-        once; on Ballistic orders' keep or coast, her spine as well when that was not already it (her focus came
-        first); and every optical battery of hers that reaches her, held on her for the tick (light retargets in
-        microseconds, and needs no arc). A stack off the aim follows the node she is in, not a field of it. Keep
-        (her focus is a stack: the heading is the admiral's): do not turn her, and do not fire it until the bow is
-        inside its trim. Otherwise, Standing orders and a coast: hold it while she burns off it, and face it when
-        she is not burning. The drive is not cut for the shot."""
+        once; where the node says spine, her spine as well when that was not already it (her focus came first);
+        and every optical battery of hers that reaches her, held on her for the tick (light retargets in
+        microseconds, and needs no arc). A stack off the aim follows what the node says: hold-heading (the
+        heading is the admiral's), she is not turned, and it is not fired until the bow is inside its trim;
+        else it is held while she burns off it, and faced when she is not burning. The drive is not cut for
+        the shot."""
         fv, t = self.fv, sp.t
         sid, tick = fv.ids[i], self.tick_s
         u = sp.reckoned(j) - sp.r[i]
@@ -494,12 +509,12 @@ class Captain:
         def in_reach(x) -> bool:
             return x is not None and (not x.reach_km or d <= x.reach_km * 1e3)
         chosen = [w] if in_reach(w) else []
-        if getattr(node, "id", "") in ("keep", "coast"):
+        if "spine" in node.do:
             spine = next((x for x in fv.weapons[i] if x.stack is not None and x not in chosen), None)
             if in_reach(spine):
                 chosen.append(spine)
         ws = chosen + [x for x in fv.weapons[i] if x.optic is not None and x not in chosen and x.reach_km and d <= x.reach_km * 1e3]
-        fired, out, keep = dict(m.at.fired), [], getattr(node, "id", "") == "keep"
+        fired, out, keep = dict(m.at.fired), [], "hold-heading" in node.do
         for x in ws:
             every = tick if x.optic is not None else x.interval_s or self.minerva.cycle_s
             if t - fired.get(x.id, -math.inf) < every - 1e-6:

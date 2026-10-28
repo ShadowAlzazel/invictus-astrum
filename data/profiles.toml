@@ -16,7 +16,9 @@
 #             station where she is on the target; with none, where she is), "face" (her hull on the
 #             target), "fire" (the battery, a WeaponEngageOrder: the combat function, once it has
 #             cycled; and every optical battery that reaches the target, held on it the tick), "pass" (a
-#             burn through where the target will be), "correct" (a pass's course corrected)
+#             burn through where the target will be), "correct" (a pass's course corrected); with
+#             fire, "spine" (her spine as well, when her focus is not it) and "hold-heading" (her
+#             heading is the admiral's: not turned for the shot, a stack fired only with her bow in trim)
 #   weapon    which battery a node's actions and conditions read: "focus" (her focus battery, the one
 #             her class is built around), a battery's kind ("stack": the spinal battery; "strip",
 #             "dome", "panel", "turret", "cell"). One she lacks is her spine if she has one, else
@@ -27,8 +29,9 @@
 #             "destroyed" (destroyed or disabled), "passed" (going away from her after a pass),
 #             "focus-stack" (her focus battery is a stack: her class is built on the spine), "fired-on"
 #
-# An attack-move uses two of these. Keeping station: Standing orders, the root. Passing on by:
-# Ballistic orders. She is not told which shot: her focus says it.
+# An attack-move flies two of these while she is on it (data/minerva.toml attack_keep, attack_pass).
+# Keeping station: Standing orders, the root. Passing on by: Ballistic orders. Once the move is
+# over she is on her own profile again. She is not told which shot: her focus says it.
 
 [profile.root]
 name = "Standing orders"
@@ -130,13 +133,13 @@ on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "f
 
 [profile.ballistic.node.keep]
 label = "Keep the heading, fire"
-do = ["fire"]
+do = ["fire", "spine", "hold-heading"]
 weapon = "focus"
 on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "passed", go = "exit" }, { if = "alive", go = "keep" }]
 
 [profile.ballistic.node.coast]
 label = "Coast for the shot, fire"
-do = ["fire"]
+do = ["fire", "spine"]
 weapon = "focus"
 on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "passed", go = "exit" }, { if = "alive", go = "coast" }]
 

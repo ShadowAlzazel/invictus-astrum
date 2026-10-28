@@ -80,25 +80,38 @@ def test_a_battle_flown_again_is_the_same_battle(tmp_path):
 def test_an_attack_move_keeps_station_unless_told_to_pass(tmp_path):
     """Without the pass, an attack-move is still a go-to: aggressive, Standing orders, and she
     brakes to keep station. Aggressive itself is not a fly-by. The pass is a ballistic burn on
-    Ballistic orders, marked so."""
+    Ballistic orders, marked so. The profile is read off her move (data/minerva.toml attack_keep,
+    attack_pass), not written into the book: a plain move after, and she is on her own again."""
     from astrum.orders import STANCE
+    from astrum.shipai.view import View
 
     c, world = _app(tmp_path)
-    fleet = world.fleet(world.scenarios["sol-demo"])
+    sc = world.scenarios["sol-demo"]
+    fleet, cap = world.fleet(sc), c.app.state.sim.host.ai.captain(sc, world.fleet(sc))
     t = fleet.t0 + 600
-    body = {"scenario": "sol-demo", "player": "arcvs", "unit": "kiki-1", "t": t, "g": 0.3, "target": {"body": "venus"}}
-    held = c.post("/api/order", json={**body, "mode": "attack"}).json()
-    assert "ballistic" not in held
-    tg = held["ships"]["kiki-1"]["goal"]["target"]
-    assert tg.get("attack") and not tg.get("pass") and fleet.c.goal[fleet.c.row["kiki-1"]]
     B, i = fleet.book, fleet.c.row["kiki-1"]
-    prof = [B.of(e).target.get("profile") for e in range(B.n) if int(B.kind[e]) == STANCE and int(B.ship[e]) == i]
-    assert prof[-1] == "root"
-    passed = c.post("/api/order", json={**body, "t": t + 60, "mode": "attack", "ballistic": True}).json()
+
+    def flies(at):
+        fv = View(fleet, at)
+        cap.wants(fv, at)
+        goal = (fleet.c.goal_dict(i) or None) if fleet.c.goal[i] else None
+        return cap._profile(i, cap.machine(i), cap._move_target(i, {"target": goal["target"]} if goal else None), None)
+    body = {"scenario": "sol-demo", "player": "arcvs", "unit": "kiki-1", "t": t, "g": 0.3, "target": {"body": "venus"}}
+    passed = c.post("/api/order", json={**body, "mode": "attack", "ballistic": True}).json()
     assert passed["ballistic"]["attack"] and passed["ballistic"]["burn_s"] > 0
     assert passed["ballistic"]["label"].startswith("attack-move, pass by")
-    prof = [B.of(e).target.get("profile") for e in range(B.n) if int(B.kind[e]) == STANCE and int(B.ship[e]) == i]
-    assert prof[-1] == "ballistic"
+    fleet.reach(t + 1)
+    assert flies(t + 1).id == world.minerva.attack_pass == "ballistic"
+    held = c.post("/api/order", json={**body, "t": t + 60, "mode": "attack"}).json()
+    assert "ballistic" not in held
+    tg = held["ships"]["kiki-1"]["goal"]["target"]
+    assert tg.get("attack") and not tg.get("pass") and fleet.c.goal[i]
+    fleet.reach(t + 61)
+    assert flies(t + 61).id == world.minerva.attack_keep == "root"
+    c.post("/api/order", json={**body, "t": t + 120, "target": {"body": "earth"}})
+    fleet.reach(t + 121)
+    assert flies(t + 121) is None                                   # her own (none written for her here)
+    assert not any(int(B.kind[e]) == STANCE and int(B.ship[e]) == i for e in range(B.n))    # nothing written
 
 
 def _spine(fleet, sid) -> bool:

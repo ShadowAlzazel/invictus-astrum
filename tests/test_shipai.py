@@ -143,9 +143,9 @@ def test_a_quiet_scenario_is_not_pictured_for_the_ship_ai(tmp_path, monkeypatch)
 
 def test_a_stack_off_the_aim_follows_the_node_and_her_focus():
     """Standing orders, and a coast: hold the stack while she burns, and face it when she does not.
-    Keep never turns her. The drive is not cut. On keep or coast her focus is fired, and the spine
-    too when that was not already it. Light fires either way. On the aim, the stack fires and she
-    is not turned."""
+    Keep (hold-heading) never turns her. The drive is not cut. On keep or coast (spine) her focus is
+    fired, and the spine too when that was not already it. Light fires either way. On the aim, the
+    stack fires and she is not turned. What a node does is its do (data/profiles.toml), not its name."""
     from types import SimpleNamespace
 
     from astrum.combat import Weapon
@@ -174,7 +174,8 @@ def test_a_stack_off_the_aim_follows_the_node_and_her_focus():
     def kinds(node_id, burning, aimed=False, battery=stack):
         pic.burning[0] = burning
         pic.dir0[0] = np.array([1.0, 0.0, 0.0] if aimed else [0.0, 1.0, 0.0])
-        node = Node(node_id, node_id, ("fire",), weapon="focus")
+        do = {"keep": ("fire", "spine", "hold-heading"), "coast": ("fire", "spine")}.get(node_id, ("fire",))   # (Ballistic orders')
+        node = Node(node_id, node_id, do, weapon="focus")
         return [o.kind for o in Captain._fire(cap, pic, 0, Machine(0.0), 1, battery, "bogey", node)]
 
     assert kinds("close", True) == ["fire"] and kinds("keep", True) == ["fire"] and kinds("coast", True) == ["fire"]

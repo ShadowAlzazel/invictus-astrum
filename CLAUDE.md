@@ -20,7 +20,7 @@ Where it is going:
 
 `README.md` is how to run it; `docs/SIMULATION.md` how the simulation works; `docs/COMBAT.md` where
 combat and the ship AI are going; `docs/DEVOPS.md` the development loop; `docs/NOTES.md` the owner's
-own notes and ideas.
+own notes and ideas; `docs/CLAUDE-CHATS.txt` checkpoints and notes the owner kept from earlier chats.
 
 ## How we work
 
