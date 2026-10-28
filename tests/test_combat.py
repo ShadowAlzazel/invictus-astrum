@@ -191,9 +191,9 @@ def test_aggressive_ships_enter_combat_on_what_they_see_and_the_book_keeps_it(tm
     mine = [x[2:] for x in _ai(fleet) if x[1] == "tf3-es-1"]
     k = mine.index(("quarters", "Aggressive: readiness I", None))      # (before it, at the first block: her written stance's)
     assert mine[k:k + 3] == [("quarters", "Aggressive: readiness I", None), ("active", None, None), ("goto", "station on bogey", "ghost-1")]
-    cap = c.app.state.sim.host.ai.captain(world.scenarios["sol-demo"], fleet)
+    cap = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
     i = fleet.c.row["tf3-es-1"]
-    assert cap.machines[i].at.node == "close" and i in cap.engaged and fleet.pinging(t + 6 * 3600)[i]
+    assert cap.captains[i].m.at.node == "close" and i in cap.engaged and fleet.pinging(t + 6 * 3600)[i]
     assert fleet.c.stand[i] == pytest.approx(0.9 * 1000e3)            # her focus battery's envelope (the domes' point defence)
     got = _ai(fleet)
     fleet.advance(t + 3600)                           # a replay gives them as given; the AI does not decide again
@@ -212,8 +212,8 @@ def test_a_map_order_overrules_the_ais_later_orders(tmp_path):
     c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": "tf3-es-1", "t": t + 300, "g": 0})
     after = lambda sid: [x for x in mine(sid) if x[0] > t + 300]
     assert not after("tf3-es-1") and after("tf3-es-2")  # hers after it go; the others' stand
-    cap = c.app.state.sim.host.ai.captain(world.scenarios["sol-demo"], fleet)
-    assert not cap.machines[fleet.c.row["tf3-es-1"]].engaged                  # her MINERVA set back too
+    cap = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
+    assert not cap.captains[fleet.c.row["tf3-es-1"]].m.engaged                  # her MINERVA set back too
     front = fleet.t
     _drive(c, t + 300, front + 3600)                 # and it decides for her again, at its next moment
     again = after("tf3-es-1")                        # (her readiness ordered again, then her station)
@@ -266,8 +266,8 @@ def test_guard_loses_her_target_waits_and_goes_back_to_her_post(tmp_path):
                                                            "elevation": math.degrees(el), "g": 0.63, "duration_s": 12 * 3600},
                         source="map"))
     _drive(c, t, t + 8 * 3600)
-    cap = c.app.state.sim.host.ai.captain(world.scenarios["sol-demo"], fleet)
-    hist = [p for k, p in enumerate(cap.machines[i].history) if not k or p.node != cap.machines[i].history[k - 1].node]
+    cap = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
+    hist = [p for k, p in enumerate(cap.captains[i].m.history) if not k or p.node != cap.captains[i].m.history[k - 1].node]
     path = [p.node for p in hist]
     k = path.index("lost")
     assert path[:k + 1] == ["ready", "close", "lost"] and path[k + 1] == "ready"

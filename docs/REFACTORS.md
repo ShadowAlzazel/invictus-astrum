@@ -147,6 +147,7 @@ under burn and seeker, each its own module behind `CombatBook.launch`), wrecks b
 - **A salvo's spot in closed form** (`d764e20`): 1.07 ms to 29 µs, the same spots to four figures.
 - **Systems by state** (`e6fbe58`): lists, not flags; a wreck's sensors cut from the sweep at no cost.
 - **Replays cut the same** (`combat`): the AI's moments kept as facts, a station ship's minute samples drawn per grid step (median 676 m, worst 26 km off before, 0.26 m and 0.5 m now), the lists restored in order; a re-fly from a checkpoint gives the same shots.
+- **The OVERSEER** (`combat`): the ship AI split into the OVERSEER (the stepping, the lists), a CAPTAIN a ship (her MINERVA moved on) and MINERVA (data, her machine, her shots apart); proven the same to the shot on four Venus runs before the two changes with it: a tick's shots no new place in her history, and her target out, she goes on to the next at once (the Venus action at 10 s: 10.3 s to 2.4 s).
 - **Dazzle and harm** (`combat`): a dazzled sensor spoils her aim while held, light no longer takes masts, her harm (damaged, disabled, destroyed) sent to the map and drawn.
 
 - **Station keeping** (`a014217`, `6f51411`): a place's velocity is its central difference (it was a

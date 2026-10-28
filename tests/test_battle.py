@@ -36,8 +36,8 @@ def test_a_flotilla_sent_at_the_venus_raiders_fights_them(tmp_path, tick):
     spinal batteries from their farthest reach in, both sides' optics within their dazzle range.
     What lands takes her systems out one by one; a ship with her drive and every battery out, or at
     her hit points, is out of the fight, a wreck: every system of hers out, her drive dead, firing
-    and sweeping no more. On a battle tick of a minute (the host's) a spinal order fires the tick's
-    cycles at once."""
+    and sweeping no more. Her target out, she goes on to the next in sight at once. On a battle tick
+    of a minute (the host's) a spinal order fires the tick's cycles at once."""
     c, world = _app(tmp_path)
     fleet, t, ours = _send(c, world, tick)
     assert len(ours) == 11
@@ -47,6 +47,13 @@ def test_a_flotilla_sent_at_the_venus_raiders_fights_them(tmp_path, tick):
     assert {("tf2", "spinal"), ("tf2", "optical"), ("raider", "optical")} <= sides
     assert _down(fleet, RAIDERS)                                                # (who wins is the balance's: a close fight, by the tick)
     assert any(o.row in {C.row[s] for s in ours} for st in S.lists for o in S.lists[st])     # they took some of ours out
+    if _down(fleet, RAIDERS) == set(RAIDERS):                # her target out, she goes on to the next at once: no wait to the block
+        last = max(e.t for e in log if e.harm and (e.harm["destroyed"] or e.harm["disabled"]) and set(e.targets) & {C.row[s] for s in RAIDERS})
+        ov = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
+        for s in ours:
+            H = ov.captains[C.row[s]].m.history
+            first = next((p.since for p in H if p.node != "ready"), None)
+            assert first is None or not any(first < p.since < last - 1 and p.node == "ready" for p in H)
     k_now = fleet.sweeper.flown_minute()
     for s in _down(fleet, RAIDERS) | _down(fleet, ours):
         j = C.row[s]
@@ -91,7 +98,7 @@ def test_an_attack_move_keeps_station_unless_told_to_pass(tmp_path):
 
     c, world = _app(tmp_path)
     sc = world.scenarios["sol-demo"]
-    fleet, cap = world.fleet(sc), c.app.state.sim.host.ai.captain(sc, world.fleet(sc))
+    fleet, cap = world.fleet(sc), c.app.state.sim.host.ai.overseer(sc, world.fleet(sc))
     t = fleet.t0 + 600
     B, i = fleet.book, fleet.c.row["kiki-1"]
 
@@ -99,7 +106,7 @@ def test_an_attack_move_keeps_station_unless_told_to_pass(tmp_path):
         fv = View(fleet, at)
         cap.wants(fv, at)
         goal = (fleet.c.goal_dict(i) or None) if fleet.c.goal[i] else None
-        return cap._profile(i, cap.machine(i), cap._move_target(i, {"target": goal["target"]} if goal else None), None)
+        return cap.profile(i, cap.move_target(i, {"target": goal["target"]} if goal else None), None)
     body = {"scenario": "sol-demo", "player": "arcvs", "unit": "kiki-1", "t": t, "g": 0.3, "target": {"body": "venus"}}
     passed = c.post("/api/order", json={**body, "mode": "attack", "ballistic": True}).json()
     assert passed["ballistic"]["attack"] and passed["ballistic"]["burn_s"] > 0

@@ -186,14 +186,13 @@ def load_minerva(path: str | Path) -> Minerva:
 class Place:
     """Where she stands in her MINERVA from a moment on: at her ReadyStance (READY) or in an
     engagement's node, on which target, what to go back to after (back: the move she was on; post:
-    where she stood), each battery's last shot, what she has passed, and what her readiness orders
-    last said."""
+    where she stood), what she has passed, and what her readiness orders last said. Her shots are
+    kept apart (Machine.shots): a tick's shots are no new place."""
     since: float
     node: str = READY
     target: int = -1
     back: dict | None = None
     post: dict | None = None
-    fired: tuple = ()                          # ((weapon id, moment), ...)
     left: frozenset = frozenset()              # targets she passed and left
     closing: bool = False                      # (a pass: she has been seen closing on it)
     readiness: int = 0                         # the readiness her orders last set (0: none yet)
@@ -201,11 +200,13 @@ class Place:
 
 
 class Machine:
-    """One ship's MINERVA running: where she stands (Place), with its history, so a set-back (an
-    order of the map's in the past) takes her back to where she stood then."""
+    """One ship's MINERVA running: where she stands (Place), with its history, and her shots, so a
+    set-back (an order of the map's in the past) takes her back to where she stood then."""
 
     def __init__(self, t: float):
         self.history: list[Place] = [Place(t)]
+        self.shots: list[tuple] = []                       # (when, battery id, its last cycle's moment), in time order
+        self._last: dict = {}                              # battery id -> its last cycle's moment
 
     @property
     def at(self) -> Place:
@@ -231,8 +232,18 @@ class Machine:
         kept from when she got there, so it moves no wait on."""
         self.history[-1] = replace(self.history[-1], **change)
 
-    def last_shot(self, wid: str) -> float:
-        return dict(self.at.fired).get(wid, -float("inf"))
+    def fired(self) -> dict:
+        """Each battery's last cycle's moment."""
+        return self._last
+
+    def shoot(self, t: float, fired: dict) -> None:
+        """Her batteries fired at t, each to the moment of its last cycle."""
+        for wid, last in fired.items():
+            if self._last.get(wid) != last:
+                self.shots.append((t, wid, last))
+                self._last[wid] = last
+        if len(self.shots) > 4096:                         # (a set-back reaches a day or two at most)
+            self.shots = self.shots[-2048:]
 
     def next(self, t: float, node: Node, holds) -> str | None:
         """The way out of her node taken at t (holds: condition -> whether it holds now), if any:
@@ -245,3 +256,7 @@ class Machine:
         """Set back to t: as she stood then."""
         while len(self.history) > 1 and self.history[-1].since > t + 1e-9:
             self.history.pop()
+        if self.shots and self.shots[-1][0] > t + 1e-9:
+            while self.shots and self.shots[-1][0] > t + 1e-9:
+                self.shots.pop()
+            self._last = {wid: last for _, wid, last in self.shots}

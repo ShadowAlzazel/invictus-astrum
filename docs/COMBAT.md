@@ -52,12 +52,17 @@ Engage is drawn red on the map. The book already has orders that follow on from 
 (attack-move and patrol fly on after an engagement, queued orders, the braking leg's "then", given
 by the fleet itself as `auto` and struck when it is set back).
 
-## The ship AI: MINERVA and the CAPTAIN
+## The ship AI: the OVERSEER, the CAPTAIN, MINERVA
 
 Each ship's AI is **one automaton, her MINERVA** (`astrum/shipai/minerva.py`). Its entry and exit
-are her **ReadyStance**; the middle is her **combat profile**'s engagement. The **CAPTAIN**
-(`astrum/shipai/captain.py`) runs it: it reads her side's picture, says which conditions hold,
-moves her MINERVA on, and gives each node's actions as orders to the book.
+are her **ReadyStance**; the middle is her **combat profile**'s engagement. Three parts, each its
+own concern:
+
+| | | |
+|---|---|---|
+| **OVERSEER** (`shipai/overseer.py`) | one a fleet | the stepping, tick to tick: keeps the lists (engaged, and when each is due; ready ships that look once a block; fired on; on a move of their own; readiness not yet ordered) and visits only those; what each stands in (stance, profile, reach); a side's ready ships looking all at once |
+| **CAPTAIN** (`shipai/captain.py`) | one a ship, made when first visited | holds her MINERVA and moves it on: into combat, a step (which conditions hold, the way out, what the node does), out of it, her readiness; each as orders to the book |
+| **MINERVA** (`shipai/minerva.py`) | data, and her machine | the ReadyStances and profiles; where she stands and since when, and her shots, kept apart (a tick's shots are no new place) |
 
 ```
  READYSTANCE (data/minerva.toml)       ENGAGEMENT (her profile, data/profiles.toml)            AFTER
@@ -106,9 +111,13 @@ it; after = coast).
 fired on; and she looks only if her side's sweep holds a live sighting within her reach (and a
 tenth more, `NEAR_SLACK`): the sweep's newest, a bound on what the relay tree has brought her
 flagship, which the look itself reads off her side's picture. A side with a ship on return fire is
-pictured (without tracks) only while a ship of another side flies an engage on one of its ships. A ship in combat is on the CAPTAIN's **engaged** list: looked at every battle tick
+pictured (without tracks) only while a ship of another side flies an engage on one of its ships. A ship in combat is on the OVERSEER's **engaged** list: looked at every battle tick
 (the level's, below; `engaged_s`, 30 s, by default) once near the farthest envelope her engagement acts at, and short of it a quarter of the
 time she takes to close on it (at most a block); while any is, her side is pictured that often.
+Her target out (or lost, once its wait is over), she looks at once in the same picture, and the
+nearest she would enter on takes her on to it, with the move she was on and her post to come back
+to; only with none in sight does she leave combat as her stance says. Before, she went back to her
+ReadyStance and waited for the next block: up to 10 minutes idle a kill.
 
 ## Control
 
@@ -126,7 +135,7 @@ formation leads.
 ## Where it runs
 
 The ship AI is its own module and can be turned off (`[sim] ai`). It runs at the flight's front
-edge (`Fleet.front`, `astrum/ai.py`): after each step the fleet flies, at the moments the CAPTAIN
+edge (`Fleet.front`, `astrum/ai.py`): after each step the fleet flies, at the moments the OVERSEER
 asked for, it is handed the fleet as it stands; each side it wants is pictured there by the picture
 processor's own functions, and its orders are given at that moment, the flight's own, so nothing
 flies again for them. The flight stops at those moments: every engaged ship's next look, on one
@@ -136,7 +145,7 @@ a checkpoint does not ask it again: its orders are the book's.
 **The battle tick** is the level's, set by its host as the clock is (`ticks`: 10, 30, 60, 300 or 600 s;
 `engaged_s`, 30 s, by default; the run-ahead hands it to the AI). A longer tick fires a tick's
 cycles at once; what it loses is the automaton's and the admiral's, not the simulation's. Only the
-engaged are ticked (`Captain.ticked`: the engaged, whom they engage, and whatever their flight bears
+engaged are ticked (`Overseer.ticked`: the engaged, whom they engage, and whatever their flight bears
 on: formations, chasers, a flying target): a piece the AI is due inside is split, the rest of the
 fleet flown the whole piece first in its ten-minute block, its station ships placed through it
 (unless one holds station on a ticked row), all read off the timeline by the AI, the ticked rows a
@@ -266,21 +275,23 @@ each tick within reach, `in-reach`), and `destroyed` holds for a target out of t
 PHALAENA), aggressive on the root's map, bogeys too, attack-moved from Earth at the Venus Raiders
 (ten hostile PHALAENA on guard, a ring 30,000 km out from Venus, `data/scenarios/sol-demo.toml`).
 
-| Venus, 28 October, 72 h | 10 s tick | 20 s | 30 s (the default) | 40 s | 60 s | TF-2 (44), 30 s |
-|---|---|---|---|---|---|---|
-| raiders out | 8 | 10 | 10 (1 destroyed) | 7 | 10 (4 destroyed) | 10 (6 destroyed) |
-| ours out | 7 | 1 | 0 | 9 | 0 | 3 |
-| spinal salvo orders (ours) | 2,910 | – | 402 | – | 215 | 10 |
-| shots | 13,819 | 4,472 | 2,356 | 3,219 | 1,303 | 7,555 |
-| 72 h flown, battle and all | 11.7 s | 5.2 s | 4.4 s | 5.2 s | 3.7 s | 8.7 s |
-| flown again from a checkpoint | the same shots, the same systems out, the same ships | | | | | |
+| Venus, 28 October, 72 h | 10 s tick | 30 s (the default) | 60 s | TF-2 (44), 30 s |
+|---|---|---|---|---|
+| raiders out | 10, within 0.36 h | 10, within 0.38 h | 10, within 0.43 h | 10 (2 destroyed), within 2.13 h |
+| ours out | 0 | 0 | 0 | 6 |
+| spinal salvo orders (ours) | 169 | 67 | 47 | 60 |
+| shots | 3,486 | 1,177 | 668 | 6,710 |
+| 72 h flown, battle and all | 4.7 s | 3.4 s | 3.0 s | 7.9 s |
+| flown again from a checkpoint | the same shots, the same systems out, the same ships | | | |
 
-Light blinds and burns radiators; the spine takes masts, batteries and drives (402 salvo orders at
-30 s, against 24 when a heated window was a mount lost). Every course is the same to 69.25 h; after
-it the fight is close, and who wins swings with the tick: where the raiders last past 69.5 h they
-close to about 2,200 km and their spines tell. The test pins the mechanics, not the winner.
-She holds her fire while she burns off her spine (95% of her chances, in the action before the
-spine reached so far). The AI at the front edge,
+Light blinds and burns radiators; the spine takes masts, batteries and drives. With each ship going
+on to the next raider at once, the fight is over in under half an hour at any tick: the swing by
+tick before (eight raiders for seven of ours at 10 s, seven for nine at 40 s) was the wait to the
+block after each kill, while the raiders closed. All eleven take the same raider, the nearest: focus
+fire, as the look has it. The raiders' spines are held by her burn, not her reach: holding a guard
+ring in Venus's well they burn throughout, their spine off the bow 874 times of 877 (bench_combat,
+before this change), and she holds her fire while she burns off it.
+The AI at the front edge,
 on a day of sol-demo: quiet 15 ms a game hour against 8 without it; TF-3 hunting, 40 against 5.
 
 A pass is dear: half the way at her cruise g is about 367 km/s against GHOST 1 from 27 Gm. Kept

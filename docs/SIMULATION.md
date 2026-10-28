@@ -309,8 +309,9 @@ A ship's stance and profile are each the last ordered to her or a formation abov
 scenario's, else the MINERVA's default and the root profile. Commanders make their own profiles on
 the map (`profiles.toml`): a shared one's map, with targets (`hostile`, `unknown`) and ranges.
 
-**The CAPTAIN** (`astrum/shipai/captain.py`, run by `astrum/ai.py`) runs at the flight's front
-edge (`Fleet.front`): after a step, at the moments it asked for, the fleet hands itself to it as it
+**The ship AI** runs at the flight's front edge (`Fleet.front`, `astrum/ai.py`): the OVERSEER
+(`astrum/shipai/overseer.py`) steps it tick to tick and keeps the lists of whom to visit, and each
+ship's CAPTAIN (`astrum/shipai/captain.py`) moves her MINERVA on and gives its orders: after a step, at the moments it asked for, the fleet hands itself to it as it
 stands; each side it wants is pictured there with the same functions as the map's
 (`astrum/pictures.py`), and it answers with orders (source `ai`) through the order book, at that
 moment, so nothing flies again for them. Its moments are facts like orders (when it ran, when it
@@ -320,11 +321,12 @@ through a view made at the front edge (`astrum/shipai/view.py`: its rows, batter
 the book, the sweep, the bodies and bullseyes), the boundary its own process will take. A ready ship looks
 once a block, if her side's sweep holds a ship within her reach (or at once when fired on); an
 engaged one every battle tick (the level's, its host's: 30 s by default, or 10, 60, 300, 600) near her
-envelope, else by how soon she gets there. Only the engaged (and whom they engage) are flown a tick
+envelope, else by how soon she gets there; her target out, she goes on to the next in sight at
+once. Only the engaged (and whom they engage) are flown a tick
 at a time; the rest of the fleet keeps its blocks, flown ahead of them and read off the timeline. Task Force 2 (Earth) is written on return fire.
 
 ```
-flight (order book) -- each step, at its front edge --> the CAPTAIN (each side's picture there)
+flight (order book) -- each step, at its front edge --> the OVERSEER -> each due ship's CAPTAIN (her side's picture there)
         ^------------------------ orders, at that moment ------------------------'
 ```
 

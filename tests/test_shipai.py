@@ -56,8 +56,8 @@ def test_the_spinal_loop_closes_firing_and_takes_her_out(tmp_path):
                                "target": {"unit": "tf3-es-1"}})
     fleet.reach(t + 44 * 3600)
     i, j = fleet.c.row["tf3-es-1"], fleet.c.row["ghost-1"]
-    cap = c.app.state.sim.host.ai.captain(world.scenarios["sol-demo"], fleet)
-    path = [p.node for k, p in enumerate(cap.machines[i].history) if not k or p.node != cap.machines[i].history[k - 1].node]
+    cap = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
+    path = [p.node for k, p in enumerate(cap.captains[i].m.history) if not k or p.node != cap.captains[i].m.history[k - 1].node]
     assert path == ["ready", "close", "fire", "await", "hold", "ready"]     # (close, and hold: again each tick)
     shots = [e for e in fleet.combat.log if e.ship == i]
     light = [e for e in shots if e.weapon != "spinal"]
@@ -91,8 +91,8 @@ def test_search_and_destroy_passes_each_target_once_and_coasts_on(tmp_path):
     miss = min(np.linalg.norm(p["tf3-es-1"] - p["ghost-1"]) for p in pos)
     assert miss < 0.25 * fleet.c.spec[i].engage_km * 1e3
     assert np.linalg.norm(fleet.c.v[i] - fleet.c.v[j]) > 1e5                    # through her, and on
-    cap = c.app.state.sim.host.ai.captain(world.scenarios["sol-demo"], fleet)
-    assert j in cap.machines[i].at.left and not any(x[2] == "goto" for x in _ai(fleet) if x[1] == "tf3-es-1")
+    cap = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
+    assert j in cap.captains[i].m.at.left and not any(x[2] == "goto" for x in _ai(fleet) if x[1] == "tf3-es-1")
 
 
 def test_the_map_is_told_her_readiness_and_where_her_minerva_stands(tmp_path):
@@ -164,45 +164,46 @@ def test_a_stack_off_the_aim_follows_the_node_and_her_focus():
                           dir0=np.array([[0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]), burning=np.array([True, False]),
                           shown=np.array([True, True]), old=np.array([False, False]), identified=np.array([True, False]))
     pic.reckoned = lambda j: pic.r[j]
-    cap = SimpleNamespace(tick_s=10.0, minerva=SimpleNamespace(cycle_s=60.0, station_share=0.9),
-                          fv=SimpleNamespace(ids=["kiki", "ghost"], weapons=[[stack, light]], spec=[None, None]))
-    cap._oid = lambda *a, **k: Captain._oid(cap, *a, **k)
-    cap._bow_off = lambda *a: Captain._bow_off(cap, *a)
-    cap._fire = lambda *a, **k: Captain._fire(cap, *a, **k)
-    cap._order = lambda *a, **k: Captain._order(cap, *a, **k)
-    cap._cruise = lambda i: 0.3
-    cap.weapon = lambda i, kind: stack
-    cap.envelope_m = lambda i, w: 1e6
+    ov = SimpleNamespace(t0=0.0, tick_s=10.0, minerva=SimpleNamespace(cycle_s=60.0, station_share=0.9),
+                         fv=SimpleNamespace(ids=["kiki", "ghost"], weapons=[[stack, light]], spec=[None, None]))
+    cap = Captain(ov, 0)                                                  # (her CAPTAIN, on an OVERSEER that is only its view)
+    cap._cruise = lambda: 0.3
+    cap.weapon = lambda kind: stack
+    cap.envelope_m = lambda w: 1e6
+
+    def fire(battery, node):
+        cap.m = Machine(0.0)
+        return [o.kind for o in cap._fire(pic, 1, battery, "bogey", node)]
 
     def kinds(node_id, burning, aimed=False, battery=stack):
         pic.burning[0] = burning
         pic.dir0[0] = np.array([1.0, 0.0, 0.0] if aimed else [0.0, 1.0, 0.0])
         do = {"keep": ("fire", "spine", "hold-heading"), "coast": ("fire", "spine")}.get(node_id, ("fire",))   # (Ballistic orders')
         node = Node(node_id, node_id, do, weapon="focus")
-        return [o.kind for o in Captain._fire(cap, pic, 0, Machine(0.0), 1, battery, "bogey", node)]
+        return fire(battery, node)
 
     assert kinds("close", True) == ["fire"] and kinds("keep", True) == ["fire"] and kinds("coast", True) == ["fire"]
     assert kinds("close", False) == ["face", "fire", "fire"] and kinds("coast", False) == ["face", "fire", "fire"]
     assert kinds("keep", False) == ["fire"]
     assert kinds("keep", True, aimed=True) == ["fire", "fire"] and "face" not in kinds("close", False, aimed=True)
     dome = Weapon(1, "domes", "domes", "energy", 1, 40000.0, "dome", True, None, 1, True, Optic(5, 1.0, 1.0, 40000.0), None)
-    cap.fv.weapons[0] = [dome, stack]
-    cap.weapon = lambda i, kind: dome
+    ov.fv.weapons[0] = [dome, stack]
+    cap.weapon = lambda kind: dome
     off = kinds("coast", False, battery=dome)
     assert off == ["fire", "face", "fire"]                 # her focus, then the spine she fell back to
-    assert [o.kind for o in Captain._fire(cap, pic, 0, Machine(0.0), 1, dome, "bogey", Node("close", "close", ("fire",)))] == ["fire"]
+    assert fire(dome, Node("close", "close", ("fire",))) == ["fire"]
 
     pic.burning[0], pic.dir0[0] = True, np.array([0.0, 1.0, 0.0])
-    cap.fv.weapons[0] = [stack, light]
-    cap.weapon = lambda i, kind: stack
+    ov.fv.weapons[0] = [stack, light]
+    cap.weapon = lambda kind: stack
     rs = SimpleNamespace(moves=True)
 
-    def engaged():
-        m = Machine(0.0)
-        m.move(pic.t, target=1)
-        return m
+    def do(node):
+        cap.m = Machine(0.0)
+        cap.m.move(pic.t, target=1)
+        return [o.kind for o in cap._do(pic, node, rs, None)]
 
     coasting = Node("coast", "Coast", ("station", "fire"), weapon="focus")
-    assert [o.kind for o in Captain._do(cap, pic, 0, engaged(), coasting, rs, None)] == ["goto", "fire"]
+    assert do(coasting) == ["goto", "fire"]
     keeping = Node("keep", "Keep", ("fire",), weapon="focus")
-    assert [o.kind for o in Captain._do(cap, pic, 0, engaged(), keeping, rs, None)] == ["fire"]
+    assert do(keeping) == ["fire"]

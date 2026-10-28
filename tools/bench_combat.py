@@ -4,6 +4,7 @@
     python tools/bench_combat.py --tick 30        # at one tick
     python tools/bench_combat.py --tf2            # all of Task Force 2 (44) instead
     python tools/bench_combat.py --spy            # and the battle flown again under py-spy, by function
+    python tools/bench_combat.py --functions      # and the ship AI's every function (cProfile), the battle again
 
 The approach is flown and timed whole; then the battle, ten game minutes at a time, from FROM_H to
 TO_H after the order: what each part costs (tools/bench_flight.py's probes, as shares, and how often
@@ -13,7 +14,9 @@ the battle tick, the block, the sweep's minute); where each ship's MINERVA stood
 what the CAPTAINs put in the order book; and what the combat book and the damage model made of it.
 Every figure is wall time on this machine, of this one thread. Each run is kept in logs/bench/.
 """
+import cProfile
 import os
+import pstats
 import signal
 import subprocess
 import sys
@@ -30,14 +33,14 @@ import bench_flight as BF  # noqa: E402
 from bench_flight import Probed, fresh, req  # noqa: E402
 from astrum import combat, damage, detect, kernels, optics, pictures, salvo, sim  # noqa: E402
 from astrum.ai import NAMES  # noqa: E402
-from astrum.shipai import captain  # noqa: E402
+from astrum.shipai import overseer  # noqa: E402
 import benchlog  # noqa: E402
 
 FROM_H, TO_H, STEP = 66.0, 72.0, 600.0
 TF2 = "--tf2" in sys.argv
 TICKS = [float(sys.argv[sys.argv.index("--tick") + 1])] if "--tick" in sys.argv else [10.0, 30.0, 60.0]
 UNIT = "tf-2" if TF2 else "tf2-lf1"
-COUNTED = [(sim.Fleet, "_front", "AI moments"), (captain.Captain, "decide", "a side decided"),
+COUNTED = [(sim.Fleet, "_front", "AI moments"), (overseer.Overseer, "decide", "a side decided"),
            (sim.Fleet, "picture", "fleet pictures"), (pictures.Pictures, "side_picture", "side pictures"),
            (detect.Sweeper, "catch_up", "sweep catch-ups"), (sim.Fleet, "_fly", "flight blocks and ticks"),
            (kernels, "fly", "compiled steps"), (sim.Fleet, "_record", "timeline writes"),
@@ -91,7 +94,7 @@ def out_rows(f):
 def battle(tick):
     w, sc, f, host, t0 = start(tick)
     a = time.perf_counter(); f.reach(t0 + FROM_H * 3600); approach = time.perf_counter() - a
-    cap = host.ai.captain(sc, f)
+    cap = host.ai.overseer(sc, f)
     side = lambda j: cap.view[j] if j < len(cap.view) else "?"
     tree = w.trees[sc.id]
     fought = {f.c.row[s] for s, u in tree.items() if (s == UNIT or UNIT in u.get("ancestors", []) or s.startswith("raider-"))
@@ -138,10 +141,10 @@ def battle(tick):
 
     print(f"\n  MINERVA: where the {len(fought)} ships in the fight stood in the battle (ship-hours, and how often each node was entered), by side")
     held, entered, moved = defaultdict(float), Counter(), Counter()
-    for i, m in enumerate(cap.machines):
-        if m is None or i not in fought:
+    for i, cp in enumerate(cap.captains):
+        if cp is None or i not in fought:
             continue
-        H = m.history
+        H = cp.m.history
         for k, p in enumerate(H):
             end = H[k + 1].since if k + 1 < len(H) else f.t
             span = min(end, T1) - max(p.since, T0)
@@ -208,10 +211,30 @@ def spy(tick):
             inc[x] += int(k)
     print(f"\n  py-spy, the battle flown again unprobed ({d:.2f} s, {n} samples): inclusive · own, % of the battle")
     for fn, k in inc.most_common(40):
-        if k < 0.02 * n or not any(s in fn for s in ("sim.py", "combat", "captain", "minerva", "pictures", "picture.py", "detect",
+        if k < 0.02 * n or not any(s in fn for s in ("sim.py", "combat", "captain", "overseer", "minerva", "pictures", "picture.py", "detect",
                                                        "damage", "systems", "salvo", "optics", "kernels", "ai.py", "view.py", "timeline")):
             continue
         print(f"    {100 * k / n:5.1f}%  {100 * own[fn] / n:5.1f}%  {fn}")
+
+
+def functions(tick):
+    """The battle flown again under cProfile: each function of the ship AI (astrum/shipai, astrum/ai.py),
+    its calls, its own time and with what it calls, as shares of the battle."""
+    w, sc, f, host, t0 = start(tick)
+    f.reach(t0 + FROM_H * 3600)
+    pr = cProfile.Profile()
+    a = time.perf_counter(); pr.enable(); f.reach(t0 + TO_H * 3600); pr.disable(); d = time.perf_counter() - a
+    st = pstats.Stats(pr).stats
+    whole = sum(v[2] for v in st.values())
+    rows = [(k, v) for k, v in st.items() if "shipai" in k[0].replace("\\", "/") or k[0].replace("\\", "/").endswith("astrum/ai.py")]
+    print(f"\n  the ship AI by function, the battle again under cProfile ({d:.2f} s; shares of its {whole:.2f} s of own time):")
+    print(f"    {'calls':>8s} {'own':>7s} {'with all':>8s}  function")
+    by = Counter()
+    for (fn, line, name), (cc, nc, tt, ct, _) in sorted(rows, key=lambda kv: -kv[1][2]):
+        by[Path(fn).name] += tt
+        if tt >= 0.002 * whole or ct >= 0.02 * whole:
+            print(f"    {nc:8,d} {100 * tt / whole:6.1f}% {100 * ct / whole:7.1f}%  {Path(fn).name}:{name}")
+    print("    own time by file: " + ", ".join(f"{k} {100 * v / whole:.1f}%" for k, v in by.most_common()))
 
 
 if __name__ == "__main__":
@@ -221,3 +244,5 @@ if __name__ == "__main__":
         battle(tick)
         if "--spy" in sys.argv:
             spy(tick)
+        if "--functions" in sys.argv:
+            functions(tick)

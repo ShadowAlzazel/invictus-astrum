@@ -5,7 +5,7 @@ event of the order book, given to her or to a formation she is in), else the one
 the scenario or for the nearest formation above her, else the MINERVA's default stance
 (data/minerva.toml) and the root profile. A formation stands in what its ships do, when they all do.
 
-The ship AI (astrum/shipai: each ship's MINERVA, run by the CAPTAIN) runs at the flight's front
+The ship AI (astrum/shipai: the OVERSEER steps it, each ship's CAPTAIN moves her MINERVA on) runs at the flight's front
 edge (Fleet.front): the fleet hands it itself as it stands after a step, at the moments it asks for
 (an engaged ship's tick, else the next block), and it is handed each side's picture there, made by
 the picture processor's functions (astrum/pictures.py) as a browser's is. It reads only what is in
@@ -20,7 +20,7 @@ import numpy as np
 
 from .detect import SAMPLE_S
 from .orders import KIND, STANCE
-from .shipai.captain import Captain, player_of, written
+from .shipai.overseer import Overseer, player_of, written
 from .shipai.view import View
 
 NAMES = {v: k for k, v in KIND.items()}
@@ -77,33 +77,33 @@ def _said(g) -> str | None:
 
 
 class AI:
-    """The ship AI at each fleet's front edge: a CAPTAIN for each fleet, handed each side's picture
+    """The ship AI at each fleet's front edge: an OVERSEER for each fleet, handed each side's picture
     there (made by pictures, the picture processor), its orders given to the fleet as a player's are."""
 
     def __init__(self, world, pictures=None):
         self.world, self.pictures = world, pictures
-        self.captains: dict[int, Captain] = {}
+        self.overseers: dict[int, Overseer] = {}
         self.tick: dict[str, float] = {}                 # scenario -> its level's battle tick (the run-ahead says; else engaged_s)
 
     def attach(self, sc, fleet) -> None:
         """Run at this fleet's front edge."""
         fleet.front = lambda f, t: self.front(sc, f, t)
 
-    def captain(self, sc, fleet) -> Captain:
-        m = self.captains.get(id(fleet))
+    def overseer(self, sc, fleet) -> Overseer:
+        m = self.overseers.get(id(fleet))
         if m is None or len(m.until) != len(fleet.c.row):
-            self.captains = {k: v for k, v in self.captains.items() if any(id(f) == k for f in self.world.fleets.values())}
-            m = self.captains[id(fleet)] = Captain(self.world, sc, fleet)
+            self.overseers = {k: v for k, v in self.overseers.items() if any(id(f) == k for f in self.world.fleets.values())}
+            m = self.overseers[id(fleet)] = Overseer(self.world, sc, fleet)
         return m
 
     def wants(self, sc, fleet, t: float) -> dict[str, bool]:
-        return self.captain(sc, fleet).wants(View(fleet, t), t)
+        return self.overseer(sc, fleet).wants(View(fleet, t), t)
 
     def front(self, sc, fleet, t: float) -> tuple[list, float, set]:
         """The fleet at its front edge, t: the sides the CAPTAIN wants pictured (every side swept up
         to t first), each handed to it; its orders, when it wants the fleet again, and the rows it
         ticks finely till then (the engaged, and whom they engage: the rest keep their blocks)."""
-        M, cap = self.world.minerva, self.captain(sc, fleet)
+        M, cap = self.world.minerva, self.overseer(sc, fleet)
         cap.tick_s = self.tick.get(sc.id, M.engaged_s)
         fv = View(fleet, t)                              # all the CAPTAIN reads of the fleet, but its sides' pictures
         views = cap.wants(fv, t)
@@ -116,19 +116,19 @@ class AI:
         return out, cap.next_due(t), cap.ticked()
 
     def engaged(self, fleet) -> bool:
-        """Whether any of this fleet's ships is engaged, as its CAPTAIN last decided."""
-        m = self.captains.get(id(fleet))
+        """Whether any of this fleet's ships is engaged, as its OVERSEER last stepped it."""
+        m = self.overseers.get(id(fleet))
         return m is not None and bool(m.engaged)
 
     def overrule(self, sc, fleet, ships: list[str], t: float) -> None:
         """An order of the map's at t: the AI's later orders to these ships, and to those they fight
         (who fired at them or was fired at from t on, or is engaged with them), go; their MINERVA is
         set back, and it decides for them again from t."""
-        m = self.captain(sc, fleet)
+        m = self.overseer(sc, fleet)
         rows = {fleet.c.row[s] for s in ships}
         with fleet.lock:
             while True:
-                more = fleet.combat.partners(t, rows) | {i for i in m.engaged if m.machines[i].at.target in rows}
+                more = fleet.combat.partners(t, rows) | {i for i in m.engaged if m.captains[i].m.at.target in rows}
                 if more <= rows:
                     break
                 rows |= more
@@ -141,13 +141,14 @@ class AI:
             m.looked[v] = min(m.looked.get(v, -1), k - 1)
         m.readied[rows] = 0                              # (her readiness looked at again)
         for i in rows:
-            if m.machines[i] is not None:
-                m.machines[i].back_to(t)
+            if m.captains[i] is not None:
+                m.captains[i].m.back_to(t)
+        m.touched |= set(rows)
 
     def place(self, sc, fleet, sid: str, t: float) -> dict:
         """Where a ship stands in her MINERVA, as the CAPTAIN last decided."""
         i = fleet.c.row[sid]
-        return self.captain(sc, fleet).place_of(i, world_profile(self.world, sc, fleet, sid, t))
+        return self.overseer(sc, fleet).place_of(i, world_profile(self.world, sc, fleet, sid, t))
 
 
 def world_profile(world, sc, fleet, sid: str, t: float):

@@ -130,13 +130,13 @@ def probes():
     """What is timed inside the flight, time to target and the sweeps: (owner, attribute, what it is).
     Each is timed where it is called from, so a part shows under what it ran in."""
     from astrum import combat, damage, detect, optics, picture, pictures, salvo, sim, simhost, timeline
-    from astrum.shipai import captain
+    from astrum.shipai import captain, overseer
     F = sim.Fleet
     return [
         (F, "_front", "the ship AI at the flight's front edge (AI.front)"),
-        (captain.Captain, "wants", "whom each CAPTAIN wants pictured (the sweep caught up first)"),
+        (overseer.Overseer, "wants", "whom each CAPTAIN wants pictured (the sweep caught up first)"),
         (detect.Sweeper, "catch_up", "the sweep, cone by cone, for every side"),
-        (captain.Captain, "_near", "the ships near hers, by her side's sweep"),
+        (overseer.Overseer, "_near", "the ships near hers, by her side's sweep"),
         (F, "picture", "the fleet's picture at the front edge"),
         (pictures.Pictures, "side_picture", "a side's picture of it"),
         (simhost.SimHost, "_side", "the side: its ships, friends and journal"),
@@ -145,9 +145,9 @@ def probes():
         (detect.Sweeper, "arrived", "the newest sightings whose reports have reached it"),
         (detect.SideSweep, "sightings", "the sightings of those minutes"),
         (picture, "light_delay", "each ship where her light shows her"),
-        (captain.Captain, "decide", "the CAPTAINs' orders"),
-        (captain.Captain, "_look", "each ship's targets in her side's picture"),
-        (captain.Captain, "_engaged", "her engagement, node by node"),
+        (overseer.Overseer, "decide", "the CAPTAINs' orders"),
+        (overseer.Overseer, "_look", "each ship's targets in her side's picture"),
+        (captain.Captain, "step", "her engagement, a step"),
         (captain.Captain, "_fire", "a WeaponEngageOrder"),
         (F, "_enter", "their orders into the book"),
         (F, "_apply", "orders coming due"),
