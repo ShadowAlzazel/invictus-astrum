@@ -913,11 +913,11 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             if lb.level in await sim.call("levels", None):
                 raise LobbyError("stop the level first")
             lb.level, lb.members = lv.id, dict.fromkeys(lb.members)
-        elif do in ("run", "pause", "warp"):             # the host's, or anyone's by the host's rule
+        elif do in ("run", "pause", "warp", "tick"):     # the host's, or anyone's by the host's rule
             lb = lobbies.of(user)
             if lb is None or not lb.may_time(user):
                 raise LobbyError(f"only the host, {lb.host if lb else 'of the lobby'}, works the level's clock (the host's rule)")
-            out = await level_do({"id": lb.level, "do": do, "warp": msg.get("warp")})
+            out = await level_do({"id": lb.level, "do": do, "warp": msg.get("warp"), "tick_s": msg.get("tick_s")})
             if not out["ok"]:
                 raise LobbyError(out["detail"])
         elif do in ("start", "restart", "stop"):
@@ -1082,11 +1082,11 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
 
     @app.post("/api/level/{lid}")
     async def level(lid: str, request: Request, req: dict = Body(...)):
-        """The host's hand on a level's clock (simhost.SimHost.level): start, run, pause, warp,
-        restart or stop. Answers how its clock stands. With auth, its lobby's host's alone."""
+        """The host's hand on a level's clock (simhost.SimHost.level): start, run, pause, warp, tick
+        (the battle tick), restart or stop. Answers how its clock stands. With auth, its lobby's host's alone."""
         user = signed(request)
         lb = lobbies.holding(lid)
-        if auth and not (lb and (lb.host == user or (req.get("do") in ("run", "pause", "warp") and lb.may_time(user)))):
+        if auth and not (lb and (lb.host == user or (req.get("do") in ("run", "pause", "warp", "tick") and lb.may_time(user)))):
             raise HTTPException(403, "only the host of the level's lobby works its clock (or anyone, by the host's rule)")
         out = await level_do({**req, "id": lid})
         if not out["ok"]:

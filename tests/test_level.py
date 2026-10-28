@@ -102,6 +102,39 @@ def test_a_running_level_is_flown_watched_or_not():
         host.stop()
 
 
+def test_the_battle_tick_is_the_host_s():
+    """A level's clock carries its battle tick, one of the MINERVA's (data/minerva.toml ticks),
+    engaged_s until the host sets another; every picture says it, and the run-ahead hands it to the
+    ship AI, which looks at an engaged ship that often."""
+    import json
+    from astrum.app import create_app
+    from astrum.simhost import SimHost
+    world = create_app().state.world
+    host = SimHost(world, run_ahead=True)
+    try:
+        r = host.handle("level", {"id": "cislunar", "do": "start"})
+        assert r["clock"]["tick_s"] == world.minerva.engaged_s and r["clock"]["ticks"] == list(world.minerva.ticks)
+        assert host.handle("level", {"id": "cislunar", "do": "tick", "tick_s": 7})["status"] == 400   # not one of them
+        assert host.handle("level", {"id": "cislunar", "do": "tick", "tick_s": 60})["clock"]["tick_s"] == 60
+        m = json.loads(host.frame({"level": "cislunar", "system": "sol", "player": "arcvs"}))
+        assert m["clock"]["tick_s"] == 60
+        deadline = time.monotonic() + 20
+        while host.ai.tick.get("sol-demo") != 60 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert host.ai.tick["sol-demo"] == 60
+    finally:
+        host.stop()
+
+
+def test_the_front_edge_stays_near_the_clock_while_ships_are_engaged():
+    """The run-ahead keeps three seconds of the clock's wall time ahead, at least a block, on the
+    block grid; while ships are engaged, half a second, at least a battle tick, on the tick's grid."""
+    from astrum.simhost import front_of
+    assert front_of(0.0, 100.0, 1.0) == 1200.0 and front_of(0.0, 100.0, 3600.0) == 11400.0
+    assert front_of(0.0, 100.0, 1.0, 10.0) == 110.0 and front_of(0.0, 100.0, 60.0, 10.0) == 130.0
+    assert front_of(0.0, 100.0, 3600.0, 10.0) == 1900.0 and front_of(0.0, 100.0, 60.0, 600.0) == 1200.0 and front_of(0.0, 100.0, 1e6, 10.0) == 12 * 3600.0 + 100
+
+
 def test_a_side_s_picture_is_made_once_for_every_map_of_it():
     """Two maps of one side, asking at once, are sent one picture (one moment, made once), each
     only what changed since its own last; another side's is its own; an order makes it again."""

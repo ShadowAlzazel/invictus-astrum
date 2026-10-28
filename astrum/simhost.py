@@ -57,6 +57,7 @@ FRAME_BUDGET_S = 0.05         # wall time a picture may spend getting the fleet 
 ORDER_BUDGET_S = 0.05         # ... and an order: past it, the order waits for the fleet to get there (queued)
 LOOKAHEAD_WALL_S = 3.0        # the run-ahead keeps this much of the clock's wall time ahead ...
 LOOKAHEAD_S = (600.0, 12 * 3600.0)   # ... within these (sim seconds); the timeline holds a day and a half
+ENGAGED_WALL_S = 0.5          # ... and while ships are engaged, this much (est.: twice LEAD_WALL_S), at least a battle tick
 LEAD_WALL_S = 0.25            # a picture is asked for at most this much of the clock's wall time ahead
 SHARE_WALL_S = 0.05           # a running level's pictures fall on moments this much of its wall time apart, shared by a side (else req["step"])
 SHARED_KEPT = 16              # pictures kept to share (a few moments of every side watching)
@@ -618,7 +619,8 @@ class SimHost:
     # ---- the levels ------------------------------------------------------------------------------
     def level(self, req: dict) -> dict:
         """The host's hand on a level's clock. start: its clock made at the level's start, running
-        at its warp, or req["warp"] (nothing ticks before); run, pause; warp: at req["warp"]; restart: from its
+        at its warp, or req["warp"] (nothing ticks before); run, pause; warp: at req["warp"]; tick: the battle
+        tick at req["tick_s"] (one of the MINERVA's ticks); restart: from its
         start again, its fleets built afresh from their scenarios; stop: no clock, no fleets.
         Returns {ok, clock} (clock None once stopped)."""
         lv = self.world.levels.get(req.get("id") or "")
@@ -628,7 +630,8 @@ class SimHost:
         if do == "start":
             if clock is None:
                 self.world.played(lv.id, "start")
-                clock = self.clocks[lv.id] = Clock(self.world.level_start(lv), lv.warp)
+                M = self.world.minerva
+                clock = self.clocks[lv.id] = Clock(self.world.level_start(lv), lv.warp, tick_s=M.engaged_s, ticks=M.ticks)
                 if isinstance(req.get("warp"), (int, float)):
                     clock.set(warp=req["warp"])
         elif clock is None:
@@ -637,6 +640,8 @@ class SimHost:
             clock.set(paused=do == "pause")
         elif do == "warp" and isinstance(req.get("warp"), (int, float)):
             clock.set(warp=req["warp"])
+        elif do == "tick" and req.get("tick_s") in clock.ticks:
+            clock.set(tick_s=req["tick_s"])
         elif do in ("restart", "stop"):
             for sc in lv.scenarios:                      # its fleets go; the next ask builds them afresh
                 self.world.fleets.pop(sc, None)
@@ -649,7 +654,8 @@ class SimHost:
                 return {"ok": True, "clock": None}
             clock.set(t=self.world.level_start(lv))
         else:
-            return {"ok": False, "status": 400, "detail": "do is start, run, pause, warp (with warp), restart or stop"}
+            return {"ok": False, "status": 400, "detail": "do is start, run, pause, warp (with warp), tick (with tick_s, one of the "
+                    f"level's ticks), restart or stop"}
         return {"ok": True, "clock": clock.as_dict()}
 
     def clock_of(self, scenario: str | None) -> Clock | None:
@@ -782,6 +788,16 @@ class SimHost:
         return t, ids, cols, flown, seen
 
 
+def front_of(t0: float, now: float, warp: float, tick_s: float | None = None) -> float:
+    """Where the run-ahead keeps a fleet's front edge: the clock's wall time ahead at its warp
+    (LOOKAHEAD_WALL_S, within LOOKAHEAD_S), on the block grid; while ships are engaged (tick_s, the
+    battle tick), near the clock (ENGAGED_WALL_S, at least a tick), on the tick's grid: an order
+    mid-battle sets back whom she fights, and the CAPTAIN decides for them again at the front."""
+    wall, lo, step = (LOOKAHEAD_WALL_S, LOOKAHEAD_S[0], BLOCK_S) if tick_s is None else (ENGAGED_WALL_S, tick_s, tick_s)
+    ahead = min(max(warp * wall, lo), LOOKAHEAD_S[1])
+    return t0 + math.ceil((now + ahead - t0) / step - 1e-9) * step
+
+
 class RunAhead:
     """The levels' tick, in a thread of its own: keeps every running level's fleets ahead of its
     clock, watched or not, and gives the AI the level's moment (Pictures.clock). The compiled step
@@ -805,14 +821,13 @@ class RunAhead:
                 lv = self.world.levels.get(lid)
                 now = clock.now()
                 warp = 0.0 if clock.paused else clock.warp
-                ahead = min(max(warp * LOOKAHEAD_WALL_S, LOOKAHEAD_S[0]), LOOKAHEAD_S[1])
                 for sid in lv.scenarios if lv else ():
-                    self.host.ai.warp[sid] = warp
+                    self.host.ai.tick[sid] = clock.tick_s
                     sc = self.world.scenarios.get(sid)
                     f = self.world.fleet(sc) if sc else None
                     if f is None:
                         continue
-                    target = f.t0 + math.ceil((now + ahead - f.t0) / BLOCK_S - 1e-9) * BLOCK_S
+                    target = front_of(f.t0, now, warp, clock.tick_s if self.host.ai.engaged(f) else None)
                     if f.t < target - 1e-6 or f.mending is not None:    # behind, or an order's rows still on their way
                         f.keep_timeline()
                         f.advance(max(target, f.t), budget_s=0.02, view=lambda _: None)

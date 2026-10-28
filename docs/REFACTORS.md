@@ -54,20 +54,28 @@ as it was.
 The tests let each fleet's timeline go at its end (`tests/conftest.py`): FastAPI keeps every app's
 routes, so the suite's fleets all stayed, and 150 MB each ran it out of memory.
 
-**C. The battle tick**
+**C. The battle tick** (done)
 1. **A setting** (the level's, the host's, as the clock): the engaged ships' tick, 10, 60, 300 or
-   600 s, fine (10 s) by default (the owner's figures). Longer ticks fire a tick's cycles at once
-   (merged salvos); what a longer tick loses is the automaton's and the admiral's, not the
-   simulation's.
-2. **Fine ticks for the engaged alone** (19). The engaged rows flown apart between ticks, as a
-   re-fly flies its scope; the rest keep their 10-minute blocks (215 pieces in 12 h of battle now,
-   72 without).
-3. **An order in a battle.** It re-flies the ship and every ship she fought with since the
-   checkpoint (`combat.partners`), out to the front edge: 120 min ahead, 21 rows, 441 ms; at 1 d/s
-   the run-ahead is up to 12 h ahead. So while ships are engaged the front edge stays near the
-   clock (the CAPTAIN's future is guesswork past it; at a slow clock less still, as the warp asks:
-   the owner's note), and the partners' CAPTAIN orders after the order's moment go and are decided again (today only the ordered ship's are: the other side
-   acts on a future that no longer happens).
+   600 s (`minerva.toml` `ticks`), 10 s by default; the clock bar's and the lobby's **tick**. Longer
+   ticks fire a tick's cycles at once. `merged_s` and `merge_warp` are gone.
+2. **Fine ticks for the engaged alone** (19). A piece the AI is due inside is split: the rest
+   flown the whole piece first, the ticked rows (`Captain.ticked`, closed over what their flight
+   bears on) a tick at a time. TF-3 burning off Mars through 12 h of battle is flown in 72 pieces,
+   against 215 (60 s tick) and 2,430 (10 s). The battle itself costs the same: it is the AI and
+   the shots at the tick (12 h of it, on this container):
+
+   | tick | before | after | shots | raiders down |
+   |---|---|---|---|---|
+   | 60 s | 2.04–2.06 s | 2.05–2.10 s | 1,309, the same | 10 |
+   | 10 s | 16.3–16.5 s | 16.6–17.0 s | 19,097 → 19,094 | 8 |
+
+   (`Fleet._units` keeps the fleet's units once, a scope a filter of them: kept per scope, it
+   thrashed between the split's three, 19.5 s.)
+3. **An order in a battle.** The CAPTAIN's later orders to her and to whoever she fights (from the
+   order's moment, both sides) are struck and decided again at the front edge, which the run-ahead
+   keeps near the clock while ships are engaged (`simhost.front_of`: half a second of wall time, at
+   least a tick, against three seconds and a block). Flying them again is cheap (21 rows; 6–12 ms
+   to 20 min ahead, 57–86 ms to 3 h); what the front's distance costs is the gap in which they hold.
 
 **D. The CAPTAIN in its own process** (18). With A3's view and C3's short battle look-ahead: the
 view handed across each tick, the orders handed back at the same moment, lockstepped at the front

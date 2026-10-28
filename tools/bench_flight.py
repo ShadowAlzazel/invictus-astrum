@@ -79,9 +79,8 @@ BATTLE_H = 62                                     # the flotilla meets the Venus
 def start(case):
     """A fresh fleet with the case under way, at its first timed moment: the fleet quiet; TF-3 to a
     point off Mars, or toward the Sun; or Line Flotilla 1 (11) sent at the Venus Raiders (10),
-    aggressive, flown untimed to some hours before they meet. The AI ticks as at 1 h/s."""
+    aggressive, flown untimed to some hours before they meet. The battle tick is the default (engaged_s)."""
     w, sc, f, host = fresh()
-    host.ai.warp[sc.id] = WARP
     t = f.t0 + 600
     f.reach(t)
     if case in ("near", "sun"):

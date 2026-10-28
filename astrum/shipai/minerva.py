@@ -98,8 +98,7 @@ class Minerva:
     stance: str
     block_s: float
     engaged_s: float
-    merged_s: float
-    merge_warp: float
+    ticks: tuple                               # the battle ticks a host may set (s)
     cycle_s: float
     station_share: float
     stances: dict                              # id -> ReadyStance
@@ -107,8 +106,8 @@ class Minerva:
     attack_pass: str = "ballistic"             # ... and passing on by
 
     def as_dict(self) -> dict:
-        return {"stance": self.stance, "block_s": self.block_s, "engaged_s": self.engaged_s, "merged_s": self.merged_s,
-                "merge_warp": self.merge_warp, "cycle_s": self.cycle_s,
+        return {"stance": self.stance, "block_s": self.block_s, "engaged_s": self.engaged_s, "ticks": list(self.ticks),
+                "cycle_s": self.cycle_s,
                 "station_share": self.station_share, "stances": {k: s.as_dict() for k, s in self.stances.items()},
                 "attack_keep": self.attack_keep, "attack_pass": self.attack_pass}
 
@@ -151,9 +150,12 @@ def load_minerva(path: str | Path) -> Minerva:
     with Path(path).open("rb") as f:
         doc = tomllib.load(f)
     m, st, p = doc.get("minerva") or {}, doc.get("stance") or {}, []
-    for k in ("block_s", "engaged_s", "merged_s", "merge_warp", "cycle_s", "station_share"):
+    for k in ("block_s", "engaged_s", "cycle_s", "station_share"):
         if not (isinstance(m.get(k), (int, float)) and m[k] > 0):
             p.append(f"[minerva] {k}: a number above zero")
+    ticks = m.get("ticks") or [m.get("engaged_s")]
+    if not all(isinstance(x, (int, float)) and x > 0 for x in ticks) or m.get("engaged_s") not in ticks:
+        p.append("[minerva] ticks: seconds above zero, engaged_s among them")
     if m.get("stance") not in STANCES:
         p.append(f"[minerva] stance is one of {list(STANCES)}")
     for k in ("attack_keep", "attack_pass"):
@@ -173,7 +175,7 @@ def load_minerva(path: str | Path) -> Minerva:
             p.append(f"stance.{sid}: range is one of {list(RANGES)}, or km above zero")
     if p:
         raise ValueError("minerva.toml:\n  " + "\n  ".join(p))
-    return Minerva(m["stance"], float(m["block_s"]), float(m["engaged_s"]), float(m["merged_s"]), float(m["merge_warp"]),
+    return Minerva(m["stance"], float(m["block_s"]), float(m["engaged_s"]), tuple(float(x) for x in ticks),
                    float(m["cycle_s"]), float(m["station_share"]),
                    {sid: ReadyStance(sid, s.get("label") or sid, s.get("text", ""), int(s["readiness"]), s["enter"], s.get("range"),
                                      s["after"], bool(s.get("moves", True))) for sid, s in st.items()},

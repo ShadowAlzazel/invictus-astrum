@@ -5,7 +5,7 @@
   // level's, or MASTER), the host's rules, and the level's clock: the host starts, restarts and
   // stops it and chooses another while it does not run; pausing it and its warp are the host's, or
   // anyone's by the rule. Once it runs, everyone in it may take the map.
-  import { utcOf, warpLabel, stepWarp } from './clock.js';
+  import { nextTick, stepWarp, tickLabel, utcOf, warpLabel } from './clock.js';
 
   export let you = null;
   export let lobbies = [];
@@ -116,6 +116,8 @@
         <button class="small" on:click={() => onact({ do: level.clock.paused ? 'run' : 'pause' })}>{level.clock.paused ? 'run' : 'pause'}</button>
         <span class="warp"><button class="small" on:click={() => onact({ do: 'warp', warp: stepWarp(level.clock.warp, false) })}>◀</button>
           {warpLabel(level.clock.warp)}<button class="small" on:click={() => onact({ do: 'warp', warp: stepWarp(level.clock.warp, true) })}>▶</button></span>
+        {#if level.clock.tick_s}<button class="small" on:click={() => onact({ do: 'tick', tick_s: nextTick(level.clock) })}
+          title="The battle tick: how often an engaged ship is looked at (finer is truer, coarser cheaper)">tick {tickLabel(level.clock.tick_s)}</button>{/if}
       {/if}
       {#if running && host}
         <button class="small" class:sure={sure === 'restart'} on:click={() => ask('restart')} on:blur={() => (sure = null)}

@@ -20,7 +20,7 @@
   import Lobby from './lib/Lobby.svelte';
   import SignIn from './lib/SignIn.svelte';
   import { LobbySocket } from './lib/lobby.js';
-  import { stepWarp, warpLabel } from './lib/clock.js';
+  import { nextTick, stepWarp, tickLabel, warpLabel } from './lib/clock.js';
   import MainMenu from './lib/MainMenu.svelte';
   import CombatProfiles from './lib/CombatProfiles.svelte';
   import ShipRegistry from './lib/ShipRegistry.svelte';
@@ -318,6 +318,7 @@
   const inLevel = () => levelId && mode === 'map';
   function togglePause() { if (inLevel()) clockDo(running ? 'pause' : 'run'); else paused = !paused; }
   function warpStep(up) { const w = stepWarp(shownWarp, up); if (inLevel()) clockDo('warp', { warp: w }); else warpS = w; }
+  function tickStep() { if (inLevel() && clockAt?.ticks) clockDo('tick', { tick_s: nextTick(clockAt) }); }
   let restartSure = false;
   function resetClock() {
     if (!inLevel()) { t = def.start; return; }
@@ -829,6 +830,8 @@
   <button on:click={() => warpStep(false)} title="[">◀</button>
   <span class="warp">{warpLabel(shownWarp)}</span>
   <button on:click={() => warpStep(true)} title="]">▶</button>
+  {#if levelId && clockAt?.tick_s}<button class="small" on:click={tickStep}
+    title="The battle tick: how often an engaged ship is looked at, her side pictured and her shots fired (a tick's cycles at once). Finer is truer, coarser cheaper; the level's, for everyone in it">tick {tickLabel(clockAt.tick_s)}</button>{/if}
   <button class="small restart" class:sure={restartSure} on:click={resetClock}
     title={levelId ? 'The level from its start again: its clock, and its fleets as their scenarios have them' : 'Back to the system\'s start'}>{levelId ? (restartSure ? 'restart?' : 'restart') : 'reset'}</button>
   {#if !levelId}<span class="src">{state?.source ?? ''}</span>{/if}

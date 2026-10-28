@@ -313,8 +313,9 @@ moment, so nothing flies again for them. It reads only what is in the picture, a
 through a view made at the front edge (`astrum/shipai/view.py`: its rows, batteries, wrecks, pings,
 the book, the sweep, the bodies and bullseyes), the boundary its own process will take. A ready ship looks
 once a block, if her side's sweep holds a ship within her reach (or at once when fired on); an
-engaged one every tick (10 s, a minute above 10 min/s) near her envelope, else by how soon she gets
-there. Task Force 2 (Earth) is written on return fire.
+engaged one every battle tick (the level's, its host's: 10 s by default, or 60, 300, 600) near her
+envelope, else by how soon she gets there. Only the engaged (and whom they engage) are flown a tick
+at a time; the rest of the fleet keeps its blocks, flown ahead of them and read off the timeline. Task Force 2 (Earth) is written on return fire.
 
 ```
 flight (order book) -- each step, at its front edge --> the CAPTAIN (each side's picture there)

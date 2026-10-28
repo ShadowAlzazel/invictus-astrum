@@ -5,8 +5,8 @@ the CAPTAIN reads only what is in it and, for each of the side's ships, moves he
 gives what it says as orders (source "ai") through the order book, as a player does: her readiness
 (quarters, her sensors pinging at general quarters), and in combat each node's actions. Out of
 combat a ship stands in her ReadyStance and is looked at once a block, or when she is fired on; in
-combat (engaged) she is looked at every tick (tick_s: engaged_s, or merged_s at a fast clock, when
-a fire order fires the tick's cycles at once), and her side is pictured that often while she is. A
+combat (engaged) she is looked at every tick (tick_s: the level's battle tick, else engaged_s; a fire
+order fires the tick's cycles at once), and her side is pictured that often while she is. A
 ship flying a plain go-to of the map's or the scenario's is left to it; an attack-move is
 aggressive the whole way, a patrol on guard.
 
@@ -178,6 +178,15 @@ class Captain:
 
     def envelope_m(self, i: int, w) -> float:
         return w.engage_km * 1e3 if w is not None and w.engage_km else self.engage_m[i]
+
+    def ticked(self) -> set[int]:
+        """The rows ticked finely: the engaged, and whom they engage."""
+        out = set(self.engaged)
+        for i in self.engaged:
+            j = self.machines[i].at.target
+            if j >= 0:
+                out.add(j)
+        return out
 
     def next_due(self, t: float) -> float:
         """When it is to be handed the fleet again: an engaged ship's next look, else the next block

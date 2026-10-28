@@ -64,7 +64,7 @@ import bisect
 import math
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -313,6 +313,8 @@ class Fleet:
         self.combat = combat.CombatBook(self, registry)     # her weapons, and what happened (astrum/combat.py)
         self.front = None                                   # the ship AI at the flight's front edge (_front), if any
         self._front_t, self._front_due = -math.inf, -math.inf
+        self._fine: set[int] = set()                        # the rows it ticks finely (the engaged, and whom they engage)
+        self._ahead, self._piece_end = None, -math.inf       # in a split piece: the rest, flown on to its end (_split)
 
     # ---- the timeline: what the map reads ----------------------------------------------------
     def keep_timeline(self) -> Timeline:
@@ -340,6 +342,11 @@ class Fleet:
             self._wings_between(pic, t)
         else:
             pic, ver = {name: getattr(c, name)[:n].copy() for name in FIELDS}, c.mver[:n].copy()
+            if self._ahead is not None and tl is not None:   # in a split piece: the rest flown on, so off the timeline
+                got, was = tl.at(t, n, V)
+                for name in FIELDS:
+                    pic[name][self._ahead] = got[name][self._ahead]
+                ver[self._ahead] = was[self._ahead]
         for name in ("gg", "goal", "lead", "off", "mode"):
             pic[name] = getattr(V, name)[ver]
         pic["mver"], pic["t"] = ver, t
@@ -840,14 +847,19 @@ class Fleet:
             held = (c.burn[:n] == BURN_G) | (c.burn[:n] == BURN_THROTTLE)
             ends = c.buntil[:n][held]
             due = self._front_due if self.front is not None and self._front_due > self.t + 1e-6 else math.inf
-            t1 = min(self._grid_next(self.t), t_end, nxt, due, *(float(e) for e in ends if e > self.t))
+            t1 = min(self._grid_next(self.t), t_end, nxt, *(float(e) for e in ends if e > self.t))
             T0 = self.t
-            slots, flown = self._fly(self.t, t1)
-            self.t = t1
-            self._stations_to(t1)
-            self._record(slots, np.arange(c.n), flown, T0=T0)
-            self._heat(T0, t1, np.arange(c.n), slots)
-            self._combat_step(T0, t1)
+            fine = self._ticked() if due < t1 - 1e-6 else None
+            if fine is not None and len(fine):
+                self._split(T0, t1, fine)
+            else:
+                t1 = min(t1, due)
+                slots, flown = self._fly(self.t, t1)
+                self.t = t1
+                self._stations_to(t1)
+                self._record(slots, np.arange(c.n), flown, T0=T0)
+                self._heat(T0, t1, np.arange(c.n), slots)
+                self._combat_step(T0, t1)
             cps = self._checkpoints
             if self.t - cps[-1][0] >= CHECKPOINT_S - 1e-6:
                 cps.append((self.t, self._snapshot(), self._station_t))
@@ -858,13 +870,74 @@ class Fleet:
     def _front(self) -> None:
         """The ship AI at the flight's front edge: at a moment it is due and has not yet seen (a
         replay from a checkpoint gives its orders again from the book), handed the fleet as it
-        stands; its orders are given at that moment, so nothing flies again for them."""
+        stands; its orders are given at that moment, so nothing flies again for them (one to a ship
+        flown on to the end of a split piece: at its end). It says which rows it ticks finely."""
         if self.front is None or self.t < self._front_due - 1e-6 or self.t <= self._front_t + 1e-9:
             return
         self._front_t = self.t
-        orders, self._front_due = self.front(self, self.t)
+        orders, self._front_due, *fine = self.front(self, self.t)
+        self._fine = set(fine[0]) if fine else set()
+        if orders and self._ahead is not None:
+            ahead = set(self._ahead.tolist())
+            orders = [replace(o, at=self._piece_end) if self.c.row.get(o.unit) in ahead else o for o in orders]
         if orders:
             self._enter(orders)
+
+    def _ticked(self) -> np.ndarray:
+        """The rows the AI ticks finely (the engaged and whom they engage), with their formations,
+        whoever chases them and whom they chase (a flying target is read live off her row, so she
+        flies with her chasers): flying rows alone, a station ship being placed, not flown."""
+        c, B = self.c, self.book
+        rows = {i for i in self._fine if i < c.n}
+        while rows:
+            more = self._affected(set(), rows)
+            for i in list(more):
+                if c.goal[i] and c.order[i] >= 0:
+                    j = c.row.get(B.of(int(c.order[i])).target.get("unit"))
+                    if j is not None:
+                        more.add(j)
+            if more <= rows:
+                break
+            rows |= more
+        return np.array(sorted(i for i in rows if c.mode[i] == FREE), dtype=np.int64)
+
+    def _split(self, T0: float, T1: float, fine: np.ndarray) -> None:
+        """A piece with ships engaged and the AI due inside it: the rest of the fleet's flight flown
+        whole, then the ticked rows (fine) tick by tick through it, with all that is placed
+        (station keeping), their samples and heat, their shots, and the AI at each tick, as a
+        whole-fleet piece would. The rest keeps its blocks: an order the AI gives one of them in it
+        is given at its end, and a picture in it reads them off the timeline."""
+        c, B = self.c, self.book
+        rest = np.setdiff1d(np.arange(c.n), fine)
+        slots, flown = self._fly(T0, T1, scope=rest)
+        self._record(slots, flown, flown, T0=T0)
+        self._heat(T0, T1, flown, slots)
+        self._ahead, self._piece_end = flown, T1
+        others = np.setdiff1d(np.arange(c.n), flown)
+        try:
+            while True:
+                given = False
+                while self._qi < len(B.queue) and B.at[B.queue[self._qi]] <= self.t:
+                    e = int(B.queue[self._qi])
+                    self._stations_to(float(B.at[e]), partial=True)
+                    self._apply(e)
+                    self._qi += 1
+                    given = True
+                if given:
+                    self._fly(self.t, self.t, steer_only=True, scope=others)
+                if self.t >= T1 - 1e-6:
+                    break
+                T = self.t
+                t2 = min(T1, self._front_due if self._front_due > T + 1e-6 else T1)
+                slots, moved = self._fly(T, t2, scope=fine)
+                self.t = t2
+                self._stations_to(t2)
+                self._record(slots, others, moved, T0=T)
+                self._heat(T, t2, others, slots)
+                self._combat_step(T, t2, fine)
+                self._front()
+        finally:
+            self._ahead = None
 
     def _combat_step(self, T0: float, T1: float, scope: np.ndarray | None = None) -> None:
         """The combat step (astrum/combat.py) for every ship engaging (among scope, if given)."""
@@ -888,9 +961,19 @@ class Fleet:
         ship on her own. Rows (only those in scope, if given)."""
         c, n = self.c, self.c.n
         key = (c.mode[:n].tobytes(), c.lead[:n].tobytes(), c.goal[:n].tobytes(), c.solo[:n].tobytes(), c.kind[:n].tobytes(),
-               tuple(L.row for L in self.leads.values()), None if scope is None else scope.tobytes())
-        if self._units_kept[0] == key:                 # kept until a row's mode, lead, order or formation changes
-            return self._units_kept[1]
+               tuple(L.row for L in self.leads.values()))
+        if self._units_kept[0] != key:                 # kept until a row's mode, lead, order or formation changes
+            self._units_kept = (key, self._units_all())
+        units = self._units_kept[1]
+        if scope is None:
+            return units
+        inside = np.zeros(n, dtype=bool)
+        inside[scope[scope < n]] = True
+        return [u for u in units if inside[u].any()]
+
+    def _units_all(self) -> list[np.ndarray]:
+        """Every unit of the fleet (kept by _units until it changes)."""
+        c, n = self.c, self.c.n
         free = (c.mode[:n] == FREE)
         lead = c.lead[:n]
         member = free & (c.kind[:n] == SHIP) & c.goal[:n] & (lead >= 0) & ~c.solo[:n]
@@ -898,9 +981,6 @@ class Fleet:
         units = [np.concatenate([[L.row], np.flatnonzero(member & (lead == L.row))]).astype(np.int64)
                  for L in self.leads.values() if c.mode[L.row] == FREE]
         units += [np.array([i], dtype=np.int64) for i in np.flatnonzero(free & (c.kind[:n] == SHIP) & ~member)]
-        if scope is not None:
-            units = [u for u in units if np.isin(u, scope).any()]
-        self._units_kept = (key, units)
         return units
 
     def _unit_steps(self, units) -> np.ndarray:

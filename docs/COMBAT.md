@@ -41,7 +41,7 @@ system: drive, sensors, weapons, rads, a mast).
 ## Orders
 
 **WeaponEngageOrder** (`fire`): a ship, a weapon (a battery), the moment, the direction it was
-aimed, and its targets if any; at a merged tick, how many salvos (`salvos`), and for light, how
+aimed, and its targets if any; at a battle tick longer than its cycle, how many salvos (`salvos`), and for light, how
 long it is held (`dwell_s`). It goes into the order book like every other order, so a replay fires
 the same shots. The sim resolves it: energy lands then; a projectile is launched (to become a row).
 A shot can destroy a ship, so one given into the flight's past flies her and her targets again
@@ -106,8 +106,8 @@ it; after = coast).
 fired on; and she looks only if her side's sweep holds a live sighting within her reach (and a
 tenth more, `NEAR_SLACK`): the sweep's newest, a bound on what the relay tree has brought her
 flagship, which the look itself reads off her side's picture. A side with a ship on return fire is
-pictured (without tracks) only while a ship of another side flies an engage on one of its ships. A ship in combat is on the CAPTAIN's **engaged** list: looked at every `engaged_s`
-(est. 10 s) once near the farthest envelope her engagement acts at, and short of it a quarter of the
+pictured (without tracks) only while a ship of another side flies an engage on one of its ships. A ship in combat is on the CAPTAIN's **engaged** list: looked at every battle tick
+(the level's, below; `engaged_s`, est. 10 s, by default) once near the farthest envelope her engagement acts at, and short of it a quarter of the
 time she takes to close on it (at most a block); while any is, her side is pictured that often.
 
 ## Control
@@ -128,11 +128,22 @@ edge (`Fleet.front`, `astrum/ai.py`): after each step the fleet flies, at the mo
 asked for, it is handed the fleet as it stands; each side it wants is pictured there by the picture
 processor's own functions, and its orders are given at that moment, the flight's own, so nothing
 flies again for them. The flight stops at those moments: every engaged ship's next look, on one
-grid of ticks from the scenario's start (`engaged_s`, est. 10 s; `merged_s`, est. 60 s, above
-`merge_warp`, est. 10 min/s, the run-ahead telling it the level's warp), else the next block, when
-ready ships look. A replay from a checkpoint does not ask it again: its orders are the book's. A
-map's order at the clock, behind the front, still flies its ships again, and strikes the CAPTAIN's
-later orders to them; it decides for them again at its next moment. Slate 1c's own process is
+grid of ticks from the scenario's start, else the next block, when ready ships look. A replay from
+a checkpoint does not ask it again: its orders are the book's.
+
+**The battle tick** is the level's, set by its host as the clock is (`ticks`: 10, 60, 300 or 600 s;
+`engaged_s`, 10 s, by default; the run-ahead hands it to the AI). A longer tick fires a tick's
+cycles at once; what it loses is the automaton's and the admiral's, not the simulation's. Only the
+engaged are ticked (`Captain.ticked`: the engaged, whom they engage, and whatever their flight bears
+on: formations, chasers, a flying target): a piece the AI is due inside is split, the rest of the
+fleet flown the whole piece first in its ten-minute block and read off the timeline by the AI, the
+ticked rows a tick at a time (`Fleet._split`); an order the AI gives one of the rest lands at the
+piece's end. While ships are engaged the run-ahead keeps the front edge near the clock
+(`simhost.front_of`: half a second of the clock's wall time, at least a tick, on the tick's grid,
+against three seconds and at least a block): at 1 min/s, 30 s ahead against 10 to 20 min. A map's
+order behind the front flies its ships again and strikes the CAPTAIN's later orders to them and to
+whoever they fight (who fired at them or was fired at from then on, or is engaged with them, both
+sides); their MINERVA is set back, and it decides for them again at its next moment, the front. Slate 1c's own process is
 still to come: it runs in the sim's, in the run-ahead's thread, which waits on it. What it reads of
 the fleet is one view, made at each front edge (`astrum/shipai/view.py`: the rows' columns, the
 operational batteries, the wrecks, who pings, the order book, what each side's sweep holds, the bodies
@@ -172,7 +183,7 @@ carries channels, hits, citadel hits, range, miss, one channel's spot and fluenc
 function is handed it and does nothing. The draw is seeded by the shot, so a re-fly lands it the
 same. A battery fires again once cycled: stacks together, their cycle; alternating, the cycle over
 their count. The CAPTAIN turns her spine on the target before she fires, and holds her fire while
-she burns off it. A salvo costs 54 µs; at a merged tick a fire order fires the tick's cycles (six
+she burns off it. A salvo costs 54 µs; at a longer battle tick a fire order fires the tick's cycles (six
 for a PAPILION's alternating stacks in a minute), each salvo its own aim error, in one draw.
 
 | PAPILION's battery (8 channels a salvo, 6.5 µrad) on a PHALAENA, broadside (66 m, wall 10,211 km) | 1,000 km | 5,000 | 10,000 | 20,000 |
@@ -237,7 +248,7 @@ each tick within reach, `in-reach`), and `destroyed` holds for a target out of t
 PHALAENA), aggressive on the root's map, bogeys too, attack-moved from Earth at the Venus Raiders
 (ten hostile PHALAENA on guard, a ring 30,000 km out from Venus, `data/scenarios/sol-demo.toml`).
 
-| Venus | 10 s ticks | merged, at 1 h/s (60 s ticks) |
+| Venus | 10 s ticks | a 60 s battle tick |
 |---|---|---|
 | first out | 67.5 h out | the same |
 | raiders out | 10 within 1.04 h: 9 disabled, 1 destroyed | 10 within 1.05 h: 7 disabled, 3 destroyed |
@@ -273,8 +284,9 @@ The owner's to give:
   battery decides. A stack, she keeps the heading and fires it only inside its trim. Anything else,
   she fires that, and falls back to the spine, facing it only when she is not burning. A node says it
   by its actions (spine, hold-heading), not its name. Light ignores the bow.
-- The merged tick: from 10 min/s (`merge_warp`), 60 s; each salvo its own draw, at the tick's
-  first moment's geometry.
+- At a longer battle tick each salvo is its own draw, at the tick's first moment's geometry.
+- Between a map's order mid-battle and the front edge, whom she fights holds (its CAPTAIN orders
+  struck, decided again at the front): half a second of the clock (30 min at 1 h/s).
 - Projectiles: mass, g, burn time, payload, burst radius, seeker; whether point defence sees only
   what the sweep sees.
 - How hard she burns into a pass (a profile's setting).

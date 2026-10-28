@@ -5,9 +5,8 @@
 [minerva]
 stance = "hold"           # the ReadyStance of a ship none is ordered or written for
 block_s = 600             # est.: a ship at a ReadyStance looks for combat once a block (the flight's)
-engaged_s = 10            # est.: an engaged ship is looked at this often (game s), her side pictured as often
-merged_s = 60             # est.: ... and this often at a clock faster than merge_warp, a fire order firing the tick's cycles at once
-merge_warp = 600          # est.: game s a wall second (10 min/s, the tactical clock's fastest)
+engaged_s = 10            # the battle tick, unless the host sets another: an engaged ship is looked at this often (game s)
+ticks = [10, 60, 300, 600]  # the battle ticks the host may set (the level's, as its clock); a fire order fires a tick's cycles at once
 cycle_s = 60              # TEMPORARY: a battery whose cycle the data does not state (a stack's is its cycle_s)
 station_share = 0.9       # est.: station on a target is taken this far into a battery's envelope
 attack_keep = "root"      # the profile an attack-move flies keeping station: Standing orders ...

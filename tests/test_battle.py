@@ -10,10 +10,11 @@ from test_combat import _app
 RAIDERS = [f"raider-{k}" for k in range(1, 11)]
 
 
-def _send(c, world, warp=0.0):
+def _send(c, world, tick=None):
     sc = world.scenarios["sol-demo"]
     fleet = world.fleet(sc)
-    c.app.state.sim.host.ai.warp[sc.id] = warp
+    if tick is not None:                                  # the battle tick, as a host sets it (else engaged_s)
+        c.app.state.sim.host.ai.tick[sc.id] = tick
     t = fleet.t0 + 600
     c.post("/api/profiles", json={"player": "arcvs", "name": "Hunters", "map": "root", "targets": ["hostile", "unknown"], "range": {}})
     o = {"scenario": "sol-demo", "player": "arcvs", "unit": "tf2-lf1", "t": t}
@@ -27,16 +28,16 @@ def _down(fleet, ids):
     return {s for s in ids if fleet.combat.out(fleet, fleet.c.row[s])}
 
 
-@pytest.mark.parametrize("warp", [0.0, 3600.0])
-def test_a_flotilla_sent_at_the_venus_raiders_fights_them(tmp_path, warp):
+@pytest.mark.parametrize("tick", [None, 60.0])
+def test_a_flotilla_sent_at_the_venus_raiders_fights_them(tmp_path, tick):
     """Attack-moved at Venus, aggressive, she meets them after some 66 h and both sides fight: her
     spinal batteries from their farthest reach in, both sides' optics within their dazzle range.
     What lands takes her systems out one by one; a ship with her drive and every battery out, or at
     her hit points, is out of the fight, a wreck: every system of hers out, her drive dead, firing
-    and sweeping no more. At 1 h/s (above merge_warp) the ticks are a minute long and a spinal order
-    fires the tick's cycles at once."""
+    and sweeping no more. On a battle tick of a minute (the host's) a spinal order fires the tick's
+    cycles at once."""
     c, world = _app(tmp_path)
-    fleet, t, ours = _send(c, world, warp)
+    fleet, t, ours = _send(c, world, tick)
     assert len(ours) == 11
     fleet.reach(t + 84 * 3600)
     log, C, S = fleet.combat.log, fleet.c, fleet.combat.systems
@@ -53,7 +54,7 @@ def test_a_flotilla_sent_at_the_venus_raiders_fights_them(tmp_path, warp):
         assert not np.isin(fleet.sensors.view(k_now).row, [j]).any()           # ... nor sweeps
     spinal = [e for e in log if e.weapon == "spinal" and e.what == "fired"]
     assert max(e.result["range_km"] for e in spinal) > 20000                    # (from far out)
-    if warp > world.minerva.merge_warp:
+    if tick == 60.0:
         assert max(e.salvos for e in spinal) == 6 and {e.t % 60 for e in log} == {(t - 600) % 60}   # (6 PAPILION cycles a minute)
     else:
         assert {e.salvos for e in spinal} == {1}
@@ -141,7 +142,7 @@ def test_the_task_force_burns_high_g_ballistic_at_the_venus_raiders(tmp_path):
     ordered = tf + bare
     high = min(fleet.c.max_accel(fleet.c.row[s]) / G0 for s in tf)
     assert high > 0.4                                          # full burn, not the cruise-floor go-to
-    c.app.state.sim.host.ai.warp[sc.id] = 3600.0
+    c.app.state.sim.host.ai.tick[sc.id] = 60.0
     t = fleet.t0 + 3600                                 # after the scenario's own burn of Picket A 1 (at 1800 s, for 1200 s)
     c.post("/api/profiles", json={"player": "arcvs", "name": "Hunters", "map": "root", "targets": ["hostile", "unknown"], "range": {}})
     o = {"scenario": "sol-demo", "player": "arcvs", "unit": "tf-2+luna-tenders-1+luna-patrol-1", "t": t}
@@ -184,3 +185,53 @@ def test_the_task_force_burns_high_g_ballistic_at_the_venus_raiders(tmp_path):
     assert not spinal_from & set(bare)
     fired_at = [e for e in log if e.what == "fired" and set(e.targets) & set(raid)]
     assert best < 1.2e8 or fired_at, f"no intercept: closest {best / 1e3:,.0f} km, no shot at the raiders"
+
+
+def test_an_order_mid_battle_sets_back_whom_she_fights(tmp_path):
+    """A map order to one of ours mid-battle, behind the front edge: the AI's later orders go for
+    her and for whoever she fights (fired at by her or at her from then on), on both sides, and it
+    decides for them again at its next moment, the front edge (kept near the clock while ships are
+    engaged: simhost.front_of)."""
+    from test_combat import _ai
+    c, world = _app(tmp_path)
+    fleet, t, ours = _send(c, world, 60.0)
+    C, log = fleet.c, fleet.combat.log
+    while not any(e.what == "fired" and C.ids[e.ship] in ours for e in log):
+        fleet.reach(fleet.t + 3600)
+    first = next(e for e in log if e.what == "fired" and C.ids[e.ship] in ours)
+    mid, sid = first.t + 60, C.ids[first.ship]
+    fleet.reach(mid + 1800)
+    foes = {C.ids[j] for j in fleet.combat.partners(mid, {C.row[sid]})}
+    after = lambda: {x[1] for x in _ai(fleet) if x[0] > mid + 1e-6}
+    assert foes & set(RAIDERS) and foes <= after()
+    assert c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": sid, "t": mid, "g": 0}).status_code == 200
+    assert not ({sid} | foes) & after()
+    front = fleet.t
+    fleet.reach(front + 600)
+    assert foes & {x[1] for x in _ai(fleet) if x[0] >= front - 1e-6}      # decided again, at its next moment
+
+
+def test_only_the_engaged_are_ticked_finely(tmp_path, monkeypatch):
+    """Mid-battle, the engaged ships (and whom they engage) are flown a battle tick at a time; the
+    rest of the fleet, TF-3 burning off Mars, keeps its ten-minute blocks."""
+    from astrum import sim
+    c, world = _app(tmp_path)
+    fleet, t, ours = _send(c, world)
+    assert c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": "tf-3", "t": t, "g": 0.3,
+                                      "target": {"body": "jupiter"}}).status_code == 200
+    C, log = fleet.c, fleet.combat.log
+    while not any(e.what == "fired" for e in log):
+        fleet.reach(fleet.t + 3600)
+    far = C.row["tf3-es-1"]
+    pieces, real = {"far": 0, "ours": 0}, sim.Fleet._fly
+
+    def fly(self, T0, T1, steer_only=False, scope=None):
+        out = real(self, T0, T1, steer_only, scope)
+        if not steer_only and T1 > T0:
+            rows = set(np.asarray(out[1]).tolist())
+            pieces["far"] += far in rows
+            pieces["ours"] += C.row[ours[0]] in rows
+        return out
+    monkeypatch.setattr(sim.Fleet, "_fly", fly)
+    fleet.reach(fleet.t + 3600)
+    assert 1 <= pieces["far"] <= 7 and pieces["ours"] >= 3600 / world.minerva.engaged_s / 2

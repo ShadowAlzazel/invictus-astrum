@@ -16,7 +16,7 @@ export class LobbySocket {
     };
     this.ws.onclose = () => { if (!this.closed) setTimeout(() => this._open(), 1000); };
   }
-  // { do: 'make' | 'join' | 'leave' | 'side' | 'level' | 'start' | 'run' | 'pause' | 'warp' | 'restart' | 'stop', ... }
+  // { do: 'make' | 'join' | 'leave' | 'side' | 'level' | 'start' | 'run' | 'pause' | 'warp' | 'tick' | 'restart' | 'stop', ... }
   send(msg) {
     if (this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));
     else this.onerror('Not connected to the lobby: trying again');

@@ -11,8 +11,8 @@ edge (Fleet.front): the fleet hands it itself as it stands after a step, at the 
 the picture processor's functions (astrum/pictures.py) as a browser's is. It reads only what is in
 it and gives orders (source "ai") through the order book, as a player does, at that moment: the
 flight's own, so nothing flies again for them, at any warp. The flight waits on it: it is the
-fleet's own step. At a warp above merge_warp an engaged ship's tick is merged_s, and a fire order
-fires the tick's cycles at once (data/minerva.toml).
+fleet's own step. An engaged ship's tick is the level's battle tick (its clock's, the host's; else
+engaged_s), and a fire order fires the tick's cycles at once (data/minerva.toml).
 """
 from __future__ import annotations
 
@@ -83,7 +83,7 @@ class AI:
     def __init__(self, world, pictures=None):
         self.world, self.pictures = world, pictures
         self.captains: dict[int, Captain] = {}
-        self.warp: dict[str, float] = {}                 # scenario -> its level's warp (the run-ahead says)
+        self.tick: dict[str, float] = {}                 # scenario -> its level's battle tick (the run-ahead says; else engaged_s)
 
     def attach(self, sc, fleet) -> None:
         """Run at this fleet's front edge."""
@@ -99,11 +99,12 @@ class AI:
     def wants(self, sc, fleet, t: float) -> dict[str, bool]:
         return self.captain(sc, fleet).wants(View(fleet, t), t)
 
-    def front(self, sc, fleet, t: float) -> tuple[list, float]:
+    def front(self, sc, fleet, t: float) -> tuple[list, float, set]:
         """The fleet at its front edge, t: the sides the CAPTAIN wants pictured (every side swept up
-        to t first), each handed to it; its orders, and when it wants the fleet again."""
+        to t first), each handed to it; its orders, when it wants the fleet again, and the rows it
+        ticks finely till then (the engaged, and whom they engage: the rest keep their blocks)."""
         M, cap = self.world.minerva, self.captain(sc, fleet)
-        cap.tick_s = M.merged_s if self.warp.get(sc.id, 0.0) > M.merge_warp else M.engaged_s
+        cap.tick_s = self.tick.get(sc.id, M.engaged_s)
         fv = View(fleet, t)                              # all the CAPTAIN reads of the fleet, but its sides' pictures
         views = cap.wants(fv, t)
         out = []
@@ -112,14 +113,27 @@ class AI:
             pic = fleet.picture(t)
             for view, tracks in views.items():
                 out += cap.decide(self.pictures.side_picture(sc, fleet, view, t, pic, tracks), fv)
-        return out, cap.next_due(t)
+        return out, cap.next_due(t), cap.ticked()
+
+    def engaged(self, fleet) -> bool:
+        """Whether any of this fleet's ships is engaged, as its CAPTAIN last decided."""
+        m = self.captains.get(id(fleet))
+        return m is not None and bool(m.engaged)
 
     def overrule(self, sc, fleet, ships: list[str], t: float) -> None:
-        """An order of the map's at t: the AI's later orders to these ships go, their MINERVA is set
-        back, and it decides for them again from t."""
-        fleet.overrule(ships, t)
+        """An order of the map's at t: the AI's later orders to these ships, and to those they fight
+        (who fired at them or was fired at from t on, or is engaged with them), go; their MINERVA is
+        set back, and it decides for them again from t."""
         m = self.captain(sc, fleet)
-        rows = [fleet.c.row[s] for s in ships]
+        rows = {fleet.c.row[s] for s in ships}
+        with fleet.lock:
+            while True:
+                more = fleet.combat.partners(t, rows) | {i for i in m.engaged if m.machines[i].at.target in rows}
+                if more <= rows:
+                    break
+                rows |= more
+        rows = sorted(rows)
+        fleet.overrule([fleet.c.ids[i] for i in rows], t)
         m.until[rows] = np.minimum(m.until[rows], t)
         m.due[rows] = np.minimum(m.due[rows], t)
         k = int(np.floor((t - m.t0) / self.world.minerva.block_s + 1e-9))
