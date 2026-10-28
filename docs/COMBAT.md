@@ -273,9 +273,6 @@ The owner's to give:
   battery decides. A stack, she keeps the heading and fires it only inside its trim. Anything else,
   she fires that, and falls back to the spine, facing it only when she is not burning. A node says it
   by its actions (spine, hold-heading), not its name. Light ignores the bow.
-- A burn given over a go-to leaves the go-to under it (the fleet's BURN sets her thrust, not her
-  goal): a pass ordered while she is on an attack-move flies the burn with the go-to still hers. From
-  rest it is a pass as meant. Whether a burn should clear the go-to is the owner's to say.
 - The merged tick: from 10 min/s (`merge_warp`), 60 s; each salvo its own draw, at the tick's
   first moment's geometry.
 - Projectiles: mass, g, burn time, payload, burst radius, seeker; whether point defence sees only

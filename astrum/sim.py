@@ -1762,6 +1762,8 @@ class Fleet:
                 return
             u = b.point(math.radians(g.burn.get("bearing", 0.0)), math.radians(g.burn.get("elevation", 0.0)), 1.0) - b.origin
             self._leave_station(i, at)
+            if g.source == "map":                     # the player's burn is her order now: the go-to she was on goes
+                c.goal[i], c.order[i] = False, -1
             c.mode[i], c.dir[i], c.burn_ev[i] = FREE, u / np.linalg.norm(u), e
             hold, thr = g.burn.get("g"), g.burn.get("throttle")
             c.burn[i], c.bval[i] = (BURN_G, float(hold)) if hold is not None else (BURN_THROTTLE, float(1.0 if thr is None else thr))

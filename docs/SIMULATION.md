@@ -235,6 +235,8 @@ equation (`orbits.drift_many`) and costs nothing to hold. A scenario may start s
 
 **Ballistic.** A move given ballistic does not brake: one burn from the ships' mean, half the way by
 distance, then she coasts through the target (`simhost.ballistic_order`; a `burn` with a duration).
+A burn from the map is her order: a go-to she was on goes with it (the CAPTAIN's passes and a
+scenario's timed burns leave theirs).
 An attack-move told to pass on by is that burn, and she flies Ballistic orders: still aggressive, and she does not brake
 to keep station (the usual attack-move flies Standing orders, and still does). Which profiles is the MINERVA's
 (`data/minerva.toml`), read off her move: nothing is written for it.

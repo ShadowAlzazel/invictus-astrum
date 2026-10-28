@@ -80,8 +80,9 @@ def test_a_battle_flown_again_is_the_same_battle(tmp_path):
 def test_an_attack_move_keeps_station_unless_told_to_pass(tmp_path):
     """Without the pass, an attack-move is still a go-to: aggressive, Standing orders, and she
     brakes to keep station. Aggressive itself is not a fly-by. The pass is a ballistic burn on
-    Ballistic orders, marked so. The profile is read off her move (data/minerva.toml attack_keep,
-    attack_pass), not written into the book: a plain move after, and she is on her own again."""
+    Ballistic orders, marked so; given on her way, the go-to she was on goes (the map's burn is her
+    order). The profile is read off her move (data/minerva.toml attack_keep, attack_pass), not
+    written into the book: a plain move after, and she is on her own again."""
     from astrum.orders import STANCE
     from astrum.shipai.view import View
 
@@ -108,6 +109,9 @@ def test_an_attack_move_keeps_station_unless_told_to_pass(tmp_path):
     assert tg.get("attack") and not tg.get("pass") and fleet.c.goal[i]
     fleet.reach(t + 61)
     assert flies(t + 61).id == world.minerva.attack_keep == "root"
+    again = c.post("/api/order", json={**body, "t": t + 90, "mode": "attack", "ballistic": True}).json()
+    fleet.reach(t + 91)                                             # a pass on her way: the go-to goes, the burn is hers
+    assert again["ballistic"]["attack"] and not fleet.c.goal[i] and flies(t + 91).id == "ballistic"
     c.post("/api/order", json={**body, "t": t + 120, "target": {"body": "earth"}})
     fleet.reach(t + 121)
     assert flies(t + 121) is None                                   # her own (none written for her here)
