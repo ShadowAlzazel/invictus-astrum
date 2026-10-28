@@ -4,6 +4,9 @@
     python tools/bench_flight.py --profile    # and the flight by function (cProfile)
     python tools/bench_flight.py --live 15    # and the sim's process as serve.py runs it, thread by thread
     python tools/bench_flight.py --live 15 --warp 86400     # ... at 1 d/s
+    python tools/bench_flight.py --tick 60    # the battle at another battle tick (else engaged_s)
+
+Each run is headed by when it ran and on what commit, and kept in logs/bench/ (tools/benchlog.py).
 
 At 1 h/s, every wall second the process must fly an hour of the fleet (the ship AI with it, at the
 flight's front edge), sweep that hour for every side, and answer the map's pictures (30 a second
@@ -38,9 +41,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from astrum.app import World, create_app  # noqa: E402
 from astrum import kernels  # noqa: E402
 from astrum.simhost import SimHost  # noqa: E402
+import benchlog  # noqa: E402
 
 kernels.warm_up()
 WARP, FPS, HOURS = 3600.0, 30, 12
+TICK = float(sys.argv[sys.argv.index("--tick") + 1]) if "--tick" in sys.argv else None   # the battle tick (None: engaged_s)
 req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo", "view": "arcvs"}
 
 
@@ -79,8 +84,9 @@ BATTLE_H = 62                                     # the flotilla meets the Venus
 def start(case):
     """A fresh fleet with the case under way, at its first timed moment: the fleet quiet; TF-3 to a
     point off Mars, or toward the Sun; or Line Flotilla 1 (11) sent at the Venus Raiders (10),
-    aggressive, flown untimed to some hours before they meet. The battle tick is the default (engaged_s)."""
+    aggressive, flown untimed to some hours before they meet. The battle tick is TICK, else engaged_s."""
     w, sc, f, host = fresh()
+    host.ai.tick[sc.id] = TICK or w.minerva.engaged_s
     t = f.t0 + 600
     f.reach(t)
     if case in ("near", "sun"):
@@ -341,6 +347,9 @@ def threads_from(path, seconds, rate=100):
 
 
 if __name__ == "__main__":
+    import tomllib
+    tick = TICK or tomllib.loads((benchlog.ROOT / "data" / "minerva.toml").read_text())["minerva"]["engaged_s"]
+    benchlog.start("bench_flight", battle_tick=f"{tick:g} s" + ("" if TICK else " (engaged_s)"), warp=f"{WARP:g} s/s")
     print(kernels.status())
     print("\nA wall second at 1 h/s, game hour by game hour (ms of one thread; 1000 = a whole core):\n")
     parts = ["flight", "time to target", "sweeps", "map pictures"]

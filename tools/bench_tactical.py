@@ -6,7 +6,8 @@ Flight with the timeline kept (the ship AI with it, at the flight's front edge, 
 tick), and the same 12 h by part, as shares (tools/bench_flight.py's probes); the map's pictures
 off it at 10 min/s (60 a second), each part's share of a frame; each kind of order given at the
 clock with the fleet half an hour ahead (as the run-ahead keeps it at this warp), and orders given
-hours behind the fleet. Every figure is wall time on this machine, of this one thread.
+hours behind the fleet. Every figure is wall time on this machine, of this one thread. Each run is
+headed by when it ran and on what commit, and kept in logs/bench/ (tools/benchlog.py).
 """
 import statistics
 import sys
@@ -23,9 +24,11 @@ from astrum.sim import Order  # noqa: E402
 from astrum.placement import plan  # noqa: E402
 from astrum.encode import ship_columns  # noqa: E402
 from bench_flight import Probed  # noqa: E402
+import benchlog  # noqa: E402
 kernels.warm_up()
 WARP = 600.0                                       # 10 min/s
 req = {"system": "sol", "player": "arcvs", "scenario": "sol-demo"}
+benchlog.start("bench_tactical", warp=f"{WARP:g} s/s")
 
 def fresh():
     app = create_app()
