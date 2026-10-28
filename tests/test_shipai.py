@@ -42,11 +42,10 @@ def test_the_spinal_loop_closes_firing_and_takes_her_out(tmp_path):
     """The root's map, flown at bogeys too, at the flight's front edge: she closes to station at her
     spinal battery's envelope, firing at every tick within its reach (each shot a WeaponEngageOrder
     in the book, resolved by the combat book), her optics held on the target within their dazzle
-    range. GHOST 1's systems go out one by one (light ruins her masts and radiators; a salvo her
-    batteries and drive) until she is out of the fight; then she leaves combat and fires no more,
+    range. GHOST 1's systems go out one by one (light dazzles her sensors and ruins her radiators; a
+    salvo her masts, batteries and drive) until she is out of the fight; then she leaves combat and fires no more,
     and GHOST 1, a wreck, sweeps no more. On a 10 s battle tick (her PICKET stacks' cycle), GHOST 1
-    running cold: her wings folded, light takes her masts but not her radiators, so the spine
-    finishes her (with both gone she would be out to light alone)."""
+    running cold: her wings folded, light dazzles her but takes nothing, so the spine finishes her."""
     c, world = _app(tmp_path)
     fleet = world.fleet(world.scenarios["sol-demo"])
     c.app.state.sim.host.ai.tick["sol-demo"] = 10.0
@@ -68,7 +67,7 @@ def test_the_spinal_loop_closes_firing_and_takes_her_out(tmp_path):
     S = fleet.combat.systems
     assert fleet.combat.out(fleet, j) and all(st["operational"] == 0 for st in S.state(j).values())
     took = {(o.kind, o.by.split(" ")[1]) for s in S.lists for o in S.lists[s] if o.row == j}
-    assert ("sensor", "domes") in took or ("sensor", "strips") in took        # light took her masts
+    assert S.dazzled.get(j) and ("sensor", "spinal") in took                 # light dazzled her; the spine took her masts
     gone = max(e.t for e in shots if e.harm and (e.harm["destroyed"] or e.harm["disabled"]))
     assert all(e.t <= gone for e in shots) and not (fleet.sensors.off_from[[m for m, (r, _, _) in enumerate(fleet.sensors.mounts)
                                                                           if r == j]] > fleet.sweeper.flown_minute()).any()

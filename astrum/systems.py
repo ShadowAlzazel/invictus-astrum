@@ -65,6 +65,7 @@ class Systems:
         self.hurt: dict[int, float] = {}              # a row: when a system of hers first went out
         self.gone: dict[int, tuple] = {}              # a wreck's row: when she went out, and as what
         self.dazzled: dict[int, list] = {}            # a row: when light dazzled her, and until when, in time order
+        self.heated: dict[int, list] = {}             # a row: light on her radiators (from, until, fluence held so far), in time order
         self.lists = {s: [] for s in OUT}
         self.log: list[Out] = []
         self._disabled = None                         # (every row's, made when asked, kept until a change)
@@ -130,6 +131,19 @@ class Systems:
         """Light held on her from t to until: dazzled."""
         insort(self.dazzled.setdefault(i, []), (t, until))
 
+    def heat(self, i: int, t: float, until: float, F: float) -> float:
+        """Light held on her radiators from t to until at fluence F: what they have taken, the held
+        light before it added if it ran on to t (light held tick after tick is one hold)."""
+        got = self.heated.setdefault(i, [])
+        s = (got[-1][2] if got and got[-1][1] >= t - 1.0 else 0.0) + F     # (within a second: light time drifts)
+        got.append((t, max(until, got[-1][1] if got else until), s))
+        return s
+
+    def cooled(self, i: int, t: float) -> None:
+        """A radiator of hers ruined at t: the next is another, its light held from nothing."""
+        got = self.heated.setdefault(i, [])
+        got.append((t, t - 1.0, 0.0))
+
     def dazzled_at(self, i: int, t: float) -> bool:
         got = self.dazzled.get(i)
         if not got:
@@ -150,9 +164,10 @@ class Systems:
         keep = lambda i, s: s < t - 1e-9 or (rows is not None and i not in rows)
         self.hurt = {i: s for i, s in self.hurt.items() if keep(i, s)}
         self.gone = {i: g for i, g in self.gone.items() if keep(i, g[0])}
-        for i, got in self.dazzled.items():
-            if rows is None or i in rows:
-                got[:] = [x for x in got if x[0] < t - 1e-9]
+        for book in (self.dazzled, self.heated):
+            for i, got in book.items():
+                if rows is None or i in rows:
+                    got[:] = [x for x in got if x[0] < t - 1e-9]
         if not undo:
             return
         self._disabled = None

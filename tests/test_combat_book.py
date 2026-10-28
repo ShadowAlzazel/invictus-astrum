@@ -135,6 +135,8 @@ def test_light_on_a_target_reaches_as_the_canon_says():
     assert optics.dwell(one, 62200e3, 6.5, 100.0, rules)["held_mjm2"] == pytest.approx(0.8, rel=0.03)
     assert "ir-window" in optics.dwell(w.optic, 7.2e6, 6.5, 10.0, rules)["effects"]           # 1 W/cm² open loop to ~7,400 km (§6.7.3)
     assert "ir-window" not in optics.dwell(w.optic, 7.6e6, 6.5, 10.0, rules)["effects"]
+    assert "window-cracked" in optics.dwell(w.optic, 2.3e5, 6.5, 10.0, rules)["effects"]       # 1 kW/cm²: ~234 km
+    assert "window-cracked" not in optics.dwell(w.optic, 2.4e5, 6.5, 10.0, rules)["effects"]
     assert "dazzle" in optics.dwell(one, 39e6, 6.5, 10.0, rules)["effects"]
     assert "dazzle" not in optics.dwell(one, 41e6, 6.5, 10.0, rules)["effects"]
 
@@ -160,7 +162,7 @@ def test_a_hit_takes_off_what_it_put_on_her_at_the_share_that_opens_a_hull():
     assert got["lost_mj"] == pytest.approx(91.2 * (5 + 2 * 3)) and not got["destroyed"]
     far = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", salvo(8, 0, 7.12)), j, 0.0)
     assert far["lost_mj"] == pytest.approx(91.2 * 8 * 7.12 / 82.7)
-    lit = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", {"hull_mjm2": 5.5, "hull_wm2": 1.0, "energy_mj": 184.0, "held_mjm2": 0.1, "held_wm2": 1.0},
+    lit = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", {"hull_mjm2": 5.5, "hull_wm2": 1.0, "energy_mj": 184.0, "held_mjm2": 0.1, "held_wm2": 1.0, "dwell_s": 10.0},
                          "optical"), j, 0.0)
     assert lit["lost_mj"] == pytest.approx(184.0 * 5.5 / 82.7) and not lit["systems"]
     f.c.damage[j] = 4990.0
@@ -186,6 +188,20 @@ def test_light_dazzles_what_looks_back_and_spoils_her_aim_while_it_is_held():
     assert [k for k, _, st in got["systems"] if st == "destroyed"] == ["radiator"]
     S.forget(t - 1)
     assert not S.dazzled_at(j, t + 10)
+
+
+def test_light_held_tick_after_tick_is_one_hold_on_her_radiators():
+    """Light on her radiators adds up while it is held on, tick after tick (1.2 MJ/m² ruins one,
+    §6.7: two 10 s holds at 0.7 do), and starts again after a gap; a re-fly forgets it."""
+    _, f = _fleet()
+    j = f.c.row["tf3-lf4-ls-1"]
+    H, S, t = f.combat.harm, f.combat.systems, f.t0 + 3600
+    lit = {"hull_mjm2": 0.0, "hull_wm2": 0.0, "energy_mj": 1.0, "held_mjm2": 0.7, "held_wm2": 7e4, "dwell_s": 10.0, "effects": []}
+    hit = lambda at: H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", lit, "optical", t=at), j, at)["systems"]
+    assert not hit(t) and not hit(t + 60)                                       # (a gap: each alone)
+    assert [k for k, _, _ in hit(t + 70)] == ["radiator"]                       # held on from t + 60
+    S.forget(t + 65)
+    assert not hit(t + 120)
 
 
 def test_her_systems_go_out_by_what_lands_on_them_and_a_re_fly_brings_them_back():

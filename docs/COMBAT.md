@@ -213,7 +213,10 @@ out. A sensor looking back at it is dazzled for the dwell (§6.7.4: the shutter 
 microseconds, dazzle recovers in seconds): her aim is a quarter worse while it lasts (`dazzle_aim`
 1.25), salvo and light alike, though her side's picture still holds the target. A thermal-infrared
 window is out of band, unshuttered, so it is heated blind by her hull's open-loop irradiance (1
-W/cm², about 7,400 km for twelve PANEL III): that mount damaged.
+W/cm², about 7,400 km for twelve PANEL III), likewise while it is held: germanium clears as it
+cools. The mount is lost only when its window cracks (1 kW/cm², about 234 km open loop). Light on
+her radiators adds up while it is held on, tick after tick, so a 10 s tick ruins them as a minute's
+does; it starts again after a gap, or on the next radiator.
 
 | Light, as built against TORMENTA | as built | canon |
 |---|---|---|
@@ -234,7 +237,8 @@ state its fluence reaches (`[damage.systems]`: a battery or her drive damaged at
 electronics are ruined, disabled at 25, destroyed at 82.7; her drive, at her rear, damaged at 25,
 disabled at 82.7, destroyed at 165.4, est.; a mast destroyed at 2.91, damaged at 0.075; a radiator
 destroyed at 1.2). Light held on her: a sensor looking back dazzled, an infrared window heated
-blind (damaged), above; else, her wings spread, a radiator at 1.2 closed loop.
+blind while held, a window cracked (damaged), above; else, her wings spread, a radiator at 1.2
+closed loop, held on.
 
 The states are lists, not flags. What runs reads only what is operational: her batteries are the
 combat book's list of hers (one out cannot be ordered or fired), her sensors the cones the sweep
@@ -262,19 +266,19 @@ each tick within reach, `in-reach`), and `destroyed` holds for a target out of t
 PHALAENA), aggressive on the root's map, bogeys too, attack-moved from Earth at the Venus Raiders
 (ten hostile PHALAENA on guard, a ring 30,000 km out from Venus, `data/scenarios/sol-demo.toml`).
 
-| Venus, 28 October, 72 h | 10 s tick | 30 s (the default) | 60 s | TF-2 (44), 30 s |
-|---|---|---|---|---|
-| raiders out | 10, all disabled, within 0.78 h | 10, all disabled, within 0.79 h | 10, all disabled, within 0.95 h | 10 within 2.68 h |
-| ours out | 0 | 0 | 0 | 7 |
-| shots, dazzles among them | 2,681, 2,618 | 1,020, 969 | 688, 591 | 4,282, 4,170 |
-| spinal salvo orders (ours) | 38 | 24 | 75 | 0 |
-| 72 h flown, battle and all | 5.1 s | 3.6 s | 3.1 s | 6.5 s |
-| flown again from a checkpoint | the same shots, the same systems out, the same ships | | | |
+| Venus, 28 October, 72 h | 10 s tick | 20 s | 30 s (the default) | 40 s | 60 s | TF-2 (44), 30 s |
+|---|---|---|---|---|---|---|
+| raiders out | 8 | 10 | 10 (1 destroyed) | 7 | 10 (4 destroyed) | 10 (6 destroyed) |
+| ours out | 7 | 1 | 0 | 9 | 0 | 3 |
+| spinal salvo orders (ours) | 2,910 | – | 402 | – | 215 | 10 |
+| shots | 13,819 | 4,472 | 2,356 | 3,219 | 1,303 | 7,555 |
+| 72 h flown, battle and all | 11.7 s | 5.2 s | 4.4 s | 5.2 s | 3.7 s | 8.7 s |
+| flown again from a checkpoint | the same shots, the same systems out, the same ships | | | | | |
 
-Light still decides it, now by heat: at station range (about 1,400 km) it blinds the raiders'
-infrared windows and burns their radiators, and blind with nothing to shed she is a wreck. With
-masts no longer taken by light, and the dazzle on her aim, none of LF-1 goes out (two before). The
-raiders never fire their spines: a PICKET reaches 49,800 km against a LINE's 100,000.
+Light blinds and burns radiators; the spine takes masts, batteries and drives (402 salvo orders at
+30 s, against 24 when a heated window was a mount lost). Every course is the same to 69.25 h; after
+it the fight is close, and who wins swings with the tick: where the raiders last past 69.5 h they
+close to about 2,200 km and their spines tell. The test pins the mechanics, not the winner.
 She holds her fire while she burns off her spine (95% of her chances, in the action before the
 spine reached so far). The AI at the front edge,
 on a day of sol-demo: quiet 15 ms a game hour against 8 without it; TF-3 hunting, 40 against 5.
@@ -323,6 +327,8 @@ Ours to build:
 - The salvo's simplifications: her aim's error drawn afresh each salvo (no walk-in from one to
   the next); her roll unknown, so her silhouette's width is her beam; the light time's lead on
   the relative motion, Galilean; the citadel an ellipse at her centre.
+- A ship whose radiators are lit folds her wings and goes onto her store (TORMENTA §6.7.1); the
+  CAPTAIN does not yet.
 - `tools/formation_tf2.py` writes over the fleet's callsigns: it needs the owner's names before
   it is run again.
 

@@ -176,7 +176,7 @@ size_k = { value = 0.479, est = true, note = "TELVM §1.3.4's sizes over √(L·
 # looking at her the loop closes and the spot is d. What a dwell reaches, by §6.7 and §8.
 [optics]
 wavelength_um = 1.03                 # TORMENTA §6.2
-threshold = { mane_mjm2 = 0.8, radiator_mjm2 = 1.2, mast_mjm2 = 2.91, ir_window_wm2 = 1.0e4 }   # §8, §6.7 (est. there)
+threshold = { mane_mjm2 = 0.8, radiator_mjm2 = 1.2, mast_mjm2 = 2.91, ir_window_wm2 = 1.0e4, window_crack_wm2 = 1.0e7 }   # §8, §6.7 (est. there)
 
 # ---- battle damage (astrum/damage.py) --------------------------------------------------------------
 # One figure for now: the hull-opening energy a ship takes before she is destroyed. A hit takes off
@@ -204,9 +204,10 @@ citadel = { weapon = 0.2, drive = 0.2 }
 
 # Light held on her, closed loop (TORMENTA §6.5.1, §6.7): a sensor looking back dazzled while it is
 # held, within the battery's dazzle range (a shutter closes in microseconds: §6.5.3, lasers blind,
-# beams destroy), her aim the worse for it; a thermal-infrared window heated blind; else, her wings
-# spread, a radiator ruined.
+# beams destroy), her aim the worse for it; a thermal-infrared window heated blind likewise, while it
+# is held (germanium clears as it cools, §6.7.3), and a mount lost only when its window cracks at
+# 1 kW/cm² ([optics] threshold; open loop, twelve PANEL III to ~234 km); else, her wings spread, a
+# radiator ruined.
 [damage.light]
 dazzle_aim = 1.25                    # TORMENTA §6.7.4: shutter discipline degrades her pointing by about a quarter
-ir_window_wm2 = 1.0e4                # §6.7.3: 1 W/cm², open loop on her aim disc (twelve PANEL III: ~7,400 km at 6.5 µrad)
 radiator_mjm2 = 1.2

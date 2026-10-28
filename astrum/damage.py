@@ -16,8 +16,9 @@ Two things, by TORMENTA §8's thresholds ([damage] in data/ships/rules.toml):
   where it opens her still takes out what it lands on. Light held on her, closed loop on what
   looks back or is hot (§6.5.1): a sensor looking back, within the battery's dazzle range, dazzled
   while it is held (a shutter closes in microseconds: light does not de-mast, §6.5.3), her aim a
-  quarter worse meanwhile (§6.7.4); a thermal-infrared window heated blind (damaged) at 1 W/cm²
-  open loop (out of band, it does not retroreflect: §6.7.3); else, her wings spread, a radiator at 1.2.
+  quarter worse meanwhile (§6.7.4); a thermal-infrared window heated blind likewise at 1 W/cm² open
+  loop (out of band, it does not retroreflect: §6.7.3), the mount damaged only when its window
+  cracks at 1 kW/cm²; else, her wings spread, a radiator at 1.2.
 
 At her hit points she is destroyed, and every system of hers still operational with her; with her
 drive and every battery out she is disabled, and the rest with her; so too with every sensor mast and
@@ -57,7 +58,7 @@ class Damage:
         self.share = {part: {k: _num(v, 0.0) for k, v in (sh or {}).items() if k in self.tiers}
                       for part, sh in (d.get("share") or {}).items()}
         light = d.get("light") or {}
-        self.window_wm2, self.dazzle_aim = _num(light.get("ir_window_wm2"), 1e4), _num(light.get("dazzle_aim"), 1.25)
+        self.dazzle_aim = _num(light.get("dazzle_aim"), 1.25)
         self.radiator_held = _num(light.get("radiator_mjm2"), 1.2)
         hp = d.get("hp_mj") or {}
         self.hp = np.full(len(fleet.c.ids), np.inf)
@@ -98,12 +99,14 @@ class Damage:
                         took += self._take(fleet, j, kind, state, t, by, rng)
         elif "held_mjm2" in r:                            # light held on her: what looks back, else what is hot
             lost = r["energy_mj"] * min(1.0, r["hull_mjm2"] / self.open_mjm2)
-            if "dazzle" in r.get("effects", ()) and S.sensors[j]:
+            fx = r.get("effects", ())
+            if ("dazzle" in fx or "ir-window" in fx) and S.sensors[j]:     # blind while it is held (§6.7.3, §6.7.4)
                 S.dazzle(j, t, t + float(r["dwell_s"]))
-            if r["hull_wm2"] >= self.window_wm2 and S.sensors[j]:     # (out of band: the loop cannot close on it, §6.7.3)
+            if "window-cracked" in fx and S.sensors[j]:
                 took += self._take(fleet, j, "sensor", DAMAGED, t, by, rng)
-            elif not c.cold[j] and r["held_mjm2"] >= self.radiator_held:
+            elif not c.cold[j] and S.radiators[j] and S.heat(j, t, t + float(r["dwell_s"]), r["held_mjm2"]) >= self.radiator_held:
                 took += self._take(fleet, j, "radiator", DESTROYED, t, by, rng)
+                S.cooled(j, t)
         if lost > 0:
             c.damage[j] += lost
         destroyed = self.destroyed(fleet, j)
