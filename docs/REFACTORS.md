@@ -77,6 +77,25 @@ routes, so the suite's fleets all stayed, and 150 MB each ran it out of memory.
    least a tick, against three seconds and a block). Flying them again is cheap (21 rows; 6–12 ms
    to 20 min ahead, 57–86 ms to 3 h); what the front's distance costs is the gap in which they hold.
 
+**C4. The combat loop** (done). The whole of TF-2 (44) at the Venus Raiders, 30 s tick, 12 h
+(`tools/bench_flight.py`'s fifth case), on this container:
+
+| | before | after |
+|---|---|---|
+| TF-2 (44), 12 h | 5.8–6.4 s | 2.1–2.2 s |
+| LF-1 (11), 12 h | 2.5–3.0 s | 1.2–1.3 s |
+| the fleet's rows at the end | 433 | 165 |
+| shots (TF-2) | 7,275 | 681 |
+
+- A ship out of combat goes back to a formation's move as her own order: each return made a
+  formation lead of its own (271 rows in 4 h of battle), every row paid for at every tick.
+- A ship blind and without radiators is a wreck (as one with her drive and batteries out): light
+  could not finish her, and her chasers fired on her for hours (3,240 shots an hour on one).
+- Station ships are placed through a split piece once, and pay up to an order first only when it
+  is theirs: each tick's fire orders made every station ship take a step of her own.
+- The side pictures stay made at each tick (20% of the battle): the sweep's minute could share
+  them, at ~10% for a cache; not taken.
+
 **D. The CAPTAIN in its own process** (18). With A3's view and C3's short battle look-ahead: the
 view handed across each tick, the orders handed back at the same moment, lockstepped at the front
 edge; the flight waits on it only when it lags.

@@ -119,7 +119,9 @@ time she takes to close on it (at most a block); while any is, her side is pictu
 | **Direct** | the CAPTAIN switched off for her; every order is the commander's |
 
 A commander's order and the CAPTAIN's are the same order; only the source differs (`map`, `ai`).
-A plain go-to of the map's takes her out of combat, and the CAPTAIN leaves her to it.
+A plain go-to of the map's takes her out of combat, and the CAPTAIN leaves her to it. Out of combat,
+she goes back to a formation's move as her own order (to her slot in it), so a battle makes no
+formation leads.
 
 ## Where it runs
 
@@ -136,9 +138,10 @@ a checkpoint does not ask it again: its orders are the book's.
 cycles at once; what it loses is the automaton's and the admiral's, not the simulation's. Only the
 engaged are ticked (`Captain.ticked`: the engaged, whom they engage, and whatever their flight bears
 on: formations, chasers, a flying target): a piece the AI is due inside is split, the rest of the
-fleet flown the whole piece first in its ten-minute block and read off the timeline by the AI, the
-ticked rows a tick at a time (`Fleet._split`); an order the AI gives one of the rest lands at the
-piece's end. While ships are engaged the run-ahead keeps the front edge near the clock
+fleet flown the whole piece first in its ten-minute block, its station ships placed through it
+(unless one holds station on a ticked row), all read off the timeline by the AI, the ticked rows a
+tick at a time (`Fleet._split`); an order the AI gives one of the rest lands at the piece's end.
+Station ships pay for their places up to an order first only when it is given to one of them. While ships are engaged the run-ahead keeps the front edge near the clock
 (`simhost.front_of`: half a second of the clock's wall time, at least a tick, on the tick's grid,
 against three seconds and at least a block): at 1 min/s, 30 s ahead against 10 to 20 min. A map's
 order behind the front flies its ships again and strikes the CAPTAIN's later orders to them and to
@@ -235,8 +238,10 @@ is handed (a mount out sweeps no more from the minute after it was hit: the swee
 each stretch with the mounts operational then), her drive her thrust (`fmax`), her radiators the
 share that shed (`shed`). A system out leaves them for the list of its state (damaged, disabled,
 destroyed), which only holds it: what it was, since when, by what. With her drive and every
-battery out she is disabled, at her hit points destroyed; either way every system of hers still
-operational goes out with her, so a wreck neither burns, fires, nor sweeps, at no cost to anyone.
+battery out she is disabled, and so with every sensor mast and radiator out (blind, and nothing
+to shed the heat of firing: light can do no more to her); at her hit points destroyed. Either way
+every system of hers still operational goes out with her, so a wreck neither burns, fires, nor
+sweeps, at no cost to anyone, and no one fights her on: the map draws her as a crab.
 Every change is a dated record, so a re-fly from a moment sets them back and makes them again.
 
 **The spine's reach.** A stack fires out to its farthest rated reach (TELVM §3.7: a LINE stack
@@ -290,8 +295,6 @@ The owner's to give:
 - Projectiles: mass, g, burn time, payload, burst radius, seeker; whether point defence sees only
   what the sweep sees.
 - How hard she burns into a pass (a profile's setting).
-- The root map fires every other tick (hold, await), so 20 s; a PICKET stack cycles in 10 s. A
-  map whose hold fires and stays would fire each cycle.
 - `wait_s = 600` on the root's lost node is TESTING.
 
 Estimates in the data, to be checked against the canon when it gives them: `size_k` 0.479 (from

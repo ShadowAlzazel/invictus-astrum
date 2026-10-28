@@ -122,6 +122,7 @@
       const hot = isHot('contact', c.id), formation = kids(c.id).length > 0;
       const h = S.icons.unit_px * (formation || c.echelon !== 'ship' ? S.icons.formation_scale : 1);
       const ring = rv.children.has(c.id) ? childCol : rv.parents.has(c.id) ? parentCol : null;
+      if (byId[c.id] === c && map.state.ships?.[c.id]?.out) c = { ...c, status: [...(c.status ?? []), 'crab'] };    // a wreck, as the side sees her (one ship, not a group)
       unitSymbol(ctx, style, c, s.x, s.y, {
         h, hot, ring, label: S.layers.labels || hot || ring !== null,
         alpha: picks ? (ofGroup(byId, picks, c.id) ? 1 : S.selection.dim_unpicked ?? 0.3) : selId && !related.has(c.id) ? S.selection.dim_others : 1,

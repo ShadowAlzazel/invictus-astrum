@@ -402,10 +402,10 @@ class Captain:
         elif tg.get("attack") or tg.get("patrol"):
             if tg.get("pass"):
                 back = {"target": {"attack": True, "pass": True, "label": "pass on by"},
-                        "g": (goal or {}).get("g") or self._cruise(i), "by": (goal or {}).get("by") or self.fv.ids[i],
+                        "g": (goal or {}).get("g") or self._cruise(i),
                         "slot": [0.0, 0.0, 0.0]}
             else:
-                back = {"target": {k: v for k, v in tg.items() if k != "offset_m"}, "g": goal["g"], "by": goal["by"],
+                back = {"target": {k: v for k, v in tg.items() if k != "offset_m"}, "g": goal["g"],
                         "slot": tg.get("offset_m", [0.0, 0.0, 0.0])}
         eng = self.world.engagement(prof)
         m.move(sp.t, node=eng.start, target=j, back=back, post=self._home(sp, i, frame), closing=False)
@@ -585,9 +585,9 @@ class Captain:
     def _oid(self, sid: str, t: float, what: str = "") -> str:
         return f"{sid}:ai{'-' + what if what else ''}@{t:.0f}#{next(_n)}"
 
-    def _order(self, sp, i: int, target: dict, g: float, by: str | None = None, kind: str = "goto") -> Order:
+    def _order(self, sp, i: int, target: dict, g: float, kind: str = "goto") -> Order:
         sid = self.fv.ids[i]
-        return Order(sid, sp.t, kind, target=target, g=g, source="ai", order_id=self._oid(sid, sp.t), by=by or sid)
+        return Order(sid, sp.t, kind, target=target, g=g, source="ai", order_id=self._oid(sid, sp.t), by=sid)
 
     def _cruise(self, i: int) -> float:
         spec = self.fv.spec[i]
@@ -637,7 +637,8 @@ class Captain:
         return tg
 
     def _back(self, sp, i: int, back: dict, rest_only: bool = False) -> Order | None:
-        """Back to a move or a place (back: {target, g, by, slot}). If she cannot stop there from
+        """Back to a move or a place (back: {target, g, slot}), as her own order: she flies to her
+        slot in it alone, a formation's move given her again making no lead of her own. If she cannot stop there from
         how she moves (closing too fast, or going away), she brakes to rest in its frame first (then
         on; rest_only: and stays there); an attack-move she would pass while braking is done once she
         rests."""
@@ -652,12 +653,12 @@ class Captain:
         a = 0.9 * min(back["g"] * G0, float(fv.accel[i]))
         P0, P1 = (fv.point(tg, t), fv.point(tg, t + 60.0)) if "bullseye" in tg or "body" in tg else (None, None)
         if P0 is None or P1 is None or a <= 0:
-            return self._order(sp, i, target, back["g"], back.get("by"))
+            return self._order(sp, i, target, back["g"])
         d, w = P0 + slot - sp.r[i], sp.v[i] - (P1 - P0) / 60.0            # where it is, how she moves in its frame
         dist, speed = float(np.linalg.norm(d)), float(np.linalg.norm(w))
         brake = speed * speed / (2 * a)
         if not rest_only and float(w @ d) > 0 and brake <= dist:          # closing, and she can stop there
-            return self._order(sp, i, target, back["g"], back.get("by"))
+            return self._order(sp, i, target, back["g"])
         stop = sp.r[i] + w * speed / (2 * a) - slot                        # where braking in its frame brings her to rest
         if "bullseye" in tg:
             az, el, rng = fv.bull(tg.get("player"), tg["bullseye"], t).aer(stop)
@@ -678,7 +679,7 @@ class Captain:
         was ordered in (the star centre's: carried with the body that pulls on her hardest). label:
         where she is, so named (not the place she holds)."""
         fv, t = self.fv, sp.t
-        out = {"g": self._cruise(i), "by": fv.ids[i], "slot": [0.0, 0.0, 0.0]}
+        out = {"g": self._cruise(i), "slot": [0.0, 0.0, 0.0]}
         place = (sp.said.get(i) or {}).get("place")
         if place and label is None:
             return {**out, "target": {**place, "label": f"back to {place.get('label') or 'her post'}"}}

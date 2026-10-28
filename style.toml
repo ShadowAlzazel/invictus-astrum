@@ -64,7 +64,7 @@ opacity = 0.7
 ellipse = true
 
 [status.crab]
-label = "Crab: surrendered or disabled"
+label = "Crab: surrendered, disabled or destroyed"
 cross = true
 opacity = 0.75
 

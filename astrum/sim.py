@@ -315,6 +315,7 @@ class Fleet:
         self._front_t, self._front_due = -math.inf, -math.inf
         self._fine: set[int] = set()                        # the rows it ticks finely (the engaged, and whom they engage)
         self._ahead, self._piece_end = None, -math.inf       # in a split piece: the rest, flown on to its end (_split)
+        self._stations_ahead = False                        # ... station ships among them
 
     # ---- the timeline: what the map reads ----------------------------------------------------
     def keep_timeline(self) -> Timeline:
@@ -350,7 +351,7 @@ class Fleet:
         for name in ("gg", "goal", "lead", "off", "mode"):
             pic[name] = getattr(V, name)[ver]
         pic["mver"], pic["t"] = ver, t
-        if not read:
+        if not read and not (self._ahead is not None and self._stations_ahead):
             rows, P = self._station_positions(t, ver=ver[: len(c.row)])
             pic["r"][rows] = P
         return pic
@@ -683,7 +684,8 @@ class Fleet:
             B, applied, had = self.book, [], {L.row for L in self.leads.values()}
             while m.q < len(m.replay) and B.at[m.replay[m.q]] <= m.t + 1e-9:
                 e = int(m.replay[m.q])
-                m.st_t = self._station_grid(m.st_t, float(B.at[e]), m.scope, partial=True)
+                if c.mode[B.ship[e]] == STATION:          # (only an order to a station ship changes what they pay)
+                    m.st_t = self._station_grid(m.st_t, float(B.at[e]), m.scope, partial=True)
                 self._apply(e)
                 applied.append(e)
                 m.q += 1
@@ -832,7 +834,8 @@ class Fleet:
             given, B = False, self.book
             while self._qi < len(B.queue) and B.at[B.queue[self._qi]] <= self.t:
                 e = int(B.queue[self._qi])
-                self._stations_to(float(B.at[e]), partial=True)   # station ships pay up to the order first
+                if c.mode[B.ship[e]] == STATION:           # station ships pay up to an order to one of them first
+                    self._stations_to(float(B.at[e]), partial=True)
                 self._apply(e)
                 self._qi += 1
                 given = True
@@ -902,24 +905,31 @@ class Fleet:
         return np.array(sorted(i for i in rows if c.mode[i] == FREE), dtype=np.int64)
 
     def _split(self, T0: float, T1: float, fine: np.ndarray) -> None:
-        """A piece with ships engaged and the AI due inside it: the rest of the fleet's flight flown
-        whole, then the ticked rows (fine) tick by tick through it, with all that is placed
-        (station keeping), their samples and heat, their shots, and the AI at each tick, as a
-        whole-fleet piece would. The rest keeps its blocks: an order the AI gives one of them in it
-        is given at its end, and a picture in it reads them off the timeline."""
+        """A piece with ships engaged and the AI due inside it: the rest of the fleet flown whole,
+        station ships placed through it too (unless one holds station on a ticked row: then they
+        are placed each tick), then the ticked rows (fine) tick by tick through it, their samples
+        and heat, their shots, and the AI at each tick, as a whole-fleet piece would. The rest keeps
+        its blocks: an order the AI gives one of them in it is given at its end, and a picture in it
+        reads them off the timeline."""
         c, B = self.c, self.book
         rest = np.setdiff1d(np.arange(c.n), fine)
         slots, flown = self._fly(T0, T1, scope=rest)
-        self._record(slots, flown, flown, T0=T0)
-        self._heat(T0, T1, flown, slots)
-        self._ahead, self._piece_end = flown, T1
-        others = np.setdiff1d(np.arange(c.n), flown)
+        if not any(c.mode[j] == STATION for j in self._affected(set(), set(fine.tolist()))):
+            self._stations_to(T1)                         # none holds on a ticked row: station ships placed through it too
+            ahead, self._stations_ahead = rest, True
+        else:
+            ahead, self._stations_ahead = flown, False
+        self._record(slots, ahead, flown, T0=T0)
+        self._heat(T0, T1, ahead, slots)
+        self._ahead, self._piece_end = ahead, T1
+        others = np.setdiff1d(np.arange(c.n), ahead)
         try:
             while True:
                 given = False
                 while self._qi < len(B.queue) and B.at[B.queue[self._qi]] <= self.t:
                     e = int(B.queue[self._qi])
-                    self._stations_to(float(B.at[e]), partial=True)
+                    if c.mode[B.ship[e]] == STATION:
+                        self._stations_to(float(B.at[e]), partial=True)
                     self._apply(e)
                     self._qi += 1
                     given = True

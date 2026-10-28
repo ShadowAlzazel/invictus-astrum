@@ -6,9 +6,9 @@ book's list of hers (astrum/combat.py), her sensors the cones the sweep is hande
 a mount out from a minute on), her drive her thrust (fmax), her radiators the share of them that
 shed (shed). A system taken out leaves those, and goes to the list of its state, which only holds
 it (what it was, since when, and by what); the three are alike in the simulation, the difference
-kept for what is to come (repair, salvage). A ship disabled (her drive and every battery out) or
-destroyed (at her hit points, astrum/damage.py) has every system out: a wreck neither fires,
-burns, nor sweeps.
+kept for what is to come (repair, salvage). A ship disabled (her drive and every battery out, or
+every sensor and radiator: she can neither see nor shed the heat of firing) or destroyed (at her
+hit points, astrum/damage.py) has every system out: a wreck neither fires, burns, nor sweeps.
 
 Every change is a dated record, so a re-fly from a moment sets them back (forget) and makes them
 again as it flies; her columns (fmax, shed) go back with her checkpoint.
@@ -55,6 +55,8 @@ class Systems:
         self.drive = [bool(c.fmax[i] > 0) for i in range(n)]
         self.radiators = [list(range(RADIATORS)) if c.store[i] > 0 else [] for i in range(n)]
         self.had = np.array([self.drive[i] or bool(weapons[i]) for i in range(n)])   # a drive or a battery to lose
+        self.saw = np.array([bool(self.sensors[i]) and bool(self.radiators[i]) for i in range(n)])   # masts and radiators to lose
+        self.gone: dict[int, float] = {}              # a wreck's row: when she went out
         self.lists = {s: [] for s in OUT}
         self.log: list[Out] = []
         self._disabled = None                         # (every row's, made when asked, kept until a change)
@@ -92,13 +94,24 @@ class Systems:
         return o
 
     def take_all(self, fleet, i: int, state: str, t: float, by: str = "") -> list[Out]:
-        """Every system of hers still operational, out: disabled or destroyed."""
+        """Every system of hers still operational, out: disabled or destroyed (she is a wreck from t)."""
+        self.gone.setdefault(i, t)
         return [o for kind in KINDS for key in list(self.operational(i, kind))
                 if (o := self.take(fleet, i, kind, key, state, t, by)) is not None]
 
     def disabled(self, i: int) -> bool:
-        """Mission-killed: her drive and every battery out (whatever else still works)."""
-        return bool(self.had[i]) and not self.drive[i] and not self.weapons[i]
+        """Mission-killed: her drive and every battery out, or every sensor mast and radiator (blind,
+        and nothing to shed the heat of firing), whatever else still works."""
+        return bool(self.had[i]) and ((not self.drive[i] and not self.weapons[i])
+                                      or (bool(self.saw[i]) and not self.sensors[i] and not self.radiators[i]))
+
+    def out_at(self, n: int, t: float) -> np.ndarray:
+        """Which of the first n rows are wrecks at t."""
+        out = np.zeros(n, dtype=bool)
+        for i, s in self.gone.items():
+            if i < n and s <= t + 1e-6:
+                out[i] = True
+        return out
 
     def disabled_rows(self) -> np.ndarray:
         if self._disabled is None:
@@ -110,6 +123,7 @@ class Systems:
         the given rows'. Her columns go back with her checkpoint; the lists and the sweep's mounts here."""
         k = bisect_left(self.log, t - 1e-9, key=lambda x: x.t)
         undo = [o for o in self.log[k:] if rows is None or o.row in rows]
+        self.gone = {i: s for i, s in self.gone.items() if s < t - 1e-9 or (rows is not None and i not in rows)}
         if not undo:
             return
         self._disabled = None

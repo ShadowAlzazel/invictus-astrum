@@ -2,6 +2,8 @@
 frigates on guard around Venus), fought by both sides' CAPTAINs at the flight's front edge; what
 lands is resolved by the combat book and the damage model, system by system (astrum/combat.py,
 astrum/damage.py, astrum/systems.py)."""
+import json
+
 import numpy as np
 import pytest
 
@@ -54,6 +56,8 @@ def test_a_flotilla_sent_at_the_venus_raiders_fights_them(tmp_path, tick):
         assert not np.isin(fleet.sensors.view(k_now).row, [j]).any()           # ... nor sweeps
     spinal = [e for e in log if e.weapon == "spinal" and e.what == "fired"]
     assert max(e.result["range_km"] for e in spinal) > 20000                    # (from far out)
+    fr = json.loads(c.app.state.sim.host.frame({"system": "sol", "t": t + 84 * 3600, "view": "master", "scenario": "sol-demo"}, conn=1))
+    assert all(fr["ships"][s].get("out") for s in RAIDERS)                     # the map's crab: a wreck, as the side sees her
     tick = tick or world.minerva.engaged_s                                      # (6 PAPILION cycles a minute)
     assert max(e.salvos for e in spinal) == tick / 10 and {e.t % tick for e in log} == {(t - 600) % tick}
 
@@ -196,12 +200,12 @@ def test_an_order_mid_battle_sets_back_whom_she_fights(tmp_path):
     C, log = fleet.c, fleet.combat.log
     while not any(e.what == "fired" and C.ids[e.ship] in ours for e in log):
         fleet.reach(fleet.t + 3600)
-    first = next(e for e in log if e.what == "fired" and C.ids[e.ship] in ours)
-    mid, sid = first.t + 60, C.ids[first.ship]
+    mid = next(e for e in log if e.what == "fired" and C.ids[e.ship] in ours).t + 60
     fleet.reach(mid + 1800)
-    foes = {C.ids[j] for j in fleet.combat.partners(mid, {C.row[sid]})}
     after = lambda: {x[1] for x in _ai(fleet) if x[0] > mid + 1e-6}
-    assert foes & set(RAIDERS) and foes <= after()
+    fighting = lambda s: {C.ids[j] for j in fleet.combat.partners(mid, {C.row[s]}) if not fleet.combat.out(fleet, j)} & after() & set(RAIDERS)
+    sid = next(s for s in ours if fighting(s))                         # one of ours, and a foe the AI still orders
+    foes = fighting(sid)
     assert c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": sid, "t": mid, "g": 0}).status_code == 200
     assert not ({sid} | foes) & after()
     front = fleet.t

@@ -283,8 +283,9 @@ hull-opening fluence a hit reaches; and her systems (`astrum/systems.py`: batter
 drive, radiators), each channel landing on one or none, out at the state its fluence reaches. What
 runs reads only the operational ones (her list of batteries, the cones the sweep is handed, her
 thrust, the share of her radiators that shed); one out goes to the damaged, disabled or destroyed
-list. Her drive and every battery out she is disabled, at her hit points destroyed: every system
-out, a wreck that neither burns, fires nor sweeps. A spinal battery fires out to its farthest
+list. Her drive and every battery out, or every sensor mast and radiator, she is disabled; at
+her hit points destroyed: every system out, a wreck (a crab on the map) that neither burns, fires
+nor sweeps. A spinal battery fires out to its farthest
 rated reach (TELVM §3.7: 100,000 km for a LINE stack).
 
 Every ship's AI is

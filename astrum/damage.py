@@ -18,7 +18,8 @@ Two things, by TORMENTA §8's thresholds ([damage] in data/ships/rules.toml):
   heated blind (damaged) at 1 W/cm²; else, her wings spread, a radiator at 1.2.
 
 At her hit points she is destroyed, and every system of hers still operational with her; with her
-drive and every battery out she is disabled, and the rest with her. Either way she is a wreck: she
+drive and every battery out she is disabled, and the rest with her; so too with every sensor mast and
+radiator out (she can neither see nor shed the heat of firing: light can do no more to her). Either way she is a wreck: she
 neither burns, fires, nor sweeps (Fleet._wreck). Every draw is the shot's own, so a re-fly lands it
 the same.
 """

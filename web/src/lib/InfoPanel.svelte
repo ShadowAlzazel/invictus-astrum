@@ -465,7 +465,7 @@
         {/if}
       </section>
     {/if}
-    {#if contact.status?.length}<p class="dim">Status: {contact.status.map((s) => style?.status?.[s]?.label ?? s).join(', ')}</p>{/if}
+    {#if contact.status?.length || ship?.out}<p class="dim">Status: {[...(contact.status ?? []), ...(ship?.out ? ['crab'] : [])].map((s) => style?.status?.[s]?.label ?? s).join(', ')}</p>{/if}
     {#if contact.notes}<p class="note">{contact.notes}</p>{/if}
   {:else if probe}
     <dl>
