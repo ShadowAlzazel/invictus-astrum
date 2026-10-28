@@ -45,7 +45,7 @@ anything else.
 | Tool | What it says |
 |---|---|
 | `tools/check.py` | the data loads, the fleet builds and flies, how long it takes |
-| `tools/bench_flight.py` | what a wall second at 1 h/s costs the sim, four cases (quiet, TF-3 near and far, the Venus battle), then each by part as shares: the ship AI, combat, station keeping, the flight, time to target (`--profile`: by function; `--live 15`: the sim's process as `serve.py` runs it, thread by thread; `--tick 60`: the battle at another battle tick, else `engaged_s`) |
+| `tools/bench_flight.py` | what a wall second at 1 h/s costs the sim, five cases (quiet, TF-3 near and far, the Venus battle by LF-1 and by all of TF-2), then each by part as shares: the ship AI, combat, station keeping, the flight, time to target (`--profile`: by function; `--live 15`: the sim's process as `serve.py` runs it, thread by thread; `--tick 60`: the battle at another battle tick, else `engaged_s`) |
 | `tools/bench_tactical.py` | the tactical layer at 10 min/s: the flight and its parts as shares, pictures and their share of a frame, orders at the clock and behind it |
 | `tools/benchlog.py` | each bench's run headed by when it ran, the commit (and whether with changes not committed), the machine, the battle tick and warp; kept in `logs/bench/` (not committed) |
 | `tools/drive_bench.py` | DRIVE_TEST_AND_BENCH from the data (`--rig`), or a class's drive, refitted (`--mark`, `--mix`, `--block`) |

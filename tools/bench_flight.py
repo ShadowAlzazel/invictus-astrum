@@ -12,8 +12,8 @@ At 1 h/s, every wall second the process must fly an hour of the fleet (the ship 
 flight's front edge), sweep that hour for every side, and answer the map's pictures (30 a second
 here). Each is timed apart, one thread, game hour by game hour, for: the fleet quiet; Task Force 3
 (44) to a point a million km off Mars (it starts, cruises, brakes and arrives within 12 h); Task
-Force 3 toward the Sun (it burns all the way); and Line Flotilla 1 (11) fighting the Venus Raiders
-(10), from some hours before they meet. Then each case by its parts, timed where each was called
+Force 3 toward the Sun (it burns all the way); and Line Flotilla 1 (11), then the whole of Task
+Force 2 (44), fighting the Venus Raiders (10), from some hours before they meet. Then each case by its parts, timed where each was called
 from: the ship AI (the sweep it asks for, the pictures, the CAPTAINs' orders), combat (salvos,
 light, damage), station keeping (places, pull, cost), the flight's steps and its kernel, time to
 target (the target's track, the bodies, the kernel), and the sweeps; each as a share of the whole,
@@ -83,7 +83,7 @@ BATTLE_H = 62                                     # the flotilla meets the Venus
 
 def start(case):
     """A fresh fleet with the case under way, at its first timed moment: the fleet quiet; TF-3 to a
-    point off Mars, or toward the Sun; or Line Flotilla 1 (11) sent at the Venus Raiders (10),
+    point off Mars, or toward the Sun; or Line Flotilla 1 (11), or all of TF-2 (44), sent at the Venus Raiders (10),
     aggressive, flown untimed to some hours before they meet. The battle tick is TICK, else engaged_s."""
     w, sc, f, host = fresh()
     host.ai.tick[sc.id] = TICK or w.minerva.engaged_s
@@ -91,8 +91,8 @@ def start(case):
     f.reach(t)
     if case in ("near", "sun"):
         order(w, host, f, t, tf3_target(w, f, t, case == "sun"))
-    elif case == "battle":
-        o = {**req, "unit": "tf2-lf1", "t": t}
+    elif case in ("battle", "tf2"):
+        o = {**req, "unit": "tf2-lf1" if case == "battle" else "tf-2", "t": t}
         for extra in ({"stance": "aggressive"}, {"g": 0.3, "mode": "attack", "target": {"body": "venus"}}):
             r = host.handle("order", {**o, **extra})
             assert r["ok"], r
@@ -355,13 +355,14 @@ if __name__ == "__main__":
     parts = ["flight", "time to target", "sweeps", "map pictures"]
     print(f"  {'case':38s}" + "".join(f"{p:>16s}" for p in parts) + f"{'in all':>12s}{'worst hour':>12s}")
     cases = (("quiet", "fleet quiet (the scenario's own orders)"), ("near", "TF-3 (44) 1M km off Mars, arrives"),
-             ("sun", "TF-3 (44) toward the Sun, burning"), ("battle", f"LF-1 (11) at the Venus Raiders, from {BATTLE_H} h"))
+             ("sun", "TF-3 (44) toward the Sun, burning"), ("battle", f"LF-1 (11) at the Venus Raiders, from {BATTLE_H} h"),
+             ("tf2", f"TF-2 (44) at the Venus Raiders, from {BATTLE_H} h"))
     for case, name in cases:
         rows, flying = second_by_second(case)
         med = {p: statistics.median(r[p] for r in rows) for p in parts}
         worst = max(sum(r.values()) for r in rows)
         print(f"  {name:38s}" + "".join(f"{ms(med[p]):>16s}" for p in parts) + f"{ms(sum(med.values())):>12s}{ms(worst):>12s}")
-        if case in ("near", "battle"):
+        if case in ("near", "battle", "tf2"):
             print("    by hour, flight: " + " ".join(f"{1e3 * r['flight']:.0f}" for r in rows))
     for case, name in cases:
         pr = by_part(case)
