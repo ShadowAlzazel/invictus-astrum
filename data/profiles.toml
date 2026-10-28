@@ -17,17 +17,18 @@
 #             target), "fire" (the battery, a WeaponEngageOrder: the combat function, once it has
 #             cycled; and every optical battery that reaches the target, held on it the tick), "pass" (a
 #             burn through where the target will be), "correct" (a pass's course corrected)
-#   spine     how a stack is fired when the bow is off the aim (light ignores it). Left out: "cut"
-#             (hold the stack while she burns off it, and face it when she does not). "coast" cuts
-#             the drive for that tick, then faces and fires, and the node's move returns the next.
-#             "keep" does not turn her: the stack fires only already inside its trim.
-#   weapon    which battery a node's actions and conditions read: "focus" (her focus battery), a
-#             battery's kind ("stack": the spinal battery; "strip", "dome", "panel", "turret",
-#             "cell"); one she lacks is read as her focus battery
+#   weapon    which battery a node's actions and conditions read: "focus" (her focus battery, the one
+#             her class is built around), a battery's kind ("stack": the spinal battery; "strip",
+#             "dome", "panel", "turret", "cell"). One she lacks is her spine if she has one, else
+#             her focus
 #   if        "always", "far" (beyond the battery's envelope), "in-envelope", "in-reach" (within its
 #             reach: a stack's farthest rated, TELVM §3.7), "lost" (out of her
 #             side's picture, or of her stance's range), "gone" (out of the picture), "alive",
-#             "destroyed" (destroyed or disabled), "passed" (going away from her after a pass), "fired-on"
+#             "destroyed" (destroyed or disabled), "passed" (going away from her after a pass),
+#             "focus-stack" (her focus battery is a stack: her class is built on the spine), "fired-on"
+#
+# An attack-move uses two of these. Keeping station: Standing orders, the root. Passing on by:
+# Ballistic orders. She is not told which shot: her focus says it.
 
 [profile.root]
 name = "Standing orders"
@@ -114,3 +115,32 @@ on = [{ if = "passed", go = "exit" }, { if = "in-envelope", go = "fire" }, { if 
 label = "Fire as she passes"
 do = ["fire"]
 on = [{ if = "passed", go = "exit" }, { if = "always", go = "fire" }]
+
+[profile.ballistic]
+name = "Ballistic orders"
+targets = ["hostile"]
+after = "coast"           # on as she goes: the pass is not braked to a point
+start = "close"
+
+[profile.ballistic.node.close]
+label = "Close"
+do = ["fire"]
+weapon = "focus"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "focus-stack", go = "keep" }, { if = "in-reach", go = "coast" }]
+
+[profile.ballistic.node.keep]
+label = "Keep the heading, fire"
+do = ["fire"]
+weapon = "focus"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "passed", go = "exit" }, { if = "alive", go = "keep" }]
+
+[profile.ballistic.node.coast]
+label = "Coast for the shot, fire"
+do = ["fire"]
+weapon = "focus"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "passed", go = "exit" }, { if = "alive", go = "coast" }]
+
+[profile.ballistic.node.lost]
+label = "Target lost"
+wait_s = 600              # TESTING: a delay before she leaves combat, to see what she does
+on = [{ if = "always", go = "exit" }]

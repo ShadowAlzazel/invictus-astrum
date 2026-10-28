@@ -125,7 +125,7 @@
              ...(ordering.mode === 'move' && shown > 0 ? [ballistic ? 'ballistic: no braking, on through it'
                : ordering.then === 'free' ? (aimed.kind === 'body' ? `then free: an orbit of ${aimed.label}` : 'then free: coasting, or an orbit in a well')
                : 'then holds station there'] : []),
-             ...(ordering.mode === 'attack' && shown > 0 ? [pass ? 'pass on by: no braking, on through it' : 'then keeps station, aggressive'] : [])],
+             ...(ordering.mode === 'attack' && shown > 0 ? [pass ? 'pass on by: Ballistic orders, no braking' : 'then keeps station: Standing orders'] : [])],
               b.x, b.y, F);
       }
     }
@@ -167,8 +167,8 @@
       </button>
     {:else if ordering.mode === 'attack'}
       <button class="plane" class:on={ordering.then === 'pass'} on:click={() => (ordering = { ...ordering, then: ordering.then === 'pass' ? 'station' : 'pass' })}
-        title="K: keep station there (aggressive, the usual), or pass on by (one burn, no braking, on through the point)">
-        <i></i>{ordering.then === 'pass' ? 'Pass on by: burn, then through' : 'Keep station'}<kbd>{cap($keymap.free)}</kbd>
+        title="K: keep station (Standing orders, the usual), or pass on by (Ballistic orders: one burn, no braking)">
+        <i></i>{ordering.then === 'pass' ? 'Pass on by · Ballistic orders' : 'Keep station · Standing orders'}<kbd>{cap($keymap.free)}</kbd>
       </button>
     {/if}
     <p class="keys"><kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>{cap($keymap.eve)}</kbd><kbd>{cap($keymap.haid)}</kbd> Eve / Haid · <kbd>{cap($keymap.plane)}</kbd> plane · click to order, <kbd>⇧</kbd>-click to queue · <kbd>{cap($keymap.order)}</kbd><kbd>{cap($keymap.attack)}</kbd><kbd>{cap($keymap.patrol)}</kbd><kbd>{cap($keymap.turn)}</kbd> move, attack, patrol, turn · <kbd>Esc</kbd> cancel</p>

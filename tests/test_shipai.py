@@ -115,8 +115,10 @@ def test_the_profiles_say_their_engagements_and_the_minerva_for_the_map(tmp_path
     assert root["root"] and root["engagement"]["start"] == "close" and set(root["engagement"]["nodes"]) >= {"close", "fire", "lost"}
     assert got["minerva"]["stance"] == "hold" and got["minerva"]["stances"]["aggressive"]["readiness"] == 1
     assert got["stances"]["hold"].startswith("Hold ground:") and {"station", "fire"} <= set(got["actions"])
-    assert set(got["spines"]) == {"cut", "coast", "keep"}
-    assert {n["spine"] for n in root["engagement"]["nodes"].values()} == {"cut"}
+    assert "spines" not in got and "focus-stack" in got["conditions"]
+    assert {n.get("spine") for n in root["engagement"]["nodes"].values()} == {None}
+    bal = next(p for p in got["profiles"] if p["id"] == "ballistic")
+    assert bal["name"] == "Ballistic orders" and set(bal["engagement"]["nodes"]) == {"close", "keep", "coast", "lost"}
     used = {w["if"] for p in got["profiles"] for n in p["engagement"]["nodes"].values() for w in n["on"]}
     assert used <= set(got["conditions"])
 
@@ -139,16 +141,18 @@ def test_a_quiet_scenario_is_not_pictured_for_the_ship_ai(tmp_path, monkeypatch)
     assert {x[3] for x in _ai(fleet, ("quarters",)) if x[1].startswith("tf2")} == {"Return fire: readiness II"}
 
 
-def test_the_spine_holds_faces_or_keeps_as_the_node_says():
-    """Off the aim: cut holds the stack while she burns and faces it when she does not; keep never
-    turns her; coast cuts the drive for that tick and does not relight the node's station. Light
-    fires either way. On the aim, the stack fires and she is not turned."""
+def test_a_stack_off_the_aim_follows_the_node_and_her_focus():
+    """Standing orders, and a coast: hold the stack while she burns, and face it when she does not.
+    Keep never turns her. The drive is not cut. On keep or coast her focus is fired, and the spine
+    too when that was not already it. Light fires either way. On the aim, the stack fires and she
+    is not turned."""
     from types import SimpleNamespace
 
     from astrum.combat import Weapon
     from astrum.optics import Optic
     from astrum.salvo import Stack
     from astrum.shipai.captain import Captain
+    from astrum.shipai.minerva import Node
 
     stack = Weapon(0, "spinal", "spinal", "energy", 1, 1500.0, "stack", True,
                    Stack(8, 1.0, 1.0, 0.01, 0.1, 1.0, 10.0, 2.0), 1, True, None, 100000.0)
@@ -167,18 +171,26 @@ def test_the_spine_holds_faces_or_keeps_as_the_node_says():
     cap.weapon = lambda i, kind: stack
     cap.envelope_m = lambda i, w: 1e6
 
-    def kinds(spine, burning, aimed=False):
+    def kinds(node_id, burning, aimed=False, battery=stack):
         pic.burning[0] = burning
         pic.dir0[0] = np.array([1.0, 0.0, 0.0] if aimed else [0.0, 1.0, 0.0])
-        return [o.kind for o in Captain._fire(cap, pic, 0, Machine(0.0), 1, stack, "bogey", spine)]
+        node = Node(node_id, node_id, ("fire",), weapon="focus")
+        return [o.kind for o in Captain._fire(cap, pic, 0, Machine(0.0), 1, battery, "bogey", node)]
 
-    assert kinds("cut", True) == ["fire"] and kinds("keep", True) == ["fire"]
-    assert kinds("coast", True) == ["coast", "fire"]
-    assert kinds("cut", False) == ["face", "fire", "fire"] and kinds("coast", False) == ["face", "fire", "fire"]
+    assert kinds("close", True) == ["fire"] and kinds("keep", True) == ["fire"] and kinds("coast", True) == ["fire"]
+    assert kinds("close", False) == ["face", "fire", "fire"] and kinds("coast", False) == ["face", "fire", "fire"]
     assert kinds("keep", False) == ["fire"]
-    assert kinds("keep", True, aimed=True) == ["fire", "fire"] and "face" not in kinds("cut", False, aimed=True)
+    assert kinds("keep", True, aimed=True) == ["fire", "fire"] and "face" not in kinds("close", False, aimed=True)
+    dome = Weapon(1, "domes", "domes", "energy", 1, 40000.0, "dome", True, None, 1, True, Optic(5, 1.0, 1.0, 40000.0), None)
+    cap.fv.weapons[0] = [dome, stack]
+    cap.weapon = lambda i, kind: dome
+    off = kinds("coast", False, battery=dome)
+    assert off == ["fire", "face", "fire"]                 # her focus, then the spine she fell back to
+    assert [o.kind for o in Captain._fire(cap, pic, 0, Machine(0.0), 1, dome, "bogey", Node("close", "close", ("fire",)))] == ["fire"]
 
     pic.burning[0], pic.dir0[0] = True, np.array([0.0, 1.0, 0.0])
+    cap.fv.weapons[0] = [stack, light]
+    cap.weapon = lambda i, kind: stack
     rs = SimpleNamespace(moves=True)
 
     def engaged():
@@ -186,7 +198,7 @@ def test_the_spine_holds_faces_or_keeps_as_the_node_says():
         m.move(pic.t, target=1)
         return m
 
-    coasting = Node("close", "Close", ("station", "fire"), weapon="stack", spine="coast")
-    assert [o.kind for o in Captain._do(cap, pic, 0, engaged(), coasting, rs, None)] == ["coast", "fire"]
-    cutting = Node("close", "Close", ("station", "fire"), weapon="stack")
-    assert [o.kind for o in Captain._do(cap, pic, 0, engaged(), cutting, rs, None)] == ["goto", "fire"]
+    coasting = Node("coast", "Coast", ("station", "fire"), weapon="focus")
+    assert [o.kind for o in Captain._do(cap, pic, 0, engaged(), coasting, rs, None)] == ["goto", "fire"]
+    keeping = Node("keep", "Keep", ("fire",), weapon="focus")
+    assert [o.kind for o in Captain._do(cap, pic, 0, engaged(), keeping, rs, None)] == ["fire"]

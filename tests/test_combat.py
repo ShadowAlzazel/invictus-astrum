@@ -6,7 +6,7 @@ from astrum.config import ROOT, load_config
 from astrum.orders import KIND
 from astrum.profiles import ROOT as ROOT_PROFILE, check, load_made, load_shared, make, save_made
 
-SHARED = ["root", "hold-the-line", "pursuit", "search-and-destroy"]    # data/profiles.toml
+SHARED = ["root", "hold-the-line", "pursuit", "search-and-destroy", "ballistic"]    # data/profiles.toml
 
 
 def _app(tmp_path):
@@ -32,15 +32,11 @@ def test_a_profile_is_an_engagement_map(tmp_path):
     with pytest.raises(ValueError) as e:
         load_shared(f)
     assert "no action 'dance'" in str(e.value) and "no condition 'bored'" in str(e.value) and "goes to 'b'" in str(e.value)
-    assert {n.spine for p in shared.values() for n in p.engagement.nodes.values()} == {"cut"}
-    f.write_text('[profile.root]\nname = "x"\nstart = "a"\n[profile.root.node.a]\ndo = ["fire"]\nweapon = "stack"\nspine = "keep"\n'
-                 'on = [{ if = "always", go = "exit" }]\n')
-    assert load_shared(f)["root"].engagement.nodes["a"].spine == "keep"
-    f.write_text('[profile.root]\nname = "x"\nstart = "a"\n[profile.root.node.a]\nspine = "park"\ndo = ["fire"]\n'
-                 'on = [{ if = "always", go = "exit" }]\n')
-    with pytest.raises(ValueError) as e:
-        load_shared(f)
-    assert "spine is one of" in str(e.value)
+    bal = shared["ballistic"]
+    assert bal.name == "Ballistic orders" and bal.after == "coast" and bal.engagement.start == "close"
+    assert set(bal.engagement.nodes) == {"close", "keep", "coast", "lost"}
+    assert ("focus-stack", "keep") in bal.engagement.nodes["close"].on and ("in-reach", "coast") in bal.engagement.nodes["close"].on
+    assert {n.weapon for n in bal.engagement.nodes.values()} == {"focus"}
     assert check({"name": "a", "stance": "guard", "range": {"hold": -3}, "targets": ["friend"]}) == [
         "unknown key 'stance'", "targets are among ['hostile', 'unknown']",
         "range hold: one of ['sensor', 'half-sensor', 'dazzle', 'weapons'], or km above zero"]

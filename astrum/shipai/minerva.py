@@ -35,11 +35,6 @@ ACTIONS = {
     "pass": "a burn through where the target will be, half the way, then on",
     "correct": "a pass's course corrected while its miss is over a quarter of her reach",
 }
-SPINES = {                     # a stack off the aim (light ignores it). Left out of a node: cut
-    "cut": "hold the stack while she burns off the aim, and face it when she is not burning",
-    "coast": "cut the drive for that tick, then face and fire; the node's move returns the next tick",
-    "keep": "do not turn her: the stack fires only already inside its trim",
-}
 CONDITIONS = {
     "always": "at once (the next tick)",
     "far": "the target beyond the battery's envelope",
@@ -50,6 +45,7 @@ CONDITIONS = {
     "alive": "the target still in the fight",
     "destroyed": "the target destroyed or disabled: out of the fight",
     "passed": "going away from the target after closing on it",
+    "focus-stack": "her focus battery is a stack: her class is built on the spine",
     "fired-on": "a ship engaging her",
 }
 WEAPONS = ("focus", "stack", "strip", "dome", "panel", "turret", "cell")
@@ -80,11 +76,10 @@ class Node:
     weapon: str = "focus"
     wait_s: float = 0.0
     on: tuple = ()                             # (condition, node id or EXIT), in order
-    spine: str = "cut"                         # a stack off the aim: cut, coast, or keep (light ignores it)
 
     def as_dict(self) -> dict:
         return {"label": self.label, "do": list(self.do), "weapon": self.weapon, "wait_s": self.wait_s,
-                "on": [{"if": c, "go": g} for c, g in self.on], "spine": self.spine}
+                "on": [{"if": c, "go": g} for c, g in self.on]}
 
 
 @dataclass(frozen=True)
@@ -130,8 +125,6 @@ def check_engagement(d: dict) -> list[str]:
                 p.append(f"node {nid}: no action {a!r} (one of {list(ACTIONS)})")
         if n.get("weapon", "focus") not in WEAPONS:
             p.append(f"node {nid}: weapon is one of {list(WEAPONS)}")
-        if n.get("spine", "cut") not in SPINES:
-            p.append(f"node {nid}: spine is one of {list(SPINES)}")
         if not (isinstance(n.get("wait_s", 0), (int, float)) and n.get("wait_s", 0) >= 0):
             p.append(f"node {nid}: wait_s is seconds, zero or more")
         for w in n.get("on") or ():
@@ -144,8 +137,7 @@ def check_engagement(d: dict) -> list[str]:
 
 def make_engagement(d: dict) -> Engagement:
     return Engagement(d["start"], {nid: Node(nid, n.get("label") or nid, tuple(n.get("do") or ()), n.get("weapon", "focus"),
-                                             float(n.get("wait_s", 0.0)), tuple((w["if"], w["go"]) for w in n.get("on") or ()),
-                                             n.get("spine", "cut"))
+                                             float(n.get("wait_s", 0.0)), tuple((w["if"], w["go"]) for w in n.get("on") or ()))
                                    for nid, n in d["node"].items()})
 
 

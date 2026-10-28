@@ -94,10 +94,7 @@
     }
     return out;
   }
-  const does = (n) => {
-    const line = n.do.length ? n.do.map((a) => (a === 'fire' || a === 'station') && n.weapon !== 'focus' ? `${a} (${n.weapon})` : a).join(' · ') : 'nothing: await next tick';
-    return n.spine && n.spine !== 'cut' ? `${line} · spine ${n.spine}` : line;
-  };
+  const does = (n) => n.do.length ? n.do.map((a) => (a === 'fire' || a === 'station') && n.weapon !== 'focus' ? `${a} (${n.weapon})` : a).join(' · ') : 'nothing: await next tick';
   $: used = eng ? [...new Set(Object.values(eng.nodes).flatMap((n) => n.on.map((w) => w.if)))] : [];
   $: acts = eng ? [...new Set(Object.values(eng.nodes).flatMap((n) => n.do))] : [];
   $: after = profile?.after || rs?.after;
@@ -195,8 +192,7 @@
           <dl>{#each used as c}<dt>{c}</dt><dd>{data.conditions[c]}</dd>{/each}</dl></div>
         <div><h3>Actions</h3>
           <dl>{#each acts as a}<dt>{a}</dt><dd>{data.actions[a]}</dd>{/each}
-            <dt>tick</dt><dd>engaged, every {data.minerva.engaged_s} s near her envelope, else by how fast she closes (at most {data.minerva.block_s / 60} min); a battery fires again after {data.minerva.cycle_s} s</dd>
-            {#each Object.entries(data.spines ?? {}) as [k, text]}<dt>spine {k}</dt><dd>{text}</dd>{/each}</dl></div>
+            <dt>tick</dt><dd>engaged, every {data.minerva.engaged_s} s near her envelope, else by how fast she closes (at most {data.minerva.block_s / 60} min); a battery fires again after {data.minerva.cycle_s} s</dd></dl></div>
       </section>
     {/if}
   </main>

@@ -340,7 +340,7 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
             offsets = {sid: flown[sid] - anchor for sid in ships}
     if req.get("free") is True and mode == "move" and halt is None:    # there, free: an orbit in a well, else coasting
         target.update(free=True, label=f"{target['label']}, then free")
-    if mode == "attack":                             # aggressive the whole way (astrum/ai.py)
+    if mode == "attack":                             # aggressive the whole way (astrum/ai.py); Standing orders
         target.update(attack=True, label=f"attack-move to {target['label']}")
     elif mode == "patrol" and anchor is not None:    # to the point and back to where it is now, over and over
         bid = target["bullseye"]
@@ -356,7 +356,17 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
                     target=dict(target, **({"offset_m": offsets[sid].tolist()} if np.any(offsets[sid]) else {}),
                                 **({"after": after[sid]} if sid in after else {})))
               for sid in ships]
+    if mode == "attack" and not req.get("queue"):
+        orders = _attack_profile(unit, ships, t, False) + orders
     return order_reply(fleet, t, unit, ships, orders, side)
+
+
+def _attack_profile(unit: str, ships: list[str], t: float, ballistic: bool) -> list:
+    """The profile an attack-move flies. Keeping station: Standing orders. Passing on by: Ballistic
+    orders. Her class, not a field of a node, says how the spine is fired."""
+    pid = "ballistic" if ballistic else "root"
+    oid = f"{unit}:profile@{t:.0f}#{next(_order_n)}"
+    return [Order(sid, t, "stance", target={"profile": pid}, source="map", order_id=oid, by=unit) for sid in ships]
 
 
 def ballistic_order(world, sc, fleet, side, unit: str, ships: list[str], t: float, tp: float, target: dict, g: float,
@@ -368,8 +378,8 @@ def ballistic_order(world, sc, fleet, side, unit: str, ships: list[str], t: floa
     its ships) with its own drift, at where the target will be when she gets there (worked out again
     until that settles); at a body, past it at the distance a go-to would stop short of it. As the
     map's predictor aims it (web/src/lib/kepler.js ballisticAim). attack: an attack-move told to pass
-    on by. The burn is marked so, and she is aggressive the whole way; she does not brake to keep
-    station at the point (the usual attack-move, without this, still does)."""
+    on by. The burn is marked so, and she flies Ballistic orders: aggressive the whole way, and she
+    does not brake to keep station at the point (the usual attack-move flies Standing orders)."""
     a = g * G0
     if a <= 0:
         raise OrderRefused(400, "a ballistic move needs g above 0")
@@ -404,7 +414,10 @@ def ballistic_order(world, sc, fleet, side, unit: str, ships: list[str], t: floa
     burn = {"bullseye": "system", "bearing": math.degrees(brg), "elevation": math.degrees(el), "g": g, "duration_s": tb}
     if attack:
         burn["attack"] = True                         # aggressive the whole way; she does not brake to station
-    out = order_reply(fleet, t, unit, ships, [Order(sid, t, "burn", burn=burn, source="map", order_id=oid, by=unit) for sid in ships], side)
+    orders = [Order(sid, t, "burn", burn=burn, source="map", order_id=oid, by=unit) for sid in ships]
+    if attack:
+        orders = _attack_profile(unit, ships, t, True) + orders
+    out = order_reply(fleet, t, unit, ships, orders, side)
     return {**out, "ballistic": {"burn_s": tb, "there_s": T, "label": label, "attack": attack}}
 
 

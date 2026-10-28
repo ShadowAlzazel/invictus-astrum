@@ -78,8 +78,11 @@ def test_a_battle_flown_again_is_the_same_battle(tmp_path):
 
 
 def test_an_attack_move_keeps_station_unless_told_to_pass(tmp_path):
-    """Without the pass, an attack-move is still a go-to: aggressive, and she brakes to keep
-    station. Aggressive itself is not a fly-by. The pass is a ballistic burn, marked so."""
+    """Without the pass, an attack-move is still a go-to: aggressive, Standing orders, and she
+    brakes to keep station. Aggressive itself is not a fly-by. The pass is a ballistic burn on
+    Ballistic orders, marked so."""
+    from astrum.orders import STANCE
+
     c, world = _app(tmp_path)
     fleet = world.fleet(world.scenarios["sol-demo"])
     t = fleet.t0 + 600
@@ -88,9 +91,14 @@ def test_an_attack_move_keeps_station_unless_told_to_pass(tmp_path):
     assert "ballistic" not in held
     tg = held["ships"]["kiki-1"]["goal"]["target"]
     assert tg.get("attack") and not tg.get("pass") and fleet.c.goal[fleet.c.row["kiki-1"]]
+    B, i = fleet.book, fleet.c.row["kiki-1"]
+    prof = [B.of(e).target.get("profile") for e in range(B.n) if int(B.kind[e]) == STANCE and int(B.ship[e]) == i]
+    assert prof[-1] == "root"
     passed = c.post("/api/order", json={**body, "t": t + 60, "mode": "attack", "ballistic": True}).json()
     assert passed["ballistic"]["attack"] and passed["ballistic"]["burn_s"] > 0
     assert passed["ballistic"]["label"].startswith("attack-move, pass by")
+    prof = [B.of(e).target.get("profile") for e in range(B.n) if int(B.kind[e]) == STANCE and int(B.ship[e]) == i]
+    assert prof[-1] == "ballistic"
 
 
 def _spine(fleet, sid) -> bool:

@@ -137,11 +137,14 @@ class Captain:
         return self.machines[i]
 
     def weapon(self, i: int, sel: str):
-        """Her battery a node reads: her focus battery, else her first of that kind (none of it: her focus)."""
+        """The battery a node reads. focus: her focus, the battery her class is built around. A kind:
+        her first of it. One she lacks: her spine, if she has one, else her focus."""
         ws = self.fv.weapons[i] if i < len(self.fv.weapons) else []
         got = self._chosen.get((i, sel))
         if got is None or got[0] is not ws:                # (kept until her batteries change: a new list then)
             w = next((w for w in ws if w.mount == sel), None) if sel != "focus" else None
+            if w is None and sel != "focus":
+                w = next((w for w in ws if w.mount == "stack" and w.stack is not None), None)
             got = self._chosen[(i, sel)] = (ws, w or next((w for w in ws if w.focus), ws[0] if ws else None))
         return got[1]
 
@@ -151,9 +154,15 @@ class Captain:
         ws, eng = self.fv.weapons[i], self.world.engagement(prof)
         got = self._far.get((i, id(prof)))
         if got is None or got[0] is not ws or got[1] is not eng:
-            env = max(max(self.envelope_m(i, w), w.reach_km * 1e3 if "fire" in n.do and w is not None and w.reach_km else 0.0)
-                      for n in eng.nodes.values() for w in [self.weapon(i, n.weapon)])
-            got = self._far[(i, id(prof))] = (ws, eng, env)
+            def reach(n) -> float:
+                w = self.weapon(i, n.weapon)
+                far = max(self.envelope_m(i, w), w.reach_km * 1e3 if "fire" in n.do and w is not None and w.reach_km else 0.0)
+                if n.id in ("keep", "coast"):             # her focus came first; the spine is still in reach of the shot
+                    spine = next((x for x in ws if x.stack is not None and x.reach_km), None)
+                    if spine is not None:
+                        far = max(far, spine.reach_km * 1e3)
+                return far
+            got = self._far[(i, id(prof))] = (ws, eng, max(reach(n) for n in eng.nodes.values()))
         return got[2]
 
     def envelope_m(self, i: int, w) -> float:
@@ -411,7 +420,7 @@ class Captain:
         reach = w.reach_km * 1e3 if w is not None and w.reach_km else env
         table = {"always": True, "far": not gone and d > env, "in-envelope": not gone and d <= env, "in-reach": not gone and d <= reach,
                  "lost": gone or d > self.reach_m(i, rs.id, prof), "gone": gone, "alive": not dead, "destroyed": dead,
-                 "passed": m.at.closing and opening, "fired-on": bool(sp.fired_on.get(i))}
+                 "passed": m.at.closing and opening, "focus-stack": self._focus_stack(i), "fired-on": bool(sp.fired_on.get(i))}
         return table.__getitem__
 
     def _do(self, sp, i: int, m: Machine, node, rs, goal) -> list:
@@ -426,12 +435,7 @@ class Captain:
         on_her = bool(goal) and goal["source"] == "ai" and tg.get("engage") and j >= 0 and tg.get("unit") == fv.ids[j]
         who = "hostile" if j >= 0 and sp.identified[j] else "bogey"
         out = []
-        # coast, and the bow is off while she burns: this tick cuts the drive, so the node's move
-        # does not relight it. The move returns next tick, when she faces and fires.
-        quiet = node.spine == "coast" and not gone and bool(sp.burning[i]) and self._bow_off(sp, i, j, w)
         for a in node.do:
-            if quiet and a in ("station", "hold", "pass", "correct", "face"):
-                continue
             if a in ("station", "pass") and not rs.moves:
                 a = "face"
             if a in ("hold", "correct") and not rs.moves:
@@ -454,12 +458,17 @@ class Captain:
                     out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"face the {who}"}, source="ai",
                                      order_id=self._oid(sid, t), by=sid))
             elif a == "fire" and not gone:
-                out += self._fire(sp, i, m, j, w, who, node.spine)
+                out += self._fire(sp, i, m, j, w, who, node)
             elif a == "pass" and not gone:
                 out.append(self._pass(sp, i, j, g, f"pass the {who}"))
             elif a == "correct" and not gone and not sp.burning[i]:
                 out.append(self._correct(sp, i, j))
         return out
+
+    def _focus_stack(self, i: int) -> bool:
+        """Her focus battery is a stack: the class is built on the spine."""
+        w = self.weapon(i, "focus")
+        return w is not None and w.stack is not None
 
     def _bow_off(self, sp, i: int, j: int, w) -> bool:
         """Her spine is off the aim by more than the stack's trim. Light has no bow."""
@@ -469,31 +478,35 @@ class Captain:
         u = u / max(float(np.linalg.norm(u)), 1.0)
         return float(sp.dir0[i] @ u) < math.cos(math.radians(w.stack.trim_deg))
 
-    def _fire(self, sp, i: int, m: Machine, j: int, w, who: str, spine: str = "cut") -> list:
+    def _fire(self, sp, i: int, m: Machine, j: int, w, who: str, node) -> list:
         """Her shots at j this tick: the node's battery, within its reach, once it has cycled, the tick's cycles at
-        once; and every optical battery of hers that reaches her, held on her for the tick (light
-        retargets in microseconds, and needs no arc). A stack off the aim follows the node's spine:
-        cut (the default) holds it while she burns off it and faces it when she does not; coast cuts
-        the drive for that tick instead; keep does not turn her and does not fire it."""
+        once; on Ballistic orders' keep or coast, her spine as well when that was not already it (her focus came
+        first); and every optical battery of hers that reaches her, held on her for the tick (light retargets in
+        microseconds, and needs no arc). A stack off the aim follows the node she is in, not a field of it. Keep
+        (her focus is a stack: the heading is the admiral's): do not turn her, and do not fire it until the bow is
+        inside its trim. Otherwise, Standing orders and a coast: hold it while she burns off it, and face it when
+        she is not burning. The drive is not cut for the shot."""
         fv, t = self.fv, sp.t
         sid, tick = fv.ids[i], self.tick_s
         u = sp.reckoned(j) - sp.r[i]
         d = float(np.linalg.norm(u))
         u = u / max(d, 1.0)
-        ws = ([w] if w is not None and (not w.reach_km or d <= w.reach_km * 1e3) else []) + [
-            x for x in fv.weapons[i] if x.optic is not None and x is not w and x.reach_km and d <= x.reach_km * 1e3]
-        fired, out = dict(m.at.fired), []
+        def in_reach(x) -> bool:
+            return x is not None and (not x.reach_km or d <= x.reach_km * 1e3)
+        chosen = [w] if in_reach(w) else []
+        if getattr(node, "id", "") in ("keep", "coast"):
+            spine = next((x for x in fv.weapons[i] if x.stack is not None and x not in chosen), None)
+            if in_reach(spine):
+                chosen.append(spine)
+        ws = chosen + [x for x in fv.weapons[i] if x.optic is not None and x not in chosen and x.reach_km and d <= x.reach_km * 1e3]
+        fired, out, keep = dict(m.at.fired), [], getattr(node, "id", "") == "keep"
         for x in ws:
             every = tick if x.optic is not None else x.interval_s or self.minerva.cycle_s
             if t - fired.get(x.id, -math.inf) < every - 1e-6:
                 continue
             extra, k = ({"dwell_s": tick}, 1) if x.optic is not None else ({}, max(1, int(tick / every + 1e-9)))
             off = x.stack is not None and self._bow_off(sp, i, j, x)
-            if off and spine == "coast" and sp.burning[i]:
-                out.append(Order(sid, t, "coast", target={"label": "cut the drive for the shot"}, source="ai",
-                                 order_id=self._oid(sid, t, "coast"), by=sid))
-                continue
-            if off and (spine == "keep" or sp.burning[i]):
+            if off and (keep or sp.burning[i]):
                 continue
             if off:
                 out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"spine on the {who}"}, source="ai",
