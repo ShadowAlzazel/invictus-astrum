@@ -116,13 +116,10 @@ under burn and seeker, each its own module behind `CombatBook.launch`), wrecks b
 | 6 | **A grid under the groups.** The sweep culls by formation spheres and a brightness bound, but groups against every target are still all pairs. | For thousands of ships: groups only against targets in nearby cells. | A coarse grid of the groups' spheres per minute in the kernel. |
 | 7 | **The map's clustering on a grid.** The overlay links units and tracks pairwise every frame. | Fine at 100s (2 ms a frame); needed for 1000s on screen. | Screen-space buckets for `clusters`. |
 
-| 18 | **The CAPTAIN in its own process (1c).** It runs at the flight's front edge, in the run-ahead's thread, which waits on it: a hunt costs 45 ms a game hour with it, 6 without (container). | The flight no longer waits on the AI; fast warps steadier. | The side pictures it reads handed across each tick (they are made from the fleet's arrays), its orders handed back at the same moment. |
-| 19 | **Fine ticks for the engaged alone.** While any ship is engaged, the flight stops at every tick (10 s), so every row is flown in 10 s steps. | The rest of the fleet keeps its 10-minute blocks during a battle. | The engaged rows flown apart between ticks, as a re-fly flies its scope. |
-| 20 | **Side pictures kept a minute.** At each tick each side wanted is pictured: detection about 0.7 ms a side. What has reached the flagship changes by the minute. In the Venus battle (`tools/bench_flight.py`) detection is 23% of the whole, reading the sightings (`SideSweep.sightings`) 15%. | Most of the AI's cost in a battle. | The detection part of a side's picture kept per minute; own ships' rows read fresh. |
+| 18 | **The CAPTAIN in its own process (1c).** It runs at the flight's front edge, in the run-ahead's thread, which waits on it: 69% of TF-2's battle (the side pictures, its decisions, the sweep it asks for). | The flight no longer waits on the AI; fast warps steadier. | The view (A3) handed across each tick, its orders handed back at the same moment (plan D). |
+| 20 | **Side pictures kept a minute, all of them.** What has reached a flagship is made once a side a minute (A2); the rest of a side's picture (light delay, own rows, who engages whom) is made each tick: 20% of TF-2's battle at 30 s. | About 10% of a battle at 30 s, more at 10 s. | The foreign rows of a side's picture kept per minute and reckoned on to the tick: a cache (not taken, C4). |
+| 29 | **The sweep's targets by formation too.** JADF's targets sit 4–5 AU off; each is still tested against six branch spheres every minute (the owner's note, 27 October). | The far sides' sweep. | Targets grouped under their own task force's sphere, branch against branch first. |
 | 21 | **Shots in a batch.** A shot costs about 0.4 ms, 0.07 of it the salvo; the rest is reading both ships at its moment. | Fleet actions of hundreds of ships. | Every fire order at one moment resolved in one array pass (geometry, presented sizes, draws seeded per shot). |
-| 22 | **The CAPTAIN's per-ship loop.** `decide` visits each ship due in Python. | Hundreds of engaged ships. | The conditions (distance, envelope, reach) as arrays over the rows due; only the moves between nodes per ship. |
-| 27 | **Timeline room grown ahead.** See the plan, B: dead leads' rows never reused (66 new in 12 h of battle), and each doubling copies 344 KB a row. | No hitch when a battle adds rows. | Rows reused past the kept day; room sized at the start. |
-| 28 | **The sweep across cores.** See the plan, A1. The sweep costs the same whole or in the AI's small calls (96 against 104 ms, 289 calls, a quiet 12 h): it was always paid, and moved into the AI. | Half the flight in the moving cases. | The kernel's loop over targets parallel. |
 
 ## Clarity
 
@@ -138,6 +135,10 @@ under burn and seeker, each its own module behind `CombatBook.launch`), wrecks b
 
 ## Done
 
+- **Fine ticks for the engaged alone** (19, `37d8456`), **timeline room and leads' rows** (27, `530dfe3`),
+  **the CAPTAIN on a view, its conditions as arrays** (22, `babb7db`): the plan's C2, B and A3.
+- **The sweep across cores** (28): done and taken out again (`abdb21b`): on Windows a parallel loop
+  started once a minute cost 2.5x; the branch cull and sensor axes when asked took its place.
 - **Time to target, the reading** (`dev`): the kernel flies on from where a short span ran out instead of again from the start (`state`); the target's knots kept as an array by grid index; the bodies' nodes a window each answer slices. The same answers to the bit, about 2.2× faster (27–39 to 11–18 ms an answer, interleaved runs).
 - **Station places, gathered** (`dev`): a station ship placed directly (every one in sol-demo) reads her base row instead of the placement's matrix product, the same bits; the product's own time halved, within the noise of a day's station keeping.
 

@@ -77,3 +77,52 @@ So combat only checks operational, and if something gets damaged, it gets put in
 This is how we solve the sweeping wrecks. A ship can be DISABLED or DESTROYED. but since both have their system in NOT OPERATIONAL it does not add anymore cost.
 
 And light does ruin sensors and depending on the profile of the ship, the radiators. But we can add the angle and silhouette later using basic shape functions.
+
+### CHECKPOINT 28 October (combat branch, 181b774)
+
+What changed since the anatomies were drawn (27 October, e6fbe58), on the container unless said:
+
+Commit	What	Figure
+2afa57c	Time to target flies on from where a span ran out; station places read their base row	the same answers, time to target 2.2x faster
+bd491cf	Benches by part, as shares; the Venus battle a case	-
+babb7db	A: side pictures by the minute; the CAPTAIN on a view (shipai/view.py)	Venus 12 h: side pictures 826-1,017 -> 415-427 ms, decide 485-591 -> 277-280
+abdb21b	The sweep serial again (the threaded one cost 2.5x on Windows), culled by branch, sensor axes when asked	owner's machine 255 -> 99 ms; a block 911 -> 737 us
+a3b4153	CLAUDE.md: simple over clever, and the design to keep	-
+530dfe3	B: timeline room taken once, dead leads' rows given again after 36 h, pings apart	Venus 12 h 2,520-2,817 -> 2,031-2,131 ms
+e1ed550 941d894 981a1bb	Attack-move flies Standing orders (keep station) or Ballistic orders (pass on by); a node says spine / hold-heading in its do	(owner's work, checked)
+3103c80	A burn from the map clears the go-to she was on	-
+37d8456	C1-C3: the battle tick is the host's (10, 30, 60, 300, 600 s); only the engaged are ticked; the front edge near the clock while engaged; an order mid-battle sets back whom she fights	TF-3 through a battle: 72 pieces, against 215 / 2,430
+387df15	Benches log each run (time, commit, machine, tick, warp) to logs/bench/; --tick	-
+0dbca2b	The battle tick 30 s by default	10 s: a battle at 1 h/s took 1.3 cores
+cbbe76c	bench_flight: the whole of TF-2 (44) as a fifth case	-
+181b774	C4, the combat loop: no lead rows from returns; blind and no radiators is a wreck; station ships through a split; the crab on the map	TF-2 12 h 5.8-6.4 -> 2.1-2.2 s; rows 433 -> 165; shots 7,275 -> 681
+
+Where the time goes now (TF-2, 30 s tick, 8 h, 1.8-1.9 s): the AI's front edge 69% (side pictures 20%, decide 19%,
+the sweep it asks for 20%, the fleet's picture 7%), the flight's steps 19%, orders and shots 5%, station ships 1%.
+The worst game hour 0.64-0.69 s:
+at 1 h/s a battle of 44 against 10 now fits in a core.
+
+Light decides a battle now: masts, then radiators, then out. The spine fired 4 salvo orders in LF-1's action at
+30 s (716 before the wreck rule) and none in TF-2's. Undo, if the spine should matter more: drop the `saw`
+clause in Systems.disabled.
+
+Notes for ourselves:
+- A big change is the owner's to plan: the architecture first, in a table, with measured costs; then only that
+  is built. Being clever is fine when the plan says so.
+- Changing what a bench measures (the tick, a case) is said in the same reply: the 10 s tick looked like a
+  regression for a day because the bench's merged tick went away silently.
+- Judge by the owner's share lines on Windows: threads and parallel loops cost there what they save here.
+- No cache, thread or heuristic for ~10%. Take work away first: the C4 gains were all work removed
+  (rows not made, wrecks not shot at, station steps not taken).
+- A rule that changes the battle (the wreck rule) is reported with what it changed in the outcome.
+- Finish each piece: decisions stated with their undo, no question at the end.
+
+Open, from the chats and the docs (all in docs/COMBAT.md Open or docs/REFACTORS.md):
+- D: the CAPTAIN in its own process (18). The view is ready (A3).
+- E: shots in a batch (21), rods and missiles as rows (23), a wreck known by sight (25).
+- Where a hit lands by silhouette and attitude (24); light on radiators by her profile and angle (the owner, 27 Oct).
+- The sweep's far targets by formation too (29: JADF, the owner, 27 Oct).
+- How hard she burns into a pass, a profile's setting ("the pass is expensive", the owner, 24 Oct).
+- The lost node's wait_s 600 is TESTING.
+- Hold fire's readiness: the data says III; the owner's note of 25 October says I.
+- Damaged, disabled, destroyed told apart (repair, salvage) (26).

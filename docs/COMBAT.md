@@ -253,19 +253,22 @@ each tick within reach, `in-reach`), and `destroyed` holds for a target out of t
 PHALAENA), aggressive on the root's map, bogeys too, attack-moved from Earth at the Venus Raiders
 (ten hostile PHALAENA on guard, a ring 30,000 km out from Venus, `data/scenarios/sol-demo.toml`).
 
-| Venus | 10 s ticks | a 60 s battle tick |
-|---|---|---|
-| first out | 67.5 h out | the same |
-| raiders out | 10 within 1.04 h: 9 disabled, 1 destroyed | 10 within 1.05 h: 7 disabled, 3 destroyed |
-| ours | none out; 2 radiators destroyed, 3 masts damaged | the same |
-| spinal salvos (ours) | 716, from 49,775 km in (median 25,354): 1,326 of 17,120 channels hit | 151 orders, 21,648 channels, 2,952 hit |
-| optical dwells (ours, theirs) | 3,912, 1,600 | 679, 295 |
-| what took the raiders out | their batteries and drives damaged by channels far out (24, 8); their masts (23) and radiators (20) by light | much the same |
-| 72 h flown, battle and all | 7.0 s | 3.9 s |
-| flown again from the middle | the same shots, the same systems out, the same ships | |
+| Venus, 28 October | 10 s tick | 30 s (the default) | 60 s |
+|---|---|---|---|
+| first out | 68.1 h | 68.0 h | 67.9 h |
+| raiders out, all disabled | 10 within 0.76 h | 10 within 0.87 h | 10 within 0.83 h |
+| ours out (disabled) | 1 | 2 | 2 |
+| spinal salvo orders (ours): channels hit of fired | 11: 82 of 264 | 4: 120 of 288 | 6: 419 of 864 |
+| farthest salvo, median | 34,316 / 16,566 km | 20,869 / 13,555 km | 20,323 / 8,496 km |
+| optical dwells (ours, theirs) | 422, 548 | 109, 131 | 68, 38 |
+| 72 h flown, battle and all | 4.7 s | 3.4 s | 3.2 s |
+| flown again from the middle | the same shots, the same systems out, the same ships | | |
 
-The raiders never fire their spines: a PICKET reaches 49,800 km against a LINE's 100,000, their
-batteries are out before they close, and within reach they burn off their spines to close.
+Light decides it now. Within dazzle range light takes a ship's masts, then her radiators, and with
+both gone she is a wreck (above): the spine is barely needed (716 salvos before the rule, 27
+October). The whole of TF-2 (44) at the raiders, 30 s: all ten out within 2.45 h, six of ours, and
+no spinal shot at all. The raiders never fire their spines: a PICKET reaches 49,800 km against a
+LINE's 100,000.
 She holds her fire while she burns off her spine (95% of her chances, in the action before the
 spine reached so far). The AI at the front edge,
 on a day of sol-demo: quiet 15 ms a game hour against 8 without it; TF-3 hunting, 40 against 5.
