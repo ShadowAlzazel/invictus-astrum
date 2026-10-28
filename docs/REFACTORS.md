@@ -56,7 +56,7 @@ routes, so the suite's fleets all stayed, and 150 MB each ran it out of memory.
 
 **C. The battle tick** (done)
 1. **A setting** (the level's, the host's, as the clock): the engaged ships' tick, 10, 60, 300 or
-   600 s (`minerva.toml` `ticks`), 10 s by default; the clock bar's and the lobby's **tick**. Longer
+   600 s (`minerva.toml` `ticks`; 30 s too, the default since the benches: at 10 s a battle at 1 h/s took 1.3 cores); the clock bar's and the lobby's **tick**. Longer
    ticks fire a tick's cycles at once. `merged_s` and `merge_warp` are gone.
 2. **Fine ticks for the engaged alone** (19). A piece the AI is due inside is split: the rest
    flown the whole piece first, the ticked rows (`Captain.ticked`, closed over what their flight

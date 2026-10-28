@@ -79,7 +79,7 @@ class Captain:
         self.engaged: set[int] = set()
         self.due = np.full(n, -np.inf)                   # an engaged ship is looked at again from here (pace)
         self.last_t = -np.inf
-        self.tick_s = self.minerva.engaged_s             # an engaged ship's tick (ai.AI.front sets it by the clock's warp)
+        self.tick_s = self.minerva.engaged_s             # an engaged ship's tick (ai.AI.front sets it: the level's battle tick)
         self.ships = np.array([c.kind[i] == SHIP for i in range(n)])
         self.readied = np.zeros(n, dtype=np.int8)        # the readiness her orders last set (0: none yet)
         self.near: dict[str, tuple] = {}                 # side -> (block, its ready rows a sighting is in reach of)

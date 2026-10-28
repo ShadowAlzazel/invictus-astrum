@@ -28,7 +28,7 @@ def _down(fleet, ids):
     return {s for s in ids if fleet.combat.out(fleet, fleet.c.row[s])}
 
 
-@pytest.mark.parametrize("tick", [None, 60.0])
+@pytest.mark.parametrize("tick", [10.0, None, 60.0])
 def test_a_flotilla_sent_at_the_venus_raiders_fights_them(tmp_path, tick):
     """Attack-moved at Venus, aggressive, she meets them after some 66 h and both sides fight: her
     spinal batteries from their farthest reach in, both sides' optics within their dazzle range.
@@ -54,10 +54,8 @@ def test_a_flotilla_sent_at_the_venus_raiders_fights_them(tmp_path, tick):
         assert not np.isin(fleet.sensors.view(k_now).row, [j]).any()           # ... nor sweeps
     spinal = [e for e in log if e.weapon == "spinal" and e.what == "fired"]
     assert max(e.result["range_km"] for e in spinal) > 20000                    # (from far out)
-    if tick == 60.0:
-        assert max(e.salvos for e in spinal) == 6 and {e.t % 60 for e in log} == {(t - 600) % 60}   # (6 PAPILION cycles a minute)
-    else:
-        assert {e.salvos for e in spinal} == {1}
+    tick = tick or world.minerva.engaged_s                                      # (6 PAPILION cycles a minute)
+    assert max(e.salvos for e in spinal) == tick / 10 and {e.t % tick for e in log} == {(t - 600) % tick}
 
 
 def test_a_battle_flown_again_is_the_same_battle(tmp_path):

@@ -44,9 +44,11 @@ def test_the_spinal_loop_closes_firing_and_takes_her_out(tmp_path):
     in the book, resolved by the combat book), her optics held on the target within their dazzle
     range. GHOST 1's systems go out one by one (light ruins her masts and radiators; a salvo her
     batteries and drive) until she is out of the fight; then she leaves combat and fires no more,
-    and GHOST 1, a wreck, sweeps no more."""
+    and GHOST 1, a wreck, sweeps no more. On a 10 s battle tick (her PICKET stacks' cycle): at 30 s
+    her light holds longer and takes GHOST 1 out before she closes to fire the spine."""
     c, world = _app(tmp_path)
     fleet = world.fleet(world.scenarios["sol-demo"])
+    c.app.state.sim.host.ai.tick["sol-demo"] = 10.0
     t = fleet.t0 + 600
     assert _hunt(c, t, "aggressive", unit="tf3-es-1", map="root") == 200
     c.post("/api/order", json={"scenario": "sol-demo", "view": "master", "unit": "ghost-1", "t": t, "g": 0.3,

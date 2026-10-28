@@ -107,7 +107,7 @@ fired on; and she looks only if her side's sweep holds a live sighting within he
 tenth more, `NEAR_SLACK`): the sweep's newest, a bound on what the relay tree has brought her
 flagship, which the look itself reads off her side's picture. A side with a ship on return fire is
 pictured (without tracks) only while a ship of another side flies an engage on one of its ships. A ship in combat is on the CAPTAIN's **engaged** list: looked at every battle tick
-(the level's, below; `engaged_s`, est. 10 s, by default) once near the farthest envelope her engagement acts at, and short of it a quarter of the
+(the level's, below; `engaged_s`, 30 s, by default) once near the farthest envelope her engagement acts at, and short of it a quarter of the
 time she takes to close on it (at most a block); while any is, her side is pictured that often.
 
 ## Control
@@ -131,8 +131,8 @@ flies again for them. The flight stops at those moments: every engaged ship's ne
 grid of ticks from the scenario's start, else the next block, when ready ships look. A replay from
 a checkpoint does not ask it again: its orders are the book's.
 
-**The battle tick** is the level's, set by its host as the clock is (`ticks`: 10, 60, 300 or 600 s;
-`engaged_s`, 10 s, by default; the run-ahead hands it to the AI). A longer tick fires a tick's
+**The battle tick** is the level's, set by its host as the clock is (`ticks`: 10, 30, 60, 300 or 600 s;
+`engaged_s`, 30 s, by default; the run-ahead hands it to the AI). A longer tick fires a tick's
 cycles at once; what it loses is the automaton's and the admiral's, not the simulation's. Only the
 engaged are ticked (`Captain.ticked`: the engaged, whom they engage, and whatever their flight bears
 on: formations, chasers, a flying target): a piece the AI is due inside is split, the rest of the

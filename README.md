@@ -169,7 +169,7 @@ the author*. The format is in `data/ships/README.md`.
 | Double-click, or F | centre on the selection and ride with it |
 | H | frame the whole system |
 | Space, `[` `]` | pause, slower, faster (1 s/s up to 1 yr/s): in a level, its clock on the server, for everyone in it. The clock bar's restart (clicked twice) restarts the level |
-| clock bar's **tick** | in a level, its battle tick (10 s, 1, 5 or 10 min): how often an engaged ship's CAPTAIN looks, a longer tick firing its cycles at once. Whoever may set the warp may set it |
+| clock bar's **tick** | in a level, its battle tick (10 s, 30 s by default, 1, 5 or 10 min): how often an engaged ship's CAPTAIN looks, a longer tick firing its cycles at once. Whoever may set the warp may set it |
 | Esc | clear the selection |
 
 Every key but Esc and Shift can be rebound in Settings, Hotkeys.
