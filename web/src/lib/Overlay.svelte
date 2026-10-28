@@ -9,7 +9,7 @@
   // collapse into a flight, group or task force by their count of ships ([folding]).
   // Zooming in never adds clutter, only resolves what was folded.
   import { onMount, onDestroy } from 'svelte';
-  import { rgba, text, display, unitSymbol, bodyDisplay, bodyMark, barycentreMark, zoneRing } from './symbols.js';
+  import { rgba, text, display, unitSymbol, bodyDisplay, bodyMark, barycentreMark, zoneRing, HARM } from './symbols.js';
   import { km } from './format.js';
   import { reveal } from './hierarchy.js';
   import { ofGroup } from './orders.js';
@@ -122,7 +122,8 @@
       const hot = isHot('contact', c.id), formation = kids(c.id).length > 0;
       const h = S.icons.unit_px * (formation || c.echelon !== 'ship' ? S.icons.formation_scale : 1);
       const ring = rv.children.has(c.id) ? childCol : rv.parents.has(c.id) ? parentCol : null;
-      if (byId[c.id] === c && map.state.ships?.[c.id]?.out) c = { ...c, status: [...(c.status ?? []), 'crab'] };    // a wreck, as the side sees her (one ship, not a group)
+      const harm = byId[c.id] === c ? HARM[map.state.ships?.[c.id]?.harm ?? 0] : null;    // as the side sees her (one ship, not a group)
+      if (harm) c = { ...c, status: [...(c.status ?? []), harm] };
       unitSymbol(ctx, style, c, s.x, s.y, {
         h, hot, ring, label: S.layers.labels || hot || ring !== null,
         alpha: picks ? (ofGroup(byId, picks, c.id) ? 1 : S.selection.dim_unpicked ?? 0.3) : selId && !related.has(c.id) ? S.selection.dim_others : 1,

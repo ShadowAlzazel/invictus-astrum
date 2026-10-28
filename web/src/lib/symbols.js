@@ -74,6 +74,7 @@ function roleMarks(ctx, marks, x, y, shape, ew, eh, color) {
 
 // what a unit's faction is called under it: its prefix (AVC, AAG, JADF), else its frame's tag
 // (style.toml [affiliation]: HOSTILE, UNKNOWN, CIVIL)
+export const HARM = [null, 'damaged', 'crab', 'destroyed'];   // a ship's harm as the server says it (0 whole to 3), as a style.toml status
 export const designation = (style, c) => c.faction?.prefix || (style.affiliation[c.affiliation] ?? style.affiliation.unknown).tag || '';
 
 // one unit or formation symbol. c = contact (affiliation, echelon, unit_type, status, callsign, pry, brevity, faction)
@@ -112,6 +113,8 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
   }
   if (statuses.some((s) => s.cross)) {
     ctx.beginPath(); ctx.moveTo(x - ew, y - eh); ctx.lineTo(x + ew, y + eh); ctx.moveTo(x + ew, y - eh); ctx.lineTo(x - ew, y + eh); ctx.stroke();
+  } else if (statuses.some((s) => s.slash)) {
+    ctx.beginPath(); ctx.moveTo(x - ew, y + eh); ctx.lineTo(x + ew, y - eh); ctx.stroke();
   }
   const ech = style.echelon[c.echelon] ?? '';
   if (ech) text(ctx, ech, x, y - eh - 3, rgba(col, alpha), 10, FONT_MONO, 'center');

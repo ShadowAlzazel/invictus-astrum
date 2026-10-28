@@ -3,7 +3,7 @@
   import { km, kmFull, n, bearing, elev, lightTime, duration, watts, age } from './format.js';
   import { hms, group, shipsUnder, orderGroups, heading, named, ofGroup } from './orders.js';
   import { G, figures, len, sub } from './kepler.js';
-  import { unitSymbol } from './symbols.js';
+  import { unitSymbol, HARM } from './symbols.js';
   import Telegraph from './Telegraph.svelte';
   import { cap, keymap } from './keys.js';
 
@@ -465,7 +465,7 @@
         {/if}
       </section>
     {/if}
-    {#if contact.status?.length || ship?.out}<p class="dim">Status: {[...(contact.status ?? []), ...(ship?.out ? ['crab'] : [])].map((s) => style?.status?.[s]?.label ?? s).join(', ')}</p>{/if}
+    {#if contact.status?.length || HARM[ship?.harm ?? 0]}<p class="dim">Status: {[...(contact.status ?? []), ...(HARM[ship?.harm ?? 0] ? [HARM[ship.harm]] : [])].map((s) => style?.status?.[s]?.label ?? s).join(', ')}</p>{/if}
     {#if contact.notes}<p class="note">{contact.notes}</p>{/if}
   {:else if probe}
     <dl>

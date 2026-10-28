@@ -8,11 +8,11 @@ Ours to build is in `docs/REFACTORS.md` (by number) and `docs/COMBAT.md` (Open).
 
 | # | Question | As it is today | Where |
 |---|---|---|---|
-| 1 | **The spine against light.** With the wreck rule (blind and no radiators is out), light decides a battle: 4 spinal salvo orders in LF-1's Venus action at 30 s, none in TF-2's (716 before the rule). Should the spine matter more? | The rule stands. Undo: drop the `saw` clause in `Systems.disabled`. | `astrum/systems.py`, COMBAT.md (the Venus action) |
+| 1 | **The spine against light.** With the wreck rule (blind and no radiators is out, a heated infrared window counting as blind), light decides a battle by heat: 24 spinal salvo orders in LF-1's Venus action at 30 s, none in TF-2's (716 before the rule). Measured the other way, only a mast destroyed counting as blind: LF-1 loses 11 against 5 raiders by 90 h; TF-2 takes all ten (8 destroyed), 4 of ours out. Should the spine matter more? | The rule stands. Undo: drop the `saw` clause in `Systems.disabled`. | `astrum/systems.py`, COMBAT.md (the Venus action) |
 | 2 | **Where a hit lands.** Her silhouette and attitude by basic shapes from her class's layout, in place of shares by kind; light on radiators by her profile and angle; her crew (§8.2) and prompt upset (§8.5). | A channel lands on a kind of system by its share of her (TEMPORARY). | `data/ships/rules.toml` [damage.share], REFACTORS 24 |
 | 3 | **The damage figures.** Hit points by rate, the citadel's factor, two radiators a ship. | 15,000 / 5,000 / 3,000 / 2,000 MJ (line, frigate, auxiliary, unrated); citadel 2x; 2 radiators (all TEMPORARY). | `data/ships/rules.toml` [damage], `astrum/systems.py` RADIATORS |
-| 4 | **Damaged, disabled, destroyed told apart.** What repair and salvage make of each. | Alike in the simulation: all out. | COMBAT.md, REFACTORS 26 |
-| 5 | **A dazzled sensor.** Its sweep blind a while behind its shutter. | Said by the dwell, not done. | `astrum/optics.py` |
+| 4 | **Damaged, disabled, destroyed told apart.** What repair, salvage and a tender make of each. | Alike in the simulation: all out. On the map: a slash, a crab, a faded hollow cross. | COMBAT.md, REFACTORS 26 |
+| 5 | **The drive's tiers at her rear.** She tanks more there. | Damaged 25, disabled 82.7, destroyed 165.4 MJ/m² (est., twice a hull's). | `data/ships/rules.toml` [damage.systems] |
 | 6 | **How hard she burns into a pass,** as a profile's setting ("the pass is expensive", 24 October). | Half the way at her cruise g. | `data/profiles.toml`, COMBAT.md |
 | 7 | **The lost node's wait.** | `wait_s = 600`, TESTING (root and Ballistic orders). | `data/profiles.toml` |
 | 8 | **Projectiles' figures.** Mass, g, burn time, payload, burst radius, seeker; whether point defence sees only what the sweep sees. | Launched and logged, not flown. | COMBAT.md, REFACTORS 23 |
@@ -26,6 +26,7 @@ Ours to build is in `docs/REFACTORS.md` (by number) and `docs/COMBAT.md` (Open).
 
 | Date | Question | Answer |
 |---|---|---|
+| 28 October | A dazzled sensor. | An aim debuff for now: her aim a quarter worse while light is held on a sensor of hers (`dazzle_aim` 1.25, TORMENTA §6.7.4); her side's picture still holds the target. Light blinds, it no longer de-masts. |
 | 28 October | Hold fire's readiness: the data had III, the 25 October note said I. | III (the note was a typo). The data stands. |
 | 28 October | The battle tick by default. | 30 s, among 10, 30, 60, 300, 600 (`data/minerva.toml`). |
 | 28 October | Does a map burn over a go-to clear it? | Yes: clearer to the player (`3103c80`). |

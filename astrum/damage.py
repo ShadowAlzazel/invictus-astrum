@@ -14,8 +14,10 @@ Two things, by TORMENTA §8's thresholds ([damage] in data/ships/rules.toml):
   damaged where its electronics are ruined, ~0.075 MJ/m², disabled where plate shatters, destroyed
   where the hull opens; a sensor mast destroyed at 2.91; a radiator at 1.2). So a salvo far beyond
   where it opens her still takes out what it lands on. Light held on her, closed loop on what
-  looks back or is hot (§6.5.1): a sensor mast ruined at 2.91 MJ/m² held, a thermal-infrared window
-  heated blind (damaged) at 1 W/cm²; else, her wings spread, a radiator at 1.2.
+  looks back or is hot (§6.5.1): a sensor looking back, within the battery's dazzle range, dazzled
+  while it is held (a shutter closes in microseconds: light does not de-mast, §6.5.3), her aim a
+  quarter worse meanwhile (§6.7.4); a thermal-infrared window heated blind (damaged) at 1 W/cm²
+  open loop (out of band, it does not retroreflect: §6.7.3); else, her wings spread, a radiator at 1.2.
 
 At her hit points she is destroyed, and every system of hers still operational with her; with her
 drive and every battery out she is disabled, and the rest with her; so too with every sensor mast and
@@ -55,7 +57,7 @@ class Damage:
         self.share = {part: {k: _num(v, 0.0) for k, v in (sh or {}).items() if k in self.tiers}
                       for part, sh in (d.get("share") or {}).items()}
         light = d.get("light") or {}
-        self.mast_held, self.window_wm2 = _num(light.get("mast_mjm2"), 2.91), _num(light.get("ir_window_wm2"), 1e4)
+        self.window_wm2, self.dazzle_aim = _num(light.get("ir_window_wm2"), 1e4), _num(light.get("dazzle_aim"), 1.25)
         self.radiator_held = _num(light.get("radiator_mjm2"), 1.2)
         hp = d.get("hp_mj") or {}
         self.hp = np.full(len(fleet.c.ids), np.inf)
@@ -63,6 +65,10 @@ class Damage:
             sc = classes.get(getattr(spec, "class_id", None))
             if sc is not None:
                 self.hp[i] = _num(hp.get(sc.rate or ""), _num(hp.get("default"), 5000.0))
+
+    def aim_factor(self, i: int, t: float) -> float:
+        """What her aim error is multiplied by at t: dazzled, a quarter worse (§6.7.4)."""
+        return self.dazzle_aim if self.systems.dazzled_at(i, t) else 1.0
 
     def destroyed(self, fleet, j: int) -> bool:
         return bool(j < len(self.hp) and fleet.c.damage[j] >= self.hp[j])
@@ -92,9 +98,10 @@ class Damage:
                         took += self._take(fleet, j, kind, state, t, by, rng)
         elif "held_mjm2" in r:                            # light held on her: what looks back, else what is hot
             lost = r["energy_mj"] * min(1.0, r["hull_mjm2"] / self.open_mjm2)
-            state = DESTROYED if r["held_mjm2"] >= self.mast_held else DAMAGED if r["held_wm2"] >= self.window_wm2 else None
-            if state and S.sensors[j]:
-                took += self._take(fleet, j, "sensor", state, t, by, rng)
+            if "dazzle" in r.get("effects", ()) and S.sensors[j]:
+                S.dazzle(j, t, t + float(r["dwell_s"]))
+            if r["hull_wm2"] >= self.window_wm2 and S.sensors[j]:     # (out of band: the loop cannot close on it, §6.7.3)
+                took += self._take(fleet, j, "sensor", DAMAGED, t, by, rng)
             elif not c.cold[j] and r["held_mjm2"] >= self.radiator_held:
                 took += self._take(fleet, j, "radiator", DESTROYED, t, by, rng)
         if lost > 0:

@@ -41,8 +41,8 @@ def dwell(op: Optic, range_m: float, aim_urad: float, dwell_s: float, rules: dic
     held_mj, hull_mj = held * dwell_s / 1e6, hull * dwell_s / 1e6
     th = rules.get("threshold") or {}
     effects = [k for k in ("mane", "radiator", "mast") if held_mj >= float(th.get(k + "_mjm2", math.inf))]
-    if held >= float(th.get("ir_window_wm2", math.inf)):
-        effects.append("ir-window")                       # a thermal-infrared window heated blind
+    if hull >= float(th.get("ir_window_wm2", math.inf)):
+        effects.append("ir-window")                       # a thermal-infrared window heated blind: open loop (§6.7.3)
     if op.dazzle_km and range_m <= op.dazzle_km * 1e3:
         effects.append("dazzle")
     return {"apertures": op.apertures, "range_km": range_m / 1e3, "dwell_s": dwell_s, "spot_m": d, "aim_m": err,

@@ -10,6 +10,11 @@ kept for what is to come (repair, salvage). A ship disabled (her drive and every
 every sensor and radiator: she can neither see nor shed the heat of firing) or destroyed (at her
 hit points, astrum/damage.py) has every system out: a wreck neither fires, burns, nor sweeps.
 
+A sensor looking back at light is dazzled while it is held on her (TORMENTA §6.7.4: a shutter
+closes in microseconds, dazzle recovers in seconds): an entry of hers in the dazzled list, from
+then until the dwell ends, which takes nothing off what runs (her side still sees) and spoils her
+own aim (Damage.aim_factor).
+
 Every change is a dated record, so a re-fly from a moment sets them back (forget) and makes them
 again as it flies; her columns (fmax, shed) go back with her checkpoint.
 """
@@ -24,6 +29,7 @@ from .detect import NEVER, SAMPLE_S
 
 OPERATIONAL, DAMAGED, DISABLED, DESTROYED = "operational", "damaged", "disabled", "destroyed"
 OUT = (DAMAGED, DISABLED, DESTROYED)
+HARM = {DAMAGED: 1, DISABLED: 2, DESTROYED: 3}     # how a ship stands, for the map: 0 whole
 KINDS = ("weapon", "sensor", "drive", "radiator")
 RADIATORS = 2                     # est.: a ship's radiators, her two wings' (TEMPORARY, until a class says)
 
@@ -56,7 +62,9 @@ class Systems:
         self.radiators = [list(range(RADIATORS)) if c.store[i] > 0 else [] for i in range(n)]
         self.had = np.array([self.drive[i] or bool(weapons[i]) for i in range(n)])   # a drive or a battery to lose
         self.saw = np.array([bool(self.sensors[i]) and bool(self.radiators[i]) for i in range(n)])   # masts and radiators to lose
-        self.gone: dict[int, float] = {}              # a wreck's row: when she went out
+        self.hurt: dict[int, float] = {}              # a row: when a system of hers first went out
+        self.gone: dict[int, tuple] = {}              # a wreck's row: when she went out, and as what
+        self.dazzled: dict[int, list] = {}            # a row: when light dazzled her, and until when, in time order
         self.lists = {s: [] for s in OUT}
         self.log: list[Out] = []
         self._disabled = None                         # (every row's, made when asked, kept until a change)
@@ -88,6 +96,7 @@ class Systems:
             self.radiators[i].remove(key)
             c.shed[i] = len(self.radiators[i]) / RADIATORS
         self._disabled = None
+        self.hurt.setdefault(i, t)
         o = Out(t, i, kind, key, state, by)
         insort(self.log, o, key=lambda x: x.t)
         self.lists[state].append(o)
@@ -95,7 +104,7 @@ class Systems:
 
     def take_all(self, fleet, i: int, state: str, t: float, by: str = "") -> list[Out]:
         """Every system of hers still operational, out: disabled or destroyed (she is a wreck from t)."""
-        self.gone.setdefault(i, t)
+        self.gone.setdefault(i, (t, state))
         return [o for kind in KINDS for key in list(self.operational(i, kind))
                 if (o := self.take(fleet, i, kind, key, state, t, by)) is not None]
 
@@ -105,13 +114,28 @@ class Systems:
         return bool(self.had[i]) and ((not self.drive[i] and not self.weapons[i])
                                       or (bool(self.saw[i]) and not self.sensors[i] and not self.radiators[i]))
 
-    def out_at(self, n: int, t: float) -> np.ndarray:
-        """Which of the first n rows are wrecks at t."""
-        out = np.zeros(n, dtype=bool)
-        for i, s in self.gone.items():
+    def harm_at(self, n: int, t: float) -> np.ndarray:
+        """How each of the first n rows stands at t: 0 whole, 1 damaged (a system out), 2 disabled,
+        3 destroyed (HARM)."""
+        out = np.zeros(n, dtype=np.int8)
+        for i, s in self.hurt.items():
             if i < n and s <= t + 1e-6:
-                out[i] = True
+                out[i] = 1
+        for i, (s, state) in self.gone.items():
+            if i < n and s <= t + 1e-6:
+                out[i] = HARM[state]
         return out
+
+    def dazzle(self, i: int, t: float, until: float) -> None:
+        """Light held on her from t to until: dazzled."""
+        insort(self.dazzled.setdefault(i, []), (t, until))
+
+    def dazzled_at(self, i: int, t: float) -> bool:
+        got = self.dazzled.get(i)
+        if not got:
+            return False
+        k = bisect_left(got, (t + 1e-9, float("inf")))
+        return any(s <= t + 1e-9 < u for s, u in got[max(k - 2, 0):k])
 
     def disabled_rows(self) -> np.ndarray:
         if self._disabled is None:
@@ -123,7 +147,12 @@ class Systems:
         the given rows'. Her columns go back with her checkpoint; the lists and the sweep's mounts here."""
         k = bisect_left(self.log, t - 1e-9, key=lambda x: x.t)
         undo = [o for o in self.log[k:] if rows is None or o.row in rows]
-        self.gone = {i: s for i, s in self.gone.items() if s < t - 1e-9 or (rows is not None and i not in rows)}
+        keep = lambda i, s: s < t - 1e-9 or (rows is not None and i not in rows)
+        self.hurt = {i: s for i, s in self.hurt.items() if keep(i, s)}
+        self.gone = {i: g for i, g in self.gone.items() if keep(i, g[0])}
+        for i, got in self.dazzled.items():
+            if rows is None or i in rows:
+                got[:] = [x for x in got if x[0] < t - 1e-9]
         if not undo:
             return
         self._disabled = None
@@ -135,12 +164,12 @@ class Systems:
             if o.kind == "weapon":
                 self.weapons[o.row] = sorted([*self.weapons[o.row], o.key], key=lambda w: w.n)
             elif o.kind == "sensor":
-                self.sensors[o.row].append(o.key)
+                insort(self.sensors[o.row], o.key)           # (in order: a draw of one is the same again)
                 self.S.off([o.key], NEVER)
             elif o.kind == "drive":
                 self.drive[o.row] = True
             else:
-                self.radiators[o.row].append(o.key)
+                insort(self.radiators[o.row], o.key)
 
     def state(self, i: int) -> dict:
         """Her systems as the map reads them: each kind's count by state."""

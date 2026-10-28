@@ -239,7 +239,8 @@ class CombatBook:
         """Light held on her for the dwell (the tick it was ordered for): at her range, by her aim."""
         at, light, _, _ = self._geometry(fleet, ev.ship, ev.targets[0], ev.t)
         ev.lands = ev.t + light
-        ev.result = optics.dwell(w.optic, float(np.linalg.norm(at)), self.aim[ev.ship], float(tg.get("dwell_s", 10.0)), self.optics)
+        aim = self.aim[ev.ship] * self.harm.aim_factor(ev.ship, ev.t)
+        ev.result = optics.dwell(w.optic, float(np.linalg.norm(at)), aim, float(tg.get("dwell_s", 10.0)), self.optics)
 
     def launch(self, fleet, ev: Event, w: Weapon, tg: dict) -> None:
         """A projectile away: logged as launched. To come: a kinetic round flown as a coasting row
@@ -265,7 +266,7 @@ class CombatBook:
         los, axis = at / d, np.nan_to_num(np.asarray(hull_dir[1], dtype=float))
         sizes = salvo.presented(hull, axis, los, bool(cold[1] > 0.5), self.size_k)
         rng = np.random.default_rng(salvo.seed(fleet.scenario.id if fleet.scenario else "", fleet.c.ids[i], w.id, f"{t:.3f}"))
-        return salvo.fire(w.stack, w.salvo_channels, d, self.aim[i], sizes, self.rules, rng, salvo.offset(at, aim, axis, los),
+        return salvo.fire(w.stack, w.salvo_channels, d, self.aim[i] * self.harm.aim_factor(i, t), sizes, self.rules, rng, salvo.offset(at, aim, axis, los),
                           salvos)
 
     def _add(self, ev: Event) -> None:

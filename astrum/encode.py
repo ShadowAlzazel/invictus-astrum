@@ -95,7 +95,7 @@ def ship_columns(fleet, pic: dict, t: float, n: int, seen: dict | None = None) -
     cols["cold"] = np.where(c.coldt[:n] > 0, (pic["cold"][:n] > 0.5).astype(float), np.nan)
     for k in ("shown", "identified", "lost"):            # how the view knows her (astrum/picture.py)
         cols[k] = seen[k] if seen else np.full(n, k != "lost")
-    cols["out"] = fleet.combat.systems.out_at(n, t) & cols["shown"]     # a wreck (the map's crab), as the side sees her
+    cols["harm"] = np.where(cols["shown"], fleet.combat.systems.harm_at(n, t), 0)   # damaged, disabled, destroyed, as the side sees her
     old = seen["old"] if seen else np.zeros(n, dtype=bool)
     if old.any():                                      # an old track: where she was last seen, nothing of her now
         cols["active"] = cols["active"] & ~old
@@ -164,9 +164,11 @@ class ShipEncoder:
                 d["active"] = bool(cols["active"][i])
             if ch["cold"][i]:
                 d["cold"] = None if np.isnan(cols["cold"][i]) else bool(cols["cold"][i])
-            for k in ("shown", "identified", "lost", "out"):
+            for k in ("shown", "identified", "lost"):
                 if ch[k][i]:
                     d[k] = bool(cols[k][i])
+            if ch["harm"][i]:
+                d["harm"] = int(cols["harm"][i])
             if ch["dir"][i]:                            # (none for a ship not hers)
                 d["dir"] = None if None in val["dir"][i] else val["dir"][i]
             st = said[int(cols["mver"][i])] or {}

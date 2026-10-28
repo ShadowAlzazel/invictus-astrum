@@ -146,6 +146,8 @@ under burn and seeker, each its own module behind `CombatBook.launch`), wrecks b
 - **The combat log indexed** (`3354d16`): reload check, last shot and forget no longer read the whole log; at a million shots 22 / 23 / 57 ms to 0.001 / 0.004 / under 0.01 ms.
 - **A salvo's spot in closed form** (`d764e20`): 1.07 ms to 29 µs, the same spots to four figures.
 - **Systems by state** (`e6fbe58`): lists, not flags; a wreck's sensors cut from the sweep at no cost.
+- **Replays cut the same** (`combat`): the AI's moments kept as facts, a station ship's minute samples drawn per grid step (median 676 m, worst 26 km off before, 0.26 m and 0.5 m now), the lists restored in order; a re-fly from a checkpoint gives the same shots.
+- **Dazzle and harm** (`combat`): a dazzled sensor spoils her aim while held, light no longer takes masts, her harm (damaged, disabled, destroyed) sent to the map and drawn.
 
 - **Station keeping** (`a014217`, `6f51411`): a place's velocity is its central difference (it was a
   60 s forward difference, 21 m/s off by Io), and a station ship's samples carry the Hermite's

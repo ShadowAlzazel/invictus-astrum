@@ -613,16 +613,16 @@ def _put3(dst, src, slots, rows):
 
 
 @jit
-def record(slots, scope, still, held, whole, ts, sa, ta, TR, TV, TPROP, TDVS, TAIM, TTHRUST, TRNG, TCLOS, TETA1, TARRIVE,
+def record(slots, scope, still, loose, held, whole, ts, TR, TV, TPROP, TDVS, TAIM, TTHRUST, TRNG, TCLOS, TETA1, TARRIVE,
            TDIR, THEAT, TCOLD, r, v, t, prop, dvs, aim, thrust, rng, clos, eta1, arrive, dirn, heat, cold):
     """Fleet._record's writes, compiled: every row in scope, when her order gets her there; the
-    rows not flown in the block (still), their state as it stands (heat and cold only if whole);
-    and those of them holding station (held), at each sample ts where they were then and how fast:
-    by cubic Hermite from the sample before the block (slot sa, at ta; sa < 0: none) to where her
-    place has her now, and its derivative; on from it past that."""
+    rows not flown in the block (still), their state as it stands (heat and cold only if whole),
+    where and how fast as it stands for those not on station (loose); and those holding station
+    (held), at each sample past her last step on the station grid, on from it (the samples up to
+    it are her steps', Fleet._station_track)."""
     _put1(TARRIVE, arrive, slots, scope)
-    _put3(TR, r, slots, still)
-    _put3(TV, v, slots, still)
+    _put3(TR, r, slots, loose)
+    _put3(TV, v, slots, loose)
     _put1(TPROP, prop, slots, still)
     _put1(TDVS, dvs, slots, still)
     _put3(TAIM, aim, slots, still)
@@ -637,26 +637,35 @@ def record(slots, scope, still, held, whole, ts, sa, ta, TR, TV, TPROP, TDVS, TA
     for q in range(held.shape[0]):
         i = held[q]
         tb = t[i]
-        ok = sa >= 0 and tb > ta + 1e-6
-        if ok:
-            for x in range(3):
-                if not math.isfinite(TR[sa, i, x]):
-                    ok = False
-        h = tb - ta
         for a in range(slots.shape[0]):
-            s = slots[a]
-            if ok and ts[a] <= tb + 1e-6:
-                u = min(max((ts[a] - ta) / (h if h > 1e-6 else 1.0), 0.0), 1.0)
-                u2 = u * u
-                u3 = u * u * u
-                for x in range(3):
-                    TR[s, i, x] = (2 * u3 - 3 * u2 + 1) * TR[sa, i, x] + (u3 - 2 * u2 + u) * h * TV[sa, i, x] \
-                        + (3 * u2 - 2 * u3) * r[i, x] + (u3 - u2) * h * v[i, x]
-                    TV[s, i, x] = ((6 * u2 - 6 * u) * TR[sa, i, x] + (6 * u - 6 * u2) * r[i, x]) / h \
-                        + (3 * u2 - 4 * u + 1) * TV[sa, i, x] + (3 * u2 - 2 * u) * v[i, x]
-            else:
+            if ts[a] > tb + 1e-6:
+                s = slots[a]
                 for x in range(3):
                     TR[s, i, x] = r[i, x] + v[i, x] * (ts[a] - tb)
+                    TV[s, i, x] = v[i, x]
+
+
+@jit
+def station_track(TR, TV, slots, ts, rows, t0, r0, v0, t1, r1, v1):
+    """Fleet._station_track, compiled: each of rows (from t0[q], r0, v0 to t1, r1, v1) at the
+    samples ts (slots) between, by cubic Hermite and its derivative."""
+    for q in range(rows.shape[0]):
+        i = rows[q]
+        h = t1 - t0[q]
+        if h <= 1e-6:
+            continue
+        for a in range(slots.shape[0]):
+            if ts[a] <= t0[q] + 1e-6 or ts[a] > t1 + 1e-6:
+                continue
+            s = slots[a]
+            u = (ts[a] - t0[q]) / h
+            u2 = u * u
+            u3 = u2 * u
+            for x in range(3):
+                TR[s, i, x] = (2 * u3 - 3 * u2 + 1) * r0[q, x] + (u3 - 2 * u2 + u) * h * v0[q, x] \
+                    + (3 * u2 - 2 * u3) * r1[q, x] + (u3 - u2) * h * v1[q, x]
+                TV[s, i, x] = ((6 * u2 - 6 * u) * r0[q, x] + (6 * u - 6 * u2) * r1[q, x]) / h \
+                    + (3 * u2 - 4 * u + 1) * v0[q, x] + (3 * u2 - 2 * u) * v1[q, x]
 
 
 @jit
@@ -1040,7 +1049,9 @@ def warm_up() -> None:
     unit_steps(i1.copy(), i1.copy(), 1, f3, f3 + 1.0, f1 + 1.0, np.zeros(1, dtype=np.bool_), f1, np.zeros(1, dtype=np.int8),
                f1, np.zeros(1, dtype=np.bool_), 1, 0.005, 10.0, 600.0, 60.0, 0.02, 1.0, 10.0)
     T1, T13 = np.zeros((2, 2)), np.zeros((2, 2, 3))
-    record(i1.copy(), i1.copy(), i1.copy(), i1.copy(), True, f1, 1, 0.0, T13, T13.copy(), T1, T1.copy(), T13.copy(),
+    station_track(T13, T13.copy(), i1.copy(), f1 + 60.0, i1.copy(), f1.copy(), np.zeros((1, 3)), np.zeros((1, 3)), 120.0,
+                  np.zeros((1, 3)), np.zeros((1, 3)))
+    record(i1.copy(), i1.copy(), i1.copy(), i1.copy(), i1.copy(), True, f1, T13, T13.copy(), T1, T1.copy(), T13.copy(),
            T1.copy(), T1.copy(), T1.copy(), T1.copy(), T1.copy(), T13.copy(), T1.copy(), T1.copy(), np.zeros((2, 3)),
            np.zeros((2, 3)), np.zeros(2), *(np.zeros(2) for _ in range(2)), np.zeros((2, 3)),
            *(np.zeros(2) for _ in range(5)), np.zeros((2, 3)), np.zeros(2), np.zeros(2))

@@ -191,7 +191,7 @@ hp_mj = { line = 15000, frigate = 5000, auxiliary = 3000, unrated = 2000, defaul
 # opened 82.7, a sensor mast 2.91, a radiator 1.2. Which state each reads off is est.
 [damage.systems]
 weapon = { damaged = 0.075, disabled = 25.0, destroyed = 82.7 }
-drive = { damaged = 0.075, disabled = 25.0, destroyed = 82.7 }
+drive = { damaged = 25.0, disabled = 82.7, destroyed = 165.4, est = true, note = "at her rear, behind her length: damaged where plate over her shatters, disabled where the hull opens, destroyed at twice that" }
 sensor = { damaged = 0.075, destroyed = 2.91 }
 radiator = { destroyed = 1.2 }
 
@@ -202,9 +202,11 @@ radiator = { destroyed = 1.2 }
 hull = { sensor = 0.08, weapon = 0.06, radiator = 0.15 }
 citadel = { weapon = 0.2, drive = 0.2 }
 
-# Light held on her, closed loop (TORMENTA §6.5.1, §6.7): a sensor looking back, its mast ruined;
-# a thermal-infrared window heated blind; else, her wings spread, a radiator ruined.
+# Light held on her, closed loop (TORMENTA §6.5.1, §6.7): a sensor looking back dazzled while it is
+# held, within the battery's dazzle range (a shutter closes in microseconds: §6.5.3, lasers blind,
+# beams destroy), her aim the worse for it; a thermal-infrared window heated blind; else, her wings
+# spread, a radiator ruined.
 [damage.light]
-mast_mjm2 = 2.91
-ir_window_wm2 = 1.0e4
+dazzle_aim = 1.25                    # TORMENTA §6.7.4: shutter discipline degrades her pointing by about a quarter
+ir_window_wm2 = 1.0e4                # §6.7.3: 1 W/cm², open loop on her aim disc (twelve PANEL III: ~7,400 km at 6.5 µrad)
 radiator_mjm2 = 1.2

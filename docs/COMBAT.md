@@ -208,8 +208,12 @@ its irradiance and fluence each way, the energy put on her, and what the canon's
 reaches: a mane (0.8 MJ/m²), a radiator (1.2), a mast (2.91), a thermal-infrared window heated blind
 (1 W/cm²), dazzle within the battery's dazzle range (40,000 km). The CAPTAIN holds every optical
 battery of hers that reaches the target on it whenever a node fires, once a tick: light retargets in
-microseconds and needs no arc. What it ruins (a mast, a radiator) the damage model takes out; a
-dazzle is said, not yet done.
+microseconds and needs no arc. Lasers blind, beams destroy (§6.5.3): light no longer takes a mast
+out. A sensor looking back at it is dazzled for the dwell (§6.7.4: the shutter closes in
+microseconds, dazzle recovers in seconds): her aim is a quarter worse while it lasts (`dazzle_aim`
+1.25), salvo and light alike, though her side's picture still holds the target. A thermal-infrared
+window is out of band, unshuttered, so it is heated blind by her hull's open-loop irradiance (1
+W/cm², about 7,400 km for twelve PANEL III): that mount damaged.
 
 | Light, as built against TORMENTA | as built | canon |
 |---|---|---|
@@ -227,10 +231,10 @@ And her systems (`astrum/systems.py`): her batteries, her sensor mounts, her dri
 takes (`[damage.share]`, TEMPORARY: on her hull a mast 8%, a battery 6%, a radiator 15% with her
 wings spread; on her citadel her stack 20%, her drive 20%); one of that kind, drawn, goes to the
 state its fluence reaches (`[damage.systems]`: a battery or her drive damaged at 0.075 MJ/m², where
-electronics are ruined, disabled at 25, destroyed at 82.7; a mast destroyed at 2.91, damaged at
-0.075; a radiator destroyed at 1.2). Light held on her, closed loop: a mast ruined at 2.91 MJ/m²
-held, a thermal-infrared window heated blind (damaged) at 1 W/cm²; else, her wings spread, a
-radiator at 1.2.
+electronics are ruined, disabled at 25, destroyed at 82.7; her drive, at her rear, damaged at 25,
+disabled at 82.7, destroyed at 165.4, est.; a mast destroyed at 2.91, damaged at 0.075; a radiator
+destroyed at 1.2). Light held on her: a sensor looking back dazzled, an infrared window heated
+blind (damaged), above; else, her wings spread, a radiator at 1.2 closed loop.
 
 The states are lists, not flags. What runs reads only what is operational: her batteries are the
 combat book's list of hers (one out cannot be ordered or fired), her sensors the cones the sweep
@@ -241,8 +245,13 @@ destroyed), which only holds it: what it was, since when, by what. With her driv
 battery out she is disabled, and so with every sensor mast and radiator out (blind, and nothing
 to shed the heat of firing: light can do no more to her); at her hit points destroyed. Either way
 every system of hers still operational goes out with her, so a wreck neither burns, fires, nor
-sweeps, at no cost to anyone, and no one fights her on: the map draws her as a crab.
-Every change is a dated record, so a re-fly from a moment sets them back and makes them again.
+sweeps, at no cost to anyone, and no one fights her on. The map is sent her harm as her side sees
+her (0 whole, 1 damaged: a system out, 2 disabled, 3 destroyed) and draws it on her frame: a slash,
+a crab's cross, a faded hollow cross (`style.toml` [status]); tenders and tugs will want it.
+Every change is a dated record, so a re-fly from a moment sets them back and makes them again: the
+lists come back in their order, the AI's moments are kept as facts (when it ran, when it is next
+due, which rows it held fine) and a station ship's samples are drawn per grid step, so a replay
+cuts and draws the same.
 
 **The spine's reach.** A stack fires out to its farthest rated reach (TELVM §3.7: a LINE stack
 100,000 km, a PICKET 49,800), where a few channels in a hundred still land and ruin what they land
@@ -253,22 +262,19 @@ each tick within reach, `in-reach`), and `destroyed` holds for a target out of t
 PHALAENA), aggressive on the root's map, bogeys too, attack-moved from Earth at the Venus Raiders
 (ten hostile PHALAENA on guard, a ring 30,000 km out from Venus, `data/scenarios/sol-demo.toml`).
 
-| Venus, 28 October | 10 s tick | 30 s (the default) | 60 s |
-|---|---|---|---|
-| first out | 68.1 h | 68.0 h | 67.9 h |
-| raiders out, all disabled | 10 within 0.76 h | 10 within 0.87 h | 10 within 0.83 h |
-| ours out (disabled) | 1 | 2 | 2 |
-| spinal salvo orders (ours): channels hit of fired | 11: 82 of 264 | 4: 120 of 288 | 6: 419 of 864 |
-| farthest salvo, median | 34,316 / 16,566 km | 20,869 / 13,555 km | 20,323 / 8,496 km |
-| optical dwells (ours, theirs) | 422, 548 | 109, 131 | 68, 38 |
-| 72 h flown, battle and all | 4.7 s | 3.4 s | 3.2 s |
-| flown again from the middle | the same shots, the same systems out, the same ships | | |
+| Venus, 28 October, 72 h | 10 s tick | 30 s (the default) | 60 s | TF-2 (44), 30 s |
+|---|---|---|---|---|
+| raiders out | 10, all disabled, within 0.78 h | 10, all disabled, within 0.79 h | 10, all disabled, within 0.95 h | 10 within 2.68 h |
+| ours out | 0 | 0 | 0 | 7 |
+| shots, dazzles among them | 2,681, 2,618 | 1,020, 969 | 688, 591 | 4,282, 4,170 |
+| spinal salvo orders (ours) | 38 | 24 | 75 | 0 |
+| 72 h flown, battle and all | 5.1 s | 3.6 s | 3.1 s | 6.5 s |
+| flown again from a checkpoint | the same shots, the same systems out, the same ships | | | |
 
-Light decides it now. Within dazzle range light takes a ship's masts, then her radiators, and with
-both gone she is a wreck (above): the spine is barely needed (716 salvos before the rule, 27
-October). The whole of TF-2 (44) at the raiders, 30 s: all ten out within 2.45 h, six of ours, and
-no spinal shot at all. The raiders never fire their spines: a PICKET reaches 49,800 km against a
-LINE's 100,000.
+Light still decides it, now by heat: at station range (about 1,400 km) it blinds the raiders'
+infrared windows and burns their radiators, and blind with nothing to shed she is a wreck. With
+masts no longer taken by light, and the dazzle on her aim, none of LF-1 goes out (two before). The
+raiders never fire their spines: a PICKET reaches 49,800 km against a LINE's 100,000.
 She holds her fire while she burns off her spine (95% of her chances, in the action before the
 spine reached so far). The AI at the front edge,
 on a day of sol-demo: quiet 15 ms a game hour against 8 without it; TF-3 hunting, 40 against 5.
@@ -284,9 +290,10 @@ The owner's to give (each also in `docs/OPEN-ITEMS.md`, with the answers given):
   them), in place of the shares by kind; her crew (§8.2: a beam kills the people it crosses long
   before it opens the hull) and prompt upset (§8.5). The hit points, the shares, the citadel's
   factor and the two radiators are TEMPORARY.
-- Damaged, disabled and destroyed are alike in the simulation (all out): what tells them apart
-  (repair, salvage) is to come. A system out stays in the state it went out at.
-- A dazzled sensor (its sweep blind a while, behind its shutter) is said, not done.
+- Damaged, disabled and destroyed are alike in the simulation (all out), told apart on the map:
+  what repair, salvage and a tender make of each is to come. A system out stays in the state it
+  went out at.
+- The wreck rule (blind and no radiators is out) with a heated window counting as blind.
 - An attack-move flies one of two profiles. Standing orders (keep station): the stack is held while
   she burns off the aim, and she faces it when she does not. Ballistic orders (pass on by): her focus
   battery decides. A stack, she keeps the heading and fires it only inside its trim. Anything else,

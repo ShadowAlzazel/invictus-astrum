@@ -44,7 +44,8 @@ fill  = 0.10
 
 # Status modifiers. dash: frame dash pattern [on, off] px; cross: strike through; opacity: 0–1;
 # ellipse: draw an uncertainty ring; scale: the frame's size, times; shape: in place of an
-# affiliation's frame, by affiliation (its colour kept); hollow: the frame alone, nothing in it.
+# affiliation's frame, by affiliation (its colour kept); hollow: the frame alone, nothing in it;
+# slash: one stroke corner to corner. A ship's harm, as her side sees her: damaged, crab (disabled), destroyed.
 [status.cold]
 label = "Cold"
 dash = [5, 3]
@@ -64,9 +65,19 @@ opacity = 0.7
 ellipse = true
 
 [status.crab]
-label = "Crab: surrendered, disabled or destroyed"
+label = "Crab: surrendered or disabled"
 cross = true
 opacity = 0.75
+
+[status.damaged]                    # a system of hers out; still in the fight
+label = "Damaged"
+slash = true
+
+[status.destroyed]
+label = "Destroyed"
+cross = true
+hollow = true
+opacity = 0.45
 
 # Echelon marks drawn above a frame, smallest to largest.
 [echelon]

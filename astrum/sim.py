@@ -313,6 +313,7 @@ class Fleet:
         self.combat = combat.CombatBook(self, registry)     # her weapons, and what happened (astrum/combat.py)
         self.front = None                                   # the ship AI at the flight's front edge (_front), if any
         self._front_t, self._front_due = -math.inf, -math.inf
+        self._moments: list[tuple] = []                     # the AI's moments, as facts of the flight: (t, its next, rows ticked)
         self._fine: set[int] = set()                        # the rows it ticks finely (the engaged, and whom they engage)
         self._ahead, self._piece_end = None, -math.inf       # in a split piece: the rest, flown on to its end (_split)
         self._stations_ahead = False                        # ... station ships among them
@@ -460,10 +461,10 @@ class Fleet:
                 T0: float | None = None) -> None:
         """What the compiled step does not write at the block's sample times: for the rows in
         scope, when their orders get them there; for those not flown in the block (station ships,
-        gone leads), their state as it stands (whole: every row's, from the rows). A station ship
-        stands at each sample where she was then: by cubic Hermite between the sample before the
-        block (T0's) and where her place has her now (exact at both ends, metres between), so the
-        samples alone say where every ship was each minute (the sensor sweep reads only them)."""
+        gone leads), their state as it stands (whole: every row's, from the rows). A station ship's
+        samples are her steps' on the station grid (_station_track), on from her last one past it,
+        so the samples alone say where every ship was each minute (the sensor sweep reads only
+        them), the same however the flight was cut."""
         tl, c = self.timeline, self.c
         if tl is None or not len(slots) or not len(scope):
             return
@@ -472,11 +473,23 @@ class Fleet:
         held = still[c.mode[still] == STATION] if T0 is not None else still[:0]
         k1 = math.floor(tl.k_of(T0) + 1e-9) + 1 if T0 is not None else 0
         ts = tl.time(k1) + tl.dt * np.arange(len(slots))
-        known = T0 is not None and tl.lo is not None and tl.lo <= k1 - 1 <= tl.hi
         kernels.record(np.asarray(slots, dtype=np.int64), np.asarray(scope, dtype=np.int64), still.astype(np.int64),
-                       held.astype(np.int64), whole, ts, tl.slot(k1 - 1) if known else -1, tl.time(k1 - 1) if known else 0.0,
+                       np.setdiff1d(still, held).astype(np.int64), held.astype(np.int64), whole, ts,
                        *(getattr(tl, name) for name in FIELDS), c.r, c.v, c.t,
                        *(getattr(c, name) for name in FIELDS if name not in ("r", "v")))
+
+    def _station_track(self, rows: np.ndarray, P1: np.ndarray, V1: np.ndarray, t1: float) -> None:
+        """The timeline's samples of station ships (rows) from their last step to this one (at t1,
+        where her place has her, moving at V1): by cubic Hermite between the two, exact at both,
+        metres between. The same samples whatever the flight's pieces were."""
+        tl, c = self.timeline, self.c
+        if tl is None or tl.lo is None or not len(rows):
+            return
+        tl.grow(c.n)
+        ks = np.arange(max(math.floor(tl.k_of(float(c.t[rows].min())) + 1e-9) + 1, tl.lo), min(math.floor(tl.k_of(t1) + 1e-9), tl.hi) + 1)
+        if len(ks):
+            kernels.station_track(tl.r, tl.v, ks % MAX_SAMPLES, tl.time(0) + ks * tl.dt, rows.astype(np.int64), c.t[rows],
+                                  c.r[rows], c.v[rows], float(t1), np.asarray(P1, dtype=float), np.asarray(V1, dtype=float))
 
     # ---- checkpoints --------------------------------------------------------------------------
     def _snapshot(self) -> tuple:
@@ -494,6 +507,8 @@ class Fleet:
         self.asked.clear()
         self.sweeper.forget(math.floor((t - self.t0) / TIMELINE_S))
         self.combat.forget(t)
+        if t <= self._front_t:
+            self._moment_at(t)
         self._setback[-1] = self._setback.get(-1, 0) + 1
         unanswered = np.isnan(self.c.arrive_at[: self.c.n])    # asked before the checkpoint, answered after: ask again
         self.c.predicted[: self.c.n][unanswered] = math.nan
@@ -845,7 +860,10 @@ class Fleet:
                 return True
             if time.monotonic() > until:
                 return False
-            nxt = float(B.at[B.queue[self._qi]]) if self._qi < len(B.queue) else math.inf
+            ahead = B.queue[self._qi:]
+            if self.front is not None:                  # (the AI's orders fall on its own moments: cut there, by due)
+                ahead = ahead[~B.ai[ahead]]
+            nxt = float(B.at[ahead[0]]) if len(ahead) else math.inf
             n = c.n
             held = (c.burn[:n] == BURN_G) | (c.burn[:n] == BURN_THROTTLE)
             ends = c.buntil[:n][held]
@@ -874,17 +892,29 @@ class Fleet:
         """The ship AI at the flight's front edge: at a moment it is due and has not yet seen (a
         replay from a checkpoint gives its orders again from the book), handed the fleet as it
         stands; its orders are given at that moment, so nothing flies again for them (one to a ship
-        flown on to the end of a split piece: at its end). It says which rows it ticks finely."""
-        if self.front is None or self.t < self._front_due - 1e-6 or self.t <= self._front_t + 1e-9:
+        flown on to the end of a split piece: at its end). It says which rows it ticks finely. A
+        moment flown again is as it was the first time (_moments), so a replay stops and ticks
+        where the flight did: the same pieces, the same battle."""
+        if self.front is None or self.t < self._front_due - 1e-6:
+            return
+        if self.t <= self._front_t + 1e-9:
+            self._moment_at(self.t)
             return
         self._front_t = self.t
         orders, self._front_due, *fine = self.front(self, self.t)
         self._fine = set(fine[0]) if fine else set()
+        self._moments.append((self.t, self._front_due, self._fine))
         if orders and self._ahead is not None:
             ahead = set(self._ahead.tolist())
             orders = [replace(o, at=self._piece_end) if self.c.row.get(o.unit) in ahead else o for o in orders]
         if orders:
             self._enter(orders)
+
+    def _moment_at(self, t: float) -> None:
+        """The AI's moment at or before t, as it was: when it wanted the fleet next, and whom it ticked."""
+        k = bisect.bisect_right(self._moments, t + 1e-9, key=lambda m: m[0]) - 1
+        if k >= 0:
+            _, self._front_due, self._fine = self._moments[k]
 
     def _ticked(self) -> np.ndarray:
         """The rows the AI ticks finely (the engaged and whom they engage), with their formations,
@@ -1442,6 +1472,7 @@ class Fleet:
                 rode = (c.t[on] == t_prev) & np.isfinite(dv) & (c.v[on] == before[1]).all(axis=1)
             if rode.any():
                 owed[rode] += dv[rode]
+                self._station_track(on[rode], P1[rode], V1[rode], t1)
                 c.r[on[rode]], c.v[on[rode]], c.t[on[rode]] = P1[rode], V1[rode], t1
             if not rode.all():
                 self._charge(t1, t_prev, on[~rode], P1[~rode], V1[~rode], free[~rode])
@@ -1500,6 +1531,7 @@ class Fleet:
         pay = (dv > 0) & (c.ve[rows] > 0)
         if pay.any():
             self._pay(rows[pay], dv[pay])
+        self._station_track(rows, P1, V1, t1)
         c.r[rows], c.v[rows], c.t[rows] = P1, V1, t1
 
     # ---- where things are ---------------------------------------------------------------------

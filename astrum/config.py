@@ -111,7 +111,7 @@ def load_style(path: str | Path) -> dict:
         if not 0 <= float(spec.get("fill", 0.0)) <= 1:
             problems.append(f"[affiliation.{a}] fill is an opacity, 0–1")
     for s, spec in doc["status"].items():
-        for key in set(spec) - {"label", "dash", "cross", "opacity", "ellipse", "scale", "shape", "hollow"}:
+        for key in set(spec) - {"label", "dash", "cross", "slash", "opacity", "ellipse", "scale", "shape", "hollow"}:
             problems.append(f"[status.{s}] unknown key {key!r}")
         if "shape" in spec and not (isinstance(spec["shape"], dict) and all(a in AFFILIATIONS and x in SHAPES for a, x in spec["shape"].items())):
             problems.append(f"[status.{s}] shape is {{affiliation = shape}}, shapes from {SHAPES}")

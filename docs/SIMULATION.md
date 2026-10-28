@@ -184,7 +184,9 @@ resolved once for all of them (`resolve_many`), the bodies off the table, the pl
 batched. A place's velocity is its central difference 60 s either side (the bullseyes' and bodies'
 own, carried through the plan: a place is linear in them). Between a block's ends the timeline holds
 each station ship by cubic Hermite and its derivative: within a metre and 2 cm/s, the Home Force off
-Io at 17 km/s included, so the sweep and the pictures read them off it.
+Io at 17 km/s included, so the sweep and the pictures read them off it. Each minute sample is drawn
+between the two grid states either side of it (`kernels.station_track`), so it is the same however a
+block or a replay cuts the flight.
 
 ## Orders
 
@@ -277,7 +279,8 @@ by her aspect, at the canon's size), and of those, her citadel. Each channel's s
 TORMENTA §4.7's (space charge and the ambient field). A battery fires again once its stacks have
 cycled (a LINE stack 20 s, a PICKET 10 s; stacks that alternate, the cycle over their count). An
 optical battery's light is held on her for the tick (`astrum/optics.py`, TORMENTA §6: open loop on
-her hull, closed on hot structure; dazzle within 40,000 km). What lands goes to the damage model
+her hull, closed on hot structure; a sensor looking back dazzled, her aim a quarter worse while it
+lasts). What lands goes to the damage model
 (`astrum/damage.py`): her hit points, by her rate (TEMPORARY), taken off at the share of the
 hull-opening fluence a hit reaches; and her systems (`astrum/systems.py`: batteries, sensor mounts,
 drive, radiators), each channel landing on one or none, out at the state its fluence reaches. What
@@ -310,7 +313,9 @@ the map (`profiles.toml`): a shared one's map, with targets (`hostile`, `unknown
 edge (`Fleet.front`): after a step, at the moments it asked for, the fleet hands itself to it as it
 stands; each side it wants is pictured there with the same functions as the map's
 (`astrum/pictures.py`), and it answers with orders (source `ai`) through the order book, at that
-moment, so nothing flies again for them. It reads only what is in the picture, and the fleet only
+moment, so nothing flies again for them. Its moments are facts like orders (when it ran, when it
+is next due, which rows it held fine): a re-fly from a checkpoint reads them back and cuts the
+flight where the first flight did. It reads only what is in the picture, and the fleet only
 through a view made at the front edge (`astrum/shipai/view.py`: its rows, batteries, wrecks, pings,
 the book, the sweep, the bodies and bullseyes), the boundary its own process will take. A ready ship looks
 once a block, if her side's sweep holds a ship within her reach (or at once when fired on); an
@@ -354,7 +359,7 @@ and drawn straight between.
 
 **The timeline.** The compiled step writes every flying row's state at every whole minute
 (`astrum/timeline.py`); what it does not fly is written in one more call (`kernels.record`): station
-ships by Hermite between their places, everything else as it stands. It keeps 2048 samples (a day
+ships past their last grid step by Hermite on, everything else as it stands. It keeps 2048 samples (a day
 and a half), for the fleet's rows and room for 256 more (est.), taken once at the start: a row is 344
 KB of it, and room past that is every sample copied. The rows past the ships are formations' leads,
 one for each order to a formation (TF-2's CAPTAIN makes some 130 a day in a battle); a lead given

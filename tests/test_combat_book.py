@@ -120,7 +120,8 @@ def test_the_logs_indices_agree_with_the_log_through_forgets():
 def test_light_on_a_target_reaches_as_the_canon_says():
     """TORMENTA §6: twelve PANEL III open a woven hull at 1,000 km in about two and a half minutes
     (§6.5, open loop at 6.5 µrad); one PANEL III ruins a radiator held 10 s at ~16,100 km and a mane
-    held 100 s at ~62,200 km (§6.7, closed loop); dazzle to 40,000 km. A PAPILION's optical battery
+    held 100 s at ~62,200 km (§6.7, closed loop); all twelve heat a thermal window blind (1 W/cm²)
+    to ~7,400 km, open loop (§6.7.3); dazzle to 40,000 km. A PAPILION's optical battery
     is its twelve PANEL III."""
     from astrum import optics
     _, f = _fleet()
@@ -132,6 +133,8 @@ def test_light_on_a_target_reaches_as_the_canon_says():
     one = optics.Optic(1, 10.0, 1.536, 40000.0)
     assert optics.dwell(one, 16100e3, 6.5, 10.0, rules)["held_mjm2"] == pytest.approx(1.2, rel=0.03)
     assert optics.dwell(one, 62200e3, 6.5, 100.0, rules)["held_mjm2"] == pytest.approx(0.8, rel=0.03)
+    assert "ir-window" in optics.dwell(w.optic, 7.2e6, 6.5, 10.0, rules)["effects"]           # 1 W/cm² open loop to ~7,400 km (§6.7.3)
+    assert "ir-window" not in optics.dwell(w.optic, 7.6e6, 6.5, 10.0, rules)["effects"]
     assert "dazzle" in optics.dwell(one, 39e6, 6.5, 10.0, rules)["effects"]
     assert "dazzle" not in optics.dwell(one, 41e6, 6.5, 10.0, rules)["effects"]
 
@@ -157,13 +160,32 @@ def test_a_hit_takes_off_what_it_put_on_her_at_the_share_that_opens_a_hull():
     assert got["lost_mj"] == pytest.approx(91.2 * (5 + 2 * 3)) and not got["destroyed"]
     far = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", salvo(8, 0, 7.12)), j, 0.0)
     assert far["lost_mj"] == pytest.approx(91.2 * 8 * 7.12 / 82.7)
-    lit = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", {"hull_mjm2": 5.5, "energy_mj": 184.0, "held_mjm2": 0.1, "held_wm2": 1.0},
+    lit = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", {"hull_mjm2": 5.5, "hull_wm2": 1.0, "energy_mj": 184.0, "held_mjm2": 0.1, "held_wm2": 1.0},
                          "optical"), j, 0.0)
     assert lit["lost_mj"] == pytest.approx(184.0 * 5.5 / 82.7) and not lit["systems"]
     f.c.damage[j] = 4990.0
     got = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", salvo(1, 0, 833.0)), j, 0.0)
     assert got["destroyed"] and H.destroyed(f, j) and f.combat.out(f, j) and not f.combat.weapons[j]
     assert all(st["operational"] == 0 and st["destroyed"] > 0 for k, st in f.combat.systems.state(j).items() if k != "radiator")
+
+
+def test_light_dazzles_what_looks_back_and_spoils_her_aim_while_it_is_held():
+    """A sensor looking back at light within the battery's dazzle range is dazzled while it is held
+    (a shutter closes in microseconds: light does not de-mast her, TORMENTA §6.5.3): an entry in
+    the dazzled list, nothing taken off what runs, and her own aim a quarter worse meanwhile
+    (§6.7.4). Light held fiercely enough still ruins a radiator; a re-fly forgets the dazzle."""
+    _, f = _fleet()
+    j = f.c.row["tf3-lf4-ls-1"]
+    H, S, t = f.combat.harm, f.combat.systems, f.t0 + 3600
+    mounts = list(S.sensors[j])
+    lit = {"hull_mjm2": 0.01, "hull_wm2": 0.3, "energy_mj": 184.0, "held_mjm2": 50.0, "held_wm2": 1.7e6, "dwell_s": 30.0,
+           "effects": ["mast", "dazzle"]}
+    got = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", lit, "optical", t=t), j, t)
+    assert S.sensors[j] == mounts and S.dazzled_at(j, t + 10) and not S.dazzled_at(j, t + 31)
+    assert H.aim_factor(j, t + 10) == 1.25 and H.aim_factor(j, t + 31) == 1.0
+    assert [k for k, _, st in got["systems"] if st == "destroyed"] == ["radiator"]
+    S.forget(t - 1)
+    assert not S.dazzled_at(j, t + 10)
 
 
 def test_her_systems_go_out_by_what_lands_on_them_and_a_re_fly_brings_them_back():
@@ -179,11 +201,13 @@ def test_her_systems_go_out_by_what_lands_on_them_and_a_re_fly_brings_them_back(
     H, S, t = f.combat.harm, f.combat.systems, f.t0 + 3600
     assert H.tier("weapon", 100.0) == DESTROYED and H.tier("weapon", 30.0) == DISABLED and H.tier("weapon", 0.1) == DAMAGED
     assert H.tier("sensor", 3.0) == DESTROYED and H.tier("sensor", 0.1) == DAMAGED and H.tier("weapon", 0.05) is None
+    assert H.tier("drive", 0.1) is None and H.tier("drive", 30.0) == DAMAGED      # (at her rear: she takes more)
     H.share = {"citadel": {"drive": 1.0}, "hull": {"weapon": 1.0}}
     got = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", {"hits": 2, "citadel": 1, "pulse_mj": 91.2, "fluence_mjm2": 833.0}), j, t)
     assert ("drive", "drive", DESTROYED) in got["systems"] and f.c.fmax[j] == 0 and not S.drive[j]
     assert len(f.combat.weapons[j]) == 2 and len(S.lists[DESTROYED]) == 2
     far = H.hit(f, _shot(f, "tf3-lf4-bs-1", "tf3-lf4-ls-1", {"hits": 5, "citadel": 0, "pulse_mj": 91.2, "fluence_mjm2": 0.09}, t=t + 60), j, t + 60)
+    assert S.harm_at(len(f.c.row), t + 30)[j] == 1 and S.harm_at(len(f.c.row), t + 60)[j] == 2      # damaged, then disabled (the map's)
     assert {st for _, _, st in far["systems"]} >= {DAMAGED} and far["disabled"] and S.disabled(j) and f.combat.out(f, j)
     assert f.combat.weapon(j, "spinal") is None and all(st["operational"] == 0 for st in S.state(j).values())
     mounts = [m for m, (r, _, _) in enumerate(f.sensors.mounts) if r == j]
