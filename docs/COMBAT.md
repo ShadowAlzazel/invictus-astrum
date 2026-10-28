@@ -278,7 +278,7 @@ for now; how hard she burns into a pass is to be a setting of her profile's.
 
 ## Open
 
-The owner's to give:
+The owner's to give (each also in `docs/OPEN-ITEMS.md`, with the answers given):
 
 - Where a hit lands: her silhouette and her attitude (basic shapes, as a class's layout gives
   them), in place of the shares by kind; her crew (§8.2: a beam kills the people it crosses long

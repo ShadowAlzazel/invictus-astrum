@@ -117,12 +117,11 @@ Notes for ourselves:
 - A rule that changes the battle (the wreck rule) is reported with what it changed in the outcome.
 - Finish each piece: decisions stated with their undo, no question at the end.
 
-Open, from the chats and the docs (all in docs/COMBAT.md Open or docs/REFACTORS.md):
+Open, from the chats and the docs (the owner's answers in docs/OPEN-ITEMS.md; ours in docs/COMBAT.md Open and docs/REFACTORS.md):
 - D: the CAPTAIN in its own process (18). The view is ready (A3).
 - E: shots in a batch (21), rods and missiles as rows (23), a wreck known by sight (25).
 - Where a hit lands by silhouette and attitude (24); light on radiators by her profile and angle (the owner, 27 Oct).
 - The sweep's far targets by formation too (29: JADF, the owner, 27 Oct).
 - How hard she burns into a pass, a profile's setting ("the pass is expensive", the owner, 24 Oct).
 - The lost node's wait_s 600 is TESTING.
-- Hold fire's readiness: the data says III; the owner's note of 25 October says I.
 - Damaged, disabled, destroyed told apart (repair, salvage) (26).
