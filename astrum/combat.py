@@ -357,6 +357,17 @@ class CombatBook:
         out[: min(n, len(d))] |= d[:n]
         return out
 
+    def destroyed_rows(self, fleet, n: int) -> np.ndarray:
+        """Destroyed outright: her hit points gone."""
+        return fleet.c.damage[:n] >= self.harm.hp[:n]
+
+    def disarmed_rows(self, fleet, n: int) -> np.ndarray:
+        """Out of the fight, or silenced: every battery she had out (a target to pass over)."""
+        out = self.out_rows(fleet, n)
+        d = self.systems.disarmed_rows()
+        out[: min(n, len(d))] |= d[:n]
+        return out
+
     def partners(self, t: float, rows: set[int]) -> set[int]:
         """Whoever fired at these rows from t on, or was fired at by them: flown again with them,
         so the shots between them are made again on both."""

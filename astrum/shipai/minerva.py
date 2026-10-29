@@ -36,6 +36,7 @@ ACTIONS = {
     "correct": "a pass's course corrected while its miss is over a quarter of her reach",
     "spine": "with fire: her spine as well, when her focus is not it, in reach of the shot",
     "turn-to-fire": "with fire: a stack off her bow while she burns: her drive cut for the shot, she faces the target and fires; her node's station or hold burns her on the next tick",
+    "answer-fire": "with fire: a ship engaging her nearer than her target becomes her target",
     "hold-heading": "with fire: her heading is the admiral's: she is not turned for the shot, and a stack fires only with her bow inside its trim",
 }
 CONDITIONS = {
@@ -46,7 +47,9 @@ CONDITIONS = {
     "lost": "the target out of her side's picture, or of her stance's range",
     "gone": "the target out of her side's picture",
     "alive": "the target still in the fight",
-    "destroyed": "the target destroyed or disabled: out of the fight",
+    "disarmed": "the target silenced (every battery she had out), or out of the fight: passed over by her side",
+    "disabled": "the target out of the fight: disabled or destroyed",
+    "destroyed": "the target destroyed outright: her hit points gone",
     "passed": "going away from the target after closing on it",
     "focus-stack": "her focus battery is a stack: her class is built on the spine",
     "fired-on": "a ship engaging her",

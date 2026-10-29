@@ -141,6 +141,7 @@ class AI:
         for v in {m.view[i] for i in rows}:              # their side looks again from t's block
             m.looked[v] = min(m.looked.get(v, -1), k - 1)
         m.readied[rows] = 0                              # (her readiness looked at again)
+        m.set_back(t)                                    # (whom its sides passed over from t on: decided again)
         for i in rows:
             if m.captains[i] is not None:
                 m.captains[i].m.back_to(t)

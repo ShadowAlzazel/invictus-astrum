@@ -21,7 +21,8 @@ from .shipai.minerva import AFTERS, RANGES, STANCES, Engagement, check_engagemen
 TARGETS = ("hostile", "unknown")   # whom it engages: identified hostiles; and bogeys, unknown
 ROOT = "root"
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-KEYS = {"id", "name", "targets", "range", "player", "map", "after", "start", "node"}
+KEYS = {"id", "name", "targets", "range", "player", "map", "after", "start", "node", "pick"}
+PICKS = ("spread", "nearest")      # how her side's ships entering together pick their targets
 
 
 @dataclass(frozen=True)
@@ -34,10 +35,11 @@ class Profile:
     map: str = ""                             # the shared profile whose engagement it flies ("": its own)
     after: str = ""                           # out of combat, this instead of her stance's after ("": the stance's)
     engagement: Engagement | None = None      # its own map (a shared profile's)
+    pick: str = "spread"                      # how ships entering together pick targets (PICKS)
 
     def as_dict(self) -> dict:
         return {"id": self.id, "name": self.name, "targets": list(self.targets), "range": dict(self.range),
-                "player": self.player, "root": self.id == ROOT, "map": self.map or self.id, "after": self.after,
+                "player": self.player, "root": self.id == ROOT, "map": self.map or self.id, "after": self.after, "pick": self.pick,
                 "engagement": self.engagement.as_dict() if self.engagement else None}
 
 
@@ -48,6 +50,8 @@ def check(d: dict, shared: bool = False) -> list[str]:
         p.append("a profile needs a name")
     if not set(d.get("targets") or ()) <= set(TARGETS):
         p.append(f"targets are among {list(TARGETS)}")
+    if d.get("pick", "spread") not in PICKS:
+        p.append(f"pick is one of {list(PICKS)}")
     if d.get("after", "") not in ("", *AFTERS):
         p.append(f"after is one of {list(AFTERS)}, or none (her stance's)")
     for s, r in (d.get("range") or {}).items():
@@ -64,7 +68,8 @@ def check(d: dict, shared: bool = False) -> list[str]:
 
 def make(d: dict, player: str = "") -> Profile:
     return Profile(str(d.get("id", "")), d["name"].strip(), tuple(d.get("targets") or ("hostile",)), dict(d.get("range") or {}),
-                   player, str(d.get("map") or ""), str(d.get("after") or ""), make_engagement(d) if d.get("node") else None)
+                   player, str(d.get("map") or ""), str(d.get("after") or ""), make_engagement(d) if d.get("node") else None,
+                   str(d.get("pick") or "spread"))
 
 
 def load_shared(path: str | Path) -> dict[str, Profile]:

@@ -220,9 +220,13 @@ def test_aggressive_ships_enter_combat_on_what_they_see_and_the_book_keeps_it(tm
     _drive(c, t, t + 6 * 3600)
     mine = [x[2:] for x in _ai(fleet) if x[1] == "tf3-es-1"]
     k = mine.index(("quarters", "Aggressive: readiness I", None))      # (before it, at the first block: her written stance's)
-    assert mine[k:k + 3] == [("quarters", "Aggressive: readiness I", None), ("active", None, None), ("goto", "station on bogey", "ghost-1")]
+    assert mine[k:k + 2] == [("quarters", "Aggressive: readiness I", None), ("active", None, None)]
+    assert mine[k + 2][:2] == ("goto", "station on bogey") and mine[k + 2][2].startswith("ghost-")
     cap = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
     i = fleet.c.row["tf3-es-1"]
+    on = [cap.captains[k].m.at.target for k in cap.engaged if fleet.c.ids[k].startswith("tf3")]
+    ghosts = sum(fleet.c.ids[k].startswith("ghost") for k in range(fleet.c.n) if fleet.c.spec[k] is not None)
+    assert len(set(on)) == min(len(on), ghosts)                    # (spread: one to a target before two)
     assert cap.captains[i].m.at.node == "close" and i in cap.engaged and fleet.pinging(t + 6 * 3600)[i]
     assert fleet.c.stand[i] == pytest.approx(0.9 * 1000e3)            # her focus battery's envelope (the domes' point defence)
     got = _ai(fleet)

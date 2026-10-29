@@ -93,10 +93,18 @@ Her focus anything else: she fires it, and once in reach falls back to the spine
 she is not burning. Aggressive itself is still that station-keeping when she keeps station.
 
 A **profile** is what she does in combat: its nodes (each with what she does entering it: station,
-hold, face, fire, pass, correct, and with fire spine, hold-heading and turn-to-fire; the battery it reads; what a
-node does is its do, never its name), the conditions between them (far,
-in-envelope, lost, gone, alive, destroyed, passed, fired-on, always), whom she engages (targets)
-and, if it says, its own ranges and after. A node's ways out are taken from the next tick on, the
+hold, face, fire, pass, correct, and with fire spine, hold-heading, turn-to-fire and answer-fire (a
+ship engaging her nearer than her target becomes her target); the battery it reads; what a node does
+is its do, never its name), the conditions between them (far, in-envelope, lost, gone, alive,
+disarmed, disabled, destroyed, passed, fired-on, always), whom she engages (targets), how her side's
+ships entering together pick their targets (pick: spread, one to a target before two, counting
+those its engaged ships hold; or nearest) and, if it says, its own ranges and after. A target left
+disarmed (silenced: every battery she had out, though her drive or masts still work) goes on her
+side's list of non-targets, which the OVERSEER keeps: none of its ships takes her again (a set-back
+takes off what was put on from then). Disabled is out of the fight (her drive and every battery out,
+or blind with no radiators); destroyed, her hit points gone. Standing orders, Reckless Ahead,
+Artillery, Hold the line and Ballistic orders leave a disarmed target; Pursuit and Search and
+Destroy keep on until she is destroyed. A node's ways out are taken from the next tick on, the
 first whose condition holds; a node may wait first. A commander's profile flies a shared one's
 map with its own targets and ranges. Shared: **Standing orders** (the root: close to station at her
 spinal battery's envelope, fire it once a cycle, hold; target lost, hold and wait, then exit; with

@@ -38,20 +38,15 @@ def test_a_node_is_left_from_the_next_tick_and_after_its_wait():
     assert m.at.node == READY and not m.engaged
 
 
-def test_the_spinal_loop_closes_firing_and_takes_her_out(tmp_path):
-    """The root's map, flown at bogeys too, at the flight's front edge: she closes to station at her
-    spinal battery's envelope, firing at every tick within its reach (turn-to-fire: her drive cut for a
-    shot off her bow, burning on again the next tick, so she finishes her before she reaches station) (each shot a WeaponEngageOrder
-    in the book, resolved by the combat book), her optics held on the target within their dazzle
-    range. GHOST 1's systems go out one by one (light dazzles her sensors and ruins her radiators; a
-    salvo her masts, batteries and drive) until she is out of the fight; then she leaves combat and fires no more,
-    and GHOST 1, a wreck, sweeps no more. On a 10 s battle tick (her PICKET stacks' cycle), GHOST 1
-    running cold: her wings folded, light dazzles her but takes nothing, so the spine finishes her."""
+def _ghost(tmp_path, map):
+    """TF-3's escort, aggressive, hunting bogeys too on a shared map, and GHOST 1 sent at her, running
+    cold (her wings folded: light dazzles her but takes nothing), on a 10 s battle tick (her PICKET
+    stacks' cycle), flown 44 h."""
     c, world = _app(tmp_path)
     fleet = world.fleet(world.scenarios["sol-demo"])
     c.app.state.sim.host.ai.tick["sol-demo"] = 10.0
     t = fleet.t0 + 600
-    assert _hunt(c, t, "aggressive", unit="tf3-es-1", map="root") == 200
+    assert _hunt(c, t, "aggressive", unit="tf3-es-1", map=map) == 200
     assert c.post("/api/order", json={"scenario": "sol-demo", "view": "master", "unit": "ghost-1", "t": t, "cold": True}).status_code == 200
     c.post("/api/order", json={"scenario": "sol-demo", "view": "master", "unit": "ghost-1", "t": t, "g": 0.3,
                                "target": {"unit": "tf3-es-1"}})
@@ -59,22 +54,46 @@ def test_the_spinal_loop_closes_firing_and_takes_her_out(tmp_path):
     i, j = fleet.c.row["tf3-es-1"], fleet.c.row["ghost-1"]
     cap = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
     path = [p.node for k, p in enumerate(cap.captains[i].m.history) if not k or p.node != cap.captains[i].m.history[k - 1].node]
+    return fleet, cap, i, j, path, [e for e in fleet.combat.log if e.ship == i]
+
+
+def test_the_spinal_loop_closes_firing_and_passes_a_silenced_target_over(tmp_path):
+    """The root's map: she closes to station at her spinal battery's envelope, firing at every tick
+    within its reach (turn-to-fire: her drive cut for a shot off her bow, burning on again the next
+    tick), her optics held on the target within their dazzle range (each shot a WeaponEngageOrder in
+    the book, resolved by the combat book). Once GHOST 1 is silenced (every battery of hers out), she
+    leaves her, though her drive and masts still work, and her side passes her over: none of it
+    takes her again, and she fires no more."""
+    fleet, cap, i, j, path, shots = _ghost(tmp_path, "root")
     assert path == ["ready", "close", "ready"]                               # (close: again each tick)
     kinds = [k for _, k in sorted({(o[0], o[2]) for o in _ai(fleet, ("coast", "goto")) if o[1] == "tf3-es-1"})]
     assert "coast" in kinds and kinds[kinds.index("coast") + 1] == "goto"      # cut for the shot, burning on after
-    shots = [e for e in fleet.combat.log if e.ship == i]
     light = [e for e in shots if e.weapon != "spinal"]
     assert fleet.combat.weapon(i, "spinal").reach_km == 49800                # an AESHNA's PICKET stacks, at their farthest
     assert {e.weapon for e in light} == {"domes", "strips"} and max(e.result["range_km"] for e in light) <= 40000
-    assert any(e.weapon == "spinal" and e.what == "fired" for e in shots)
+    S, n = fleet.combat.systems, fleet.c.n
+    assert fleet.combat.disarmed_rows(fleet, n)[j] and not fleet.combat.out(fleet, j)
+    assert S.state(j)["weapon"]["operational"] == 0 and S.state(j)["drive"]["operational"] == 1
+    left = cap.passed_over["arcvs"][j]
+    assert cap.captains[i].m.at.node == "ready" and all(e.t <= left for e in shots)
+    assert len(_ai(fleet, ("fire",))) == len(shots)
+
+
+def test_pursuit_takes_her_till_destroyed(tmp_path):
+    """Pursuit: station, then fire until she is destroyed outright, past disabled. GHOST 1's systems go
+    out one by one (light dazzles her sensors; a salvo her masts, batteries and drive), she is out of
+    the fight, a wreck that sweeps no more, and taken on to her hit points; then she leaves combat and
+    fires no more."""
+    fleet, cap, i, j, path, shots = _ghost(tmp_path, "pursuit")
+    assert path == ["ready", "close", "fire", "ready"]
     S = fleet.combat.systems
-    assert fleet.combat.out(fleet, j) and all(st["operational"] == 0 for st in S.state(j).values())
+    assert fleet.combat.destroyed_rows(fleet, fleet.c.n)[j] and all(st["operational"] == 0 for st in S.state(j).values())
     took = {(o.kind, o.by.split(" ")[1]) for s in S.lists for o in S.lists[s] if o.row == j}
     assert S.dazzled.get(j) and ("sensor", "spinal") in took                 # light dazzled her; the spine took her masts
-    gone = max(e.t for e in shots if e.harm and (e.harm["destroyed"] or e.harm["disabled"]))
+    gone = max(e.t for e in shots if e.harm and e.harm["destroyed"])
     assert all(e.t <= gone for e in shots) and not (fleet.sensors.off_from[[m for m, (r, _, _) in enumerate(fleet.sensors.mounts)
                                                                           if r == j]] > fleet.sweeper.flown_minute()).any()
-    assert len(_ai(fleet, ("fire",))) == len(shots)
+    assert not cap.passed_over.get("arcvs")
 
 
 def test_search_and_destroy_passes_each_target_once_and_coasts_on(tmp_path):

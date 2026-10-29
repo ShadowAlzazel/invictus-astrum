@@ -61,6 +61,7 @@ class Systems:
         self.drive = [bool(c.fmax[i] > 0) for i in range(n)]
         self.radiators = [list(range(RADIATORS)) if c.store[i] > 0 else [] for i in range(n)]
         self.had = np.array([self.drive[i] or bool(weapons[i]) for i in range(n)])   # a drive or a battery to lose
+        self.armed = np.array([bool(weapons[i]) for i in range(n)])                  # a battery to lose
         self.saw = np.array([bool(self.sensors[i]) and bool(self.radiators[i]) for i in range(n)])   # masts and radiators to lose
         self.hurt: dict[int, float] = {}              # a row: when a system of hers first went out
         self.gone: dict[int, tuple] = {}              # a wreck's row: when she went out, and as what
@@ -150,6 +151,10 @@ class Systems:
             return False
         k = bisect_left(got, (t + 1e-9, float("inf")))
         return any(s <= t + 1e-9 < u for s, u in got[max(k - 2, 0):k])
+
+    def disarmed_rows(self) -> np.ndarray:
+        """Silenced: every battery she had out, whatever else still works."""
+        return self.armed & np.array([not w for w in self.weapons], dtype=bool)
 
     def disabled_rows(self) -> np.ndarray:
         if self._disabled is None:

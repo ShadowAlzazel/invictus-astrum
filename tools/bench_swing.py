@@ -9,7 +9,8 @@ Each run is its own process (tools/bench_flight.py's fresh world, no run-ahead):
 at Venus at the scenario's start plus its offset, flown to --hours after the order ten game minutes at
 a time. What it keeps: every shot (when, after the order; who at whom; the weapon; range, channels on
 her, what it took off and took out), when each ship went out and to what, and the wall time (the
-approach, and the battle from the first shot on). Then, side by side: each run's outcome and its first
+approach, and the battle from the first shot on), and who is silenced at the end (every battery out,
+not out of the fight: passed over). Then, side by side: each run's outcome and its first
 shots and losses; where each run first parts from the one before it, shot by shot; and the cost. Each
 run's shots are kept in logs/bench/swing-*/ as JSON.
 """
@@ -38,6 +39,7 @@ OURS, THEIRS = "tf2", "raider"
 def one(offset: float, out: Path) -> None:
     """One run, its shots and outs written to out."""
     import bench_flight as BF
+    import numpy as np
     w, sc, f, host = BF.fresh()
     host.ai.tick[sc.id] = TICK
     t0 = f.t0 + offset
@@ -60,10 +62,12 @@ def one(offset: float, out: Path) -> None:
               "took": [f"{k} {st}" for k, _, st in (e.harm or {}).get("systems", [])],
               "out": bool(e.harm and (e.harm["destroyed"] or e.harm["disabled"]))} for e in log]
     outs = {ids[j]: g[0] - t0 for j, g in S.gone.items()}
+    n = len(C.row)
+    silenced = [ids[j] for j in np.flatnonzero(f.combat.disarmed_rows(f, n) & ~f.combat.out_rows(f, n))]
     B = f.book
     engage = [{"t": float(B.at[e]) - t0, "ship": ids[B.ship[e]], "at": B.of(e).target.get("unit")}
               for e in B.queue if B.ai[e] and B.of(e).target.get("engage")]
-    json.dump({"offset": offset, "shots": shots, "outs": outs, "engage": engage,
+    json.dump({"offset": offset, "shots": shots, "outs": outs, "silenced": silenced, "engage": engage,
                "wall_s": end - a, "battle_s": end - first if first else 0.0}, open(out, "w"))
 
 
@@ -100,15 +104,17 @@ def key(s):
 def report(runs):
     print(f"{UNIT} attack-moved at Venus at {G} g, battle tick {TICK:.0f} s; the order {BASE:.0f} s after the start, "
           f"{STEP:g} s apart; {HOURS:.0f} h flown\n")
-    print("offset  ours out  theirs out   first shot (who → whom, range)            first out           wall s  battle s")
+    print("offset  ours out (silenced)  theirs out (silenced)   first shot (who → whom, range)            first out           wall s  battle s")
     for r in runs:
         outs = Counter(side(s) for s in r["outs"])
+        quiet = Counter(side(s) for s in r.get("silenced", ()))
         fired = [s for s in r["shots"] if s["what"] == "fired"]
         fs = fired[0] if fired else None
         fo = min(r["outs"].items(), key=lambda kv: kv[1]) if r["outs"] else None
         first = f"{h(fs['t'])} {short(fs['ship'])} → {short(fs['at'] or '-')} {fs['weapon']} {fs['km'] or 0:,.0f} km" if fs else "none"
         out = f"{h(fo[1])} {short(fo[0])}" if fo else "none"
-        print(f"{r['offset']:6.0f}  {outs['ours']:8d}  {outs['theirs']:10d}   {first:<42} {out:<18} {r['wall_s']:6.0f}  {r['battle_s']:8.0f}")
+        print(f"{r['offset']:6.0f}  {outs['ours']:8d} ({quiet['ours']:2d})       {outs['theirs']:10d} ({quiet['theirs']:2d})      "
+              f"{first:<42} {out:<18} {r['wall_s']:6.0f}  {r['battle_s']:8.0f}")
     print("\nEach run's first ten shots fired, and its first five ships out:")
     for r in runs:
         print(f"\n  offset {r['offset']:.0f}:")

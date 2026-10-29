@@ -7,6 +7,8 @@
 #             out, the stance's own
 #   after     out of combat, this instead of her stance's (minerva.toml): "resume", "post", "hold",
 #             "coast" (on as she goes, the drive cut)
+#   pick      how her side's ships entering together pick their targets: "spread" (the one fewest of
+#             them are on, the nearest of those: one to a target before two; the default), "nearest"
 #   start     the engagement's first node
 #   node      the engagement's nodes. Entering one, she does what it says (do); from the next tick
 #             on, the first of its ways out (on) whose condition holds takes her on ("exit": out of
@@ -18,9 +20,10 @@
 #             cycled; and every optical battery that reaches the target, held on it the tick), "pass" (a
 #             burn through where the target will be), "correct" (a pass's course corrected); with
 #             fire, "spine" (her spine as well, when her focus is not it) and "hold-heading" (her
-#             heading is the admiral's: not turned for the shot, a stack fired only with her bow in trim)
+#             heading is the admiral's: not turned for the shot, a stack fired only with her bow in trim),
 #             and "turn-to-fire" (a stack off her bow while she burns: her drive cut for the shot, she
-#             faces and fires; her node's station or hold burns her on the next tick)
+#             faces and fires; her node's station or hold burns her on the next tick) and "answer-fire"
+#             (a ship engaging her nearer than her target becomes her target)
 #   weapon    which battery a node's actions and conditions read: "focus" (her focus battery, the one
 #             her class is built around), a battery's kind ("stack": the spinal battery; "strip",
 #             "dome", "panel", "turret", "cell"). One she lacks is her spine if she has one, else
@@ -28,7 +31,9 @@
 #   if        "always", "far" (beyond the battery's envelope), "in-envelope", "in-reach" (within its
 #             reach: a stack's farthest rated, TELVM §3.7), "lost" (out of her
 #             side's picture, or of her stance's range), "gone" (out of the picture), "alive",
-#             "destroyed" (destroyed or disabled), "passed" (going away from her after a pass),
+#             "disarmed" (silenced: every battery she had out, or out of the fight; her side passes
+#             her over), "disabled" (out of the fight: disabled or destroyed), "destroyed" (destroyed
+#             outright: her hit points gone), "passed" (going away from her after a pass),
 #             "focus-stack" (her focus battery is a stack: her class is built on the spine), "fired-on"
 #
 # An attack-move flies two of these while she is on it (data/minerva.toml attack_keep, attack_pass).
@@ -42,25 +47,25 @@ start = "close"
 
 [profile.root.node.close]
 label = "Close to station, fire"
-do = ["station", "fire", "turn-to-fire"]
+do = ["station", "fire", "turn-to-fire", "answer-fire"]
 weapon = "stack"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-envelope", go = "fire" }, { if = "in-reach", go = "close" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-envelope", go = "fire" }, { if = "in-reach", go = "close" }]
 
 [profile.root.node.fire]
 label = "Fire spinal battery"
-do = ["fire", "turn-to-fire"]
+do = ["fire", "turn-to-fire", "answer-fire"]
 weapon = "stack"
 on = [{ if = "always", go = "await" }]
 
 [profile.root.node.await]
 label = "Await next tick"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "alive", go = "hold" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "alive", go = "hold" }]
 
 [profile.root.node.hold]
 label = "Hold station, fire"
-do = ["hold", "fire", "turn-to-fire"]
+do = ["hold", "fire", "turn-to-fire", "answer-fire"]
 weapon = "stack"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "far", go = "close" }, { if = "alive", go = "hold" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "far", go = "close" }, { if = "alive", go = "hold" }]
 
 [profile.root.node.lost]
 label = "Target lost: hold, wait"
@@ -77,7 +82,7 @@ start = "close"
 label = "Close to station, fire"
 do = ["station", "fire"]
 weapon = "stack"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-envelope", go = "fire" }, { if = "in-reach", go = "close" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-envelope", go = "fire" }, { if = "in-reach", go = "close" }]
 
 [profile.reckless-ahead.node.fire]
 label = "Fire spinal battery"
@@ -87,13 +92,13 @@ on = [{ if = "always", go = "await" }]
 
 [profile.reckless-ahead.node.await]
 label = "Await next tick"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "alive", go = "hold" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "alive", go = "hold" }]
 
 [profile.reckless-ahead.node.hold]
 label = "Hold station, fire"
 do = ["hold", "fire"]
 weapon = "stack"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "far", go = "close" }, { if = "alive", go = "hold" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "far", go = "close" }, { if = "alive", go = "hold" }]
 
 [profile.reckless-ahead.node.lost]
 label = "Target lost: hold, wait"
@@ -108,15 +113,15 @@ start = "close"
 
 [profile.artillery.node.close]
 label = "Close to the spine's reach, fire"
-do = ["station", "fire", "turn-to-fire"]
+do = ["station", "fire", "turn-to-fire", "answer-fire"]
 weapon = "stack"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-reach", go = "hold" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-reach", go = "hold" }]
 
 [profile.artillery.node.hold]
 label = "Hold off, fire"
-do = ["hold", "fire", "turn-to-fire"]
+do = ["hold", "fire", "turn-to-fire", "answer-fire"]
 weapon = "stack"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "alive", go = "hold" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "alive", go = "hold" }]
 
 [profile.artillery.node.lost]
 label = "Target lost: hold, wait"
@@ -136,8 +141,8 @@ on = [{ if = "lost", go = "exit" }, { if = "in-envelope", go = "fire" }]
 
 [profile.hold-the-line.node.fire]
 label = "Hold station, fire"
-do = ["hold", "fire"]
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "exit" }, { if = "far", go = "close" }, { if = "alive", go = "fire" }]
+do = ["hold", "fire", "answer-fire"]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "exit" }, { if = "far", go = "close" }, { if = "alive", go = "fire" }]
 
 [profile.pursuit]
 name = "Pursuit"
@@ -154,7 +159,7 @@ on = [{ if = "gone", go = "exit" }, { if = "in-envelope", go = "fire" }]
 label = "Keep station, fire"
 do = ["station", "fire"]
 weapon = "stack"
-on = [{ if = "destroyed", go = "exit" }, { if = "gone", go = "exit" }, { if = "far", go = "close" }, { if = "alive", go = "fire" }]
+on = [{ if = "destroyed", go = "exit" }, { if = "gone", go = "exit" }, { if = "far", go = "close" }, { if = "always", go = "fire" }]
 
 [profile.search-and-destroy]
 name = "Search and Destroy"
@@ -165,17 +170,17 @@ start = "pass"
 [profile.search-and-destroy.node.pass]
 label = "Pass through her"
 do = ["pass"]
-on = [{ if = "passed", go = "exit" }, { if = "in-envelope", go = "fire" }, { if = "always", go = "run" }]
+on = [{ if = "destroyed", go = "exit" }, { if = "passed", go = "exit" }, { if = "in-envelope", go = "fire" }, { if = "always", go = "run" }]
 
 [profile.search-and-destroy.node.run]
 label = "On the run in"
 do = ["correct"]
-on = [{ if = "passed", go = "exit" }, { if = "in-envelope", go = "fire" }, { if = "always", go = "run" }]
+on = [{ if = "destroyed", go = "exit" }, { if = "passed", go = "exit" }, { if = "in-envelope", go = "fire" }, { if = "always", go = "run" }]
 
 [profile.search-and-destroy.node.fire]
 label = "Fire as she passes"
 do = ["fire"]
-on = [{ if = "passed", go = "exit" }, { if = "always", go = "fire" }]
+on = [{ if = "destroyed", go = "exit" }, { if = "passed", go = "exit" }, { if = "always", go = "fire" }]
 
 [profile.ballistic]
 name = "Ballistic orders"
@@ -187,19 +192,19 @@ start = "close"
 label = "Close"
 do = ["fire"]
 weapon = "focus"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "focus-stack", go = "keep" }, { if = "in-reach", go = "coast" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "focus-stack", go = "keep" }, { if = "in-reach", go = "coast" }]
 
 [profile.ballistic.node.keep]
 label = "Keep the heading, fire"
 do = ["fire", "spine", "hold-heading"]
 weapon = "focus"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "passed", go = "exit" }, { if = "alive", go = "keep" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "passed", go = "exit" }, { if = "alive", go = "keep" }]
 
 [profile.ballistic.node.coast]
 label = "Coast for the shot, fire"
 do = ["fire", "spine"]
 weapon = "focus"
-on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "passed", go = "exit" }, { if = "alive", go = "coast" }]
+on = [{ if = "disarmed", go = "exit" }, { if = "lost", go = "lost" }, { if = "passed", go = "exit" }, { if = "alive", go = "coast" }]
 
 [profile.ballistic.node.lost]
 label = "Target lost"

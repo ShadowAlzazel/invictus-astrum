@@ -87,6 +87,21 @@ class Overseer:
         self._passes: dict[int, bool] = {}               # a patrol, the first engage order's moment);
                                                          # ship -> her attack-move passes on by (no braking to station)
         self._reach: dict = {}                           # (row, stance, profile) -> how far out a target takes her in
+        self.passed_over: dict[str, dict[int, float]] = {}   # side -> its non-targets: rows its ships left silenced, and when
+
+    # ---- whom a side passes over -----------------------------------------------------------------
+    def pass_over(self, i: int, j: int, t: float) -> None:
+        """Her side's ships target j no more: she left her silenced (every battery out) at t."""
+        self.passed_over.setdefault(self.view[i], {}).setdefault(j, t)
+
+    def passed(self, i: int, j: int) -> bool:
+        return j in self.passed_over.get(self.view[i], ())
+
+    def set_back(self, t: float) -> None:
+        """Passed over from t on: not yet (it is decided again)."""
+        for rows in self.passed_over.values():
+            for j in [j for j, at in rows.items() if at >= t - 1e-9]:
+                del rows[j]
 
     # ---- what each stands in ---------------------------------------------------------------------
     def standing(self, B, t: float) -> tuple[list, list, list, np.ndarray, np.ndarray]:
@@ -344,9 +359,11 @@ class Overseer:
         return [o for o in out if o is not None]
 
     def _look(self, sp, items: list, prof: list, frame: list) -> list:
-        """The side's ready ships that enter combat on what it sees, all at once: the nearest target
-        of her profile's within her stance's range takes her into her engagement. One just out of it
-        (her move and her post held) goes on to the next with them."""
+        """The side's ready ships that enter combat on what it sees, all at once: a target of her
+        profile's within her stance's range takes her into her engagement, as her profile picks it
+        (spread: the one fewest of her side's ships are on, the nearest of those, so a formation goes
+        one to a target before two; nearest: her nearest). One its side has passed over is not
+        taken. One just out of it (her move and her post held) goes on to the next with them."""
         side = sp.side
         I = np.array([i for i, *_ in items])
         live = sp.shown & ~sp.old & ~side.own & ~sp.wrecked
@@ -358,13 +375,25 @@ class Overseer:
         D = np.linalg.norm(sp.r[None] - sp.r[I][:, None], axis=2)
         reach = np.array([self.reach_m(it[0], it[1].id, prof[it[0]]) for it in items])
         near &= D <= reach[:, None]
+        skip = list(self.passed_over.get(side.view, ()))
+        if skip:
+            near[:, skip] = False
+        on = np.zeros(near.shape[1])                     # how many of the side's ships are on each
+        for k in self.engaged:
+            j = self.captains[k].m.at.target
+            if self.view[k] == side.view and 0 <= j < len(on):
+                on[j] += 1
         out = []
-        for a, (i, rs, goal, *held) in enumerate(items):
+        for a in np.argsort([D[a][near[a]].min() if near[a].any() else np.inf for a in range(len(items))], kind="stable"):
+            i, rs, goal, *held = items[a]
             cp = self.captains[i]
             if cp.m.at.left:
                 near[a, list(cp.m.at.left)] = False
             if near[a].any():
-                j = int(np.flatnonzero(near[a])[np.argmin(D[a][near[a]])])
+                c = np.flatnonzero(near[a])
+                key = D[a][c] if prof[i].pick == "nearest" else on[c] * 1e30 + D[a][c]
+                j = int(c[np.argmin(key)])
+                on[j] += 1
                 out += cp.enter(sp, j, goal, frame[i], prof[i], rs, *held)
                 self.due[i] = self._on_tick(sp.t + cp.pace(sp, prof[i]))
         return out

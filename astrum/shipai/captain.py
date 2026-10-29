@@ -131,14 +131,32 @@ class Captain:
         if node is None:                                  # her profile changed under her: its first node
             m.move(sp.t, node=eng.start)
             return self._do(sp, eng.nodes[eng.start], rs, goal)
+        if "answer-fire" in node.do:
+            self._answer(sp)
         holds = self._holds(sp, node, rs, prof)
         go = m.next(sp.t, node, holds)
         if go is None:
             return []
         if go == EXIT:
+            j = m.at.target
+            if j >= 0 and holds("disarmed") and not holds("disabled"):     # silenced, not out: her side passes her over
+                self.o.pass_over(self.i, j, sp.t)
             return self.exit(sp, rs, prof, goal, passed=holds("passed"))
         m.move(sp.t, node=go)
         return self._do(sp, eng.nodes[go], rs, goal)
+
+    def _answer(self, sp) -> None:
+        """A ship engaging her, nearer than her target, becomes her target (one her side has passed
+        over, or out of the fight, does not)."""
+        i, j, fv = self.i, self.m.at.target, self.fv
+        foes = [a for a in sp.fired_on.get(i, []) if a != j and not fv.disarmed[a] and not self.o.passed(i, a)]
+        if not foes:
+            return
+        here = sp.r[i]
+        a = min(foes, key=lambda a: _d(sp.r[a], here))
+        gone = j < 0 or not sp.shown[j] or bool(sp.old[j])
+        if gone or _d(sp.r[a], here) < _d(sp.reckoned(j), here):
+            self.m.move(sp.t, target=a, closing=False)
 
     def _holds(self, sp, node, rs, prof):
         """Which of the conditions hold for her now, on her target, as her side sees it."""
@@ -156,9 +174,10 @@ class Captain:
         w = self.weapon(node.weapon)
         env = self.envelope_m(w)
         dead = j >= 0 and bool(fv.dead[j])
+        disarmed, destroyed = j >= 0 and bool(fv.disarmed[j]), j >= 0 and bool(fv.destroyed[j])
         reach = w.reach_km * 1e3 if w is not None and w.reach_km else env
         table = {"always": True, "far": not gone and d > env, "in-envelope": not gone and d <= env, "in-reach": not gone and d <= reach,
-                 "lost": gone or d > self.o.reach_m(i, rs.id, prof), "gone": gone, "alive": not dead, "destroyed": dead,
+                 "lost": gone or d > self.o.reach_m(i, rs.id, prof), "gone": gone, "alive": not dead, "disarmed": disarmed, "disabled": dead, "destroyed": destroyed,
                  "passed": m.at.closing and opening, "focus-stack": self._focus_stack(), "fired-on": bool(sp.fired_on.get(i))}
         return table.__getitem__
 

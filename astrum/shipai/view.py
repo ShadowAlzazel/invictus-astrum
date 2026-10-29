@@ -55,6 +55,16 @@ class View:
         return (self.mode == DEAD) | self.wreck
 
     @cached_property
+    def destroyed(self) -> np.ndarray:
+        """Destroyed outright: her hit points gone."""
+        return (self.mode == DEAD) | self._f.combat.destroyed_rows(self._f, self.n)
+
+    @cached_property
+    def disarmed(self) -> np.ndarray:
+        """Out of the fight, or every battery she had out."""
+        return (self.mode == DEAD) | self._f.combat.disarmed_rows(self._f, self.n)
+
+    @cached_property
     def pinging(self) -> np.ndarray:
         return self._f.pinging(self.t)
 
