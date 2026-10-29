@@ -122,7 +122,11 @@
       const hot = isHot('contact', c.id), formation = kids(c.id).length > 0;
       const h = S.icons.unit_px * (formation || c.echelon !== 'ship' ? S.icons.formation_scale : 1);
       const ring = rv.children.has(c.id) ? childCol : rv.parents.has(c.id) ? parentCol : null;
-      const harm = byId[c.id] === c ? HARM[map.state.ships?.[c.id]?.harm ?? 0] : null;    // as the side sees her (one ship, not a group)
+      // as the side sees her; a symbol of many (a formation, a group, tracks together) only once every
+      // one is out: the least of their harms, from disabled on
+      const ships = (also?.group ?? also?.members ?? [c.id]).flatMap(leaves).map((l) => map.state.ships?.[l]?.harm ?? 0);
+      const least = ships.length ? Math.min(...ships) : 0;
+      const harm = ships.length === 1 || least >= 2 ? HARM[least] : null;
       if (harm) c = { ...c, status: [...(c.status ?? []), harm] };
       unitSymbol(ctx, style, c, s.x, s.y, {
         h, hot, ring, label: S.layers.labels || hot || ring !== null,
@@ -214,7 +218,7 @@
                affiliation: same((c) => c.affiliation)?.affiliation ?? 'unknown', faction: same((c) => c.faction?.id)?.faction ?? null,
                callsign: cs[0].old ? `${n} old tracks` : `${n} ${bogeys === n ? 'bogeys' : 'tracks'}`, brevity: bogeys && !cs[0].old ? 'bogey' : '',
                old: !!cs[0].old, status: cs[0].old ? ['old-track'] : cs.every((c) => c.status?.includes('track-lost')) ? ['track-lost'] : [] },
-             centre(g));
+             centre(g), { members: g.map((b) => b.id) });
     }
 
     // lines: from each open formation to the units it reveals, and from the selection up
