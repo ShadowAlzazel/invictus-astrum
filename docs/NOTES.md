@@ -279,3 +279,42 @@ Depolyment zones, and what fleets you want.
 
 
 SPAWNING
+
+
+## 
+
+TODO: Rotate FORMATION
+
+TODO: Crab (I think done)
+
+TODO: Show veterancy. (this part done)
+Veteran commanders.
+That IS THE GACHA
+radio/communication leaders. Like the stars in steel division. That increase veterancy.
+
+AT MAX SPEED AHEAD, you have to turn and burn
+so you are at a disadvateage.
+
+AI In its OWN PROCESS.
+
+Missile ticking per ship.
+
+Macro for fleet formations
+
+
+##
+
+Base building and CORONA
+
+
+civil ships can send stores and propellent
+
+## HP 
+
+two types of HP. Hull Points and Crew Points
+
+So Crew Points are sort of like stamina.
+UREB does not kill it instantly, but applies a negative rate on it. 
+So that is mission-kill
+
+Also, crew can escape?
