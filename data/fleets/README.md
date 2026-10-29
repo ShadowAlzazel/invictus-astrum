@@ -42,7 +42,8 @@ A formation may say `flag = "<ship>"` (its leader: the ship under it its reports
 fleet flagship; else the ship it is placed on, else its first ship; `astrum/relay.py`) and
 `role = "battle"` (one of `style.toml [formation_role]`; else a word of its callsign gives it). Any
 unit takes its affiliation, faction, veterancy, stance and profile from the formation above it,
-unless it states its own.
+unless it states its own. The top formation's flag is the fleet flagship. The Fleets screen sets
+a unit's veterancy and a formation's flag (left empty: handed down, or led by the next in line).
 
 ## A placement: where and how she starts (in the scenario)
 

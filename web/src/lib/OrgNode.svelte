@@ -13,6 +13,11 @@
   export let changed = {};
   export let classes = [];
   export let onfocus = () => {};        // (id): a formation as the chart's top
+  export let tiers = [];
+  export let under = {};                // formation id -> the ships under it
+  export let role = () => '';           // a ship's: Flagship, or the formation she leads
+  export let tierName = (t) => t;
+  export let handed = (u) => u.handed;   // the veterancy handed down to her
 
   $: kids = ships ? unit.kids : unit.kids.filter((k) => !k.class);
   $: tally = ships ? [] : Object.entries(unit.kids.filter((k) => k.class).reduce((t, k) => ({ ...t, [k.class_name || k.class]: (t[k.class_name || k.class] ?? 0) + 1 }), {}));
@@ -47,12 +52,27 @@
     {:else if tally.length}
       <span class="sub">{tally.map(([c, n]) => `${n} ${c}`).join(' · ')}</span>
     {/if}
+    {#if admin}
+      <span class="crew">
+        <select class="vet" value={value(unit, 'veterancy')} on:change={(e) => change(unit, 'veterancy', e.target.value)} title="Veterancy: her crew's tier, handed down to the units under it">
+          <option value="">{unit.formation ? `${tierName(handed(unit))} (from above)` : `${tierName('rated')} (default)`}</option>
+          {#each tiers as t}<option value={t.id}>{t.name}</option>{/each}
+        </select>
+        {#if !unit.class}
+          <select class="vet" value={value(unit, 'flag')} on:change={(e) => change(unit, 'flag', e.target.value)} title={unit.formation ? 'The ship that leads it' : 'The fleet flagship'}>
+            <option value="">{unit.formation ? 'led by' : 'flagship'}: first ship</option>
+            {#each under[unit.id] ?? [] as sh}<option value={sh.id}>{unit.formation ? 'led by' : 'flagship'}: {value(sh, 'callsign')}</option>{/each}
+          </select>
+        {/if}
+      </span>
+    {:else if unit.veterancy}<span class="sub">{tierName(unit.veterancy)}</span>{/if}
+    {#if unit.class && role(unit)}<span class="flag" class:fs={role(unit) === 'Flagship'}>{role(unit)}</span>{/if}
   </div>
 </div>
 {#if kids.length}
   <ul>
     {#each kids as k (k.id)}
-      <li><svelte:self unit={k} {style} {admin} {ships} {value} {change} {changed} {classes} {onfocus} /></li>
+      <li><svelte:self unit={k} {style} {admin} {ships} {value} {change} {changed} {classes} {onfocus} {tiers} {under} {role} {handed} {tierName} /></li>
     {/each}
   </ul>
 {/if}
@@ -72,6 +92,10 @@
   input:hover, select:hover { border-color: var(--line); }
   input:focus, select:focus { outline: none; border-color: var(--y); background: rgba(0, 0, 0, 0.3); }
   select { color: var(--t2); font-size: 11px; width: 190px; }
+  .crew { display: flex; gap: 4px; }
+  select.vet { width: auto; max-width: 150px; }
+  .flag { justify-self: start; padding: 0 5px; color: var(--t2); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line); }
+  .flag.fs { color: #e8c35a; border-color: rgba(232, 195, 90, 0.5); }
   /* the lines: each unit hangs from the one above it, the last line stopping at the last unit */
   ul { list-style: none; margin: 0 0 0 25px; padding: 0; }
   li { position: relative; padding-left: 14px; }

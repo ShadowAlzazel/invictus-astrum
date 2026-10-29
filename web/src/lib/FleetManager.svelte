@@ -1,8 +1,9 @@
 <script>
   // The fleets (data/fleets, astrum/fleets.py): every fleet, its ships by class, and its order of
   // battle, formation by formation: as a table, or as a chart in the NATO manner, each unit under
-  // the one above it with the map's own symbols. An admin renames units and changes a ship's hull
-  // number or class, in either; the server writes it into the fleet's file. A level already
+  // the one above it with the map's own symbols. An admin renames units, changes a ship's hull
+  // number or class, any unit's veterancy (else handed down), and the ship that leads a formation
+  // (the top one's: the fleet flagship), in either; the server writes it into the fleet's file. A level already
   // running keeps the copy it started with: an edit is played from the next start.
   import { onMount } from 'svelte';
   import { api } from './api.js';
@@ -14,7 +15,7 @@
   let view = 'chart', top = null, ships = false;   // the chart: its top formation, ships shown or tallied
 
   let fleets = [], admin = false, current = null, fleet = null, error = '', saved = '';
-  let edits = {};                       // unit id -> { callsign, hull_number, class }: what is changed and not saved
+  let edits = {};                       // unit id -> { callsign, hull_number, class, veterancy, flag }: what is changed and not saved
   $: dirty = Object.keys(edits).length > 0;
 
   async function load() {
@@ -51,6 +52,27 @@
   $: roots = fleet ? (top && nodes[top] ? [nodes[top]] : fleet.units.filter((u) => !u.formation).map((u) => nodes[u.id])) : [];
   $: trail = top && nodes[top] ? (() => { const t = []; for (let u = nodes[top]; u; u = nodes[u.formation]) t.unshift(u); return t; })() : [];
   const value = (u, k) => edits[u.id]?.[k] ?? u[k];
+  // who leads: a formation's flag, else its first ship (in a scenario, the ship it is placed on first);
+  // the top formation's leader is the fleet flagship. Read with the unsaved edits, so a change shows at once.
+  $: byId = fleet ? Object.fromEntries(fleet.units.map((u) => [u.id, u])) : {};
+  $: under = fleet ? (() => {
+    const kids = {};
+    for (const u of fleet.units) (kids[u.formation ?? ''] ??= []).push(u);
+    const walk = (id) => (kids[id] ?? []).flatMap((u) => (u.class ? [u] : walk(u.id)));
+    return Object.fromEntries(fleet.units.filter((u) => !u.class).map((u) => [u.id, walk(u.id)]));
+  })() : {};
+  $: leader = (edits, Object.fromEntries(Object.keys(under).map((id) => [id, value(byId[id], 'flag') || byId[id].first])));
+  $: flagship = fleet ? leader[fleet.units.find((u) => !u.formation && !u.class)?.id] : null;
+  $: role = ((lead, fs) => (u) => {     // a ship's: the fleet flagship, else the nearest formation she leads
+    if (u.id === fs) return 'Flagship';
+    for (let f = byId[u.formation]; f; f = byId[f.formation]) if (lead[f.id] === u.id) return `Leads ${value(f, 'callsign')}`;
+    return '';
+  })(leader, flagship);
+  $: handed = (edits, (u) => {           // the veterancy handed down to her: the nearest above that states one
+    for (let f = byId[u.formation]; f; f = byId[f.formation]) if (value(f, 'veterancy')) return value(f, 'veterancy');
+    return 'rated';
+  });
+  const tierName = (t) => fleet?.tiers.find((x) => x.id === t)?.name ?? t;
   function change(u, k, v) {
     const e = { ...(edits[u.id] ?? {}), [k]: v };
     if (v === u[k]) delete e[k];
@@ -126,17 +148,17 @@
           <p class="hint">A formation's symbol makes it the chart's top.</p>
           {#each roots as r (r.id)}
             <div class="chart">
-              <div class="root"><OrgNode unit={{ ...r, kids: [] }} {style} {admin} ships {value} {change} changed={edits} classes={fleet.classes} onfocus={(id) => (top = id)} /></div>
+              <div class="root"><OrgNode unit={{ ...r, kids: [] }} {style} {admin} ships {value} {change} changed={edits} classes={fleet.classes} tiers={fleet.tiers} {under} {role} {handed} {tierName} onfocus={(id) => (top = id)} /></div>
               <div class="cols">
                 {#each (ships ? r.kids : r.kids.filter((k) => !k.class)) as col (col.id)}
-                  <div class="col"><OrgNode unit={col} {style} {admin} {ships} {value} {change} changed={edits} classes={fleet.classes} onfocus={(id) => (top = id)} /></div>
+                  <div class="col"><OrgNode unit={col} {style} {admin} {ships} {value} {change} changed={edits} classes={fleet.classes} tiers={fleet.tiers} {under} {role} {handed} {tierName} onfocus={(id) => (top = id)} /></div>
                 {/each}
               </div>
             </div>
           {/each}
         {:else}
         <table>
-          <thead><tr><th>Unit</th><th>Class</th><th>Hull</th><th class="dim">id</th></tr></thead>
+          <thead><tr><th>Unit</th><th>Class</th><th>Hull</th><th>Veterancy</th><th>Led by</th><th class="dim">id</th></tr></thead>
           <tbody>
             {#each rows as u (u.id)}
               <tr class:ship={u.class} class:changed={edits[u.id]}>
@@ -159,6 +181,25 @@
                     {#if admin}<input class="hull" value={value(u, 'hull_number')} placeholder="—" on:input={(e) => change(u, 'hull_number', e.target.value)} />
                     {:else}{u.hull_number || '—'}{/if}
                   {/if}
+                </td>
+                <td>
+                  {#if admin}
+                    <select value={value(u, 'veterancy')} on:change={(e) => change(u, 'veterancy', e.target.value)}>
+                      <option value="">{u.formation ? `from above: ${tierName(handed(u))}` : `${tierName('rated')} (the default)`}</option>
+                      {#each fleet.tiers as t}<option value={t.id}>{t.name}</option>{/each}
+                    </select>
+                  {:else}{u.veterancy ? tierName(u.veterancy) : `${tierName(handed(u))}, from above`}{/if}
+                </td>
+                <td>
+                  {#if !u.class}
+                    {#if admin}
+                      <select value={value(u, 'flag')} on:change={(e) => change(u, 'flag', e.target.value)} title={u.formation ? 'The ship that leads it: its reports go up through her' : 'The fleet flagship: where its picture is'}>
+                        <option value="">first ship: {value(byId[u.first] ?? {}, 'callsign') ?? '—'}</option>
+                        {#each under[u.id] ?? [] as sh}<option value={sh.id}>{value(sh, 'callsign')}</option>{/each}
+                      </select>
+                    {:else}{value(byId[leader[u.id]] ?? {}, 'callsign') ?? '—'}{/if}
+                    {#if !u.formation}<span class="flag">flagship</span>{/if}
+                  {:else if role(u)}<span class="flag" class:fs={role(u) === 'Flagship'}>{role(u)}</span>{/if}
                 </td>
                 <td class="dim id">{u.id}</td>
               </tr>
@@ -243,4 +284,6 @@
   input:focus, select:focus { outline: none; border-color: var(--y); }
   input { width: 220px; }
   input.hull { width: 110px; }
+  .flag { margin-left: 8px; padding: 1px 6px; color: var(--t2); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; border: 1px solid var(--line); }
+  .flag.fs { color: #e8c35a; border-color: rgba(232, 195, 90, 0.5); }
 </style>

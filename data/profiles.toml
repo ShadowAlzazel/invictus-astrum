@@ -102,20 +102,20 @@ wait_s = 600              # TESTING: a delay before she leaves combat, to see wh
 on = [{ if = "always", go = "exit" }]
 
 [profile.artillery]
-name = "Artillery orders"   # stand off at her light's dazzle range (strips: 40,000 km) and keep the salvos coming
+name = "Artillery orders"   # stand off at her spine's farthest reach and keep the salvos coming: past where they open a hull, they still take out what they land on
 targets = ["hostile"]
 start = "close"
 
 [profile.artillery.node.close]
-label = "Close to dazzle range, fire"
-do = ["station", "fire", "spine", "turn-to-fire"]
-weapon = "strip"
+label = "Close to the spine's reach, fire"
+do = ["station", "fire", "turn-to-fire"]
+weapon = "stack"
 on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-reach", go = "hold" }]
 
 [profile.artillery.node.hold]
 label = "Hold off, fire"
-do = ["hold", "fire", "spine", "turn-to-fire"]
-weapon = "strip"
+do = ["hold", "fire", "turn-to-fire"]
+weapon = "stack"
 on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "alive", go = "hold" }]
 
 [profile.artillery.node.lost]

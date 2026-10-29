@@ -59,6 +59,36 @@ def test_only_an_admin_edits_and_a_bad_edit_is_undone(data):
     app.state.sim.close()
 
 
+def test_an_admin_sets_veterancy_who_leads_and_the_flagship(data):
+    """Veterancy on any unit (handed down to those under it; cleared, handed down from above
+    again), the ship that leads a formation, and the top formation's: the fleet flagship. A flag
+    that is not a ship under its formation, or a tier that is not one, is refused and undone."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    from astrum.relay import chain
+    cfg, tmp = data
+    app = create_app(cfg)
+    with TestClient(app) as c:
+        put = lambda units: c.put("/api/fleets/jupiter-home", json={"units": units})
+        r = put({"jove": {"veterancy": "veteran", "flag": "jove-2"}, "jove-3": {"veterancy": "green"}, "jupiter-home": {"flag": "cew2-1"}})
+        assert r.status_code == 200
+        u = {x["id"]: x for x in r.json()["units"]}
+        assert u["jove"]["veterancy"] == "veteran" and u["jove-2"]["handed"] == "veteran" and u["jove-3"]["veterancy"] == "green"
+        assert u["jove-2"]["leads"] == ["jove"] and u["cew2-1"]["flagship"] and not u["jove-1"]["flagship"]
+        sc = app.state.world.scenarios["sol-demo"]
+        assert sc.contacts["jove-2"].veterancy == "veteran" and sc.contacts["jove-3"].veterancy == "green"
+        ships = [k for k, x in sc.contacts.items() if x.ship_class and k.startswith(("jove", "cew2"))]
+        got = chain({k: x for k, x in sc.contacts.items() if k in ships or not x.ship_class}, ships, set())
+        assert got["leader"]["jove"] == "jove-2" and got["leader"]["jupiter-home"] == "cew2-1"
+        r = put({"jove": {"veterancy": "", "flag": ""}})
+        u = {x["id"]: x for x in r.json()["units"]}
+        assert u["jove"]["veterancy"] == "" and u["jove"]["flag"] == "" and u["jove-2"]["handed"] == "rated"
+        before = (tmp / "fleets" / "jupiter-home.toml").read_text()
+        assert put({"jove": {"flag": "cew2-1"}}).status_code == 400 and put({"jove": {"veterancy": "ace"}}).status_code == 400
+        assert (tmp / "fleets" / "jupiter-home.toml").read_text() == before
+    app.state.sim.close()
+
+
 def test_a_level_plays_the_copy_it_started_with(data):
     """Started, a level keeps its scenarios and the fleets flown from them through a reload; a
     fleet edited meanwhile is what the next start (or a restart) plays."""

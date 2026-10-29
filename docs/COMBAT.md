@@ -102,9 +102,10 @@ map with its own targets and ranges. Shared: **Standing orders** (the root: clos
 spinal battery's envelope, fire it once a cycle, hold; target lost, hold and wait, then exit; with
 turn-to-fire: a stack off her bow while she burns, her drive is cut for the shot, she faces and fires,
 and her station or hold burns her on the next tick), **Reckless Ahead** (Standing orders without
-turn-to-fire: off the bow under burn, the stack is held), **Artillery orders** (close reading her
-strips, hold off as soon as she is within their reach, their dazzle range: 40,000 km; the spine fired
-with them, turning to fire; a class with no strip reads her spine), **Hold the line**, **Pursuit** (on until the target is out of the picture), **Search and Destroy**
+turn-to-fire: off the bow under burn, the stack is held), **Artillery orders** (close, and hold off as
+soon as she is within her spine's farthest rated reach, firing it, turning to fire, with her light
+where it reaches: an AESHNA's or PHALAENA's 49,800 km, a PAPILION's 100,000; past where it opens a
+hull, a channel still takes out what it lands on), **Hold the line**, **Pursuit** (on until the target is out of the picture), **Search and Destroy**
 (a pass through her, firing as she passes, then on: after = coast), **Ballistic orders** (an
 attack-move passing on by: close, then keep the heading if her focus is a stack (fire, spine,
 hold-heading), else coast for the shot (fire, spine): her focus first and the spine if that was not

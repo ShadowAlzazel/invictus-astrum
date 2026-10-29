@@ -4,7 +4,7 @@
     GET  /api/status                     data version and load errors (the map polls this)
     GET  /api/fleets                     every fleet (data/fleets): faction, ships by class, the scenarios it is in
     GET  /api/fleets/{id}                one fleet, unit by unit
-    PUT  /api/fleets/{id}                an admin's edit of its units: {units: {id: {callsign, hull_number, class}}}
+    PUT  /api/fleets/{id}                an admin's edit of its units: {units: {id: {callsign, hull_number, class, veterancy, flag}}}
     GET  /api/system/{id}                bodies, derived zones, findings
     GET  /api/system/{id}/orbits?t=      orbit paths, each relative to its parent, km
     GET  /api/system/{id}/probe?x&y&z&t  what is at a point: zone, gravity, magnetism, AER
@@ -46,7 +46,7 @@ from .fields import gravity, magnetic, potential
 from .frames import to_spherical
 from .factions import Factions, load_factions
 from .fleets import edit as edit_fleet, load_fleets
-from .loader import Player, contact_positions, load_players, load_scenarios, load_systems
+from .loader import VETERANCY, Player, contact_positions, load_players, load_scenarios, load_systems
 from .relay import chain
 from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify
@@ -750,7 +750,22 @@ def fleet_dict(world: "World", fl, units: bool = False) -> dict:
             while c is not None and c.get(key) is None:
                 c = by_id.get(c.get("formation"))
             return c.get(key) if c else None
+        kids: dict = {}
+        for c in fl.units:
+            kids.setdefault(c.get("formation"), []).append(c)
+
+        def first_ship(c):                               # (its leader when no flag says: astrum/relay.py)
+            for k in kids.get(c["id"], []):
+                got = k["id"] if k.get("class") else first_ship(k)
+                if got:
+                    return got
+            return None
+        lead = {c["id"]: c.get("flag") or first_ship(c) for c in fl.units if not c.get("class")}
+        flagship = next((lead[c["id"]] for c in fl.units if not c.get("formation") and not c.get("class")), None)
         out["units"] = [{"id": c["id"], "callsign": c.get("callsign", c["id"]), "echelon": c.get("echelon", "ship"),
+                         "veterancy": c.get("veterancy", ""), "handed": above(by_id.get(c.get("formation")), "veterancy") or "rated",
+                         "flag": c.get("flag", ""), "first": "" if c.get("class") else first_ship(c) or "",
+                         "leads": [f for f, s in lead.items() if s == c["id"]], "flagship": c["id"] == flagship,
                          "formation": c.get("formation"), "class": c.get("class", ""), "hull_number": str(c.get("hull_number", "")),
                          "class_name": classes[c["class"]].name if c.get("class") in classes else "",
                          "affiliation": above(c, "affiliation") or "unknown", "status": c.get("status", []),
@@ -758,6 +773,8 @@ def fleet_dict(world: "World", fl, units: bool = False) -> dict:
                          "unit_type": c.get("unit_type") or (classes[c["class"]].doc.get("class", {}).get("symbol", "")
                                                              if c.get("class") in classes else "")} for c in fl.units]
         out["classes"] = sorted(({"id": k, "name": v.name} for k, v in classes.items() if v.drive), key=lambda x: x["name"])
+        crew = world.ships.rules.crew
+        out["tiers"] = [{"id": t, "name": (crew.get(t) or {}).get("label", t)} for t in VETERANCY]
     return out
 
 

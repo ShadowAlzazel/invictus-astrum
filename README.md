@@ -65,7 +65,9 @@ The map opens on the main menu, over a system standing still:
       chart in the NATO manner (the map's own symbols, each unit under the one above it, a
       formation's symbol making it the chart's top; ships shown or tallied by class) or as a
       table. An admin (`role = "admin"` in `data/users.toml`: Fabian, and the `--dev` user)
-      renames its units and changes a ship's hull number or class; the edit is written into the
+      renames its units, changes a ship's hull number or class, any unit's veterancy (else
+      handed down from above), and the ship that leads a formation (the top formation's leader
+      is the fleet flagship; each ship says whom she leads); the edit is written into the
       fleet's file. A level plays a copy of its scenarios and fleets as they stood when it
       started: an edit is played from the next start (or a restart), never in a game already
       running.
