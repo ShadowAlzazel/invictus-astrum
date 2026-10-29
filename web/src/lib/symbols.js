@@ -131,8 +131,10 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
     ctx.strokeStyle = rgba(ring, 0.9); ctx.lineWidth = 1.2; ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.arc(x, y, Math.max(ew, eh) + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
   }
-  if (statuses.some((s) => s.cross)) {
-    ctx.beginPath(); ctx.moveTo(x - ew, y - eh); ctx.lineTo(x + ew, y + eh); ctx.moveTo(x + ew, y - eh); ctx.lineTo(x - ew, y + eh); ctx.stroke();
+  const cross = Math.max(0, ...statuses.map((s) => (s.cross === true ? 1 : +s.cross || 0)));
+  if (cross) {                                                 // out: corner to corner, and past the frame by its share (style.toml)
+    const cx = ew * cross, cy = eh * cross;
+    ctx.beginPath(); ctx.moveTo(x - cx, y - cy); ctx.lineTo(x + cx, y + cy); ctx.moveTo(x + cx, y - cy); ctx.lineTo(x - cx, y + cy); ctx.stroke();
   } else if (statuses.some((s) => s.slash)) {
     ctx.beginPath(); ctx.moveTo(x - ew, y + eh); ctx.lineTo(x + ew, y - eh); ctx.stroke();
   }
@@ -148,10 +150,11 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
     ctx.fillStyle = rgba(col, 0.8 * alpha); ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
   }
   if (!label) return;
-  display(ctx, c.callsign, x + ew + 6, y - 1, rgba(hot ? style.palette.fuchsia : style.palette.ink, 0.92 * alpha), labelPx);
+  const lx = x + ew * Math.max(1, cross) + 6;                 // (past an out cross)
+  display(ctx, c.callsign, lx, y - 1, rgba(hot ? style.palette.fuchsia : style.palette.ink, 0.92 * alpha), labelPx);
   const tags = [...new Set([faction ? designation(style, c) : null, c.pry ? `Pry-${c.pry}` : null,
                             c.brevity ? c.brevity.toUpperCase() : null].filter(Boolean))].join('  ');
-  if (tags) text(ctx, tags, x + ew + 6, y + 2 + tagPx, rgba(aff.color, 0.85 * alpha), tagPx);
+  if (tags) text(ctx, tags, lx, y + 2 + tagPx, rgba(aff.color, 0.85 * alpha), tagPx);
 }
 
 // ---- bodies ------------------------------------------------------------------------------------

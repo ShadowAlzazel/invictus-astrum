@@ -45,7 +45,8 @@ shape = "square"
 color = "#2ec4b6"
 fill  = 0.10
 
-# Status modifiers. dash: frame dash pattern [on, off] px; cross: strike through; opacity: 0–1;
+# Status modifiers. dash: frame dash pattern [on, off] px; cross: strike through (a number: how far
+# past the frame, as a share of its half-size, so it is not read as a line formation's X); opacity: 0–1;
 # ellipse: draw an uncertainty ring; scale: the frame's size, times; shape: in place of an
 # affiliation's frame, by affiliation (its colour kept); hollow: the frame alone, nothing in it;
 # slash: one stroke corner to corner. A ship's harm, as her side sees her: damaged, crab (disabled), destroyed.
@@ -69,7 +70,7 @@ ellipse = true
 
 [status.crab]
 label = "Crab: surrendered or disabled"
-cross = true
+cross = 1.45
 opacity = 0.75
 
 [status.damaged]                    # a system of hers out; still in the fight
@@ -78,7 +79,7 @@ slash = true
 
 [status.destroyed]
 label = "Destroyed"
-cross = true
+cross = 1.45
 hollow = true
 opacity = 0.45
 
