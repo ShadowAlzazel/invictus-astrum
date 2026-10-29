@@ -62,6 +62,7 @@ from .gate import Busy, OrderGate
 
 log = logging.getLogger("astrum.web")         # who connected, signed in, acted in a lobby, gave an order (serve.py: console and file)
 from . import display
+from . import formations
 from . import picture
 from . import profiles
 from .shipai import ACTIONS, AFTERS, CONDITIONS, WEAPONS, Minerva, load_minerva
@@ -98,6 +99,7 @@ class World:
         self.retired: dict[str, dict[str, Bullseye]] = {}  # ... and deleted: still flown to, never listed
         self.profiles: dict[str, Profile] = {}              # the shared combat profiles (data/profiles.toml), by id
         self.minerva: Minerva | None = None                 # the ship AI's MINERVA: its ReadyStances, its figures (data/minerva.toml)
+        self.formations: formations.Presets | None = None   # the shapes a formation takes on a move (data/formations.toml)
         self.profiles_made: dict[str, dict[str, Profile]] = {}  # player -> combat profiles made on the map
         self.tables: dict[str, Tabled] = {}      # system id -> its body table, filled up front (see _prefill)
         self.style = {}
@@ -147,6 +149,11 @@ class World:
             minerva = load_minerva(Path(p["players"]).parent / "minerva.toml")
         except (OSError, ValueError, tomllib.TOMLDecodeError) as e:
             errors["minerva.toml"] = str(e)
+        presets = self.formations
+        try:
+            presets = formations.load(Path(p["players"]).parent / "formations.toml")
+        except (OSError, ValueError, tomllib.TOMLDecodeError) as e:
+            errors["formations.toml"] = str(e)
         style = self.style
         try:
             style = load_style(p["style"])
@@ -249,7 +256,7 @@ class World:
             self.players, self.style, self.errors, self.ships = players, style, errors, ships
             self.factions = factions
             self.made, self.retired = made, {}
-            self.profiles, self.profiles_made, self.minerva = shared, made_profiles, minerva
+            self.profiles, self.profiles_made, self.minerva, self.formations = shared, made_profiles, minerva, presets
             self.display_rules, self.settings, self.trees = rules, settings, trees
             self.levels = levels
             self.fleets = {k: f for k, f in self.fleets.items() if any(k in h for h in self.held.values())}
@@ -1069,6 +1076,7 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
                       for cid in (world.ships.classes if world.ships else {}) if (spec := world.spec(cid)) is not None},
             "style": world.style,
             "speed_of_light_kms": k.C * KM,
+            "formations": world.formations.as_dict() if world.formations else None,
             "ship_classes": len(world.ships.classes) if world.ships else 0,
             "display": {"rules": world.display_rules, "settings": world.settings},
             "picture": switches.described(config["picture"]),

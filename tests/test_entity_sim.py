@@ -274,7 +274,8 @@ def test_orders_from_the_map_api():
 
 
 def test_formation_orders_and_the_telegraph():
-    """An order for a flight goes to her ships, each keeping her offset; the telegraph retunes them."""
+    """An order for a flight goes to her ships, each taking her place in the default preset (line
+    abreast, right: a spacing apart, data/formations.toml); the telegraph retunes them."""
     from fastapi.testclient import TestClient
     from astrum.app import create_app
     app = create_app()
@@ -289,12 +290,38 @@ def test_formation_orders_and_the_telegraph():
     assert {s["goal"]["g"] for s in r.json()["ships"].values()} == {0.2}
     after = f.at(t + 12 * 3600)
     assert all(after[i].state.mode == "station" for i in before)
-    # laid out as they left: the gaps between them are kept
-    gap0 = np.linalg.norm(before["kiki-2"] - before["kiki-3"])
-    gap1 = np.linalg.norm(after["kiki-2"].state.r - after["kiki-3"].state.r)
-    assert gap1 == pytest.approx(gap0, rel=0.02)
+    # laid out in line abreast: a spacing apart, the first at the end
+    gap = lambda a, b: np.linalg.norm(after[a].state.r - after[b].state.r)
+    sp = world.formations.get(None).spacing_m
+    assert gap("kiki-1", "kiki-2") == pytest.approx(sp, rel=0.02) and gap("kiki-1", "kiki-3") == pytest.approx(2 * sp, rel=0.02)
     assert c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.3,
                                       "target": {"unit": "kiki-2"}}).status_code == 400      # not one of her own
+
+
+@pytest.mark.parametrize("shape", ["as-they-stand", "two-by-five"])
+def test_a_formation_takes_the_shape_it_is_ordered_in(shape):
+    """As they stand: each ship keeps her place as the flight left; rows of five: about the first
+    ship, across the move. The map is told the presets and the default."""
+    from fastapi.testclient import TestClient
+    from astrum.app import create_app
+    app = create_app()
+    c, world = TestClient(app), app.state.world
+    f = world.fleet(world.scenarios["sol-demo"])
+    t = f.t0 + 600
+    before = {i: f.at(t)[i].state.r.copy() for i in ("kiki-1", "kiki-2", "kiki-3")}
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "kiki", "t": t, "g": 0.4, "player": "arcvs", "shape": shape,
+                                   "target": {"bullseye": "burn", "aer": [90, 0, 30000]}})
+    assert r.status_code == 200
+    after = f.at(t + 12 * 3600)
+    gap = lambda a, b, s: np.linalg.norm(s[a] - s[b])
+    now = {i: after[i].state.r for i in before}
+    if shape == "as-they-stand":
+        assert gap("kiki-2", "kiki-3", now) == pytest.approx(gap("kiki-2", "kiki-3", before), rel=0.02)
+    else:                                             # (one row: the first in the middle, one each side)
+        sp = world.formations.get(shape).spacing_m
+        assert gap("kiki-1", "kiki-2", now) == pytest.approx(sp, rel=0.02) and gap("kiki-2", "kiki-3", now) == pytest.approx(2 * sp, rel=0.02)
+    meta = c.get("/api/meta").json()["formations"]
+    assert meta["default"] == "line-abreast-right" and {p["id"] for p in meta["presets"]} >= {"as-they-stand", "file", shape}
 
 
 def test_each_order_keeps_its_own_telegraph():
@@ -427,7 +454,8 @@ def test_a_formation_keeps_its_places_on_the_way():
     c, world = TestClient(app), app.state.world
     f = world.fleet(world.scenarios["sol-demo"])
     t = f.t0 + 600
-    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "tf2-lf1", "t": t, "g": 0.3, "target": {"body": "moon"}}).json()
+    r = c.post("/api/order", json={"scenario": "sol-demo", "unit": "tf2-lf1", "t": t, "g": 0.3, "target": {"body": "moon"},
+                                   "shape": "as-they-stand"}).json()
     ids = list(r["ships"])
     assert all(s["goal"]["in_formation"] for s in r["ships"].values()) and len(f.leads) == 1
     for T in (1800, 3 * 3600, 4.5 * 3600):         # settled from their station velocities: within metres of their places
@@ -1787,7 +1815,7 @@ def test_a_group_of_units_is_given_one_order():
     f.at(t)
     ships = order_ships(world, sc, f, "kiki+paris+kiki")
     assert ships == ["kiki-1", "kiki-2", "kiki-3", "paris-1", "paris-2"]
-    r = give_order(world, {"scenario": "sol-demo", "unit": "kiki+paris", "player": "arcvs", "t": t, "g": 0.3,
+    r = give_order(world, {"scenario": "sol-demo", "unit": "kiki+paris", "player": "arcvs", "t": t, "g": 0.3, "shape": "as-they-stand",
                            "target": {"bullseye": "burn", "aer": [90, 0, 3e5]}})
     goals = [r["ships"][s]["goal"] for s in ships]
     assert len({g["order_id"] for g in goals}) == 1 and all(g["by"] == "kiki+paris" for g in goals)

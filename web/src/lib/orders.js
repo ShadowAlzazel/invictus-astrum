@@ -162,3 +162,10 @@ export const nextThen = (then) => THEN[(THEN.indexOf(then ?? 'station') + 1) % T
 // an attack-move's K, two profiles: Standing orders (keep station; aggressive does not change), or
 // Ballistic orders (a ballistic burn, no braking to the point)
 export const toggleAttack = (then) => (then === 'pass' ? 'station' : 'pass');
+// the formation presets (data/formations.toml, the server's): the next one O gives, and whether an order takes one
+export const nextShape = (formations, id) => {
+  const ids = (formations?.presets ?? []).map((p) => p.id);
+  return ids.length ? ids[(ids.indexOf(id ?? formations.default) + 1) % ids.length] : null;
+};
+export const shapes = (o) => o && o.ships?.length > 1 && ['move', 'attack', 'patrol'].includes(o.mode)
+  && !(o.mode === 'move' && o.then === 'ballistic') && !(o.mode === 'attack' && o.then === 'pass');

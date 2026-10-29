@@ -5,7 +5,7 @@
   // slowest ship can give down to stop. Every ship flying an order shows its vector and time to
   // target; the selected ones brightest.
   import { onMount, onDestroy } from 'svelte';
-  import { nextThen, aimAt, estimate, heading, hms, group, stepG, shipsUnder } from './orders.js';
+  import { nextThen, nextShape, shapes, aimAt, estimate, heading, hms, group, stepG, shipsUnder } from './orders.js';
   import Telegraph from './Telegraph.svelte';
   import { cap, is, keymap } from './keys.js';
   import { km, bearing, elev } from './format.js';
@@ -18,6 +18,7 @@
   export let chosen = null;             // the unit (or group, "a+b") the selection orders
   export let ordering = null;       // { unit, ships, g, tilt, plane } while an order is being aimed
   export let message = '';
+  export let formations = null;         // the formation presets (data/formations.toml): the shape a formation takes
 
   let canvas, ctx, unhook, W = 0, H = 0, dpr = 1;
   let cursor = { x: -1, y: -1 };
@@ -169,6 +170,12 @@
       <button class="plane" class:on={ordering.then === 'pass'} on:click={() => (ordering = { ...ordering, then: ordering.then === 'pass' ? 'station' : 'pass' })}
         title="K: keep station (Standing orders, the usual), or pass on by (Ballistic orders: one burn, no braking)">
         <i></i>{ordering.then === 'pass' ? 'Pass on by · Ballistic orders' : 'Keep station · Standing orders'}<kbd>{cap($keymap.free)}</kbd>
+      </button>
+    {/if}
+    {#if shapes(ordering) && formations}
+      <button class="plane" class:on={ordering.shape !== formations.default} on:click={() => (ordering = { ...ordering, shape: nextShape(formations, ordering.shape) })}
+        title="The shape its ships take on the way (O cycles; data/formations.toml)">
+        <i></i>{formations.presets.find((p) => p.id === ordering.shape)?.name ?? 'As they stand'}<kbd>{cap($keymap.shape)}</kbd>
       </button>
     {/if}
     <p class="keys"><kbd>{cap($keymap.up)}</kbd><kbd>{cap($keymap.down)}</kbd> telegraph · <kbd>⇧</kbd> fine · <kbd>{cap($keymap.eve)}</kbd><kbd>{cap($keymap.haid)}</kbd> Eve / Haid · <kbd>{cap($keymap.plane)}</kbd> plane · click to order, <kbd>⇧</kbd>-click to queue · <kbd>{cap($keymap.order)}</kbd><kbd>{cap($keymap.attack)}</kbd><kbd>{cap($keymap.patrol)}</kbd><kbd>{cap($keymap.turn)}</kbd> move, attack, patrol, turn · <kbd>Esc</kbd> cancel</p>

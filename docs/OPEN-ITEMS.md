@@ -22,6 +22,7 @@ Ours to build is in `docs/REFACTORS.md` (by number) and `docs/COMBAT.md` (Open).
 | 12 | **The salvo's estimates,** to check against the canon when it gives them. | `size_k` 0.479 (TELVM §1.3.4's three sizes), `muzzle_share` 0.25 (gives TORMENTA §4.8's table), `station_share` 0.9. | `data/ships/rules.toml` [salvo], `data/minerva.toml` |
 | 13 | **TF-2's callsigns.** `tools/formation_tf2.py` writes over them. | Not to be run again before the owner's names are in. | `tools/formation_tf2.py` |
 | 14 | **A SimLogBook.** The level's warp, battle tick and combat changes kept as the orders are, so a flight flown again from a checkpoint before a change flies it as it was (combat likely locked once a level runs). | Each is the clock's as it stands; a re-fly reads it as it is now. | `astrum/level.py`, `astrum/simhost.py` |
+| 15 | **Formation spacing.** The presets' distance between neighbours. | 1,000 km, est. (TEMPORARY): tight enough that every spine bears on one target (an envelope is 1,550 to 3,600 km). LF-1 at Half, line abreast: 0–7 of ours out or silenced in 8 runs (as they stand: 2–9). | `data/formations.toml` spacing_km |
 
 ## Answered
 

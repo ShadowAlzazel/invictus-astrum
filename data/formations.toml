@@ -1,0 +1,39 @@
+# Formation presets (astrum/formations.py): the shape a formation's ships take on a move, laid out
+# on the move's direction (forward: toward the target; right: forward across the ecliptic north).
+# The player picks one aiming a move, an attack-move or a patrol (O cycles them); default otherwise.
+#
+#   name      what the map calls it
+#   keep      true: each ship keeps her place as the formation stands (no shape)
+#   across    ships a row (0: all of them in one row); rows follow behind the first, a spacing apart
+#   side      where the rest of a row stand from its first ship: "right", "left", or "centre"
+#   spacing_km  between neighbours, across and back (else the file's)
+#
+# The order's first ship (the formation's, as it lists its ships) takes the first place: at the
+# target, the row's end (right, left) or its middle (centre).
+
+default = "line-abreast-right"
+spacing_km = { value = 1000, est = true, note = "TEMPORARY: tight enough that every spine bears on one target (an envelope is 1,550 to 3,600 km), until the owner gives it" }
+
+[preset.as-they-stand]
+name = "As they stand"
+keep = true
+
+[preset.line-abreast-right]
+name = "Line abreast, right"
+across = 0
+side = "right"
+
+[preset.line-abreast-left]
+name = "Line abreast, left"
+across = 0
+side = "left"
+
+[preset.file]
+name = "File"
+across = 1
+side = "centre"
+
+[preset.two-by-five]
+name = "Rows of five"
+across = 5
+side = "centre"

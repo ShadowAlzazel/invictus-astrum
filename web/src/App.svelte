@@ -11,7 +11,7 @@
   import { config as adjutantConfig } from './lib/adjutant.js';
   import Orders from './lib/Orders.svelte';
   import Bullseyes from './lib/Bullseyes.svelte';
-  import { aimAt, group, hms, named, nextThen, orderGroups, shipsUnder, stepG, THEN, toggleAttack } from './lib/orders.js';
+  import { aimAt, group, hms, named, nextShape, nextThen, orderGroups, shapes, shipsUnder, stepG, THEN, toggleAttack } from './lib/orders.js';
   import { Motion } from './lib/motion.js';
   import Overlay from './lib/Overlay.svelte';
   import InfoPanel from './lib/InfoPanel.svelte';
@@ -439,11 +439,14 @@
     const g = grp.g ?? Math.min(grp.cruise?.[1] ?? grp.maxG, grp.maxG);
     // an attack-move starts keeping station (aggressive, unchanged). K on it toggles a pass; it does
     // not inherit how the last move ended
-    ordering = { unit: chosen, ships: able, g, tilt: 0, plane: orderPlane, mode, then: mode === 'attack' ? 'station' : lastThen };
+    ordering = { unit: chosen, ships: able, g, tilt: 0, plane: orderPlane, mode, then: mode === 'attack' ? 'station' : lastThen,
+                 shape: lastShape ?? meta?.formations?.default };
   }
   // how a move ends (orders.js THEN): on station, free, or ballistic; K while aiming, kept for the next move.
   // an attack-move's K is its own: keep station, or pass on by. It does not change the move's
   let lastThen = 'station';
+  let lastShape = null;                                  // the formation shape O last chose (kept for the next order)
+  $: if (ordering?.shape) lastShape = ordering.shape;
   $: if (ordering?.mode === 'move' && ordering.then) lastThen = ordering.then;
   // K: the selection goes free if any of its ships holds station, else takes station (decelerate: to
   // rest on the active bullseye, held there)
@@ -533,7 +536,7 @@
     if (!aim || !scenario) { say('Nothing to aim at there.'); return false; }
     try {
       const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId, view: side,
-                                  target: aim.target, mode: o.mode, queue,
+                                  target: aim.target, mode: o.mode, queue, shape: shapes(o) ? o.shape : undefined,
                                   free: o.mode === 'move' && o.then === 'free' ? true : undefined,
                                   ballistic: !queue && (o.mode === 'move' && o.then === 'ballistic' || o.mode === 'attack' && o.then === 'pass') ? true : undefined });
       const goal = Object.values(r.ships)[0]?.goal;
@@ -607,6 +610,7 @@
       }
       if (is(e, 'free') && ordering.mode === 'move') { ordering = { ...ordering, then: nextThen(ordering.then) }; return; }
       if (is(e, 'free') && ordering.mode === 'attack') { ordering = { ...ordering, then: toggleAttack(ordering.then) }; return; }
+      if (is(e, 'shape') && shapes(ordering)) { ordering = { ...ordering, shape: nextShape(meta?.formations, ordering.shape) }; return; }
       if (orderTool?.key(e)) { e.preventDefault(); return; }
     } else if (Object.keys(MODES).some((a) => is(e, a)) && mode === 'map') { startOrder(MODES[Object.keys(MODES).find((a) => is(e, a))]); return; }
     else if (is(e, 'stop') && mode === 'map') { stopOrder(); return; }
@@ -788,7 +792,7 @@
   contacts={scenario.contacts} {chosen} {ordering} aim={() => orderTool?.aim()} {motion} />{/if}
 {#if ruler && mode === 'map'}<Ruler {map} {style} {ruler} {markAt} />{/if}
 {#if mode === 'map'}
-  <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} {chosen} message={orderMsg} />
+  <Orders bind:this={orderTool} bind:ordering {map} {style} {state} {contacts} {sel} {chosen} message={orderMsg} formations={meta?.formations} />
 {/if}
 
 {#if mode === 'menu'}

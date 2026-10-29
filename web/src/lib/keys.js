@@ -19,6 +19,7 @@ export const ACTIONS = {
   stop:     { key: 'z', label: 'STOP: drop the order, cut the drive, fly on as she goes' },
   decel:    { key: 'x', label: 'DECELERATE: drop the order, turn and burn to rest on the bullseye' },
   ping:     { key: 'v', label: 'Active sensors: ping, or go quiet (a ping shows the pinger)' },
+  shape:    { key: 'o', label: 'Formation: aiming a move, an attack-move or a patrol, the shape its ships take (cycles)' },
   free:     { key: 'k', label: 'Station or free; aiming a move: how it ends; aiming an attack-move: Standing orders, or Ballistic orders' },
   paths:    { key: 'y', label: 'Trajectories: the free ships\' paths on the map, on or off' },
   relay:    { key: 'n', label: 'Relay: each ship\'s reports up the chain to the flagship, on or off' },

@@ -337,8 +337,13 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
         placed = contact_positions(sc, world.resolved(sc.system, sc.player, pos), pos, flown)
         at = [placed[u] for u in order_units(unit) if u in placed]
         anchor = np.mean(at, axis=0) if at else None  # a group's: the middle of its units
-        if formation and anchor is not None:         # a formation (or a group): each ship keeps her place in it, as it stands
+        if formation and anchor is not None:         # a formation (or a group): each ship keeps her place in it, as it stands,
             offsets = {sid: flown[sid] - anchor for sid in ships}
+            shape = world.formations.get(req.get("shape")) if world.formations else None
+            aim = fleet._point(target, tp) if shape is not None and not shape.keep else None
+            if aim is not None and np.linalg.norm(aim - anchor) > 0:    # or takes the preset's shape, laid out on the move
+                at = shape.places(len(ships), aim - anchor)
+                offsets = {sid: at[k] for k, sid in enumerate(ships)}
     if req.get("free") is True and mode == "move" and halt is None:    # there, free: an orbit in a well, else coasting
         target.update(free=True, label=f"{target['label']}, then free")
     if mode == "attack":                             # aggressive the whole way, on Standing orders (the CAPTAIN reads it)

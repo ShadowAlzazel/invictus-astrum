@@ -230,8 +230,11 @@ hour, or a tenth of the time left. Past 60 days, or late on it, a one-dimensiona
 **Formations.** An order to a formation goes to every ship under it. The formation gets a **lead**,
 a point that flies the order at the ordered g capped at 95% of its slowest ship's most; each ship
 keeps her offset on it (the lead's acceleration, the gravity difference, and a damped correction,
-within her own most). When the lead arrives, each ship flies the last of the way to her own place,
-so they arrive laid out as they left. A ship's own telegraph takes her out of the formation.
+within her own most). When the lead arrives, each ship flies the last of the way to her own place.
+Her place is the formation's shape (data/formations.toml, `astrum/formations.py`): a preset laid out
+on the move, forward toward the target and right across the ecliptic north, the first ship at the
+target (line abreast right by default; file, rows of five...), or as they stand (laid out as they
+left). The player picks it aiming the move (O). A ship's own telegraph takes her out of the formation.
 
 **Free.** In a body's well (the innermost sphere of influence) she goes onto a circular orbit of it
 at her height, prograde about the system's up, paying the burn onto it; out of every well, or short

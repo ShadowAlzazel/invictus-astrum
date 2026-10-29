@@ -171,6 +171,7 @@ the author*. The format is in `data/ships/README.md`.
 | Hold G | weapon ranges: a dotted ring for each kind (de-mast, dazzle, guns) of every armed ship, where it is at least 14 px across (display.toml `[ranges]`) |
 | Z | STOP the selection: its order dropped, the drive cut; it flies on as it goes, under gravity |
 | V | active sensors: ping, or go quiet (an active scan sees any hull in reach and makes out its class; every ping shows the pinger far beyond); a formation: every ship under it |
+| O | aiming a move, an attack-move or a patrol of a formation: the shape its ships take on the way, cycled (`data/formations.toml`: line abreast right, the default; left; file; rows of five; as they stand). Kept for the next order |
 | K | station or free: a ship (or every ship under a formation) holding station goes free, onto an orbit of the body whose well she is in (paying only the burn onto it), else coasting; a free one takes station (decelerate, as X). Aiming a move, how it ends, cycled: holding station there, free there (at a body, an orbit of it), or ballistic (no braking: half the way burning, then on through it). Aiming an attack-move, Standing orders or Ballistic orders |
 | Y | trajectories: the free ships' paths on the map, on or off (Display, Free paths; the fuchsia estimates are Free path estimates). An orbit far larger than the view about her is drawn as an arc about her, and every path is cut at the screen's edge |
 | C | show sensors: the selection's drawn on the map always (a formation: every ship under it); again: hide |
@@ -249,6 +250,7 @@ above it comes down to it.
 | `data/ships/` | ship classes, their components, and the rules they are read against |
 | `data/players.toml` | players and their bullseyes |
 | `bullseyes.toml` | bullseyes commanders made on the map (written by the map; not committed) |
+| `data/formations.toml` | the formation presets a move lays a formation's ships out in: rows across, the side the rest stand on, the spacing (est.), and the default |
 | `data/profiles.toml` | the shared combat profiles: the root, every unit's fallback, states each stance's range |
 | `profiles.toml` | combat profiles commanders made on the map (written by the map; not committed) |
 | `data/factions.toml` | factions: a name, the prefix a ship's name reads with, and whose branch (AVC, AAG of ARCVS) or member world's force (JADF) it is; units take theirs from the formation above |
