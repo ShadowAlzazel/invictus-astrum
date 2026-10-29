@@ -2,8 +2,9 @@
   // The fleets (data/fleets, astrum/fleets.py): every fleet, its ships by class, and its order of
   // battle, formation by formation: as a table, or as a chart in the NATO manner, each unit under
   // the one above it with the map's own symbols. An admin renames units, changes a ship's hull
-  // number or class, any unit's veterancy (else handed down), and the ship that leads a formation
-  // (the top one's: the fleet flagship), in either; the server writes it into the fleet's file. A level already
+  // number or class in either; in the table, any unit's veterancy (else handed down) and the ship
+  // that leads a formation (the top one's: the fleet flagship), which the chart marks as the map
+  // does (stars, pennants); the server writes it into the fleet's file. A level already
   // running keeps the copy it started with: an edit is played from the next start.
   import { onMount } from 'svelte';
   import { api } from './api.js';
@@ -148,10 +149,10 @@
           <p class="hint">A formation's symbol makes it the chart's top.</p>
           {#each roots as r (r.id)}
             <div class="chart">
-              <div class="root"><OrgNode unit={{ ...r, kids: [] }} {style} {admin} ships {value} {change} changed={edits} classes={fleet.classes} tiers={fleet.tiers} {under} {role} {handed} {tierName} onfocus={(id) => (top = id)} /></div>
+              <div class="root"><OrgNode unit={{ ...r, kids: [] }} {style} {admin} ships {value} {change} changed={edits} classes={fleet.classes} {role} {handed} onfocus={(id) => (top = id)} /></div>
               <div class="cols">
                 {#each (ships ? r.kids : r.kids.filter((k) => !k.class)) as col (col.id)}
-                  <div class="col"><OrgNode unit={col} {style} {admin} {ships} {value} {change} changed={edits} classes={fleet.classes} tiers={fleet.tiers} {under} {role} {handed} {tierName} onfocus={(id) => (top = id)} /></div>
+                  <div class="col"><OrgNode unit={col} {style} {admin} {ships} {value} {change} changed={edits} classes={fleet.classes} {role} {handed} onfocus={(id) => (top = id)} /></div>
                 {/each}
               </div>
             </div>
