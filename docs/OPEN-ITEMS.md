@@ -26,6 +26,7 @@ Ours to build is in `docs/REFACTORS.md` (by number) and `docs/COMBAT.md` (Open).
 
 | Date | Question | Answer |
 |---|---|---|
+| 29 October | TF-2 at full g lost every ship: her spines were off the bow under burn, held. | Standing orders turn to fire (`turn-to-fire`: the drive cut for the shot, burning on the next tick); the old map kept as Reckless Ahead. |
 | 28 October | A dazzled sensor. | An aim debuff for now: her aim a quarter worse while light is held on a sensor of hers (`dazzle_aim` 1.25, TORMENTA §6.7.4); her side's picture still holds the target. Light blinds, it no longer de-masts. |
 | 28 October | Hold fire's readiness: the data had III, the 25 October note said I. | III (the note was a typo). The data stands. |
 | 28 October | The battle tick by default. | 30 s, among 10, 30, 60, 300, 600 (`data/minerva.toml`). |

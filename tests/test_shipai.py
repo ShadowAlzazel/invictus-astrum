@@ -40,7 +40,8 @@ def test_a_node_is_left_from_the_next_tick_and_after_its_wait():
 
 def test_the_spinal_loop_closes_firing_and_takes_her_out(tmp_path):
     """The root's map, flown at bogeys too, at the flight's front edge: she closes to station at her
-    spinal battery's envelope, firing at every tick within its reach (each shot a WeaponEngageOrder
+    spinal battery's envelope, firing at every tick within its reach (turn-to-fire: her drive cut for a
+    shot off her bow, burning on again the next tick, so she finishes her before she reaches station) (each shot a WeaponEngageOrder
     in the book, resolved by the combat book), her optics held on the target within their dazzle
     range. GHOST 1's systems go out one by one (light dazzles her sensors and ruins her radiators; a
     salvo her masts, batteries and drive) until she is out of the fight; then she leaves combat and fires no more,
@@ -58,7 +59,9 @@ def test_the_spinal_loop_closes_firing_and_takes_her_out(tmp_path):
     i, j = fleet.c.row["tf3-es-1"], fleet.c.row["ghost-1"]
     cap = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
     path = [p.node for k, p in enumerate(cap.captains[i].m.history) if not k or p.node != cap.captains[i].m.history[k - 1].node]
-    assert path == ["ready", "close", "fire", "await", "hold", "ready"]     # (close, and hold: again each tick)
+    assert path == ["ready", "close", "ready"]                               # (close: again each tick)
+    kinds = [k for _, k in sorted({(o[0], o[2]) for o in _ai(fleet, ("coast", "goto")) if o[1] == "tf3-es-1"})]
+    assert "coast" in kinds and kinds[kinds.index("coast") + 1] == "goto"      # cut for the shot, burning on after
     shots = [e for e in fleet.combat.log if e.ship == i]
     light = [e for e in shots if e.weapon != "spinal"]
     assert fleet.combat.weapon(i, "spinal").reach_km == 49800                # an AESHNA's PICKET stacks, at their farthest

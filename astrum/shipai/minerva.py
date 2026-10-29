@@ -35,6 +35,7 @@ ACTIONS = {
     "pass": "a burn through where the target will be, half the way, then on",
     "correct": "a pass's course corrected while its miss is over a quarter of her reach",
     "spine": "with fire: her spine as well, when her focus is not it, in reach of the shot",
+    "turn-to-fire": "with fire: a stack off her bow while she burns: her drive cut for the shot, she faces the target and fires; her node's station or hold burns her on the next tick",
     "hold-heading": "with fire: her heading is the admiral's: she is not turned for the shot, and a stack fires only with her bow inside its trim",
 }
 CONDITIONS = {

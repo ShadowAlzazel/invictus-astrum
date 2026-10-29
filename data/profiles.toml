@@ -19,6 +19,8 @@
 #             burn through where the target will be), "correct" (a pass's course corrected); with
 #             fire, "spine" (her spine as well, when her focus is not it) and "hold-heading" (her
 #             heading is the admiral's: not turned for the shot, a stack fired only with her bow in trim)
+#             and "turn-to-fire" (a stack off her bow while she burns: her drive cut for the shot, she
+#             faces and fires; her node's station or hold burns her on the next tick)
 #   weapon    which battery a node's actions and conditions read: "focus" (her focus battery, the one
 #             her class is built around), a battery's kind ("stack": the spinal battery; "strip",
 #             "dome", "panel", "turret", "cell"). One she lacks is her spine if she has one, else
@@ -40,13 +42,13 @@ start = "close"
 
 [profile.root.node.close]
 label = "Close to station, fire"
-do = ["station", "fire"]
+do = ["station", "fire", "turn-to-fire"]
 weapon = "stack"
 on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-envelope", go = "fire" }, { if = "in-reach", go = "close" }]
 
 [profile.root.node.fire]
 label = "Fire spinal battery"
-do = ["fire"]
+do = ["fire", "turn-to-fire"]
 weapon = "stack"
 on = [{ if = "always", go = "await" }]
 
@@ -56,11 +58,44 @@ on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "a
 
 [profile.root.node.hold]
 label = "Hold station, fire"
-do = ["hold", "fire"]
+do = ["hold", "fire", "turn-to-fire"]
 weapon = "stack"
 on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "far", go = "close" }, { if = "alive", go = "hold" }]
 
 [profile.root.node.lost]
+label = "Target lost: hold, wait"
+do = ["hold"]
+wait_s = 600              # TESTING: a delay before she leaves combat, to see what she does
+on = [{ if = "always", go = "exit" }]
+
+[profile.reckless-ahead]
+name = "Reckless Ahead"   # Standing orders without turn-to-fire: off the bow under burn, the spine is held
+targets = ["hostile"]
+start = "close"
+
+[profile.reckless-ahead.node.close]
+label = "Close to station, fire"
+do = ["station", "fire"]
+weapon = "stack"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-envelope", go = "fire" }, { if = "in-reach", go = "close" }]
+
+[profile.reckless-ahead.node.fire]
+label = "Fire spinal battery"
+do = ["fire"]
+weapon = "stack"
+on = [{ if = "always", go = "await" }]
+
+[profile.reckless-ahead.node.await]
+label = "Await next tick"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "alive", go = "hold" }]
+
+[profile.reckless-ahead.node.hold]
+label = "Hold station, fire"
+do = ["hold", "fire"]
+weapon = "stack"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "far", go = "close" }, { if = "alive", go = "hold" }]
+
+[profile.reckless-ahead.node.lost]
 label = "Target lost: hold, wait"
 do = ["hold"]
 wait_s = 600              # TESTING: a delay before she leaves combat, to see what she does

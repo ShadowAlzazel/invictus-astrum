@@ -6,7 +6,7 @@ from astrum.config import ROOT, load_config
 from astrum.orders import KIND
 from astrum.profiles import ROOT as ROOT_PROFILE, check, load_made, load_shared, make, save_made
 
-SHARED = ["root", "hold-the-line", "pursuit", "search-and-destroy", "ballistic"]    # data/profiles.toml
+SHARED = ["root", "reckless-ahead", "hold-the-line", "pursuit", "search-and-destroy", "ballistic"]    # data/profiles.toml
 
 
 def _app(tmp_path):

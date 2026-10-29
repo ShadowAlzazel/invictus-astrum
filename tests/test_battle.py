@@ -46,7 +46,8 @@ def test_a_flotilla_sent_at_the_venus_raiders_fights_them(tmp_path, tick):
     sides = {("tf2" if C.ids[e.ship].startswith("tf2") else "raider", e.weapon) for e in log if e.what == "fired"}
     assert {("tf2", "spinal"), ("tf2", "optical"), ("raider", "optical")} <= sides
     assert _down(fleet, RAIDERS)                                                # (who wins is the balance's: a close fight, by the tick)
-    assert any(o.row in {C.row[s] for s in ours} for st in S.lists for o in S.lists[st])     # they took some of ours out
+    assert any(o.row in {C.row[s] for s in ours} for st in S.lists for o in S.lists[st]) or _down(fleet, RAIDERS) == set(RAIDERS)
+                                                                                # they took some of ours out, or she finished them first
     if _down(fleet, RAIDERS) == set(RAIDERS):                # her target out, she goes on to the next at once: no wait to the block
         last = max(e.t for e in log if e.harm and (e.harm["destroyed"] or e.harm["disabled"]) and set(e.targets) & {C.row[s] for s in RAIDERS})
         ov = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
@@ -205,12 +206,13 @@ def test_an_order_mid_battle_sets_back_whom_she_fights(tmp_path):
     c, world = _app(tmp_path)
     fleet, t, ours = _send(c, world, 60.0)
     C, log = fleet.c, fleet.combat.log
-    while not any(e.what == "fired" and C.ids[e.ship] in ours for e in log):
+    while not any(e.what == "fired" and C.ids[e.ship] in RAIDERS for e in log):          # (both sides firing)
         fleet.reach(fleet.t + 3600)
-    mid = next(e for e in log if e.what == "fired" and C.ids[e.ship] in ours).t + 60
-    fleet.reach(mid + 1800)
+    mid = next(e for e in log if e.what == "fired" and C.ids[e.ship] in RAIDERS).t + 60
+    fleet.reach(mid + 120)
     after = lambda: {x[1] for x in _ai(fleet) if x[0] > mid + 1e-6}
-    fighting = lambda s: {C.ids[j] for j in fleet.combat.partners(mid, {C.row[s]}) if not fleet.combat.out(fleet, j)} & after() & set(RAIDERS)
+    out = {k for e in log if e.harm and (e.harm["destroyed"] or e.harm["disabled"]) and e.t <= mid for k in e.targets}   # (out by then)
+    fighting = lambda s: {C.ids[j] for j in fleet.combat.partners(mid, {C.row[s]}) if j not in out} & after() & set(RAIDERS)
     sid = next(s for s in ours if fighting(s))                         # one of ours, and a foe the AI still orders
     foes = fighting(sid)
     assert c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": sid, "t": mid, "g": 0}).status_code == 200
@@ -242,5 +244,5 @@ def test_only_the_engaged_are_ticked_finely(tmp_path, monkeypatch):
             pieces["ours"] += C.row[ours[0]] in rows
         return out
     monkeypatch.setattr(sim.Fleet, "_fly", fly)
-    fleet.reach(fleet.t + 3600)
-    assert 1 <= pieces["far"] <= 7 and pieces["ours"] >= 3600 / world.minerva.engaged_s / 2
+    fleet.reach(fleet.t + 600)
+    assert 1 <= pieces["far"] <= 2 and pieces["ours"] >= 600 / world.minerva.engaged_s / 2

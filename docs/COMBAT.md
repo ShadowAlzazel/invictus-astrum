@@ -85,23 +85,24 @@ Readiness I is general quarters: her sensors ping, to find cold targets, and eve
 sees her doing it. A ReadyStance is ordered to a ship or a formation and passed down its chain. An
 attack-move is Aggressive the whole way, a patrol Guard. Aimed, K chooses which of the two profiles
 an attack-move flies. Keeping station, the usual: Standing orders (she closes to the battery and
-holds). Passing on by: Ballistic orders, one burn and no braking. Which two is `data/minerva.toml`'s
+holds, turning to fire). Passing on by: Ballistic orders, one burn and no braking. Which two is `data/minerva.toml`'s
 (attack_keep, attack_pass); the CAPTAIN reads it off her move, as her stance, and nothing is written
 into the book: once the move is over she is on her own profile again. On that profile her class decides
 the shot. Her focus a stack: she keeps the heading, and the stack fires only already inside its trim.
 Her focus anything else: she fires it, and once in reach falls back to the spine, facing it only when
-she is not burning. The drive is not cut for the shot. Aggressive itself is still that station-keeping
-when she keeps station.
+she is not burning. Aggressive itself is still that station-keeping when she keeps station.
 
 A **profile** is what she does in combat: its nodes (each with what she does entering it: station,
-hold, face, fire, pass, correct, and with fire spine and hold-heading; the battery it reads; what a
+hold, face, fire, pass, correct, and with fire spine, hold-heading and turn-to-fire; the battery it reads; what a
 node does is its do, never its name), the conditions between them (far,
 in-envelope, lost, gone, alive, destroyed, passed, fired-on, always), whom she engages (targets)
 and, if it says, its own ranges and after. A node's ways out are taken from the next tick on, the
 first whose condition holds; a node may wait first. A commander's profile flies a shared one's
 map with its own targets and ranges. Shared: **Standing orders** (the root: close to station at her
-spinal battery's envelope, fire it once a cycle, hold; target lost, hold and wait, then exit),
-**Hold the line**, **Pursuit** (on until the target is out of the picture), **Search and Destroy**
+spinal battery's envelope, fire it once a cycle, hold; target lost, hold and wait, then exit; with
+turn-to-fire: a stack off her bow while she burns, her drive is cut for the shot, she faces and fires,
+and her station or hold burns her on the next tick), **Reckless Ahead** (Standing orders without
+turn-to-fire: off the bow under burn, the stack is held), **Hold the line**, **Pursuit** (on until the target is out of the picture), **Search and Destroy**
 (a pass through her, firing as she passes, then on: after = coast), **Ballistic orders** (an
 attack-move passing on by: close, then keep the heading if her focus is a stack (fire, spine,
 hold-heading), else coast for the shot (fire, spine): her focus first and the spine if that was not
@@ -194,8 +195,8 @@ the canon's size (`size_k` 0.479, est., from TELVM §1.3.4), and the citadel's l
 carries channels, hits, citadel hits, range, miss, one channel's spot and fluence; the damage
 function is handed it and does nothing. The draw is seeded by the shot, so a re-fly lands it the
 same. A battery fires again once cycled: stacks together, their cycle; alternating, the cycle over
-their count. The CAPTAIN turns her spine on the target before she fires, and holds her fire while
-she burns off it. A salvo costs 54 µs; at a longer battle tick a fire order fires the tick's cycles (six
+their count. The CAPTAIN turns her spine on the target before she fires; while she burns off it,
+she holds her fire, or with turn-to-fire cuts her drive for the shot and burns on the next tick. A salvo costs 54 µs; at a longer battle tick a fire order fires the tick's cycles (six
 for a PAPILION's alternating stacks in a minute), each salvo its own aim error, in one draw.
 
 | PAPILION's battery (8 channels a salvo, 6.5 µrad) on a PHALAENA, broadside (66 m, wall 10,211 km) | 1,000 km | 5,000 | 10,000 | 20,000 |
@@ -309,11 +310,12 @@ The owner's to give (each also in `docs/OPEN-ITEMS.md`, with the answers given):
   what repair, salvage and a tender make of each is to come. A system out stays in the state it
   went out at.
 - The wreck rule (blind and no radiators is out) with a heated window counting as blind.
-- An attack-move flies one of two profiles. Standing orders (keep station): the stack is held while
-  she burns off the aim, and she faces it when she does not. Ballistic orders (pass on by): her focus
+- An attack-move flies one of two profiles. Standing orders (keep station): turn-to-fire, the drive
+  cut for a shot off the aim and her burn taken up again the next tick (Reckless Ahead: the stack held
+  while she burns off it). Ballistic orders (pass on by): her focus
   battery decides. A stack, she keeps the heading and fires it only inside its trim. Anything else,
   she fires that, and falls back to the spine, facing it only when she is not burning. A node says it
-  by its actions (spine, hold-heading), not its name. Light ignores the bow.
+  by its actions (spine, hold-heading, turn-to-fire), not its name. Light ignores the bow.
 - At a longer battle tick each salvo is its own draw, at the tick's first moment's geometry.
 - Between a map's order mid-battle and the front edge, whom she fights holds (its CAPTAIN orders
   struck, decided again at the front): half a second of the clock (30 min at 1 h/s).

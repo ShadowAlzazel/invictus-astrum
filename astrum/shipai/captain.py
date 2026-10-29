@@ -223,8 +223,9 @@ class Captain:
         and every optical battery of hers that reaches her, held on her for the tick (light retargets in
         microseconds, and needs no arc). A stack off the aim follows what the node says: hold-heading (the
         heading is the admiral's), she is not turned, and it is not fired until the bow is inside its trim;
-        else it is held while she burns off it, and faced when she is not burning. The drive is not cut for
-        the shot."""
+        else, where the node says turn-to-fire, her drive is cut for the shot, she is faced and fires (her node's
+        station or hold burns her on again the next tick); else it is held while she burns off it, and faced
+        when she is not burning."""
         fv, t, i, m = self.fv, sp.t, self.i, self.m
         sid, tick = fv.ids[i], self.o.tick_s
         u = sp.reckoned(j) - sp.r[i]
@@ -238,15 +239,17 @@ class Captain:
             if in_reach(spine):
                 chosen.append(spine)
         ws = chosen + [x for x in fv.weapons[i] if x.optic is not None and x not in chosen and x.reach_km and d <= x.reach_km * 1e3]
-        fired, out, keep = dict(m.fired()), [], "hold-heading" in node.do
+        fired, out, keep, turn = dict(m.fired()), [], "hold-heading" in node.do, "turn-to-fire" in node.do
         for x in ws:
             every = tick if x.optic is not None else x.interval_s or self.o.minerva.cycle_s
             if t - fired.get(x.id, -math.inf) < every - 1e-6:
                 continue
             extra, k = ({"dwell_s": tick}, 1) if x.optic is not None else ({}, max(1, int(tick / every + 1e-9)))
             off = x.stack is not None and self._bow_off(sp, j, x)
-            if off and (keep or sp.burning[i]):
+            if off and (keep or sp.burning[i] and not turn):
                 continue
+            if off and sp.burning[i]:
+                out.append(self._order(sp, {"label": f"cut the drive to fire on the {who}"}, 0.0, kind="coast"))
             if off:
                 out.append(Order(sid, t, "face", target={"dir": u.tolist(), "label": f"spine on the {who}"}, source="ai",
                                  order_id=self._oid(t), by=sid))

@@ -954,7 +954,7 @@ class Fleet:
         self._ahead, self._piece_end = ahead, T1
         others = np.setdiff1d(np.arange(c.n), ahead)
         try:
-            while True:
+            while self.t < T1 - 1e-6:                    # (the orders at its end are given after: a checkpoint there is before them)
                 given = False
                 while self._qi < len(B.queue) and B.at[B.queue[self._qi]] <= self.t:
                     e = int(B.queue[self._qi])
@@ -965,8 +965,6 @@ class Fleet:
                     given = True
                 if given:
                     self._fly(self.t, self.t, steer_only=True, scope=others)
-                if self.t >= T1 - 1e-6:
-                    break
                 T = self.t
                 t2 = min(T1, self._front_due if self._front_due > T + 1e-6 else T1)
                 slots, moved = self._fly(T, t2, scope=fine)
