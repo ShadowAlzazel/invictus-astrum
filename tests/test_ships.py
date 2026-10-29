@@ -24,22 +24,22 @@ def km(reg, cid, effect, tier):
     return (round(q.lo), round(q.hi)), by
 
 
-# DE COLLINEATIONE §4.1–4.3, to the kilometre the tables print
+# DE COLLINEATIONE §4.1–4.3, to the kilometre the tables print (its veteran is our experienced)
 @pytest.mark.parametrize("cid,effect,tier,expect,by", [
     ("papilion", "crew", "rated", (9892, 9892), "aim"),
-    ("papilion", "crew", "veteran", (10717, 10717), "aim"),
+    ("papilion", "crew", "experienced", (10717, 10717), "aim"),
     ("papilion", "crew", "exceptional", (11691, 11691), "aim"),
     ("papilion", "mast", "green", (11600, 11600), "beam"),
     ("papilion", "radiator", "rated", (14831, 14831), "aim"),
-    ("papilion", "radiator", "veteran", (15500, 15500), "beam"),
-    ("papilion", "mane", "veteran", (16067, 16067), "aim"),
+    ("papilion", "radiator", "experienced", (15500, 15500), "beam"),
+    ("papilion", "mane", "experienced", (16067, 16067), "aim"),
     ("papilion", "mane", "exceptional", (17527, 17527), "aim"),
     ("papilion", "open-titanium", "green", (4310, 4310), "beam"),
     ("phalaena", "crew", "rated", (11691, 11691), "aim"),
     ("phalaena", "crew", "exceptional", (16075, 16075), "aim"),
     ("phalaena", "mane", "green", (8450, 8450), "beam"),
     ("aeshna", "crew", "rated", (10717, 10717), "aim"),
-    ("aeshna", "crew", "veteran", (11691, 11691), "aim"),
+    ("aeshna", "crew", "experienced", (11691, 11691), "aim"),
 ])
 def test_reaches_match_de_collineatione(reg, cid, effect, tier, expect, by):
     got, set_by = km(reg, cid, effect, tier)

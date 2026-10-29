@@ -10,6 +10,8 @@ dim     = "#8a82a6"   # secondary text
 orbit   = "#5b4a8f"   # orbit lines
 cyan    = "#9ff0ff"   # bullseye plane and fields
 engage  = "#ff3046"   # an engage order's vector: red
+silver  = "#c9cfd8"   # a crew's stars
+gold    = "#e3c45a"   # an exceptional crew's stars
 
 # Affiliation is told by SHAPE first, colour second (APP-6 style frames).
 # shape: rect | diamond | quatrefoil | square | circle; fill is the frame's fill opacity (0–1).
@@ -80,6 +82,13 @@ hollow = true
 opacity = 0.45
 
 # Echelon marks drawn above a frame, smallest to largest.
+# A ship's crew tier (data/ships/rules.toml [crew]) as stars above her frame. Green: none.
+[veterancy]
+rated       = { stars = 1, color = "silver" }
+experienced = { stars = 2, color = "silver" }
+veteran     = { stars = 3, color = "silver" }
+exceptional = { stars = 3, color = "gold" }
+
 [echelon]
 ship       = ""
 

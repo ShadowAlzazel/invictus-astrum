@@ -31,7 +31,7 @@ sized_g = 0.45             # her most, full speed: 0.45 g fully loaded (the benc
 [aim]
 rated_urad = 6.5
 demasted_urad = 18
-tiers = { green = [7.5, 8.0], rated = 6.5, veteran = 6.0, exceptional = 5.5 }
+tiers = { green = [7.5, 8.0], rated = 6.5, experienced = 6.0, veteran = { value = 5.75, est = true }, exceptional = 5.5 }   # experienced: the canon's veteran; veteran est., halfway to exceptional
 
 [layout]                     # stations along the hull, metres from the bow; mount stations est.
 truss_m = 100

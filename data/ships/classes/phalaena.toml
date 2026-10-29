@@ -35,7 +35,7 @@ dv_kms = 4000
 [aim]
 rated_urad = 5.5
 demasted_urad = 15
-tiers = { green = [6.5, 7.0], rated = 5.5, veteran = 5.0, exceptional = 4.0 }
+tiers = { green = [6.5, 7.0], rated = 5.5, experienced = 5.0, veteran = { value = 4.5, est = true }, exceptional = 4.0 }   # experienced: the canon's veteran; veteran est., halfway to exceptional
 
 [layout]                     # stations along the hull, metres from the bow; mount stations est.
 truss_m = 70

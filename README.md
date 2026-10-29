@@ -127,7 +127,7 @@ Every class in `data/ships/classes/`: the Garden's fleet and auxiliaries, its sh
 and the Old Forest. Each shows what she is called (her rate and her terms, in one line), who builds
 her, rate and command,
 particulars, batteries, point defence and endurance, and reach by crew tier: pick green, rated,
-veteran or exceptional and the table shows how far each effect reaches and whether the beam or
+experienced, veteran or exceptional and the table shows how far each effect reaches and whether the beam or
 the aim sets it (DE COLLINEATIONE). Its Sensors tab shows the suite as the simulation fits it
 (each sensor part, what it is mounted as, its cones and sweep, how far it sees a cold, warm and
 burning ship; an active scan's reach and what each ping gives off), what she gives off herself,

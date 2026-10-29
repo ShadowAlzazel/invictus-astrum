@@ -48,9 +48,13 @@ who = "a MINERVA and crew with no engagement behind them"
 label = "Rated"
 who = "after one engagement"
 
+[crew.experienced]
+label = "Experienced"
+who = "after several"
+
 [crew.veteran]
 label = "Veteran"
-who = "after several"
+who = "after many"
 
 [crew.exceptional]
 label = "Exceptional"

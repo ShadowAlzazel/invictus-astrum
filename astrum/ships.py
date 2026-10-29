@@ -37,7 +37,7 @@ from .model import Finding
 
 BLANK = "—"
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
-TIER_ORDER = ("green", "rated", "veteran", "exceptional")       # worst aim to best
+TIER_ORDER = ("green", "rated", "experienced", "veteran", "exceptional")       # worst aim to best
 
 SECTIONS = {"class", "hull", "drive", "layout", "aim", "battery", "reach", "point_defence", "endurance", "combat", "sensor",
             "tending", "history"}

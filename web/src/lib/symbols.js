@@ -52,6 +52,19 @@ export function frameExtent(shape, h) {
 // chevron (anti-armour, an inverted V), dome (air defence, an arc on the bottom edge), bolt (signal,
 // a lightning bolt from upper left to lower right, its jog in the middle). A frame that is not a box takes them in the box
 // inside it.
+function stars(ctx, n, x, y, r, color) {         // n five-pointed stars in a row, centred on x, their middles at y
+  ctx.fillStyle = color;
+  for (let k = 0; k < n; k++) {
+    const cx = x + (k - (n - 1) / 2) * r * 2.3;
+    ctx.beginPath();
+    for (let p = 0; p < 10; p++) {
+      const a = -Math.PI / 2 + (p * Math.PI) / 5, rr = p % 2 ? r * 0.45 : r;
+      ctx.lineTo(cx + rr * Math.cos(a), y + rr * Math.sin(a));
+    }
+    ctx.closePath(); ctx.fill();
+  }
+}
+
 function roleMarks(ctx, marks, x, y, shape, ew, eh, color) {
   const box = shape === 'rect' || shape === 'square' ? 1 : 0.62;
   const w = ew * box, h = eh * box;
@@ -118,6 +131,8 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
   }
   const ech = style.echelon[c.echelon] ?? '';
   if (ech) text(ctx, ech, x, y - eh - 3, rgba(col, alpha), 10, FONT_MONO, 'center');
+  const vet = c.echelon === 'ship' && !c.track ? style.veterancy?.[c.veterancy] : null;   // her crew's stars (style.toml [veterancy])
+  if (vet?.stars) stars(ctx, vet.stars, x, y - eh - 6, Math.max(2.5, h * 0.2), rgba(style.palette[vet.color ?? 'silver'] ?? '#c9cfd8', 0.95 * alpha));
   const role = c.echelon !== 'ship' && c.role ? style.formation_role?.[c.role] : null;
   if (hollow) { /* the frame alone */ }
   else if (role) roleMarks(ctx, role.marks, x, y, shape, ew, eh, rgba(col, 0.9 * alpha));

@@ -30,7 +30,7 @@ dv_kms = 5000              # a quarter over the fleet's 4,000 km/s budget
 [aim]
 rated_urad = 6.0
 demasted_urad = { value = 18, est = true }
-tiers = { green = [7.0, 7.5], rated = 6.0, veteran = 5.5 }
+tiers = { green = [7.0, 7.5], rated = 6.0, experienced = 5.5, veteran = { value = 5.0, est = true } }   # experienced: the canon's veteran; veteran est., a step on (no exceptional given)
 
 [[battery]]
 id = "domes"

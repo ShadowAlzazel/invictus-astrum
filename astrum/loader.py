@@ -24,7 +24,7 @@ from .profiles import STANCES
 
 SYSTEM_KEYS = {"system", "frame", "body", "binary", "ephemeris"}
 AFFILIATIONS = ("friend", "hostile", "unknown", "neutral")
-VETERANCY = ("green", "rated", "veteran", "exceptional")     # a crew's tiers, worst to best (rules.toml [crew])
+VETERANCY = ("green", "rated", "experienced", "veteran", "exceptional")     # a crew's tiers, worst to best (rules.toml [crew])
 
 
 def build_system(doc: dict, where: str = "") -> StellarSystem:

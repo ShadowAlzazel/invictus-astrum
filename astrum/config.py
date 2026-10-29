@@ -84,10 +84,10 @@ def load_config(path: str | Path = ROOT / "config.toml") -> dict:
 def load_style(path: str | Path) -> dict:
     path = Path(path)
     doc, problems = _read(path), []
-    allowed = {"palette", "affiliation", "status", "echelon", "roles", "formation_block", "formation_role"}
+    allowed = {"palette", "affiliation", "status", "echelon", "roles", "formation_block", "formation_role", "veterancy"}
     for sec in set(doc) - allowed:
         problems.append(f"unknown section [{sec}]")
-    for sec in allowed - set(doc) - {"formation_block", "formation_role"}:
+    for sec in allowed - set(doc) - {"formation_block", "formation_role", "veterancy"}:
         problems.append(f"missing section [{sec}]")
     if problems:
         raise ConfigError(path.name, problems)
@@ -115,6 +115,10 @@ def load_style(path: str | Path) -> dict:
             problems.append(f"[status.{s}] unknown key {key!r}")
         if "shape" in spec and not (isinstance(spec["shape"], dict) and all(a in AFFILIATIONS and x in SHAPES for a, x in spec["shape"].items())):
             problems.append(f"[status.{s}] shape is {{affiliation = shape}}, shapes from {SHAPES}")
+    for t, spec in doc.get("veterancy", {}).items():
+        if not (isinstance(spec, dict) and not set(spec) - {"stars", "color"} and isinstance(spec.get("stars"), int)
+                and 0 <= spec["stars"] <= 5 and spec.get("color", "silver") in doc["palette"]):
+            problems.append(f"[veterancy] {t} is {{ stars = 0–5, color = a palette key }}")
     for e, mark in doc["echelon"].items():
         if not isinstance(mark, str):
             problems.append(f"[echelon] {e} must be a string (the mark drawn above the frame)")

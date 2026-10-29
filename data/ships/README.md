@@ -64,7 +64,7 @@ sized_g = 0.55                        # thrust sized to this g fully loaded (or 
 [aim]
 rated_urad = 6.5
 demasted_urad = 18
-tiers = { green = [7.5, 8.0], rated = 6.5, veteran = 6.0, exceptional = 5.5 }
+tiers = { green = [7.5, 8.0], rated = 6.5, experienced = 6.0, veteran = { value = 5.75, est = true }, exceptional = 5.5 }
 
 [layout]                              # stations, metres from the bow; draws the firing arcs
 truss_m = 100
