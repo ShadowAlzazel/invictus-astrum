@@ -583,6 +583,10 @@
     if (is(e, 'settings')) { showSettings = !showSettings; return; }
     if (e.key === 'Escape' && showSettings) { showSettings = false; return; }
     if (!inMap) return;                                  // menus have their own keys
+    if (is(e, 'relay') && mode === 'map' && settings) {
+      setSetting('layers', 'relay', !settings.layers.relay);
+      say(`Relay ${settings.layers.relay ? 'shown' : 'hidden'}`);
+    }
     if (is(e, 'paths') && mode === 'map' && settings) {
       setSetting('layers', 'paths', !settings.layers.paths);
       say(`Trajectories ${settings.layers.paths ? 'shown' : 'hidden'}`);
@@ -916,6 +920,7 @@
   bullseyeName={bullseyes.find((b) => b.id === bullseyeId)?.name ?? ''}
   onclose={() => select(null)} onfocus={focusOn} onselect={select} onretune={retune} onwithdraw={withdrawOrder} oncold={setCold}
   {watched} onwatch={toggleWatch} onfree={toggleFree} {frameVel}
+  relayShown={settings?.layers.relay ?? false} onrelay={() => setSetting('layers', 'relay', !settings.layers.relay)}
   master={side === 'master'} onstop={stopOrder} ondecel={decelOrder} onping={setPing} ondismiss={dismissTrack}
   {profiles} stances={profileRules.stances ?? {}} {engagement} onstance={setStance} />
 {/if}

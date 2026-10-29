@@ -117,6 +117,14 @@
     const childCol = pal[drules.selection?.rules.child_color] ?? pal.cyan;
     const parentCol = pal[drules.selection?.rules.parent_color] ?? pal.violet;
     const drawnAt = {};
+    if (S.layers.relay) {                          // the relay: each ship's reports to her next hop up the chain
+      ctx.setLineDash([2, 4]); ctx.lineWidth = 1; ctx.strokeStyle = rgba(pal.relay ?? '#3ddc84', 0.75);
+      for (const c of contacts) {
+        const a = c.hop && scrOf(c.id), b = a && scrOf(c.hop);
+        if (b) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+      }
+      ctx.setLineDash([]);
+    }
 
     const symbol = (c, s, also = null) => {
       const hot = isHot('contact', c.id), formation = kids(c.id).length > 0;
@@ -128,8 +136,9 @@
       const least = ships.length ? Math.min(...ships) : 0;
       const harm = ships.length === 1 || least >= 2 ? HARM[least] : null;
       if (harm) c = { ...c, status: [...(c.status ?? []), harm] };
+      const lead = byId[c.id] === c && c.echelon === 'ship' ? (c.flagship ? 'flagship' : c.leads?.length ? 'leader' : null) : null;
       unitSymbol(ctx, style, c, s.x, s.y, {
-        h, hot, ring, label: S.layers.labels || hot || ring !== null,
+        h, hot, ring, lead, label: S.layers.labels || hot || ring !== null,
         alpha: picks ? (ofGroup(byId, picks, c.id) ? 1 : S.selection.dim_unpicked ?? 0.3) : selId && !related.has(c.id) ? S.selection.dim_others : 1,
         hq: S.icons.hq_staff && formation && c.has_position,
         labelPx: S.text.unit_label_px, tagPx: S.text.unit_tag_px, faction: S.text.faction_tag ?? true,

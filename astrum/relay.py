@@ -26,6 +26,64 @@ from . import kernels
 C = 299_792_458.0           # m/s
 
 
+def chain(contacts, ships: list[str], vigils: set[str]) -> dict:
+    """A side's chain of command as the scenario fixes it, from its units (contacts) and its own
+    ships, in order: each formation's leader (its flag, else the ship it is placed on, else its
+    first ship), the fleet flagship (the leader of the top formation with most of its ships), and
+    each ship's path of hops to it (a Vigil straight to the flagship)."""
+    ships_set = set(ships)
+    kids: dict[str, list[str]] = {}
+    for cid, x in contacts.items():
+        if x.formation:
+            kids.setdefault(x.formation, []).append(cid)
+
+    def first_ship(cid: str) -> str | None:
+        stack = [cid]
+        while stack:
+            x = stack.pop(0)
+            if x in ships_set:
+                return x
+            stack[:0] = kids.get(x, [])
+        return None
+
+    def leader(cid: str) -> str | None:
+        x = contacts[cid]
+        if x.flag in ships_set:
+            return x.flag
+        unit = x.position.get("unit")
+        return unit if unit in ships_set else first_ship(cid)
+
+    up = {sid: [] for sid in ships}                      # her formations, lowest first
+    for sid in ships:
+        f = contacts[sid].formation if sid in contacts else None
+        while f and f in contacts and f not in up[sid]:
+            up[sid].append(f)
+            f = contacts[f].formation
+    tops: dict[str, int] = {}
+    for sid in ships:
+        if up[sid]:
+            tops[up[sid][-1]] = tops.get(up[sid][-1], 0) + 1
+    top = max(tops, key=tops.get) if tops else None
+    flag = leader(top) if top else (ships[0] if ships else None)
+    leaders = {f: leader(f) for sid in ships for f in up[sid]}
+    paths = {}
+    for sid in ships:
+        if flag is None or sid == flag:
+            continue
+        if sid in vigils:
+            path = [sid, flag]
+        else:
+            path = [sid]
+            for f in up[sid]:
+                L = leaders[f]
+                if L and L != path[-1]:
+                    path.append(L)
+            if path[-1] != flag:
+                path.append(flag)
+        paths[sid] = path
+    return {"leader": leaders, "flagship": flag, "paths": paths}
+
+
 class Relay:
     """One side's chain of command for its reports: per ship of its, the hops to the flagship."""
 
@@ -37,60 +95,16 @@ class Relay:
         n = len(c.row)
         self.n = n
         rows = {c.ids[i]: i for i in range(n)}
-        contacts = sc.contacts
-        kids: dict[str, list[str]] = {}
-        for cid, x in contacts.items():
-            if x.formation:
-                kids.setdefault(x.formation, []).append(cid)
-
-        def first_ship(cid: str) -> str | None:
-            stack = [cid]
-            while stack:
-                x = stack.pop(0)
-                if x in rows:
-                    return x
-                stack[:0] = kids.get(x, [])
-            return None
-
-        def leader(cid: str) -> str | None:
-            x = contacts[cid]
-            if x.flag in rows:
-                return x.flag
-            unit = x.position.get("unit")
-            return unit if unit in rows else first_ship(cid)
-
         mine = [sid for sid in rows if own[rows[sid]]]
-        up = {sid: [] for sid in mine}                   # her formations, lowest first
-        for sid in mine:
-            f = contacts[sid].formation if sid in contacts else None
-            while f and f in contacts and f not in up[sid]:
-                up[sid].append(f)
-                f = contacts[f].formation
-        tops: dict[str, int] = {}
-        for sid in mine:
-            if up[sid]:
-                tops[up[sid][-1]] = tops.get(up[sid][-1], 0) + 1
-        top = max(tops, key=tops.get) if tops else None
-        flag = leader(top) if top else (mine[0] if mine else None)
+        vigils = {sid for sid in mine if c.spec[rows[sid]] is not None and c.spec[rows[sid]].class_id in vigil_classes}
+        got = chain(sc.contacts, mine, vigils)
+        flag = got["flagship"]
         self.flagship = rows.get(flag) if flag else None
-        leaders = {leader(f) for sid in mine for f in up[sid]}
-        self.vigils = np.array([rows[sid] for sid in mine
-                                if c.spec[rows[sid]] is not None and c.spec[rows[sid]].class_id in vigil_classes], dtype=np.int64)
+        leaders = set(got["leader"].values())
+        self.vigils = np.array([rows[sid] for sid in mine if sid in vigils], dtype=np.int64)
         src, dst, speed, owner = [], [], [], []
-        for sid in mine:
+        for sid, path in got["paths"].items():
             o = rows[sid]
-            if self.flagship is None or o == self.flagship:
-                continue
-            if o in self.vigils:
-                path = [sid, flag]
-            else:
-                path = [sid]
-                for f in up[sid]:
-                    L = leader(f)
-                    if L and L != path[-1]:
-                        path.append(L)
-                if path[-1] != flag:
-                    path.append(flag)
             for a, b in zip(path, path[1:]):
                 src.append(rows[a])
                 dst.append(rows[b])

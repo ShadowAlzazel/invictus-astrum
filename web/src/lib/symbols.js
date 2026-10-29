@@ -94,7 +94,7 @@ export const designation = (style, c) => c.faction?.prefix || (style.affiliation
 // opts: h frame height; hot (hover/selected); label; alpha (dimming); ring (highlight colour);
 // hq (draw the headquarters staff); labelPx, tagPx (text sizes); faction (its designation among the tags)
 export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = true, alpha: dim = 1, ring = null,
-                                                   hq = false, labelPx = 12, tagPx = 9, faction = true } = {}) {
+                                                   hq = false, lead = null, labelPx = 12, tagPx = 9, faction = true } = {}) {
   const aff = style.affiliation[c.affiliation] ?? style.affiliation.unknown;
   const statuses = (c.status ?? []).map((s) => style.status[s]).filter(Boolean);
   const alpha = dim * Math.min(1, ...statuses.map((s) => s.opacity ?? 1));
@@ -119,6 +119,13 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
   if (hq) {                                                    // APP-6 headquarters staff: down from the left edge
     ctx.strokeStyle = rgba(col, 0.95 * alpha); ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.moveTo(x - ew, y); ctx.lineTo(x - ew, y + eh + h * 0.9); ctx.stroke();
+  }
+  if (lead) {                                                  // a pennant from her top-right corner: a formation's leader (hollow), the fleet flagship (filled)
+    const mx = x + ew, my = y - eh, top = my - h * 0.8;
+    ctx.strokeStyle = rgba(col, 0.95 * alpha); ctx.fillStyle = rgba(col, 0.95 * alpha); ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(mx, top); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mx, top); ctx.lineTo(mx + h * 0.5, top + h * 0.17); ctx.lineTo(mx, top + h * 0.34); ctx.closePath();
+    if (lead === 'flagship') ctx.fill(); else ctx.stroke();
   }
   if (ring) {
     ctx.strokeStyle = rgba(ring, 0.9); ctx.lineWidth = 1.2; ctx.setLineDash([3, 3]);

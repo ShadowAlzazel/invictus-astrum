@@ -27,6 +27,8 @@
   export let ondecel = () => {};    // (unit): DECELERATE: turn and burn to rest on the bullseye
   export let oncold = () => {};     // (cold): fold her wings (run cold) or spread them
   export let onping = () => {};     // (on): sweep her active sensors (ping) or go quiet
+  export let relayShown = false;    // the relay drawn on the map
+  export let onrelay = () => {};    // show it, or hide it
   export let watched = new Set();   // ships whose sensors the map draws always
   export let onwatch = () => {};    // (unit): draw her sensors always, or not (a formation: every ship under it)
   export let onfree = () => {};     // (unit): take station, or go free
@@ -462,6 +464,14 @@
             <li><button on:click={() => onselect({ kind: 'contact', id: a.id })}><span class="nm">{a.name ?? a.callsign}</span><span class="ech">{a.echelon}</span></button></li>
           {/each}
         </ol>
+        <p class="dim">
+          {#if contact.flagship}Fleet flagship. {/if}
+          {#if contact.leads?.length}Leads {contact.leads.map(nameOf).join(', ')}. {/if}
+          {#if contact.leader}Led by <button class="link" on:click={() => onselect({ kind: 'contact', id: contact.leader })}>{nameOf(contact.leader)}</button>. {/if}
+          {#if contact.hop}Reports to <button class="link" on:click={() => onselect({ kind: 'contact', id: contact.hop })}>{nameOf(contact.hop)}</button>.{/if}
+        </p>
+        <button class="act" class:on={relayShown} on:click={onrelay}
+          title="Draw the relay on the map: each ship's reports to her next hop, up the chain to the fleet flagship">{relayShown ? 'Hide relay' : 'Show relay'} <kbd>{cap($keymap.relay)}</kbd></button>
         {/if}
       </section>
     {/if}
@@ -505,6 +515,7 @@
   button:hover { color: var(--ink); }
   .close:hover { color: var(--fuchsia); }
   .act { margin-top: 10px; font-size: 11px; color: var(--violet); filter: brightness(1.5); }
+  .link { background: none; border: 0; padding: 0; font: inherit; color: var(--ink); text-decoration: underline dotted; cursor: pointer; }
   .act:hover { color: var(--fuchsia); filter: none; }
   .act + .act { margin-left: 14px; }
   .hold { margin: 4px 0 0; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }

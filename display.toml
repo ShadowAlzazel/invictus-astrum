@@ -76,6 +76,7 @@ contacts = { default = true, label = "Units" }
 zones    = { default = true, label = "Zones" }
 paths    = { default = true, label = "Free paths" }
 path_estimates = { default = true, label = "Free path estimates (going free)" }
+relay    = { default = false, label = "Relay: each ship's reports up the chain to the fleet flagship" }
 
 # ---- cursor --------------------------------------------------------------------------------------
 [cursor]

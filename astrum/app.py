@@ -47,6 +47,7 @@ from .frames import to_spherical
 from .factions import Factions, load_factions
 from .fleets import edit as edit_fleet, load_fleets
 from .loader import Player, contact_positions, load_players, load_scenarios, load_systems
+from .relay import chain
 from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify
 from . import workshop
@@ -665,15 +666,43 @@ def contact_dict(world: "World", c, tree: dict | None = None) -> dict:
     return d
 
 
+def chain_of(world: "World", sc, view: str) -> dict:
+    """The view's chain of command as the scenario fixes it (relay.chain): each formation's leader,
+    the fleet flagship, each ship's next hop on the way to it. MASTER: each side's own."""
+    vigils = set((world.ships.rules.relay or {}).get("vigils", ("salticidae",))) if world.ships else set()
+    ships = [cid for cid, c in sc.contacts.items() if c.ship_class]
+    views = {world.factions.owner(sc.contacts[s].faction) for s in ships} if view == picture.MASTER else {view}
+    out = {"leader": {}, "flagship": set(), "hop": {}}
+    for v in views:
+        mine = world.factions.mine(v)
+        own = [s for s in ships if sc.contacts[s].faction in mine]
+        got = chain(sc.contacts, own, {s for s in own if sc.contacts[s].ship_class in vigils})
+        out["leader"].update(got["leader"])
+        out["flagship"].add(got["flagship"])
+        out["hop"].update({s: p[1] for s, p in got["paths"].items()})
+    return out
+
+
 def side_contacts(world: "World", sc, view: str) -> list[dict]:
     """The scenario's units in the view's own table (picture.known_units), for the map. Its own
     are its friends, whichever side the scenario was written for; the tree reaches no further than
     the table does. Others' ships come in the pictures, as tracks, once seen."""
     home, tree = world.home(sc), world.trees.get(sc.id)
     keep = picture.known_units(sc, world.factions, view, home)
+    ch = chain_of(world, sc, view)
+    leads: dict[str, list] = {}
+    for f, sid in ch["leader"].items():
+        leads.setdefault(sid, []).append(f)
     out = []
     for cid in (x for x in sc.contacts if x in keep):
         d = contact_dict(world, sc.contacts[cid], tree)
+        if cid in ch["leader"]:                  # the chain of command: whom her reports go up through
+            d["leader"] = ch["leader"][cid]
+        if cid in leads or cid in ch["flagship"]:
+            d["leads"] = [f for f in leads.get(cid, []) if f in keep]
+            d["flagship"] = cid in ch["flagship"]
+        if cid in ch["hop"]:
+            d["hop"] = ch["hop"][cid]
         if view not in (home, picture.MASTER) and sc.contacts[cid].faction in world.factions.mine(view):
             d["affiliation"] = "friend"
         if view != picture.MASTER:

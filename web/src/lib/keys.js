@@ -21,6 +21,7 @@ export const ACTIONS = {
   ping:     { key: 'v', label: 'Active sensors: ping, or go quiet (a ping shows the pinger)' },
   free:     { key: 'k', label: 'Station or free; aiming a move: how it ends; aiming an attack-move: Standing orders, or Ballistic orders' },
   paths:    { key: 'y', label: 'Trajectories: the free ships\' paths on the map, on or off' },
+  relay:    { key: 'n', label: 'Relay: each ship\'s reports up the chain to the flagship, on or off' },
   watch:    { key: 'c', label: 'Show sensors: the selection\'s drawn always, every ship under a formation (again: hide)' },
   plane:    { key: 'b', label: "Orders: her own height or the bullseye's plane" },
   ranges:   { key: 'g', label: 'Weapon ranges (hold)' },

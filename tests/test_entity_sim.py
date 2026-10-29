@@ -1318,6 +1318,25 @@ def test_reports_come_up_the_leaders_to_the_fleet_flagship():
     assert now["arrive"][g] > t >= held["arrive"][g] and held["k"][g] < now["k"][g]    # the newest is on its way
 
 
+def test_the_map_is_given_the_chain_the_relay_runs():
+    """The units a side is sent carry its chain of command (relay.chain): the fleet flagship marked,
+    each formation's leader, each ship's next hop, as the relay sends her reports."""
+    from astrum.app import create_app, side_contacts
+    from astrum import picture
+    from astrum.relay import relay
+    w = create_app().state.world
+    f = _demo(w)
+    got = {d["id"]: d for d in side_contacts(w, w.scenarios["sol-demo"], "arcvs")}
+    R = relay(f, "arcvs", picture.own_rows(f, w.factions, "arcvs"))
+    ids = f.c.ids
+    assert [k for k, d in got.items() if d.get("flagship")] == [ids[R.flagship]] == ["paris-2"]
+    first = {}
+    for a, b, o in zip(R.src, R.dst, R.owner):
+        first.setdefault(int(o), int(b))
+    assert {k: d["hop"] for k, d in got.items() if "hop" in d} == {ids[o]: ids[b] for o, b in first.items()}
+    assert got["tf2-lf1"]["leader"] == "tf2-lf1-bs-1" and "tf2-lf1" in got["tf2-lf1-bs-1"]["leads"]
+
+
 def test_the_relay_is_a_tree_of_its_paths():
     """A side's paths to its flagship make a tree, one node a ship: a report's delay is still its
     path's hops summed (or through the nearest Vigil, if sooner), whoever else was heard from."""
