@@ -459,17 +459,15 @@
         <h2><button class="fold" class:shut={shut.chain} on:click={() => flip('chain')}><i></i>Chain of command</button>{#if shut.chain} <span class="dim">{chain.map((a) => a.name ?? a.callsign).join(' · ')}</span>{/if}</h2>
         {#if !shut.chain}
         <ol class="ladder">
-          <li class="self"><span class="nm">{contact.name ?? contact.callsign}</span><span class="ech">{contact.echelon}</span></li>
+          <li class="self"><span class="nm">{contact.name ?? contact.callsign}</span><span class="ech">{#if contact.leader}<span class="ldr" title="Who leads it">{nameOf(contact.leader)}</span>{/if}{contact.echelon}</span></li>
           {#each chain as a}
-            <li><button on:click={() => onselect({ kind: 'contact', id: a.id })}><span class="nm">{a.name ?? a.callsign}</span><span class="ech">{a.echelon}</span></button></li>
+            <li><button on:click={() => onselect({ kind: 'contact', id: a.id })}><span class="nm">{a.name ?? a.callsign}</span><span class="ech">{#if a.leader}<span class="ldr" title="Who leads it">{nameOf(a.leader)}</span>{/if}{a.echelon}</span></button></li>
           {/each}
         </ol>
-        <p class="dim">
-          {#if contact.flagship}Fleet flagship. {/if}
-          {#if contact.leads?.length}Leads {contact.leads.map(nameOf).join(', ')}. {/if}
-          {#if contact.leader}Led by <button class="link" on:click={() => onselect({ kind: 'contact', id: contact.leader })}>{nameOf(contact.leader)}</button>. {/if}
+        {#if contact.flagship || contact.hop}<p class="dim">
+          {#if contact.flagship}Fleet flagship.{/if}
           {#if contact.hop}Reports to <button class="link" on:click={() => onselect({ kind: 'contact', id: contact.hop })}>{nameOf(contact.hop)}</button>.{/if}
-        </p>
+        </p>{/if}
         <button class="act" class:on={relayShown} on:click={onrelay}
           title="Draw the relay on the map: each ship's reports to her next hop, up the chain to the fleet flagship">{relayShown ? 'Hide relay' : 'Show relay'} <kbd>{cap($keymap.relay)}</kbd></button>
         {/if}
@@ -589,6 +587,7 @@
   .ladder .nm { font-family: var(--display); font-size: 13px; }
   .ladder .ech { color: var(--dim); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
   .ladder button:hover .nm { color: var(--fuchsia); }
+  .ladder .ldr { margin-right: 8px; font-family: var(--display); font-size: 11px; letter-spacing: 0; text-transform: none; }
   .hint { margin-top: 8px; font-size: 10px; }
   /* a section's heading folds it: a small diamond, open below, shut to the side */
   .fold { display: inline-flex; align-items: center; gap: 7px; padding: 0; font: inherit; color: inherit; cursor: pointer; }

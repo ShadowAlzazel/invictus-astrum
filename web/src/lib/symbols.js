@@ -131,12 +131,13 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
     ctx.strokeStyle = rgba(ring, 0.9); ctx.lineWidth = 1.2; ctx.setLineDash([3, 3]);
     ctx.beginPath(); ctx.arc(x, y, Math.max(ew, eh) + 6, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
   }
-  const cross = Math.max(0, ...statuses.map((s) => (s.cross === true ? 1 : +s.cross || 0)));
-  if (cross) {                                                 // out: corner to corner, and past the frame by its share (style.toml)
+  const reach = (k) => Math.max(0, ...statuses.map((s) => (s[k] === true ? 1 : +s[k] || 0)));    // past the frame, by its share (style.toml)
+  const cross = reach('cross'), slash = reach('slash');
+  if (cross) {                                                 // out: corner to corner, both ways
     const cx = ew * cross, cy = eh * cross;
     ctx.beginPath(); ctx.moveTo(x - cx, y - cy); ctx.lineTo(x + cx, y + cy); ctx.moveTo(x + cx, y - cy); ctx.lineTo(x - cx, y + cy); ctx.stroke();
-  } else if (statuses.some((s) => s.slash)) {
-    ctx.beginPath(); ctx.moveTo(x - ew, y + eh); ctx.lineTo(x + ew, y - eh); ctx.stroke();
+  } else if (slash) {                                         // damaged: lower left to upper right
+    ctx.beginPath(); ctx.moveTo(x - ew * slash, y + eh * slash); ctx.lineTo(x + ew * slash, y - eh * slash); ctx.stroke();
   }
   const ech = style.echelon[c.echelon] ?? '';
   if (ech) text(ctx, ech, x, y - eh - 3, rgba(col, alpha), 10, FONT_MONO, 'center');
@@ -150,7 +151,7 @@ export function unitSymbol(ctx, style, c, x, y, { h = 16, hot = false, label = t
     ctx.fillStyle = rgba(col, 0.8 * alpha); ctx.fillRect(x - 1.5, y - 1.5, 3, 3);
   }
   if (!label) return;
-  const lx = x + ew * Math.max(1, cross) + 6;                 // (past an out cross)
+  const lx = x + ew * Math.max(1, cross, slash) + 6;          // (past a cross or a slash)
   display(ctx, c.callsign, lx, y - 1, rgba(hot ? style.palette.fuchsia : style.palette.ink, 0.92 * alpha), labelPx);
   const tags = [...new Set([faction ? designation(style, c) : null, c.pry ? `Pry-${c.pry}` : null,
                             c.brevity ? c.brevity.toUpperCase() : null].filter(Boolean))].join('  ');

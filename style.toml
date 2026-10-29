@@ -49,7 +49,7 @@ fill  = 0.10
 # past the frame, as a share of its half-size, so it is not read as a line formation's X); opacity: 0–1;
 # ellipse: draw an uncertainty ring; scale: the frame's size, times; shape: in place of an
 # affiliation's frame, by affiliation (its colour kept); hollow: the frame alone, nothing in it;
-# slash: one stroke corner to corner. A ship's harm, as her side sees her: damaged, crab (disabled), destroyed.
+# slash: one stroke corner to corner (a number: past the frame, as cross). A ship's harm, as her side sees her: damaged, crab (disabled), destroyed.
 [status.cold]
 label = "Cold"
 dash = [5, 3]
@@ -75,7 +75,7 @@ opacity = 0.75
 
 [status.damaged]                    # a system of hers out; still in the fight
 label = "Damaged"
-slash = true
+slash = 1.45                        # (past the frame, as the out cross: not a reconnaissance role's slash)
 
 [status.destroyed]
 label = "Destroyed"
