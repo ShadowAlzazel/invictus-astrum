@@ -197,7 +197,7 @@ class Pictures:
         true_r = pic["r"][:n].copy()
         if tracks:
             with fleet.lock:
-                seen = picture.view(fleet, pic, t, own, self.world.config["picture"], view, side.friendly, side.knows)
+                seen = picture.view(fleet, pic, t, own, self.world.config["picture"], view, side.friendly, side.knows, keep=True)
             shown, ident, old, age = seen["shown"], seen["identified"], seen["old"], np.where(own, 0.0, seen["seen_s"])
         else:
             shown, ident, old, age = own.copy(), own.copy(), np.zeros(n, dtype=bool), np.where(own, 0.0, np.nan)

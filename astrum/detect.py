@@ -272,6 +272,7 @@ class SideSweep:
         c, n = fleet.c, len(own)
         contacts = fleet.scenario.contacts
         self.view, self.own, self.hold = view, own, hold
+        self.read = None                                  # what its picture read of each ship for her sighting (picture.Readings)
         self.tgt = np.flatnonzero(~own & (c.kind[:n] == 0)).astype(np.int64)
         groups: dict = {}
         for o in np.flatnonzero(own).tolist():            # her formation: the group she is swept in
@@ -289,6 +290,7 @@ class SideSweep:
         self._lo = None                                   # the oldest minute kept for, last time
         self.snaps: dict[int, dict] = {-1: _empty(n)}     # minute -> the summary as of it
         self._kept: dict[int, dict] = {}                  # summaries asked for, kept a while
+        self._window = (None, None)                       # ((lo, m), its sightings): the hold's, for reports on their way
 
     def sightings(self, lo: int, hi: int) -> tuple | None:
         """The sightings of minutes lo..hi, in order (None: none)."""
@@ -308,6 +310,13 @@ class SideSweep:
         if cols is not None and len(cols[0]):
             kernels.fold(*cols, self.hold, state["k"], state["s"], state["flux"], state["plume"], state["d"], state["arrive"],
                          state["act"], state["r"], state["n"], state["cls"], state["ident"])
+
+    def window(self, lo: int, m: int) -> tuple | None:
+        """The sightings of minutes lo..m (sightings), kept until the minute moves on: a tick within it
+        reads them again for the reports still on their way."""
+        if self._window[0] != (lo, m):
+            self._window = ((lo, m), self.sightings(lo, m))
+        return self._window[1]
 
     def summary(self, m: int) -> dict:
         """What the side has made of every ship as of minute m (the newest swept, if later)."""
@@ -348,6 +357,8 @@ class SideSweep:
 
     def forget(self, k0: int) -> None:
         """Every minute from k0 on to be swept again (it is flown again)."""
+        if self.read is not None:
+            self.read.forget(k0)
         if self.frontier < k0:
             return
         runs = []
@@ -361,6 +372,7 @@ class SideSweep:
         self.runs, self.starts = runs, [r[0] for r in runs]
         self.snaps = {x: v for x, v in self.snaps.items() if x < k0}
         self._kept.clear()
+        self._window = (None, None)
         self.frontier = -1                                # (so summary folds from the whole one before)
         self.head = _copy(self.summary(k0 - 1))
         self.frontier = k0 - 1
@@ -486,7 +498,7 @@ class Sweeper:
         got = _copy(now)
         lo = max(0, k - side.hold)
         src = np.full(len(late), lo - 1)                 # each late ship: the minute of her newest report in
-        h = side.sightings(lo, k)                        # (none in the hour: as it stood before it)
+        h = side.window(lo, k)                           # (none in the hour: as it stood before it)
         if h is not None:
             ok = late[h[1]] & (h[6] <= t)
             np.maximum.at(src, h[1][ok], h[0][ok])       # (the newest in)

@@ -90,13 +90,54 @@ def journal(fleet, factions: Factions, view: str | None) -> np.ndarray:
                     dtype=bool)
 
 
-def view(fleet, pic: dict, t: float, own: np.ndarray, settings: dict, view_id: str = "", friendly=None, knows=None) -> dict:
+class Readings:
+    """What a side's picture read of each ship off the timeline for the sighting it shows her by
+    (Fleet.past, at the moment her light left her): the same at every tick that sighting stands, so a
+    tick reads only the ships seen anew. Kept by the side's sweep, and forgotten with it (a minute
+    flown again); a reading between samples not yet both written is not kept."""
+
+    def __init__(self):
+        self.k = self.d = self.te = None
+        self.vals: dict = {}
+
+    def forget(self, k0: int) -> None:
+        if self.te is not None:
+            self.k[self.te >= self._t0 + k0 * SAMPLE_S - 1e-6] = -1
+
+    def read(self, fleet, te: np.ndarray, X: np.ndarray, k: np.ndarray, d: np.ndarray) -> dict:
+        n, tl = len(fleet.c.row), fleet.timeline
+        if self.k is None or len(self.k) < n:
+            was, self._t0 = self.k, fleet.t0
+            self.k, self.d, self.te = np.full(n, -1, dtype=np.int64), np.full(n, np.nan), np.full(n, np.nan)
+            if was is not None:
+                self.k[: len(was)] = was
+            self.vals = {}
+        miss = (self.k[X] != k) | (self.d[X] != d)
+        if miss.any():
+            M = X[miss]
+            got = fleet.past(te[miss], M)
+            for name, val in got.items():
+                if name not in self.vals or len(self.vals[name]) < n:
+                    old = self.vals.get(name)
+                    self.vals[name] = np.zeros((n, *val.shape[1:]), dtype=val.dtype)
+                    if old is not None:
+                        self.vals[name][: len(old)] = old
+                self.vals[name][M] = val
+            sure = (te[miss] >= tl.time(tl.lo)) & (te[miss] < tl.time(tl.hi)) & np.isfinite(got["r"]).all(axis=1)
+            self.k[M] = np.where(sure, k[miss], -1)
+            self.d[M], self.te[M] = d[miss], te[miss]
+        return {name: val[X] for name, val in self.vals.items()}
+
+
+def view(fleet, pic: dict, t: float, own: np.ndarray, settings: dict, view_id: str = "", friendly=None, knows=None,
+         keep: bool = False) -> dict:
     """The view's picture made from the truth (pic: Fleet.picture at t), in place, by the
     functions settings turn on. Returns, per row, what it adds for the map: how old what is shown
     is (seen_s), how bright she looks to the ship that saw her (sig_w), whether she is shown at all,
     her track's stage (STAGES) and whether known for what she is, a lost track, an old one (and the
     minute she was last seen); and which rows are hidden (not the view's own). knows: the rows
-    whose class the side knows (journal; else all)."""
+    whose class the side knows (journal; else all). keep: what is read of each ship for her
+    sighting kept by the side's sweep (Readings), for a reader that asks tick after tick."""
     n = len(own)
     settings = resolve(settings)                         # (a partial dict: the rest at their defaults)
     seen = {"seen_s": np.full(n, np.nan), "sig_w": np.full(n, np.nan), "relay_s": np.full(n, np.nan), "shown": np.ones(n, dtype=bool),
@@ -111,14 +152,14 @@ def view(fleet, pic: dict, t: float, own: np.ndarray, settings: dict, view_id: s
         return seen
     if settings["detection"]:
         detection(fleet, pic, t, own, seen, view_id, friendly if friendly is not None else np.zeros(n, dtype=bool),
-                  settings["relay"], knows if knows is not None else np.ones(n, dtype=bool), settings["old_days"] * 86400.0)
+                  settings["relay"], knows if knows is not None else np.ones(n, dtype=bool), settings["old_days"] * 86400.0, keep)
     elif settings["light_delay"]:
         light_delay(fleet, pic, t, own, seen)
     return seen
 
 
 def detection(fleet, pic: dict, t: float, own: np.ndarray, seen: dict, view_id: str, friendly: np.ndarray,
-              relayed: bool = True, knows: np.ndarray | None = None, old_s: float = 7 * 86400.0) -> None:
+              relayed: bool = True, knows: np.ndarray | None = None, old_s: float = 7 * 86400.0, keep: bool = False) -> None:
     """Every ship not the view's own, as its own ships' sensors last saw her: the newest sighting
     (the fleet's sweeper, astrum/detect.py, swept as it was flown) whose report has reached the flagship. Within the hold, a track: where she
     was when that light left her (Fleet.past), how bright she looked to the sensor that saw her,
@@ -127,6 +168,10 @@ def detection(fleet, pic: dict, t: float, own: np.ndarray, seen: dict, view_id: 
     S = fleet.sensors
     n = len(own)
     knows = np.ones(n, dtype=bool) if knows is None else knows
+    read = None
+    if keep:
+        side = fleet.sweeper.side(view_id, own)
+        read = side.read = side.read or Readings()
     got = fleet.sweeper.arrived(t, view_id, own) if relayed else \
         fleet.sweeper.latest(int(np.floor((t - fleet.t0) / SAMPLE_S + 1e-9)), view_id, own)
     rows = np.flatnonzero(~own)
@@ -143,7 +188,7 @@ def detection(fleet, pic: dict, t: float, own: np.ndarray, seen: dict, view_id: 
         s_, fl_, d_, tau = got["s"][X], got["flux"][X], got["d"][X], tau_all[X]
         te = tau - d_ / C
         if X is J:
-            for name, val in fleet.past(te, X).items():
+            for name, val in (read.read(fleet, te, X, got["k"][X], d_) if read is not None else fleet.past(te, X)).items():
                 pic[name][X] = val
             seen["lost"][X] = (t - (got["arrive"][X] if relayed else tau)) > S.lost * S.period[s_]
         else:                                            # an old track: where she was last seen, and no more

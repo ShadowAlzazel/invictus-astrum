@@ -156,7 +156,11 @@ in a lobby, the host sets them for everyone (`switches.py`):
 - **detection:** a ship not the side's own is shown once its sensors have seen her, where she was
   when that light left her (`Fleet.past`), for the hold, then as an old track. Identified, she is
   known for who she is; else a **bogey**, her class shown once classified. Not seen again within one
-  and a half of its sensor's sweeps, a lost track.
+  and a half of its sensor's sweeps, a lost track. The AI's side pictures keep what was read of
+  each ship for her sighting (`picture.Readings`, on the side's sweep): a tick reads only the ships
+  seen anew, the rest reckoned on to the tick (how old the sighting is, lost or not); forgotten with
+  the sweep when a minute is flown again. The hold's sightings, for reports still on their way, are
+  read once a minute (`SideSweep.window`).
 - **relay:** ... once the report has reached the flagship (off: the moment she is seen).
 - **light_delay** (without detection): every other ship where she was when the light reaching the
   nearest of the side's ships left her.
