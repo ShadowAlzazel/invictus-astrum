@@ -620,7 +620,8 @@ class SimHost:
     def level(self, req: dict) -> dict:
         """The host's hand on a level's clock. start: its clock made at the level's start, running
         at its warp, or req["warp"] (nothing ticks before); run, pause; warp: at req["warp"]; tick: the battle
-        tick at req["tick_s"] (one of the MINERVA's ticks); restart: from its
+        tick at req["tick_s"] (one of the MINERVA's ticks); combat: on or off (req["combat"]: off, no
+        ship enters an engagement, and one in it leaves); restart: from its
         start again, its fleets built afresh from their scenarios; stop: no clock, no fleets.
         Returns {ok, clock} (clock None once stopped)."""
         lv = self.world.levels.get(req.get("id") or "")
@@ -631,7 +632,8 @@ class SimHost:
             if clock is None:
                 self.world.played(lv.id, "start")
                 M = self.world.minerva
-                clock = self.clocks[lv.id] = Clock(self.world.level_start(lv), lv.warp, tick_s=M.engaged_s, ticks=M.ticks)
+                clock = self.clocks[lv.id] = Clock(self.world.level_start(lv), lv.warp, tick_s=M.engaged_s, ticks=M.ticks,
+                                                   combat=req.get("combat", True) is not False)
                 if isinstance(req.get("warp"), (int, float)):
                     clock.set(warp=req["warp"])
         elif clock is None:
@@ -642,6 +644,8 @@ class SimHost:
             clock.set(warp=req["warp"])
         elif do == "tick" and req.get("tick_s") in clock.ticks:
             clock.set(tick_s=req["tick_s"])
+        elif do == "combat" and isinstance(req.get("combat"), bool):
+            clock.set(combat=req["combat"])
         elif do in ("restart", "stop"):
             for sc in lv.scenarios:                      # its fleets go; the next ask builds them afresh
                 self.world.fleets.pop(sc, None)
@@ -655,7 +659,7 @@ class SimHost:
             clock.set(t=self.world.level_start(lv))
         else:
             return {"ok": False, "status": 400, "detail": "do is start, run, pause, warp (with warp), tick (with tick_s, one of the "
-                    f"level's ticks), restart or stop"}
+                    f"level's ticks), combat (with combat, true or false), restart or stop"}
         return {"ok": True, "clock": clock.as_dict()}
 
     def clock_of(self, scenario: str | None) -> Clock | None:
@@ -823,6 +827,7 @@ class RunAhead:
                 warp = 0.0 if clock.paused else clock.warp
                 for sid in lv.scenarios if lv else ():
                     self.host.ai.tick[sid] = clock.tick_s
+                    self.host.ai.combat[sid] = clock.combat
                     sc = self.world.scenarios.get(sid)
                     f = self.world.fleet(sc) if sc else None
                     if f is None:

@@ -76,6 +76,7 @@ class Overseer:
         self.due = np.full(n, -np.inf)                   # an engaged ship is looked at again from here (pace)
         self.last_t = -np.inf
         self.tick_s = self.minerva.engaged_s             # an engaged ship's tick (ai.AI.front sets it: the level's battle tick)
+        self.combat = True                               # whether ships engage (ai.AI.front sets it: the level's; off, none enters)
         self.ships = np.array([c.kind[i] == SHIP for i in range(n)])
         self.readied = np.zeros(n, dtype=np.int8)        # the readiness her orders last set (0: none yet)
         self.near: dict[str, tuple] = {}                 # side -> (block, its ready rows a sighting is in reach of)
@@ -216,6 +217,8 @@ class Overseer:
         due = eng & (t >= self.due - 1e-6)
         rest = self.ships & ~eng
         enter = np.where(mov, self.minerva.stances["aggressive"].enter, enter)
+        if not self.combat:                               # (combat off: no ship looks for one)
+            enter = np.full(n, "never", dtype=object)
         hit = np.array([v in targeted for v in self.sides])[self.vcode]
         fresh = np.array([k > self.looked.get(v, -1) for v in self.sides])[self.vcode]
         touch = due | (rest & (((self.readied != ready) | mov) | ((enter == "fired-on") & hit)))
@@ -294,7 +297,7 @@ class Overseer:
             if m.engaged:
                 if plain:                                 # a map's order of her own: it stands, she is out of combat
                     m.move(t, node=READY, target=-1, back=None, post=None)
-                elif rs.enter == "never":                 # her stance holds fire now
+                elif rs.enter == "never" or not self.combat:    # her stance holds fire now, or combat is off
                     out += cp.exit(sp, rs, prof[i], goal)
                 elif t >= self.due[i] - 1e-6:
                     held = (m.at.back, m.at.post)
@@ -306,7 +309,7 @@ class Overseer:
                         out += got
                     self.due[i] = self._on_tick(t + cp.pace(sp, prof[i]))
                 continue
-            if plain or rs.enter == "never":
+            if plain or rs.enter == "never" or not self.combat:
                 continue
             if rs.enter == "fired-on":
                 reach = self.reach_m(i, rs.id, prof[i])

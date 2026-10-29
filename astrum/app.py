@@ -950,7 +950,12 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
                 raise LobbyError("not a side of this level")
             lb.choose(user, msg["side"], lb.level in await sim.call("levels", None))
         elif do == "rules":                              # the host's
-            lobbies.hosted(user).set_rules(msg.get("rules") or {})
+            lb = lobbies.hosted(user)
+            lb.set_rules(msg.get("rules") or {})
+            if "combat" in (msg.get("rules") or {}) and lb.level in await sim.call("levels", None):
+                out = await level_do({"id": lb.level, "do": "combat", "combat": lb.rules["combat"]})    # (the sim's: its level's)
+                if not out["ok"]:
+                    raise LobbyError(out["detail"])
         elif do == "picture":                            # the host's: what every member is shown by
             lobbies.hosted(user).set_picture(msg.get("picture") or {})
         elif do == "level":                              # the host's other choice, while it does not run
@@ -968,7 +973,8 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
             if not out["ok"]:
                 raise LobbyError(out["detail"])
         elif do in ("start", "restart", "stop"):
-            out = await level_do({"id": lobbies.hosted(user).level, "do": do, "warp": msg.get("warp")})
+            lb = lobbies.hosted(user)
+            out = await level_do({"id": lb.level, "do": do, "warp": msg.get("warp"), "combat": lb.rules["combat"]})
             if not out["ok"]:
                 raise LobbyError(out["detail"])
         else:

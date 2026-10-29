@@ -31,7 +31,7 @@
   $: fixed = running && !host && !rules.switch_sides && !!side;
   $: takenBy = (s) => (!rules.shared_sides && mine?.members.find((m) => m.side === s && m.user !== you)?.user) || null;
   const RULES = [['anyone_speed', 'Anyone may pause and set the warp'], ['switch_sides', 'Anyone may switch sides while it runs'],
-                 ['shared_sides', 'A side may be played by several']];
+                 ['shared_sides', 'A side may be played by several'], ['combat', 'Combat: ships engage (off: none does)']];
   $: lobbyOf = (lid) => lobbies.find((lb) => lb.level === lid);
   $: games = levels.filter((l) => !l.own);
   $: alone = levels.filter((l) => l.own);

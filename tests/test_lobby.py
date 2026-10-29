@@ -124,9 +124,13 @@ def test_the_host_s_rules(server):
         la.send_json({"do": "rules", "rules": {"anyone_speed": True}})
         _until(lb, lambda m: m["lobbies"][0]["rules"]["anyone_speed"])
         lb.send_json({"do": "pause"})
-        _until(lb, lambda m: (next(x for x in m["levels"] if x["id"] == "cislunar")["clock"] or {}).get("paused"))
+        clock = lambda m: next(x for x in m["levels"] if x["id"] == "cislunar")["clock"] or {}
+        assert clock(_until(lb, lambda m: clock(m).get("paused")))["combat"] is True       # combat on, by default
         assert c.post("/api/level/cislunar", json={"do": "run"}, headers=hb).status_code == 200
         assert c.post("/api/level/cislunar", json={"do": "stop"}, headers=hb).status_code == 403    # still the host's
+        la.send_json({"do": "rules", "rules": {"combat": False}})                 # the level's clock is told at once
+        m = _until(lb, lambda m: clock(m).get("combat") is False or m["kind"] == "error")
+        assert m["kind"] != "error" and not m["lobbies"][0]["rules"]["combat"]
 
 
 def test_pictures_come_unasked_and_the_server_is_healthy(server):

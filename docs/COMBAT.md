@@ -138,7 +138,9 @@ formation leads.
 
 ## Where it runs
 
-The ship AI is its own module and can be turned off (`[sim] ai`). It runs at the flight's front
+The ship AI is its own module and can be turned off (`[sim] ai`). A lobby turns combat off for
+its level (its rule `combat`, the level's clock's `combat`): the OVERSEER enters no ship into an
+engagement and takes out any in one; readiness and the rest stand. It runs at the flight's front
 edge (`Fleet.front`, `astrum/ai.py`): after each step the fleet flies, at the moments the OVERSEER
 asked for, it is handed the fleet as it stands; each side it wants is pictured there by the picture
 processor's own functions, and its orders are given at that moment, the flight's own, so nothing

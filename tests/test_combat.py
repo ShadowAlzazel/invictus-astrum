@@ -69,9 +69,21 @@ def test_made_profiles_are_written_and_read_back(tmp_path):
 
 
 def test_every_ship_is_rated_unless_written_otherwise(tmp_path):
+    """A unit's veterancy is its own, else the nearest formation above's that states one, else rated
+    (TF-2's, as data/fleets/luna-classis-1.toml writes it)."""
+    from astrum.fleets import load_fleet
+    from conftest import ROOT
     _, world = _app(tmp_path)
     sc = world.scenarios["sol-demo"]
-    assert {c.veterancy for c in sc.contacts.values()} == {"rated"}
+    written = {u["id"]: u for fid in sc.fleets for u in load_fleet(ROOT / "data" / "fleets" / f"{fid}.toml").units}
+
+    def stated(cid):
+        while cid in written and "veterancy" not in written[cid]:
+            cid = written[cid].get("formation")
+        return written[cid]["veterancy"] if cid in written else "rated"
+    assert all(c.veterancy == stated(cid) for cid, c in sc.contacts.items())
+    assert sc.contacts["tf2-lf1-bs-1"].veterancy == "veteran" and sc.contacts["tf2-lf1-ls-3"].veterancy == "experienced"
+    assert sc.contacts["tf3-es-1"].veterancy == "rated"
 
 
 def test_commanders_make_change_and_delete_profiles(tmp_path):

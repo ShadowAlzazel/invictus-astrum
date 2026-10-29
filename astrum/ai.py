@@ -84,6 +84,7 @@ class AI:
         self.world, self.pictures = world, pictures
         self.overseers: dict[int, Overseer] = {}
         self.tick: dict[str, float] = {}                 # scenario -> its level's battle tick (the run-ahead says; else engaged_s)
+        self.combat: dict[str, bool] = {}                # scenario -> whether its ships engage (its level's; else they do)
 
     def attach(self, sc, fleet) -> None:
         """Run at this fleet's front edge."""
@@ -104,7 +105,7 @@ class AI:
         to t first), each handed to it; its orders, when it wants the fleet again, and the rows it
         ticks finely till then (the engaged, and whom they engage: the rest keep their blocks)."""
         M, cap = self.world.minerva, self.overseer(sc, fleet)
-        cap.tick_s = self.tick.get(sc.id, M.engaged_s)
+        cap.tick_s, cap.combat = self.tick.get(sc.id, M.engaged_s), self.combat.get(sc.id, True)
         fv = View(fleet, t)                              # all the CAPTAIN reads of the fleet, but its sides' pictures
         views = cap.wants(fv, t)
         out = []

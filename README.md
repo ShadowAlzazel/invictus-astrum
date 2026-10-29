@@ -89,8 +89,10 @@ The map opens on the main menu, over a system standing still:
 others join it, and each member chooses the side they play (any of the level's factions, or
 MASTER). The host starts, restarts and stops the level, chooses another while it does not run,
 and sets the lobby's **rules**: whether anyone may pause it and set its warp (else the host
-alone: a member's clock bar is locked), whether anyone may switch sides while it runs, and whether
-a side may be played by several (else one member each: a side taken shows whose it is). Once it
+alone: a member's clock bar is locked), whether anyone may switch sides while it runs, whether
+a side may be played by several (else one member each: a side taken shows whose it is), and
+**combat**: off, no ship enters an engagement (one in it leaves), the rest flies as ever, to work
+on the flight with combat set apart; on again, they engage from there. Once it
 runs, everyone in it takes the map, and the server sends each map 20 pictures a second unasked
 (`[server] picture_hz`); `pictures = "ask"` has each map ask for its next as each lands instead, up
 to 60 a second (smoothest on one machine or a LAN, with less delay: the map does not draw a tenth

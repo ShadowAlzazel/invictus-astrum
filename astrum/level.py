@@ -95,20 +95,25 @@ def _level(head: dict, rows: list, path: Path, systems: dict, scenarios: dict) -
 class Clock:
     """A level's game clock: the moment it shows (TDB seconds since J2000), running at warp game
     seconds a wall second, or paused; and its battle tick (tick_s: how often an engaged ship is
-    looked at, one of ticks). Changed only by the host; read by every picture and order."""
+    looked at, one of ticks), and whether ships engage at all (combat: off, none enters an engagement).
+    Changed only by the host; read by every picture and order."""
 
-    def __init__(self, t: float, warp: float, paused: bool = False, tick_s: float = 10.0, ticks: tuple = (10.0,)):
+    def __init__(self, t: float, warp: float, paused: bool = False, tick_s: float = 10.0, ticks: tuple = (10.0,),
+                 combat: bool = True):
         self._t, self._wall, self.warp, self.paused = float(t), time.monotonic(), float(warp), paused
-        self.tick_s, self.ticks = float(tick_s), tuple(ticks)
+        self.tick_s, self.ticks, self.combat = float(tick_s), tuple(ticks), bool(combat)
 
     def now(self) -> float:
         return self._t if self.paused else self._t + self.warp * (time.monotonic() - self._wall)
 
     def set(self, *, warp: float | None = None, paused: bool | None = None, t: float | None = None,
-            tick_s: float | None = None) -> None:
-        """Run on from now, at another warp, paused or not, or from another moment; or another battle tick."""
+            tick_s: float | None = None, combat: bool | None = None) -> None:
+        """Run on from now, at another warp, paused or not, or from another moment; or another battle
+        tick; or combat on or off."""
         if tick_s is not None and float(tick_s) in self.ticks:
             self.tick_s = float(tick_s)
+        if combat is not None:
+            self.combat = bool(combat)
         self._t, self._wall = (self.now() if t is None else float(t)), time.monotonic()
         if warp is not None:
             self.warp = min(max(float(warp), 0.0), WARP_MAX)
@@ -116,4 +121,5 @@ class Clock:
             self.paused = bool(paused)
 
     def as_dict(self) -> dict:
-        return {"t": self.now(), "warp": self.warp, "paused": self.paused, "tick_s": self.tick_s, "ticks": list(self.ticks)}
+        return {"t": self.now(), "warp": self.warp, "paused": self.paused, "tick_s": self.tick_s, "ticks": list(self.ticks),
+                "combat": self.combat}

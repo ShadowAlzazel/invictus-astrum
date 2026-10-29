@@ -70,6 +70,22 @@ def test_a_flotilla_sent_at_the_venus_raiders_fights_them(tmp_path, tick):
     assert max(e.salvos for e in spinal) == tick / 10 and {e.t % tick for e in log} == {(t - 600) % tick}
 
 
+def test_with_combat_off_no_ship_engages(tmp_path):
+    """Combat off (the lobby's rule, its level's clock): the flotilla flies the attack-move to Venus
+    and the raiders hold their guard, and no ship of either side enters an engagement or fires;
+    on again, they fight."""
+    c, world = _app(tmp_path)
+    ai = c.app.state.sim.host.ai
+    ai.combat["sol-demo"] = False
+    fleet, t, ours = _send(c, world)
+    fleet.reach(t + 84 * 3600)
+    assert not fleet.combat.log and not ai.engaged(fleet)
+    assert not [e for e in fleet.book.queue if fleet.book.ai[e] and fleet.book.of(e).target.get("engage")]
+    ai.combat["sol-demo"] = True
+    fleet.reach(t + 90 * 3600)
+    assert any(e.what == "fired" for e in fleet.combat.log)
+
+
 def test_a_battle_flown_again_is_the_same_battle(tmp_path):
     """From a checkpoint in the middle of it, the fleet flies it again: the CAPTAINs' orders are
     the book's, every salvo and every system it lands on its own seeded draw, so the same shots

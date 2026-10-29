@@ -4,8 +4,8 @@ alone: the simulation runs levels and answers requests, and never knows a lobby 
 A signed-in user makes a lobby for a level and is its host; others join it and each chooses a side
 (any of the level's factions, or MASTER). The host starts, restarts and stops the level, chooses
 another while it is not running, and sets the lobby's rules (RULES): whether anyone may pause it
-and set its warp (else the host alone), whether a member may switch sides while it runs, and
-whether a side may be played by more than one member; and the picture's switches (astrum/switches.py:
+and set its warp (else the host alone), whether a member may switch sides while it runs,
+whether a side may be played by more than one member, and whether ships engage at all (combat); and the picture's switches (astrum/switches.py:
 detection, relay, light delay...), which every member is shown by, whatever their map asks. A
 user is in one lobby at most, and a level in one lobby. The host leaving, the next member is host;
 the last one leaving, the lobby closes (and its level stops: the caller says so to the
@@ -28,6 +28,7 @@ RULES = {                             # the host's to set: (default, what it all
     "anyone_speed": (False, "anyone may pause the level and set its warp"),
     "switch_sides": (True, "anyone may switch sides while it runs"),
     "shared_sides": (True, "a side may be played by more than one"),
+    "combat": (True, "ships engage (off: none enters an engagement; the level's, astrum/level.py Clock)"),
 }
 
 
