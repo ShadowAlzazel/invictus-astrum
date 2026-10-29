@@ -96,7 +96,7 @@ routes, so the suite's fleets all stayed, and 150 MB each ran it out of memory.
 - The side pictures stay made at each tick (20% of the battle): the sweep's minute could share
   them, at ~10% for a cache; not taken.
 
-**D. The CAPTAIN in its own process** (18). With A3's view and C3's short battle look-ahead: the
+**D. The ship AI in its own process** (18). With A3's view and C3's short battle look-ahead: the
 view handed across each tick, the orders handed back at the same moment, lockstepped at the front
 edge; the flight waits on it only when it lags.
 
@@ -116,7 +116,9 @@ under burn and seeker, each its own module behind `CombatBook.launch`), wrecks b
 | 6 | **A grid under the groups.** The sweep culls by formation spheres and a brightness bound, but groups against every target are still all pairs. | For thousands of ships: groups only against targets in nearby cells. | A coarse grid of the groups' spheres per minute in the kernel. |
 | 7 | **The map's clustering on a grid.** The overlay links units and tracks pairwise every frame. | Fine at 100s (2 ms a frame); needed for 1000s on screen. | Screen-space buckets for `clusters`. |
 
-| 18 | **The CAPTAIN in its own process (1c).** It runs at the flight's front edge, in the run-ahead's thread, which waits on it: 69% of TF-2's battle (the side pictures, its decisions, the sweep it asks for). | The flight no longer waits on the AI; fast warps steadier. | The view (A3) handed across each tick, its orders handed back at the same moment (plan D). |
+| 18 | **The ship AI in its own process (1c).** The OVERSEER runs at the flight's front edge, in the run-ahead's thread, which waits on it: about 60% of LF-1's battle at 10 s (`bench_combat`, 29 October: the side pictures 15%, the decisions 23%, the fleet's picture 6%, the sweep it asks for). Now three parts with one way in each (the OVERSEER's lists, a CAPTAIN a ship, MINERVA's data), the boundary is the OVERSEER. | The flight no longer waits on the AI; fast warps steadier. | The view (A3) handed across each tick, its orders handed back at the same moment (plan D). |
+| 30 | **The fleet's picture at the AI's moments.** Each moment reads every row off the timeline (`Fleet.picture`, `Timeline.at` with three `Versions.at`): 6% of LF-1's battle at 10 s, though the AI reads only the sides it pictures. | About 5% of a battle at 10 s. | Read the rows a side picture needs (its own, and the foreign rows it shows) rather than the whole fleet. |
+| 31 | **Readings for the map's pictures.** The AI's side pictures keep what they read of each ship for her sighting (`picture.Readings`); the map's do not (they run behind the front edge and would push the AI's out). | The map's share at 60 pictures a second, with missiles. | A store of the map's own per side (`keep=True` in `simhost._ships_at`, on a second `Readings`). |
 | 29 | **The sweep's targets by formation too.** JADF's targets sit 4–5 AU off; each is still tested against six branch spheres every minute (the owner's note, 27 October). | The far sides' sweep. | Targets grouped under their own task force's sphere, branch against branch first. |
 | 21 | **Shots in a batch.** A shot costs about 0.4 ms, 0.07 of it the salvo; the rest is reading both ships at its moment. | Fleet actions of hundreds of ships. | Every fire order at one moment resolved in one array pass (geometry, presented sizes, draws seeded per shot). |
 
@@ -126,10 +128,10 @@ under burn and seeker, each its own module behind `CombatBook.launch`), wrecks b
 |---|---|---|
 | 10 | **Old-track removals kept.** They live in the sim's memory (`SimHost._dismissed`): a restart brings them back. | Write them beside `bullseyes.toml`, per player. |
 | 15 | **Holding on a unit is placed, not flown.** A ship that arrives on a unit (an engage) holds station on it, carried as it moves. | An engaged ship that burns away should be chased under thrust; today the AI only notices at its next picture. The kernel would keep flying a go-to on a unit, or the AI re-engage a target that burns. |
-| 23 | **Projectiles as rows.** `CombatBook.launch` logs a round or a missile as launched, nothing more. | A kinetic round is a coasting row (gravity alone); a missile a row under its own burn and seeker; either handed to the damage model when it bursts or strikes. |
+| 23 | **Projectiles as rows.** `CombatBook.launch` logs a round or a missile as launched, nothing more. A missile seen tick after tick is read once a minute in a side's picture (`picture.Readings`). | A kinetic round is a coasting row (gravity alone); a missile a row under its own burn and seeker; either handed to the damage model when it bursts or strikes. |
 | 24 | **Where a hit lands.** A channel lands on a kind of system by a share of her (TEMPORARY). | Her silhouette and attitude by basic shapes from her class's layout, so what faces the shooter is what is hit; then crew and prompt upset. |
 | 25 | **A wreck known by sight.** Every side's picture marks a wreck as one, as the truth has it. | Read off what the side sees of her: no plume, cold, no pings, and the flash only a ship near her saw. |
-| 26 | **States told apart.** Damaged, disabled and destroyed are alike in the simulation (all out). | Repair and salvage will need them apart; a system already out stays at the state it went out at. |
+| 26 | **States told apart.** Damaged, disabled and destroyed are alike in the simulation (all out); the map tells them apart (a slash, a crab, a faded cross). | Repair and salvage will need them apart; a system already out stays at the state it went out at. |
 | 12 | **`Versions` as arrays.** Per-row Python lists, flattened for `at` when they change. | Append-only arrays with a per-row cut would drop the rebuild and the lists. |
 
 ## Done

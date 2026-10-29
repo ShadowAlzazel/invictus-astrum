@@ -328,7 +328,7 @@ TELVM §1.3.4's three sizes), `muzzle_share` 0.25 (gives TORMENTA §4.8's table)
 
 Ours to build:
 
-- **1c, the CAPTAIN in its own process.** It is at the flight's front edge now, in the sim's
+- **1c, the ship AI (the OVERSEER) in its own process.** It is at the flight's front edge now, in the sim's
   process, and the run-ahead waits on it.
 - Projectiles: a kinetic round as a coasting row, a missile as a row with its own seeker and burn
   (`CombatBook.launch` logs them launched, nothing more).
