@@ -38,6 +38,9 @@ declutter_px = { default = 14, min = 0, max = 60, step = 1, label = "A body fold
 aggregate_px = { default = 40, min = 0, max = 160, step = 1, label = "Units fold within (px): into their formation, or into a group" }
 # A formation's symbol stands for its main body: the folded cluster must hold more than this share
 # of its ships, or the formation stays open and its parts are drawn as themselves.
+# Each echelon above a squadron links its units over echelon_growth times the reach of the one below
+# (a squadron's ships within aggregate_px, a flotilla's squadrons twice it, a task force's four times).
+echelon_growth = { default = 2.0, min = 1.0, max = 4.0, step = 0.25, label = "Each echelon up links its units this many times further" }
 core_share   = { default = 0.5, min = 0.0, max = 0.95, step = 0.05, label = "A folded core holds more than (share of ships)" }
 # Where the simulation does not form them together, what lies within aggregate_px is drawn as one
 # symbol of the echelon its count of ships reads as: up to flight_max a flight, up to group_max a
