@@ -8,3 +8,4 @@ settings.toml
 bullseyes.toml
 /profiles.toml
 logs/
+hidden/
