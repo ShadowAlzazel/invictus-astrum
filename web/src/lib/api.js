@@ -25,6 +25,7 @@ export const api = {
   saveSettings: (values) => post('/display/settings', values),
   ships: () => get('/ships'),
   ship: (id) => get(`/ships/${id}`),
+  gunnery: (id, q) => get(`/ships/${id}/gunnery`, q),           // a stack against a hull, by range: the server's salvos
   order: (o) => giveOrder(o),
   withdrawOrder: (scenario, id, view, player) => send('DELETE', `/order/${encodeURIComponent(scenario)}/${encodeURIComponent(id)}?${new URLSearchParams(Object.entries({ view, player }).filter(([, v]) => v != null))}`),
   dismissTrack: (scenario, id, view, player) => send('DELETE', `/track/${encodeURIComponent(scenario)}/${encodeURIComponent(id)}?${new URLSearchParams(Object.entries({ view, player }).filter(([, v]) => v != null))}`),

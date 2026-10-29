@@ -128,7 +128,11 @@ and the Old Forest. Each shows what she is called (her rate and her terms, in on
 her, rate and command,
 particulars, batteries, point defence and endurance, and reach by crew tier: pick green, rated,
 experienced, veteran or exceptional and the table shows how far each effect reaches and whether the beam or
-the aim sets it (DE COLLINEATIONE). Its Sensors tab shows the suite as the simulation fits it
+the aim sets it (DE COLLINEATIONE). Its Armament tab sets her stack against a hull, by range:
+pick the target class, broadside or bow on, and her hit points (her rate's by default), and the
+server fires the simulation's own salvos for each range: a channel's fluence, the share of a hull
+opened it counts, what a salvo takes off her, how many salvos and how long to her hit points, and
+what one channel still takes out. Its Sensors tab shows the suite as the simulation fits it
 (each sensor part, what it is mounted as, its cones and sweep, how far it sees a cold, warm and
 burning ship; an active scan's reach and what each ping gives off), what she gives off herself,
 and the rules a track is made out by. Figures the canon has not stated yet are listed as *left for

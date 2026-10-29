@@ -102,7 +102,9 @@ map with its own targets and ranges. Shared: **Standing orders** (the root: clos
 spinal battery's envelope, fire it once a cycle, hold; target lost, hold and wait, then exit; with
 turn-to-fire: a stack off her bow while she burns, her drive is cut for the shot, she faces and fires,
 and her station or hold burns her on the next tick), **Reckless Ahead** (Standing orders without
-turn-to-fire: off the bow under burn, the stack is held), **Hold the line**, **Pursuit** (on until the target is out of the picture), **Search and Destroy**
+turn-to-fire: off the bow under burn, the stack is held), **Artillery orders** (close reading her
+strips, hold off as soon as she is within their reach, their dazzle range: 40,000 km; the spine fired
+with them, turning to fire; a class with no strip reads her spine), **Hold the line**, **Pursuit** (on until the target is out of the picture), **Search and Destroy**
 (a pass through her, firing as she passes, then on: after = coast), **Ballistic orders** (an
 attack-move passing on by: close, then keep the heading if her focus is a stack (fire, spine,
 hold-heading), else coast for the shot (fire, spine): her focus first and the spine if that was not
@@ -198,6 +200,11 @@ same. A battery fires again once cycled: stacks together, their cycle; alternati
 their count. The CAPTAIN turns her spine on the target before she fires; while she burns off it,
 she holds her fire, or with turn-to-fire cuts her drive for the shot and burns on the next tick. A salvo costs 54 µs; at a longer battle tick a fire order fires the tick's cycles (six
 for a PAPILION's alternating stacks in a minute), each salvo its own aim error, in one draw.
+
+The ship registry's Armament tab reads this table off the server for any class's stack against any
+class, broadside or bow on, at any crew tier and hit points (`combat.gunnery`: the mean of 4,000 of
+the simulation's salvos, `salvo.fire` and the damage model's `salvo_lost`), with what one channel
+still takes out at each range.
 
 | PAPILION's battery (8 channels a salvo, 6.5 µrad) on a PHALAENA, broadside (66 m, wall 10,211 km) | 1,000 km | 5,000 | 10,000 | 20,000 |
 |---|---|---|---|---|

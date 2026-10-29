@@ -166,6 +166,21 @@
       ['Protection', hullRow('protection_kgm2') ? row(hullRow('protection_kgm2')) : '—'],
     ] },
   ] : [];
+  // the Armament tab's gunnery: her stack against a hull, by range, as the server's salvos land
+  let gTarget = 'phalaena', gAspect = 'broadside', gHp = '', gBattery = null, gun = null;
+  $: gunFor = cls && reg ? { id: cls.id, target: reg.classes.some((c) => c.id === gTarget) ? gTarget : cls.id, tier, aspect: gAspect,
+                              hp: Number(gHp) > 0 ? Number(gHp) : null, battery: gBattery } : null;
+  $: if (gunFor) loadGun(gunFor);
+  async function loadGun(f) {
+    const { id, ...q } = f;
+    try { const g = await api.gunnery(id, q); if (f === gunFor) gun = g; } catch (e) { gun = null; }
+  }
+  const salvosText = (n) => (n == null || n > 1e6 ? 'never' : n >= 100 ? `~${num(n, 0)}` : num(n, n >= 10 ? 0 : 1));
+  const span = (s) => (s == null || s > 365 * 86400 ? '—' : s >= 5400 ? `${num(s / 3600, 1)} h` : s >= 90 ? `${num(s / 60, 0)} min` : `${num(s, 0)} s`);
+  const sig = (x) => (x >= 100 ? num(x, 0) : x >= 1 ? num(x, x >= 10 ? 1 : 2) : x >= 0.001 ? num(x, 3) : x > 0 ? x.toExponential(1) : '0');
+  const TAKES = { destroyed: 'destroyed', disabled: 'disabled', damaged: 'damaged' };
+  const takes = (t) => Object.entries(t ?? {}).filter(([, st]) => st).map(([k, st]) => `${k} ${TAKES[st]}`).join(' · ') || 'nothing';
+
   // the armament: engagement range first, then how many
   const engage = (b) => (b.engage?.q ? `${num(v(b.engage.q))}` : '—');
   $: focusBat = cls?.batteries.find((b) => b.focus) ?? null;
@@ -494,6 +509,36 @@
         {:else if cls.reach.length}
           <h2 class="caps">Reach</h2>
           <dl class="rows">{#each cls.reach as r}<dt>{r.label}</dt><dd>{q(r.beam, 'km')}</dd>{/each}</dl>
+        {/if}
+
+        {#if gun?.battery}
+          <h2 class="caps">Against a hull <span class="sub">{gun.battery.label}, {gun.battery.channels} channels a salvo at {tierLabel(tier).toLowerCase()} aim ({num(gun.aim_urad, 2)} µrad); the mean of {num(gun.draws)} of the simulation's salvos</span></h2>
+          <div class="seg gun">
+            <label>Target <select bind:value={gTarget}>{#each flat as c}<option value={c.id}>{c.name ?? c.id}</option>{/each}</select></label>
+            {#each [['broadside', 'Broadside'], ['bow', 'Bow on']] as [a, l]}<button class:on={gAspect === a} on:click={() => (gAspect = a)}>{l}</button>{/each}
+            <label>Hit points <input type="number" min="1" step="500" placeholder={num(gun.hp_rate)} bind:value={gHp} /> MJ</label>
+            {#if gun.batteries.length > 1}{#each gun.batteries as b}<button class:on={gun.battery.id === b.id} on:click={() => (gBattery = b.id)}>{b.label}</button>{/each}{/if}
+          </div>
+          <table>
+            <thead><tr><th>Range</th><th class="r">Fluence a channel, MJ/m²</th><th class="r">Share counted</th><th class="r">All {gun.battery.channels} land (hull / citadel), MJ</th>
+              <th class="r">On her a salvo (citadel)</th><th class="r">Expected a salvo, MJ</th><th class="r">Salvos to her {num(gun.hp)} MJ</th><th class="r">Time</th><th>A channel still takes</th></tr></thead>
+            <tbody>
+              {#each gun.rows as r, i}
+                <tr class:band={i % 2} class:hl={r.mark}>
+                  <td class="nw">{num(r.km)} km{#if r.mark} <i class="dim">({r.mark})</i>{/if}</td>
+                  <td class="r">{sig(r.fluence_mjm2)}</td>
+                  <td class="r">{r.share >= 0.001 ? `${num(r.share * 100, r.share >= 0.1 ? 0 : 1)}%` : '~0'}</td>
+                  <td class="r">{sig(r.all_hull_mj)} / {sig(r.all_citadel_mj)}</td>
+                  <td class="r">{num(r.hits, 1)} ({num(r.citadel, 1)})</td>
+                  <td class="r">{sig(r.mean_mj)}</td>
+                  <td class="r strong">{salvosText(r.salvos)}</td>
+                  <td class="r">{r.salvos != null && r.salvos <= 1e6 ? span(r.time_s) : '—'}</td>
+                  <td class="dim">{takes(r.takes)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+          <p class="note">Against {gun.target === cls.id ? 'her own class' : `a ${reg.classes.find((c) => c.id === gun.target)?.name ?? gun.target}`}, {gAspect === 'broadside' ? 'broadside' : 'bow on'} ({num(gun.presented_m)} m presented), unmoving, wings spread. A channel takes off its pulse at the share of a hull opened ({num(gun.open_mjm2, 1)} MJ/m²) its fluence reaches, a citadel hit {num(gun.citadel_factor, 1)} times; past where the hull opens, a channel still takes out what it lands on.</p>
         {/if}
 
         {#if spreadOf}
@@ -874,6 +919,11 @@
   .seg button.on { background: var(--c); color: var(--c-ink); border-color: var(--c); }
   .seg button.on i { color: rgba(6, 20, 26, 0.7); }
   .seg .dim { margin-left: 14px; font-size: 12px; }
+  .seg.gun label { display: flex; align-items: center; gap: 6px; margin-right: 14px; font-size: 12px; color: var(--t2); }
+  .seg.gun select, .seg.gun input { padding: 5px 8px; background: var(--p2); border: 1px solid var(--line); color: var(--t); font: inherit; font-size: 13px; }
+  .seg.gun input { width: 90px; }
+  td.nw { white-space: nowrap; }
+  .seg.gun label + button { margin-left: 0; }
   .bats { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; }
   .bat { background: var(--p2); border: 1px solid var(--line); clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%); }
   .bat.focus { grid-column: 1 / -1; border-color: var(--y); }

@@ -101,6 +101,29 @@ do = ["hold"]
 wait_s = 600              # TESTING: a delay before she leaves combat, to see what she does
 on = [{ if = "always", go = "exit" }]
 
+[profile.artillery]
+name = "Artillery orders"   # stand off at her light's dazzle range (strips: 40,000 km) and keep the salvos coming
+targets = ["hostile"]
+start = "close"
+
+[profile.artillery.node.close]
+label = "Close to dazzle range, fire"
+do = ["station", "fire", "spine", "turn-to-fire"]
+weapon = "strip"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "in-reach", go = "hold" }]
+
+[profile.artillery.node.hold]
+label = "Hold off, fire"
+do = ["hold", "fire", "spine", "turn-to-fire"]
+weapon = "strip"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "lost" }, { if = "alive", go = "hold" }]
+
+[profile.artillery.node.lost]
+label = "Target lost: hold, wait"
+do = ["hold"]
+wait_s = 600              # TESTING: a delay before she leaves combat, to see what she does
+on = [{ if = "always", go = "exit" }]
+
 [profile.hold-the-line]
 name = "Hold the line"
 targets = ["hostile", "unknown"]

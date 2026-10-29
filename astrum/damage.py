@@ -42,6 +42,18 @@ def _num(x, default: float) -> float:
     return float(x) if isinstance(x, (int, float)) else default
 
 
+def hp_of(rules, sc) -> float:
+    """A class's hit points (MJ), by her rate ([damage] hp_mj)."""
+    hp = (dict(getattr(rules, "damage", {}) or {}).get("hp_mj")) or {}
+    return _num(hp.get(sc.rate or ""), _num(hp.get("default"), 5000.0))
+
+
+def salvo_lost(r: dict, open_mjm2: float, citadel: float) -> float:
+    """What a salvo (astrum/salvo.fire) takes off her (MJ): each channel on her its pulse at the share of
+    what opens a woven hull its fluence reaches, one on her citadel counting citadel times."""
+    return r["pulse_mj"] * min(1.0, r["fluence_mjm2"] / open_mjm2) * ((r["hits"] - r["citadel"]) + citadel * r["citadel"])
+
+
 class Damage:
     """A fleet's damage model: each row's hit points (inf for what cannot be hit: a formation's
     lead, a ship with no class), the figures a hit is weighed by, and her systems."""
@@ -60,12 +72,11 @@ class Damage:
         light = d.get("light") or {}
         self.dazzle_aim = _num(light.get("dazzle_aim"), 1.25)
         self.radiator_held = _num(light.get("radiator_mjm2"), 1.2)
-        hp = d.get("hp_mj") or {}
         self.hp = np.full(len(fleet.c.ids), np.inf)
         for i, spec in enumerate(fleet.c.spec[: fleet.c.n]):
             sc = classes.get(getattr(spec, "class_id", None))
             if sc is not None:
-                self.hp[i] = _num(hp.get(sc.rate or ""), _num(hp.get("default"), 5000.0))
+                self.hp[i] = hp_of(rules, sc)
 
     def aim_factor(self, i: int, t: float) -> float:
         """What her aim error is multiplied by at t: dazzled, a quarter worse (§6.7.4)."""
@@ -91,7 +102,7 @@ class Damage:
         lost = 0.0
         if "hits" in r:                                   # a salvo: each channel on her, the citadel's more
             F = r["fluence_mjm2"]
-            lost = r["pulse_mj"] * min(1.0, F / self.open_mjm2) * ((r["hits"] - r["citadel"]) + self.citadel * r["citadel"])
+            lost = salvo_lost(r, self.open_mjm2, self.citadel)
             for part, n in (("hull", r["hits"] - r["citadel"]), ("citadel", r["citadel"])):
                 for kind in self._lands(part, n, rng, bool(c.cold[j])):
                     state = self.tier(kind, F)

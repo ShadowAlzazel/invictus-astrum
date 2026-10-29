@@ -24,6 +24,7 @@ model (astrum/damage.py); the combat step, every block, for every ship engaging,
 """
 from __future__ import annotations
 
+import math
 from bisect import bisect_left, bisect_right, insort
 from dataclasses import dataclass
 
@@ -31,7 +32,7 @@ import numpy as np
 
 from . import optics, salvo
 from .constants import C
-from .damage import Damage
+from .damage import Damage, _num, hp_of, salvo_lost
 from .systems import OPERATIONAL, OUT, Systems
 from .orders import QUARTERS as QUARTERS_ORDER
 
@@ -141,6 +142,62 @@ def hull_of(sc, rules) -> salvo.Hull | None:
     cit = (sc.doc.get("layout") or {}).get("citadel_m")
     citadel = float(cit[1] - cit[0]) if isinstance(cit, list) and len(cit) == 2 else num(rate.get("citadel_length_m")) or 0.5 * length
     return salvo.Hull(length, beam, folded, citadel, 2 * half)
+
+
+GUNNERY_KM = (500, 1000, 2000, 5000, 10000, 20000, 50000)
+GUNNERY_DRAWS = 4000
+
+
+def gunnery(registry, cid: str, target: str, tier: str = "rated", hp: float | None = None, aspect: str = "broadside",
+            battery: str | None = None) -> dict:
+    """A class's stack battery against another's hull, by range: what one channel's fluence is there,
+    the share of a hull-opening it counts for, what a salvo takes off her if every channel lands (on
+    her hull, on her citadel), what one takes off on the average (GUNNERY_DRAWS salvos of the
+    simulation's own, at her crew's aim, the target unmoving at the aspect), and how many salvos, and
+    how long, to her hit points; and what one channel there still takes a system of each kind to. The ranges: GUNNERY_KM, her envelope and her farthest reach."""
+    classes, rules = registry.classes, registry.rules
+    sc, tc = classes[cid], classes[target]
+    stacks = [w for w in weapons_of(sc) if w.stack is not None]
+    w = next((x for x in stacks if x.id == battery), None) or next((x for x in stacks if x.focus), None) or (stacks or [None])[0]
+    hull = hull_of(tc, rules)
+    if w is None or hull is None:
+        return {"battery": None, "batteries": [], "rows": []}
+    srules = dict(getattr(rules, "salvo", {}) or {})
+    d = dict(getattr(rules, "damage", {}) or {})
+    open_mjm2, cit = _num(d.get("open_mjm2"), 82.7), _num(d.get("citadel_factor"), 2.0)
+    k = srules.get("size_k", 0.479)
+    k = float(k["value"] if isinstance(k, dict) else k)
+    los = np.array([1.0, 0.0, 0.0])
+    axis = np.array([0.0, 1.0, 0.0]) if aspect == "broadside" else los
+    sizes = salvo.presented(hull, axis, los, False, k)
+    a = sc.aim.get(tier) or sc.aim.get("rated")
+    aim = float(a.value) if a is not None and a.value else 6.5
+    hp = float(hp) if hp else hp_of(rules, tc)
+    marks = {km: None for km in GUNNERY_KM}
+    if w.engage_km:
+        marks[w.engage_km] = "her envelope"
+    if w.far_km:
+        marks[w.far_km] = "her farthest reach"
+    tiers = {kind: {st: _num(v, np.inf) for st, v in (t or {}).items() if st in ("damaged", "disabled", "destroyed")}
+             for kind, t in (d.get("systems") or {}).items()}
+    n, rows = w.salvo_channels, []
+    for km in sorted(marks):
+        rng = np.random.default_rng(salvo.seed(cid, target, w.id, tier, aspect, f"{km:.0f}"))
+        r = salvo.fire(w.stack, n, km * 1e3, aim, sizes, srules, rng, salvos=GUNNERY_DRAWS)
+        share = min(1.0, r["fluence_mjm2"] / open_mjm2)
+        every = salvo_lost({**r, "hits": n, "citadel": 0}, open_mjm2, cit)
+        mean = salvo_lost(r, open_mjm2, cit) / GUNNERY_DRAWS
+        kills = hp / mean if mean > 0 else None
+        rows.append({"km": km, "mark": marks[km], "fluence_mjm2": r["fluence_mjm2"], "share": share,
+                     "all_hull_mj": every, "all_citadel_mj": every * cit, "hits": r["hits"] / GUNNERY_DRAWS,
+                     "citadel": r["citadel"] / GUNNERY_DRAWS, "mean_mj": mean, "salvos": kills,
+                     "time_s": kills * w.interval_s if kills is not None and w.interval_s else None,
+                     "takes": {kind: next((st for st in ("destroyed", "disabled", "damaged") if r["fluence_mjm2"] >= t.get(st, np.inf)), None)
+                               for kind, t in tiers.items()}})
+    return {"battery": {"id": w.id, "label": w.label, "channels": n, "interval_s": w.interval_s},
+            "batteries": [{"id": x.id, "label": x.label} for x in stacks], "target": target, "tier": tier,
+            "aim_urad": aim, "aspect": aspect, "hp": hp, "open_mjm2": open_mjm2, "citadel_factor": cit, "hp_rate": hp_of(rules, tc), "draws": GUNNERY_DRAWS,
+            "presented_m": 2 * math.sqrt(sizes[0] * sizes[1]), "rows": rows}
 
 
 class CombatBook:

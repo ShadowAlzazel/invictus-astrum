@@ -6,7 +6,7 @@ from astrum.config import ROOT, load_config
 from astrum.orders import KIND
 from astrum.profiles import ROOT as ROOT_PROFILE, check, load_made, load_shared, make, save_made
 
-SHARED = ["root", "reckless-ahead", "hold-the-line", "pursuit", "search-and-destroy", "ballistic"]    # data/profiles.toml
+SHARED = ["root", "reckless-ahead", "artillery", "hold-the-line", "pursuit", "search-and-destroy", "ballistic"]    # data/profiles.toml
 
 
 def _app(tmp_path):
@@ -40,6 +40,24 @@ def test_a_profile_is_an_engagement_map(tmp_path):
     assert check({"name": "a", "stance": "guard", "range": {"hold": -3}, "targets": ["friend"]}) == [
         "unknown key 'stance'", "targets are among ['hostile', 'unknown']",
         "range hold: one of ['sensor', 'half-sensor', 'dazzle', 'weapons'], or km above zero"]
+
+
+def test_the_registry_reads_a_stack_against_a_hull_by_range(tmp_path):
+    """The Armament tab's gunnery, the simulation's own salvos: a PAPILION's eight channels on a
+    PHALAENA broadside open her hull whole close in (91.2 MJ a channel, a citadel hit twice) and
+    take her 5,000 MJ in under four salvos; at her envelope a quarter of each counts; far out a
+    channel no longer opens her but still damages what it lands on; another target, aspect or hit
+    points move it."""
+    c, world = _app(tmp_path)
+    g = c.get("/api/ships/papilion/gunnery", params={"target": "phalaena"}).json()
+    rows = {r["km"]: r for r in g["rows"]}
+    assert g["battery"]["channels"] == 8 and g["hp"] == 5000 and {r["mark"] for r in g["rows"]} >= {"her envelope", "her farthest reach"}
+    assert rows[500]["share"] == 1.0 and round(rows[500]["all_hull_mj"]) == 730 and round(rows[500]["all_citadel_mj"]) == 1459
+    assert 3.3 < rows[500]["salvos"] < 3.5 and 0.2 < rows[3600]["share"] < 0.25 and 14 < rows[3600]["salvos"] < 18
+    assert rows[20000]["share"] < 0.002 and rows[20000]["takes"]["weapon"] == "damaged" and rows[50000]["takes"]["weapon"] is None
+    h = c.get("/api/ships/papilion/gunnery", params={"target": "aeshna", "aspect": "bow", "hp": 10000}).json()
+    assert h["hp"] == 10000 and h["hp_rate"] == 15000 and h["presented_m"] != g["presented_m"]
+    assert c.get("/api/ships/papilion/gunnery", params={"target": "nobody"}).status_code == 404
 
 
 def test_made_profiles_are_written_and_read_back(tmp_path):

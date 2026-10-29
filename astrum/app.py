@@ -51,6 +51,7 @@ from .relay import chain
 from .timescale import iso, utc_to_tdb
 from .zones import all_zones, classify
 from . import workshop
+from .combat import gunnery
 from .ships import ShipRegistry, class_detail, class_summary, rules_dict
 from .entity import ShipSpec, SpecError
 from .sim import Fleet, Order
@@ -1208,6 +1209,14 @@ def create_app(config: dict | None = None, sim: str = "inline", run_ahead: bool 
         if reg is None or cid not in reg.classes:
             raise HTTPException(404, f"no ship class {cid!r}")
         return {**class_detail(reg, reg.classes[cid]), "sensing": sensing(world, cid)}
+
+    @app.get("/api/ships/{cid}/gunnery")
+    def ship_gunnery(cid: str, target: str = "phalaena", tier: str = "rated", hp: float | None = None,
+                     aspect: str = "broadside", battery: str | None = None):
+        reg = world.ships
+        if reg is None or cid not in reg.classes or target not in reg.classes:
+            raise HTTPException(404, f"no ship class {cid if reg is None or cid not in reg.classes else target!r}")
+        return gunnery(reg, cid, target, tier, hp, aspect, battery)
 
     # ---- the workshop: build systems from the map --------------------------------------------
     presets = Path(config["paths"]["systems"]).parent / "presets.toml"
