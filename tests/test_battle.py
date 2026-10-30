@@ -86,6 +86,27 @@ def test_with_combat_off_no_ship_engages(tmp_path):
     assert any(e.what == "fired" for e in fleet.combat.log)
 
 
+def test_destroy_orders_finish_what_the_fight_left(tmp_path):
+    """The fight over, every raider out of it (silenced, disabled) and none destroyed; an attack-move
+    on destroy orders (K: Destroy orders, data/minerva.toml attack_destroy) takes the wrecks and the
+    silenced her side passed over as targets too, and keeps on each till she is destroyed."""
+    c, world = _app(tmp_path)
+    fleet, t, ours = _send(c, world)
+    fleet.reach(t + 84 * 3600)
+    n, R = len(fleet.c.row), [fleet.c.row[s] for s in RAIDERS]
+    gone = lambda: fleet.combat.disarmed_rows(fleet, n)[R]
+    dead = lambda: fleet.combat.destroyed_rows(fleet, n)[R]
+    assert gone().all() and not dead().any()
+    T = t + 84 * 3600
+    r = c.post("/api/order", json={"scenario": "sol-demo", "player": "arcvs", "unit": "tf2-lf1", "t": T, "g": 0.3, "mode": "attack",
+                                   "destroy": True, "target": {"body": "venus"}})
+    assert r.status_code == 200 and all(s["goal"]["target"].get("destroy") for s in r.json()["ships"].values())
+    ov = c.app.state.sim.host.ai.overseer(world.scenarios["sol-demo"], fleet)
+    assert ov.profile(fleet.c.row[ours[0]], {"attack": True, "destroy": True}, None).id == world.minerva.attack_destroy == "destroy"
+    fleet.reach(T + 12 * 3600)
+    assert dead().all()
+
+
 def test_a_battle_flown_again_is_the_same_battle(tmp_path):
     """From a checkpoint in the middle of it, the fleet flies it again: the CAPTAINs' orders are
     the book's, every salvo and every system it lands on its own seeded draw, so the same shots

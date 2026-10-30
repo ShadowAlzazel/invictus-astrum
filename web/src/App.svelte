@@ -538,7 +538,8 @@
       const r = await api.order({ scenario: scenario.id, unit: o.unit, t, g: o.g, player: playerId, view: side,
                                   target: aim.target, mode: o.mode, queue, shape: shapes(o) ? o.shape : undefined,
                                   free: o.mode === 'move' && o.then === 'free' ? true : undefined,
-                                  ballistic: !queue && (o.mode === 'move' && o.then === 'ballistic' || o.mode === 'attack' && o.then === 'pass') ? true : undefined });
+                                  ballistic: !queue && (o.mode === 'move' && o.then === 'ballistic' || o.mode === 'attack' && o.then === 'pass') ? true : undefined,
+                                  destroy: o.mode === 'attack' && o.then === 'destroy' ? true : undefined });
       const goal = Object.values(r.ships)[0]?.goal;
       const who = `${map.contactName(o.unit)}${o.ships.length > 1 ? ` (${o.ships.length} ships)` : ''}`;
       say(o.mode === 'turn' ? `${who}: turned to ${aim.kind === 'point' ? 'the point' : aim.label}` : o.g <= 0 ? `${who}: drive cut`

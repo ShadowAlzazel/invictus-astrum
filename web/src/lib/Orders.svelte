@@ -5,7 +5,7 @@
   // slowest ship can give down to stop. Every ship flying an order shows its vector and time to
   // target; the selected ones brightest.
   import { onMount, onDestroy } from 'svelte';
-  import { nextThen, nextShape, shapes, aimAt, estimate, heading, hms, group, stepG, shipsUnder } from './orders.js';
+  import { nextThen, nextShape, shapes, toggleAttack, aimAt, estimate, heading, hms, group, stepG, shipsUnder } from './orders.js';
   import Telegraph from './Telegraph.svelte';
   import { cap, is, keymap } from './keys.js';
   import { km, bearing, elev } from './format.js';
@@ -167,9 +167,9 @@
         <i></i>{ordering.then === 'ballistic' ? 'Ballistic: burn, then on through' : ordering.then === 'free' ? 'Then free: orbit or coast' : 'Then hold station'}<kbd>{cap($keymap.free)}</kbd>
       </button>
     {:else if ordering.mode === 'attack'}
-      <button class="plane" class:on={ordering.then === 'pass'} on:click={() => (ordering = { ...ordering, then: ordering.then === 'pass' ? 'station' : 'pass' })}
-        title="K: keep station (Standing orders, the usual), or pass on by (Ballistic orders: one burn, no braking)">
-        <i></i>{ordering.then === 'pass' ? 'Pass on by · Ballistic orders' : 'Keep station · Standing orders'}<kbd>{cap($keymap.free)}</kbd>
+      <button class="plane" class:on={ordering.then !== 'station'} on:click={() => (ordering = { ...ordering, then: toggleAttack(ordering.then) })}
+        title="K cycles: keep station (Standing orders, the usual); pass on by (Ballistic orders: one burn, no braking); or finish them (Destroy orders: the silenced and the wrecks too, till destroyed)">
+        <i></i>{ordering.then === 'pass' ? 'Pass on by · Ballistic orders' : ordering.then === 'destroy' ? 'Finish them · Destroy orders' : 'Keep station · Standing orders'}<kbd>{cap($keymap.free)}</kbd>
       </button>
     {/if}
     {#if shapes(ordering) && formations}

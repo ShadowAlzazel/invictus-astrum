@@ -346,7 +346,9 @@ def give_order(world, req: dict, side_of=None, overrule=None) -> dict:
                 offsets = {sid: at[k] for k, sid in enumerate(ships)}
     if req.get("free") is True and mode == "move" and halt is None:    # there, free: an orbit in a well, else coasting
         target.update(free=True, label=f"{target['label']}, then free")
-    if mode == "attack":                             # aggressive the whole way, on Standing orders (the CAPTAIN reads it)
+    if mode == "attack" and req.get("destroy") is True:     # on Destroy orders: the passed over and the wrecks too
+        target.update(attack=True, destroy=True, label=f"attack-move to {target['label']}, destroy")
+    elif mode == "attack":                           # aggressive the whole way, on Standing orders (the CAPTAIN reads it)
         target.update(attack=True, label=f"attack-move to {target['label']}")
     elif mode == "patrol" and anchor is not None:    # to the point and back to where it is now, over and over
         bid = target["bullseye"]

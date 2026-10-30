@@ -9,6 +9,8 @@
 #             "coast" (on as she goes, the drive cut)
 #   pick      how her side's ships entering together pick their targets: "spread" (the one fewest of
 #             them are on, the nearest of those: one to a target before two; the default), "nearest"
+#   scuttle   true: her side's ships take what it passed over (the silenced) and the wrecks as targets
+#             too (Destroy orders)
 #   start     the engagement's first node
 #   node      the engagement's nodes. Entering one, she does what it says (do); from the next tick
 #             on, the first of its ways out (on) whose condition holds takes her on ("exit": out of
@@ -36,8 +38,9 @@
 #             outright: her hit points gone), "passed" (going away from her after a pass),
 #             "focus-stack" (her focus battery is a stack: her class is built on the spine), "fired-on"
 #
-# An attack-move flies two of these while she is on it (data/minerva.toml attack_keep, attack_pass).
-# Keeping station: Standing orders, the root. Passing on by: Ballistic orders. Once the move is
+# An attack-move flies one of three of these while she is on it (data/minerva.toml attack_keep,
+# attack_pass, attack_destroy). Keeping station: Standing orders, the root. Passing on by: Ballistic
+# orders. Finishing them: Destroy orders. Once the move is
 # over she is on her own profile again. She is not told which shot: her focus says it.
 
 [profile.root]
@@ -181,6 +184,24 @@ on = [{ if = "destroyed", go = "exit" }, { if = "passed", go = "exit" }, { if = 
 label = "Fire as she passes"
 do = ["fire"]
 on = [{ if = "destroyed", go = "exit" }, { if = "passed", go = "exit" }, { if = "always", go = "fire" }]
+
+[profile.destroy]
+name = "Destroy orders"   # an attack-move told to finish them: the silenced her side passed over, and the wrecks, till destroyed
+targets = ["hostile"]
+scuttle = true
+start = "close"
+
+[profile.destroy.node.close]
+label = "Close to station, fire"
+do = ["station", "fire", "turn-to-fire", "answer-fire"]
+weapon = "stack"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "exit" }, { if = "in-envelope", go = "fire" }, { if = "always", go = "close" }]
+
+[profile.destroy.node.fire]
+label = "Keep station, fire till destroyed"
+do = ["station", "fire", "turn-to-fire", "answer-fire"]
+weapon = "stack"
+on = [{ if = "destroyed", go = "exit" }, { if = "lost", go = "exit" }, { if = "far", go = "close" }, { if = "always", go = "fire" }]
 
 [profile.ballistic]
 name = "Ballistic orders"

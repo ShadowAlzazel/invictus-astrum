@@ -107,13 +107,14 @@ class Minerva:
     station_share: float
     stances: dict                              # id -> ReadyStance
     attack_keep: str = "root"                  # the profile an attack-move flies keeping station ...
-    attack_pass: str = "ballistic"             # ... and passing on by
+    attack_pass: str = "ballistic"             # ... passing on by ...
+    attack_destroy: str = "destroy"            # ... and on destroy orders (the passed over and the wrecks taken too)
 
     def as_dict(self) -> dict:
         return {"stance": self.stance, "block_s": self.block_s, "engaged_s": self.engaged_s, "ticks": list(self.ticks),
                 "cycle_s": self.cycle_s,
                 "station_share": self.station_share, "stances": {k: s.as_dict() for k, s in self.stances.items()},
-                "attack_keep": self.attack_keep, "attack_pass": self.attack_pass}
+                "attack_keep": self.attack_keep, "attack_pass": self.attack_pass, "attack_destroy": self.attack_destroy}
 
 
 def _range_ok(r) -> bool:
@@ -162,7 +163,7 @@ def load_minerva(path: str | Path) -> Minerva:
         p.append("[minerva] ticks: seconds above zero, engaged_s among them")
     if m.get("stance") not in STANCES:
         p.append(f"[minerva] stance is one of {list(STANCES)}")
-    for k in ("attack_keep", "attack_pass"):
+    for k in ("attack_keep", "attack_pass", "attack_destroy"):
         if not isinstance(m.get(k, ""), str):
             p.append(f"[minerva] {k}: a profile's id")
     p += [f"[stance.{s}] is needed" for s in STANCES if s not in st]
@@ -183,7 +184,7 @@ def load_minerva(path: str | Path) -> Minerva:
                    float(m["cycle_s"]), float(m["station_share"]),
                    {sid: ReadyStance(sid, s.get("label") or sid, s.get("text", ""), int(s["readiness"]), s["enter"], s.get("range"),
                                      s["after"], bool(s.get("moves", True))) for sid, s in st.items()},
-                   m.get("attack_keep", "root"), m.get("attack_pass", "ballistic"))
+                   m.get("attack_keep", "root"), m.get("attack_pass", "ballistic"), m.get("attack_destroy", "destroy"))
 
 
 @dataclass(frozen=True)

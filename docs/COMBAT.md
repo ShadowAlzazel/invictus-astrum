@@ -104,7 +104,9 @@ side's list of non-targets, which the OVERSEER keeps: none of its ships takes he
 takes off what was put on from then). Disabled is out of the fight (her drive and every battery out,
 or blind with no radiators); destroyed, her hit points gone. Standing orders, Reckless Ahead,
 Artillery, Hold the line and Ballistic orders leave a disarmed target; Pursuit and Search and
-Destroy keep on until she is destroyed. A node's ways out are taken from the next tick on, the
+Destroy keep on until she is destroyed. **Destroy orders** (scuttle: what her side passed over and
+the wrecks are targets too; station and fire, each till destroyed) is the third an attack-move
+flies, K's (data/minerva.toml attack_destroy): the fight over, it finishes what was left. A node's ways out are taken from the next tick on, the
 first whose condition holds; a node may wait first. A commander's profile flies a shared one's
 map with its own targets and ranges. Shared: **Standing orders** (the root: close to station at her
 spinal battery's envelope, fire it once a cycle, hold; target lost, hold and wait, then exit; with

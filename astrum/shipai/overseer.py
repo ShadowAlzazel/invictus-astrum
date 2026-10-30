@@ -136,7 +136,8 @@ class Overseer:
 
     def profile(self, i: int, tg: dict, prof):
         """The profile she fights by: on an attack-move (or engaged out of one) the one the MINERVA
-        names for it (attack_keep: Standing orders; attack_pass, passing on by: Ballistic orders);
+        names for it (attack_keep: Standing orders; attack_pass, passing on by: Ballistic orders;
+        attack_destroy: Destroy orders);
         else her own. Read off her move, as her stance is: nothing is written, so once the move is
         over she is on her own again."""
         cp = self.captains[i]
@@ -144,7 +145,8 @@ class Overseer:
         if not on.get("attack"):
             return prof
         M = self.minerva
-        return self.world.profile(self.player[self.view[i]], M.attack_pass if on.get("pass") else M.attack_keep)
+        pid = M.attack_pass if on.get("pass") else M.attack_destroy if on.get("destroy") else M.attack_keep
+        return self.world.profile(self.player[self.view[i]], pid)
 
     def reach_m(self, i: int, stance: str, prof) -> float:
         """How far out a target takes her into combat at a stance (her profile's, else the stance's)."""
@@ -366,18 +368,23 @@ class Overseer:
         taken. One just out of it (her move and her post held) goes on to the next with them."""
         side = sp.side
         I = np.array([i for i, *_ in items])
-        live = sp.shown & ~sp.old & ~side.own & ~sp.wrecked
+        seen = sp.shown & ~sp.old & ~side.own
+        live = seen & ~sp.wrecked
         hostile = live & sp.identified & side.hostile
         bogey = live & ~sp.identified
         H = np.array(["hostile" in prof[i].targets for i in I])[:, None]
         U = np.array(["unknown" in prof[i].targets for i in I])[:, None]
         near = (hostile[None] & H) | (bogey[None] & U)
+        S = np.array([prof[i].scuttle for i in I])        # (destroy orders: the wrecks too, till destroyed)
+        if S.any():
+            wreck = seen & sp.wrecked & ~self.fv.destroyed[: len(seen)]
+            near[S] |= ((wreck & sp.identified & side.hostile)[None] & H[S]) | ((wreck & ~sp.identified)[None] & U[S])
         D = np.linalg.norm(sp.r[None] - sp.r[I][:, None], axis=2)
         reach = np.array([self.reach_m(it[0], it[1].id, prof[it[0]]) for it in items])
         near &= D <= reach[:, None]
         skip = list(self.passed_over.get(side.view, ()))
         if skip:
-            near[:, skip] = False
+            near[np.ix_(~S, skip)] = False                   # (passed over: but not for destroy orders)
         on = np.zeros(near.shape[1])                     # how many of the side's ships are on each
         for k in self.engaged:
             j = self.captains[k].m.at.target

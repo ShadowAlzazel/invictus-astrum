@@ -10,7 +10,8 @@ ticks = [10, 30, 60, 300, 600]  # the battle ticks the host may set (the level's
 cycle_s = 60              # TEMPORARY: a battery whose cycle the data does not state (a stack's is its cycle_s)
 station_share = 0.9       # est.: station on a target is taken this far into a battery's envelope
 attack_keep = "root"      # the profile an attack-move flies keeping station: Standing orders ...
-attack_pass = "ballistic" # ... and passing on by: Ballistic orders (her own again once the move is over)
+attack_pass = "ballistic" # ... passing on by: Ballistic orders ...
+attack_destroy = "destroy" # ... and on destroy orders: Destroy orders (her own again once the move is over)
 
 # A ReadyStance:
 #   readiness  1 general quarters (her sensors ping actively), 2 attack, 3 watching
