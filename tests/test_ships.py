@@ -333,3 +333,32 @@ def test_check_tool(capsys):
     assert tool.main(["sol-demo", "--hours", "1"]) == 0
     out = capsys.readouterr().out
     assert "registry: " in out and "0 errors" in out and "jadf" in out and "flown 1 h" in out and out.rstrip().endswith("ok")
+
+
+def test_every_class_states_what_a_hit_does_to_her(reg):
+    """[damage] in every class, the same shape (data for the simulation to come): her hull points, her
+    spread, her silhouette's shares, and each kind of her systems (her crew: [hull] complement, a blank
+    where the canon has not given it); the crew tiers' detection, repair
+    and morale, and the spreads, in rules.toml. ARCVS radiators take many hits and are repaired."""
+    spreads = reg.rules.damage["spread"]
+    assert {"regular", "here"} <= set(spreads)
+    for t in ("green", "rated", "experienced", "veteran", "exceptional"):
+        assert {"detect_k", "repair_k", "surrender_at"} <= set(reg.rules.crew[t])
+    for cid, sc in reg.classes.items():
+        d = sc.doc["damage"]
+        assert d["spread"] in spreads, cid
+        assert set(d["systems"]) == {"weapon", "sensor", "drive", "radiator"} and set(d["share"]) == {"hull", "citadel"}, cid
+    rad = reg.classes["papilion"].doc["damage"]["systems"]["radiator"]
+    assert rad["hits"]["value"] > 1 and "disabled" in rad["repairable"]
+
+
+def test_a_bad_damage_table_is_found(reg):
+    import tomllib
+    doc = tomllib.loads((ROOT / "data" / "ships" / "classes" / "phalaena.toml").read_text())
+    doc["damage"]["spread"] = "nowhere"
+    doc["damage"]["systems"]["radiator"]["fluence"] = {"damaged": 5.0, "destroyed": 1.0}
+    doc["damage"]["systems"]["hull"] = {"fluence": {"damaged": 1.0}}
+    doc["damage"]["share"]["hull"]["sensor"] = 0.9
+    got = " ".join(str(f) for f in build_class(doc, reg.rules, reg.armoury, drives=reg.drives).findings)
+    for x in ("spread is one of", "each worse state", "not one of", "together at most 1"):
+        assert x in got, x

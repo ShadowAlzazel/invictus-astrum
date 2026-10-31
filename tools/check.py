@@ -59,6 +59,11 @@ def scenario(w: World, sid: str, hours: float) -> int:
     for x in sc.findings:
         print(f"  [finding] {x}")
     errors = len(f.findings)
+    spreads = (w.ships.rules.damage.get("spread") or {}) if w.ships else {}
+    for cid, c in sc.contacts.items():                   # a ship's own spread (rules.toml [damage.spread])
+        if c.spread is not None and c.spread not in spreads:
+            print(f"  error: {cid}: spread {c.spread!r} is not one of {list(spreads)}")
+            errors += 1
     t = time.perf_counter()
     f.reach(f.t0 + hours * 3600)
     flown = time.perf_counter() - t

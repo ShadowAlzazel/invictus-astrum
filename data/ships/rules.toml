@@ -40,25 +40,46 @@ order = "carried by rating"
 design = "generalists in graded sizes"
 
 # ---- crew: experience moves aim, never the beam ------------------------------------------------------
+# Besides her aim (each class's [aim] tiers), a crew's tier carries (data for the simulation to come,
+# not yet read; est., TEMPORARY until the owner's):
+#   detect_k      her sensors' threshold, times this: a better crew makes out a fainter ship (not a
+#                 longer reach of the same mast: the MW she can tell from the noise)
+#   repair_k      her damage control's repair times (each class's [damage.systems] repair_s), times this
+#   surrender_at  the share of her systems out at which she strikes (a green crew holds on less; 1.0: never)
 [crew.green]
 label = "Green"
 who = "a MINERVA and crew with no engagement behind them"
+detect_k = { value = 1.25, est = true }
+repair_k = { value = 1.5, est = true }
+surrender_at = { value = 0.6, est = true }
 
 [crew.rated]
 label = "Rated"
 who = "after one engagement"
+detect_k = { value = 1.0, est = true }
+repair_k = { value = 1.0, est = true }
+surrender_at = { value = 0.75, est = true }
 
 [crew.experienced]
 label = "Experienced"
 who = "after several"
+detect_k = { value = 0.9, est = true }
+repair_k = { value = 0.85, est = true }
+surrender_at = { value = 0.85, est = true }
 
 [crew.veteran]
 label = "Veteran"
 who = "after many"
+detect_k = { value = 0.8, est = true }
+repair_k = { value = 0.7, est = true }
+surrender_at = { value = 0.95, est = true }
 
 [crew.exceptional]
 label = "Exceptional"
 who = "the best MINERVA and crews"
+detect_k = { value = 0.7, est = true }
+repair_k = { value = 0.6, est = true }
+surrender_at = { value = 1.0, est = true }
 
 # ---- the wall: where the miss equals the target ------------------------------------------------------
 # R = size / θ: the range at which the beam's miss θ equals a line-rate citadel, or a silhouette.
@@ -205,6 +226,16 @@ radiator = { destroyed = 1.2 }
 [damage.share]
 hull = { sensor = 0.08, weapon = 0.06, radiator = 0.15 }
 citadel = { weapon = 0.2, drive = 0.2 }
+
+# Where a shooter's hits land among a target's systems: her silhouette's shares (each class's
+# [damage.share]) times her spread's weights, by kind (a kind not named: 1). A class names its own
+# ([damage] spread), a ship may name another (a fleet's unit: spread). Data, not yet read; est.
+[damage.spread.regular]
+label = "Regular: as the silhouette lies"
+
+[damage.spread.here]
+label = "HERE: laid on the engines"
+drive = { value = 4.0, est = true, note = "TEMPORARY: very high accuracy on drives (Imoogi's)" }
 
 # Light held on her, closed loop (TORMENTA §6.5.1, §6.7): a sensor looking back dazzled while it is
 # held, within the battery's dazzle range (a shutter closes in microseconds: §6.5.3, lasers blind,

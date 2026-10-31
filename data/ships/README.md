@@ -108,7 +108,28 @@ pairs = 1
 [[point_defence]]                     # bearing, at_km, kills_per_s
 [endurance]                           # thermal_store_tj, cold_h = {...}, notes
 [combat]  [tending]  [[sensor]]  [history]
+
+[damage]                              # what a hit does to her: every class, the same shape (est. till the owner's)
+hp_mj = 5000                          # her hull points
+spread = "regular"                    # where her hits land among a target's systems (rules.toml [damage.spread]);
+                                      # a fleet's unit may name her own (spread = "here")
+[damage.share]                        # her silhouette: the share of channels on each part each kind takes
+hull = { sensor = 0.08, weapon = 0.06, radiator = 0.15 }
+citadel = { weapon = 0.2, drive = 0.2 }
+[damage.systems.radiator]             # and weapon, sensor, drive
+count = 2                             # how many (weapons, sensors: her batteries, her masts)
+fluence = { damaged = 1.2, disabled = 25.0, destroyed = 82.7 }   # MJ/m² one channel takes one to each state
+hits = 8                              # channels at that fluence before it goes (1: one shot, one kill)
+damaged = "degraded"                  # "out", or "degraded": working at degraded_share
+degraded_share = 0.75
+repairable = ["damaged", "disabled"]  # what damage control brings back, and how long (a rated crew)
+repair_s = 1800
 ```
+
+Her crew is `[hull] complement`. `[damage]` is data for the simulation to come: it still reads
+`rules.toml [damage]` (hit points by rate, one table of shares and fluences for all). The crew tiers
+carry `detect_k` (her sensors' threshold, times it), `repair_k` (repair times, times it) and
+`surrender_at` (the share of her systems out at which she strikes) for the same.
 
 ## What the registry derives
 

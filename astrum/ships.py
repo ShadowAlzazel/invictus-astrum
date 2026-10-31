@@ -40,7 +40,11 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 TIER_ORDER = ("green", "rated", "experienced", "veteran", "exceptional")       # worst aim to best
 
 SECTIONS = {"class", "hull", "drive", "layout", "aim", "battery", "reach", "point_defence", "endurance", "combat", "sensor",
-            "tending", "history"}
+            "tending", "history", "damage"}
+DAMAGE_KINDS = ("weapon", "sensor", "drive", "radiator")    # her systems, as [damage] names them
+DAMAGE_STATES = ("damaged", "disabled", "destroyed")
+DAMAGE_SYSTEM_KEYS = {"count", "fluence", "hits", "damaged", "degraded_share", "repairable", "repair_s"}
+META = {"est", "approx", "note"}
 CLASS_KEYS = {"id", "name", "lineage", "genus", "epithet", "builder", "rate", "terms", "summary",
               "symbol", "in_classis", "places", "successor_of", "old_rating"}
 MOVED = {"designation": "[class] builder", "body": "[hull] body"}      # keys of the old format, and where they went
@@ -719,6 +723,45 @@ def _drive(sc: ShipClass, doc: dict, rules: ShipRules, cat: Catalogue, f: list[F
     sc.drive = out
 
 
+def _damage(d: dict, rules: ShipRules, where: str, f: list[Finding]) -> None:
+    """A class's [damage], checked: her hull points, her spread, her silhouette's shares, and each kind
+    of her systems (data for the simulation to come; docs/COMBAT.md)."""
+    w = f"{where} [damage]"
+    for k in set(d) - {"hp_mj", "spread", "share", "systems"}:
+        f.append(Finding("error", w, f"unknown key {k!r}"))
+    quantity(d.get("hp_mj"), f"{w} hp_mj", f)
+    spreads = (rules.damage.get("spread") or {})
+    if d.get("spread", "regular") not in spreads:
+        f.append(Finding("error", w, f"spread is one of {list(spreads)} (rules.toml [damage.spread])"))
+    num = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool)
+    for part, sh in (d.get("share") or {}).items():
+        kinds = {k: v for k, v in sh.items() if k not in META}
+        if part not in ("hull", "citadel"):
+            f.append(Finding("error", w, f"share: {part!r} is not hull or citadel"))
+        bad = [k for k, v in kinds.items() if k not in DAMAGE_KINDS or not num(v) or v < 0]
+        if bad or sum(v for v in kinds.values() if num(v)) > 1:
+            f.append(Finding("error", w, f"share.{part}: a share (0 to 1, together at most 1) of each of {list(DAMAGE_KINDS)}"))
+    for kind, s in (d.get("systems") or {}).items():
+        at = f"{w} systems.{kind}"
+        if kind not in DAMAGE_KINDS:
+            f.append(Finding("error", at, f"not one of {list(DAMAGE_KINDS)}"))
+            continue
+        for k in set(s) - DAMAGE_SYSTEM_KEYS:
+            f.append(Finding("error", at, f"unknown key {k!r} (one of {sorted(DAMAGE_SYSTEM_KEYS)})"))
+        fl = {k: v for k, v in (s.get("fluence") or {}).items() if k not in META}
+        if not fl or set(fl) - set(DAMAGE_STATES) or not all(num(v) and v > 0 for v in fl.values()):
+            f.append(Finding("error", at, f"fluence: MJ/m² above zero for some of {list(DAMAGE_STATES)}"))
+        elif [fl[x] for x in DAMAGE_STATES if x in fl] != sorted(fl.values()):
+            f.append(Finding("error", at, "fluence: each worse state at no less than the one before"))
+        if s.get("damaged", "out") not in ("out", "degraded"):
+            f.append(Finding("error", at, 'damaged is "out" or "degraded"'))
+        if not set(s.get("repairable") or ()) <= set(DAMAGE_STATES):
+            f.append(Finding("error", at, f"repairable: among {list(DAMAGE_STATES)}"))
+        for k in ("count", "hits", "degraded_share", "repair_s"):
+            if k in s:
+                quantity(s[k], f"{at} {k}", f)
+
+
 def build_class(doc: dict, rules: ShipRules, arm: Armoury, source: str = "",
                 drives: Catalogue | None = None) -> ShipClass:
     f: list[Finding] = []
@@ -729,6 +772,8 @@ def build_class(doc: dict, rules: ShipRules, arm: Armoury, source: str = "",
         f.append(Finding("error", where, f"unknown section [{s}]"))
     for k in set(c) - CLASS_KEYS:
         f.append(Finding("error", where, f"[class] {k!r} is now {MOVED[k]}" if k in MOVED else f"[class] unknown key {k!r}"))
+    if "damage" in doc:
+        _damage(doc["damage"], rules, where, f)
     terms = c.get("terms")
     if terms is not None and not (isinstance(terms, list) and all(isinstance(x, str) for x in terms)):
         f.append(Finding("error", where, '[class] terms is a list of what she is called: ["heavy frigate", "multi-role destroyer"]'))
@@ -1015,6 +1060,7 @@ def class_detail(reg: ShipRegistry, sc: ShipClass) -> dict:
         "armament_heat_mw": sum(b["heat_mw"] for b in sc.batteries if b["heat_mw"]) or None,
         "endurance": figures(sc.doc.get("endurance", {}), sc.id),
         "combat": figures(sc.doc.get("combat", {}), sc.id),
+        "damage": sc.doc.get("damage"),
         "tending": figures(sc.doc.get("tending", {}), sc.id),
         "sensors": sc.doc.get("sensor", []),
         "history": sc.doc.get("history", {}),

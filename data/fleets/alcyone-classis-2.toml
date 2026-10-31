@@ -1918,6 +1918,7 @@ class = "papilion"
 [[unit]]
 id = "strike-squadron-4"
 callsign = "Imoogi"
+spread = "here"                 # her own: laid on the engines (rules.toml [damage.spread.here])
 affiliation = "friend"
 echelon = "ship"
 formation = "strike-squadron"

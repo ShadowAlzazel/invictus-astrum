@@ -121,6 +121,7 @@ class Contact:
     role: str = ""                        # formation: its role (style.toml [formation_role]); else read from its callsign
     flag: str = ""                        # formation: its leader, the ship its reports go through (else its first ship)
     veterancy: str | None = None          # her crew's tier (rules.toml [crew]); taken from the formation above, else rated
+    spread: str | None = None             # where her hits land (rules.toml [damage.spread]); else her class's (data, not yet read)
     stance: str | None = None             # its stance (astrum/profiles.py STANCES); else the one above it holds
     profile: str | None = None            # the combat profile its stance reads (an id); else the one above it holds
 
@@ -203,7 +204,8 @@ def load_scenario(path: str | Path, fleets: dict | None = None) -> Scenario:
                                 ship_class=c.get("class", ""), load=c.get("load"), propellant=c.get("propellant"),
                                 mode=c.get("mode"), faction=c.get("faction"), hull_number=str(c.get("hull_number", "")),
                                 own_faction="faction" in c, role=c.get("role", ""), flag=c.get("flag", ""),
-                                veterancy=c.get("veterancy"), stance=c.get("stance"), profile=c.get("profile"))
+                                veterancy=c.get("veterancy"), stance=c.get("stance"), profile=c.get("profile"),
+                                spread=c.get("spread"))
         if c.get("veterancy") not in (None, *VETERANCY):
             problems.append(f"{cid}: veterancy is one of {list(VETERANCY)}")
         if c.get("stance") not in (None, *STANCES):

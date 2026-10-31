@@ -17,3 +17,56 @@ notes = "Warheads of 100 kt and above. An armada 1-ring or above attaches her; o
 
 [history]
 notable = ["Popocatépetl: the warrior who keeps watch forever beside the sleeping Iztaccíhuatl"]
+
+[hull]
+
+# ---- damage: what a hit does to her (data for the simulation to come; the simulation still reads
+# data/ships/rules.toml [damage]). est. throughout, TEMPORARY until the owner's; docs/COMBAT.md.
+#   hp_mj       her hull points: hull-opening energy she takes before she is destroyed
+#   spread      where her own hits land among a target's systems (rules.toml [damage.spread]; a ship may name another)
+#   [damage.share]  her silhouette: of the channels on her hull, and on her citadel, the share each kind takes
+#   [damage.systems.KIND]  weapon (each battery), sensor (each mast), drive, radiator:
+#       count         how many (weapons and sensors: her batteries and masts)
+#       fluence       MJ/m² one channel takes one to each state
+#       hits          channels at that fluence before it goes (1: one shot, one kill)
+#       damaged       what damaged means: "out", or "degraded" (working at degraded_share)
+#       repairable    the states her damage control brings back, and repair_s how long (a rated crew; rules [crew] repair_k)
+[damage]
+hp_mj = { value = 2000, est = true, note = "TEMPORARY: the unrated rate's" }
+spread = "regular"
+
+[damage.share]
+hull = { sensor = 0.08, weapon = 0.06, radiator = 0.15, est = true }
+citadel = { weapon = 0.2, drive = 0.2, est = true }
+
+[damage.systems.weapon]
+fluence = { damaged = 0.075, disabled = 25.0, destroyed = 82.7 }
+hits = { value = 1, est = true }
+damaged = "out"
+repairable = ["damaged"]
+repair_s = { value = 1800, est = true }
+
+[damage.systems.sensor]
+fluence = { damaged = 0.075, destroyed = 2.91 }
+hits = { value = 1, est = true }
+damaged = "degraded"
+degraded_share = { value = 0.5, est = true }
+repairable = ["damaged"]
+repair_s = { value = 900, est = true }
+
+[damage.systems.drive]
+fluence = { damaged = 25.0, disabled = 82.7, destroyed = 165.4, est = true }
+hits = { value = 1, est = true }
+damaged = "degraded"
+degraded_share = { value = 0.5, est = true }
+repairable = ["damaged"]
+repair_s = { value = 7200, est = true }
+
+[damage.systems.radiator]
+count = 2
+fluence = { damaged = 1.2, destroyed = 25.0, est = true }
+hits = { value = 2, est = true }
+damaged = "degraded"
+degraded_share = { value = 0.5, est = true }
+repairable = ["damaged"]
+repair_s = { value = 3600, est = true }
