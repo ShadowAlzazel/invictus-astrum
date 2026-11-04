@@ -325,7 +325,7 @@ The owner's to give (each also in `docs/OPEN-ITEMS.md`, with the answers given):
 - Where a hit lands: her silhouette and her attitude (basic shapes, as a class's layout gives
   them), in place of the shares by kind; her crew (§8.2: a beam kills the people it crosses long
   before it opens the hull) and prompt upset (§8.5). The hit points, the shares, the citadel's
-  factor and the two radiators are TEMPORARY.
+  factor are TEMPORARY; radiators are her class's ([damage.systems.radiator] count).
 - What a hit does, class by class, is in the data and not yet read (data/ships/README.md, `[damage]`):
   hull points, a shooter's spread (regular; incapacitator, on the drives: Imoogi's), the silhouette's shares, and
   per kind of system how many hits take it, whether damaged is out or degraded, what damage control
