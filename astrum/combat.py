@@ -33,7 +33,7 @@ import numpy as np
 from . import optics, salvo
 from .constants import C
 from .damage import Damage, _num, hp_of, salvo_lost
-from .systems import OPERATIONAL, OUT, Systems
+from .systems import OPERATIONAL, OUT, RADIATORS, Systems
 from .orders import QUARTERS as QUARTERS_ORDER
 
 ENERGY, KINETIC, PROPELLED = "energy", "kinetic", "propelled"
@@ -124,6 +124,13 @@ def weapons_of(sc) -> list[Weapon]:
                           op, max((float(v) for v in (f.get("reach") or {}).values() if isinstance(v, (int, float))), default=None)
                           if st else None))
     return out
+
+
+def _radiators(sc) -> int:
+    """How many radiators her class has ([damage.systems.radiator] count; else RADIATORS)."""
+    k = (((sc.doc.get("damage") or {}).get("systems") or {}).get("radiator") or {}).get("count") if sc is not None else None
+    k = k.get("value") if isinstance(k, dict) else k
+    return int(k) if isinstance(k, (int, float)) and k > 0 else RADIATORS
 
 
 def hull_of(sc, rules) -> salvo.Hull | None:
@@ -227,7 +234,8 @@ class CombatBook:
             tier = getattr(contacts.get(sid), "veterancy", None) or "rated"
             a = (sc.aim.get(tier) or sc.aim.get("rated")) if sc is not None and sc.aim else None
             self.aim.append(float(a.value) if a is not None and a.value else 6.5)
-        self.systems = Systems(fleet, self.weapons)
+        rads = [_radiators(classes.get(getattr(spec, "class_id", None))) for spec in fleet.c.spec[: fleet.c.n]]
+        self.systems = Systems(fleet, self.weapons, rads)
         self.harm = Damage(fleet, registry, self.systems)
         self.log: list[Event] = []                       # by time
         self._mine: dict[int, list[Event]] = {}          # each ship's shots, by time

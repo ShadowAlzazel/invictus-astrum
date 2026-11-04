@@ -20,13 +20,13 @@ notable = ["Popocatépetl: the warrior who keeps watch forever beside the sleepi
 
 [hull]
 
-# ---- damage: what a hit does to her (data for the simulation to come; the simulation still reads
-# data/ships/rules.toml [damage]). est. throughout, TEMPORARY until the owner's; docs/COMBAT.md.
+# ---- damage: what a hit does to her (data for the simulation to come, but her radiators' count, which it
+# reads; else it still reads data/ships/rules.toml [damage]). est. throughout, TEMPORARY until the owner's; docs/COMBAT.md.
 #   hp_mj       her hull points: hull-opening energy she takes before she is destroyed
 #   spread      where her own hits land among a target's systems (rules.toml [damage.spread]; a ship may name another)
 #   [damage.share]  her silhouette: of the channels on her hull, and on her citadel, the share each kind takes
 #   [damage.systems.KIND]  weapon (each battery), sensor (each mast), drive, radiator:
-#       count         how many (weapons and sensors: her batteries and masts)
+#       count         how many (weapons and sensors: her batteries and masts; radiators: her thermal store shed through all of them, read by the simulation)
 #       fluence       MJ/m² one channel takes one to each state
 #       hits          channels at that fluence before it goes (1: one shot, one kill)
 #       damaged       what damaged means: "out", or "degraded" (working at degraded_share)

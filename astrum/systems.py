@@ -31,7 +31,7 @@ OPERATIONAL, DAMAGED, DISABLED, DESTROYED = "operational", "damaged", "disabled"
 OUT = (DAMAGED, DISABLED, DESTROYED)
 HARM = {DAMAGED: 1, DISABLED: 2, DESTROYED: 3}     # how a ship stands, for the map: 0 whole
 KINDS = ("weapon", "sensor", "drive", "radiator")
-RADIATORS = 2                     # est.: a ship's radiators, her two wings' (TEMPORARY, until a class says)
+RADIATORS = 2                     # a ship's radiators where her class does not say ([damage.systems.radiator] count)
 
 
 @dataclass(frozen=True)
@@ -49,7 +49,7 @@ class Systems:
     """A fleet's systems by state: each ship's operational ones (by kind), the lists of the rest,
     and the records of each change, in time order."""
 
-    def __init__(self, fleet, weapons: list):
+    def __init__(self, fleet, weapons: list, radiators: list | None = None):
         c, S = fleet.c, fleet.sensors
         n = len(weapons)
         self.S = S
@@ -59,7 +59,8 @@ class Systems:
             if i < n:
                 self.sensors[i].append(m)
         self.drive = [bool(c.fmax[i] > 0) for i in range(n)]
-        self.radiators = [list(range(RADIATORS)) if c.store[i] > 0 else [] for i in range(n)]
+        self.rads = [(radiators[i] if radiators else RADIATORS) if c.store[i] > 0 else 0 for i in range(n)]   # her class's count
+        self.radiators = [list(range(k)) for k in self.rads]          # (her thermal store shed through all of them)
         self.had = np.array([self.drive[i] or bool(weapons[i]) for i in range(n)])   # a drive or a battery to lose
         self.armed = np.array([bool(weapons[i]) for i in range(n)])                  # a battery to lose
         self.saw = np.array([bool(self.sensors[i]) and bool(self.radiators[i]) for i in range(n)])   # masts and radiators to lose
@@ -96,7 +97,7 @@ class Systems:
             c.fmax[i] = 0.0
         else:
             self.radiators[i].remove(key)
-            c.shed[i] = len(self.radiators[i]) / RADIATORS
+            c.shed[i] = len(self.radiators[i]) / self.rads[i]
         self._disabled = None
         self.hurt.setdefault(i, t)
         o = Out(t, i, kind, key, state, by)
