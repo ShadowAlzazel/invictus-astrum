@@ -341,7 +341,7 @@ def test_every_class_states_what_a_hit_does_to_her(reg):
     where the canon has not given it); the crew tiers' detection, repair
     and morale, and the spreads, in rules.toml. ARCVS radiators take many hits and are repaired."""
     spreads = reg.rules.damage["spread"]
-    assert {"regular", "here"} <= set(spreads)
+    assert {"regular", "incapacitator"} <= set(spreads)
     for t in ("green", "rated", "experienced", "veteran", "exceptional"):
         assert {"detect_k", "repair_k", "surrender_at"} <= set(reg.rules.crew[t])
     for cid, sc in reg.classes.items():

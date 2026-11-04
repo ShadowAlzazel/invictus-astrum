@@ -327,7 +327,7 @@ The owner's to give (each also in `docs/OPEN-ITEMS.md`, with the answers given):
   before it opens the hull) and prompt upset (§8.5). The hit points, the shares, the citadel's
   factor and the two radiators are TEMPORARY.
 - What a hit does, class by class, is in the data and not yet read (data/ships/README.md, `[damage]`):
-  hull points, a shooter's spread (regular; HERE, on the engines: Imoogi's), the silhouette's shares, and
+  hull points, a shooter's spread (regular; incapacitator, on the drives: Imoogi's), the silhouette's shares, and
   per kind of system how many hits take it, whether damaged is out or degraded, what damage control
   repairs and how long; the crew tiers' detection threshold, repair times and morale. ARCVS radiators
   (liquid lithium, fractal copper fins) take eight hits and come back from disabled.

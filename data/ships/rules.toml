@@ -233,9 +233,9 @@ citadel = { weapon = 0.2, drive = 0.2 }
 [damage.spread.regular]
 label = "Regular: as the silhouette lies"
 
-[damage.spread.here]
-label = "HERE: laid on the engines"
-drive = { value = 4.0, est = true, note = "TEMPORARY: very high accuracy on drives (Imoogi's)" }
+[damage.spread.incapacitator]
+label = "Incapacitator: laid on the engines"
+drive = { value = 4.0, est = true, note = "TEMPORARY: very high accuracy on drives: she takes out enemy drives (Imoogi's)" }
 
 # Light held on her, closed loop (TORMENTA §6.5.1, §6.7): a sensor looking back dazzled while it is
 # held, within the battery's dazzle range (a shutter closes in microseconds: §6.5.3, lasers blind,

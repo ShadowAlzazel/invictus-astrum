@@ -112,7 +112,7 @@ pairs = 1
 [damage]                              # what a hit does to her: every class, the same shape (est. till the owner's)
 hp_mj = 5000                          # her hull points
 spread = "regular"                    # where her hits land among a target's systems (rules.toml [damage.spread]);
-                                      # a fleet's unit may name her own (spread = "here")
+                                      # a fleet's unit may name her own (spread = "incapacitator")
 [damage.share]                        # her silhouette: the share of channels on each part each kind takes
 hull = { sensor = 0.08, weapon = 0.06, radiator = 0.15 }
 citadel = { weapon = 0.2, drive = 0.2 }
